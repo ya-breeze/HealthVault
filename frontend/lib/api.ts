@@ -6,7 +6,17 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
   return res.json();
 }
 
@@ -42,14 +52,13 @@ export const api = {
   importHealthConnect: (file: File): Promise<Record<string, number>> => {
     const form = new FormData();
     form.append('file', file);
-    return fetch(`${BASE}/import/health-connect`, {
-      method: 'POST',
-      credentials: 'include',
-      body: form,
-    }).then(async res => {
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      return res.json();
-    });
+    return apiFetchForm('/import/health-connect', form);
+  },
+
+  importLibra: (file: File): Promise<Record<string, number>> => {
+    const form = new FormData();
+    form.append('file', file);
+    return apiFetchForm('/import/libra', form);
   },
 };
 

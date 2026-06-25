@@ -12,9 +12,19 @@ const TYPE_LABELS: Record<string, string> = {
   total_calories: 'Total Calories',
   oxygen_saturation: 'Oxygen Saturation',
   speed: 'Speed',
+  weight: 'Weight',
+  body_fat: 'Body Fat',
 };
 
-export default function ImportPage() {
+interface ImportCardProps {
+  title: string;
+  description: string;
+  accept: string;
+  label: string;
+  onImport: (file: File) => Promise<Record<string, number>>;
+}
+
+function ImportCard({ title, description, accept, label, onImport }: ImportCardProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -29,7 +39,7 @@ export default function ImportPage() {
     setCounts(null);
 
     try {
-      const result = await api.importHealthConnect(file);
+      const result = await onImport(file);
       setCounts(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
@@ -38,6 +48,81 @@ export default function ImportPage() {
     }
   };
 
+  return (
+    <div className="mb-10">
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">{title}</h2>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{description}</p>
+
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          {label}
+        </label>
+        <input
+          ref={fileRef}
+          type="file"
+          accept={accept}
+          className="block w-full text-sm text-gray-700 dark:text-gray-300
+            file:mr-4 file:py-2 file:px-4
+            file:rounded-lg file:border-0
+            file:text-sm file:font-medium
+            file:bg-blue-50 file:text-blue-700
+            dark:file:bg-blue-900 dark:file:text-blue-200
+            hover:file:bg-blue-100 dark:hover:file:bg-blue-800
+            file:cursor-pointer cursor-pointer"
+        />
+
+        <button
+          onClick={handleImport}
+          disabled={loading}
+          className={`mt-4 w-full py-2.5 rounded-lg text-sm font-medium transition-all ${
+            loading
+              ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700 text-white'
+          }`}
+        >
+          {loading ? 'Importing…' : 'Import'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+          <p className="text-sm font-medium text-red-700 dark:text-red-400">Import failed</p>
+          <p className="text-sm text-red-600 dark:text-red-300 mt-1 font-mono break-all">{error}</p>
+        </div>
+      )}
+
+      {counts && (
+        <div className="mt-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">Import complete</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 dark:bg-gray-900/50">
+                <th className="text-left px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Type</th>
+                <th className="text-right px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Records</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {Object.entries(counts).map(([key, count]) => (
+                <tr key={key}>
+                  <td className="px-6 py-3 text-gray-700 dark:text-gray-300">
+                    {TYPE_LABELS[key] ?? key.replace(/_/g, ' ')}
+                  </td>
+                  <td className="px-6 py-3 text-right font-mono text-gray-900 dark:text-white">
+                    {count.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ImportPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
@@ -53,76 +138,21 @@ export default function ImportPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-10">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Import Health Connect</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
-          Upload the zip archive exported from Android&apos;s Health Connect app to import your health history.
-        </p>
+        <ImportCard
+          title="Import Health Connect"
+          description="Upload the zip archive exported from Android's Health Connect app to import your health history."
+          accept=".zip"
+          label="Health Connect archive (.zip)"
+          onImport={api.importHealthConnect}
+        />
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Health Connect archive (.zip)
-          </label>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".zip"
-            className="block w-full text-sm text-gray-700 dark:text-gray-300
-              file:mr-4 file:py-2 file:px-4
-              file:rounded-lg file:border-0
-              file:text-sm file:font-medium
-              file:bg-blue-50 file:text-blue-700
-              dark:file:bg-blue-900 dark:file:text-blue-200
-              hover:file:bg-blue-100 dark:hover:file:bg-blue-800
-              file:cursor-pointer cursor-pointer"
-          />
-
-          <button
-            onClick={handleImport}
-            disabled={loading}
-            className={`mt-4 w-full py-2.5 rounded-lg text-sm font-medium transition-all ${
-              loading
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 text-white'
-            }`}
-          >
-            {loading ? 'Importing…' : 'Import'}
-          </button>
-        </div>
-
-        {error && (
-          <div className="mt-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
-            <p className="text-sm font-medium text-red-700 dark:text-red-400">Import failed</p>
-            <p className="text-sm text-red-600 dark:text-red-300 mt-1 font-mono break-all">{error}</p>
-          </div>
-        )}
-
-        {counts && (
-          <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white">Import complete</p>
-            </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 dark:bg-gray-900/50">
-                  <th className="text-left px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Type</th>
-                  <th className="text-right px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Records</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {Object.entries(counts).map(([key, count]) => (
-                  <tr key={key}>
-                    <td className="px-6 py-3 text-gray-700 dark:text-gray-300">
-                      {TYPE_LABELS[key] ?? key.replace(/_/g, ' ')}
-                    </td>
-                    <td className="px-6 py-3 text-right font-mono text-gray-900 dark:text-white">
-                      {count.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <ImportCard
+          title="Import Libra"
+          description="Upload the CSV exported from the Libra weight-tracking app to import your weight history."
+          accept=".csv"
+          label="Libra export (.csv)"
+          onImport={api.importLibra}
+        />
       </main>
     </div>
   );

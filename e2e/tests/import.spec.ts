@@ -23,8 +23,8 @@ test.describe('Import page', () => {
     await login(page);
     await page.goto('/import/');
     await expect(page.getByRole('heading', { name: /import health connect/i })).toBeVisible();
-    await expect(page.locator('input[type="file"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: /import/i })).toBeVisible();
+    await expect(page.locator('input[type="file"][accept=".zip"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: /import/i }).first()).toBeVisible();
   });
 
   test('dashboard link on import page navigates home', async ({ page }) => {
@@ -43,6 +43,25 @@ test.describe('Import page', () => {
 
     // POST without a file field
     const res = await request.post(`${BASE_URL}/api/import/health-connect`, {
+      multipart: {},
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('Libra card is visible on import page', async ({ page }) => {
+    await login(page);
+    await page.goto('/import/');
+    await expect(page.getByRole('heading', { name: /import libra/i })).toBeVisible();
+    await expect(page.locator('input[type="file"][accept=".csv"]')).toBeVisible();
+  });
+
+  test('API: import libra rejects missing file', async ({ request }) => {
+    const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { username: USER, password: PASS },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+
+    const res = await request.post(`${BASE_URL}/api/import/libra`, {
       multipart: {},
     });
     expect(res.status()).toBe(400);
