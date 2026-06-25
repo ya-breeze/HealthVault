@@ -24,9 +24,7 @@ func parseTime(s string) time.Time {
 // Sleep uses DO NOTHING because re-inserting its child stages is not safe
 // without a unique key on the stage rows.
 func Process(db *gorm.DB, userID, familyID, payloadID uuid.UUID, p *PayloadJSON) error {
-	return db.Transaction(func(tx *gorm.DB) error {
-		return process(tx, userID, familyID, payloadID, p)
-	})
+	return process(db, userID, familyID, payloadID, p)
 }
 
 func process(db *gorm.DB, userID, familyID, payloadID uuid.UUID, p *PayloadJSON) error {

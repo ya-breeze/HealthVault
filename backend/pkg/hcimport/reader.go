@@ -171,24 +171,21 @@ func readSleep(db *sql.DB, p *ingest.PayloadJSON, c *Counts) error {
 	}
 
 	for _, s := range sessions {
-		endTime := time.UnixMilli(s.endMs).UTC()
-		startTime := time.UnixMilli(s.startMs).UTC()
-		durationSec := int(endTime.Sub(startTime).Seconds())
+		durationSec := int(time.UnixMilli(s.endMs).Sub(time.UnixMilli(s.startMs)).Seconds())
 
 		var stages []ingest.SleepStageJSON
 		for _, st := range stagesByParent[s.rowID] {
-			stStart := time.UnixMilli(st.startMs).UTC()
-			stEnd := time.UnixMilli(st.endMs).UTC()
+			stageDur := int(time.UnixMilli(st.endMs).Sub(time.UnixMilli(st.startMs)).Seconds())
 			stages = append(stages, ingest.SleepStageJSON{
 				Stage:           sleepStageName(st.stageType),
-				StartTime:       stStart.Format(time.RFC3339Nano),
-				EndTime:         stEnd.Format(time.RFC3339Nano),
-				DurationSeconds: int(stEnd.Sub(stStart).Seconds()),
+				StartTime:       msToRFC3339(st.startMs),
+				EndTime:         msToRFC3339(st.endMs),
+				DurationSeconds: stageDur,
 			})
 		}
 
 		p.Sleep = append(p.Sleep, ingest.SleepJSON{
-			SessionEndTime:  endTime.Format(time.RFC3339Nano),
+			SessionEndTime:  msToRFC3339(s.endMs),
 			DurationSeconds: durationSec,
 			Stages:          stages,
 		})
@@ -212,13 +209,12 @@ func readExercise(db *sql.DB, p *ingest.PayloadJSON, c *Counts) error {
 		if err := rows.Scan(&exType, &startMs, &endMs); err != nil {
 			return fmt.Errorf("scan exercise: %w", err)
 		}
-		startTime := time.UnixMilli(startMs).UTC()
-		endTime := time.UnixMilli(endMs).UTC()
+		durationSec := int(time.UnixMilli(endMs).Sub(time.UnixMilli(startMs)).Seconds())
 		p.Exercise = append(p.Exercise, ingest.ExerciseJSON{
 			Type:            exerciseTypeName(exType),
-			StartTime:       startTime.Format(time.RFC3339Nano),
-			EndTime:         endTime.Format(time.RFC3339Nano),
-			DurationSeconds: int(endTime.Sub(startTime).Seconds()),
+			StartTime:       msToRFC3339(startMs),
+			EndTime:         msToRFC3339(endMs),
+			DurationSeconds: durationSec,
 		})
 		c.Exercise++
 	}

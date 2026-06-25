@@ -1,6 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -15,7 +15,6 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function ImportPage() {
-  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -44,12 +43,12 @@ export default function ImportPage() {
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
         <div className="max-w-2xl mx-auto flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">HealthVault</h1>
-          <button
-            onClick={() => router.push('/')}
+          <Link
+            href="/"
             className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium"
           >
             ← Dashboard
-          </button>
+          </Link>
         </div>
       </header>
 

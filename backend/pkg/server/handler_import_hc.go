@@ -14,6 +14,7 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/hcimport"
 	"github.com/ya-breeze/healthvault/pkg/ingest"
+	"gorm.io/gorm"
 )
 
 func importHealthConnectHandler(storage database.Storage) http.HandlerFunc {
@@ -95,14 +96,18 @@ func importHealthConnectHandler(storage database.Storage) http.HandlerFunc {
 		user, err := storage.FindUserByID(claims.UserID)
 		if err != nil {
 			slog.Error("hc-import: find user", "err", err, "user_id", claims.UserID)
-			http.Error(w, "user not found", http.StatusInternalServerError)
+			http.Error(w, "user not found", http.StatusNotFound)
 			return
 		}
 
 		// Ingest into HealthVault DB.
 		t3 := time.Now()
 		slog.Info("hc-import: ingest starting", "user", user.Username)
-		if err := ingest.Process(storage.DB(), user.ID, user.FamilyID, uuid.New(), payload); err != nil {
+		payloadID := uuid.New()
+		err = storage.DB().Transaction(func(tx *gorm.DB) error {
+			return ingest.Process(tx, user.ID, user.FamilyID, payloadID, payload)
+		})
+		if err != nil {
 			slog.Error("hc-import: ingest failed", "err", err, "user", user.Username, "duration", time.Since(t3))
 			http.Error(w, fmt.Sprintf("ingest error: %s", err), http.StatusInternalServerError)
 			return

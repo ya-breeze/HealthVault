@@ -47,7 +47,7 @@ export const api = {
       credentials: 'include',
       body: form,
     }).then(async res => {
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       return res.json();
     });
   },
