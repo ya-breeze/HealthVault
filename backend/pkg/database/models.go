@@ -243,6 +243,16 @@ type Exercise struct {
 	StrideLengthM   *float64
 }
 
+// --- speed (point-in-time series, like HeartRate) ---
+
+type Speed struct {
+	models.TenantModel
+	UserID          uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_speed_user_time"`
+	SourcePayloadID uuid.UUID `gorm:"type:uuid;not null"`
+	Time            time.Time `gorm:"not null;uniqueIndex:idx_speed_user_time"`
+	MetersPerSecond float64   `gorm:"not null"`
+}
+
 // --- nutrition ---
 
 type Nutrition struct {

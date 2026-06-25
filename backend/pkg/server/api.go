@@ -40,6 +40,7 @@ var typeRegistry = map[string]typeInfo{
 	"lean_body_mass":         {"lean_body_masses", "time"},
 	"vo2_max":                {"vo2_maxes", "time"},
 	"bone_mass":              {"bone_masses", "time"},
+	"speed":                  {"speeds", "time"},
 }
 
 // meHandler returns the authenticated user's profile.

@@ -293,5 +293,14 @@ func Process(db *gorm.DB, userID, familyID, payloadID uuid.UUID, p *PayloadJSON)
 		rec.FamilyID = familyID
 		db.Clauses(upsertPoint).Create(rec) //nolint:errcheck
 	}
+	for _, r := range p.Speed {
+		rec := &database.Speed{
+			UserID: userID, SourcePayloadID: payloadID,
+			Time: parseTime(r.Time), MetersPerSecond: r.MetersPerSecond,
+		}
+		rec.ID = uuid.New()
+		rec.FamilyID = familyID
+		db.Clauses(upsertPoint).Create(rec) //nolint:errcheck
+	}
 	return nil
 }

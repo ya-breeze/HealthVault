@@ -138,6 +138,12 @@ export default function Dashboard() {
                 )}
               </div>
             )}
+            <a
+              href="/import"
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium border border-gray-200 dark:border-gray-600 rounded-md px-2.5 py-1.5 transition-colors"
+            >
+              Import
+            </a>
             <button
               onClick={handleLogout}
               className="text-sm text-red-500 hover:text-red-700 dark:hover:text-red-400 font-medium"

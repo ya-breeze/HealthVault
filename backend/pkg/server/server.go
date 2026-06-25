@@ -61,6 +61,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	// gorilla/mux routing "summary" as the {type} variable.
 	api.HandleFunc("/data/summary", summaryHandler(storage)).Methods("GET")
 	api.HandleFunc("/data/{type}", dataHandler(storage)).Methods("GET")
+	api.HandleFunc("/import/health-connect", importHealthConnectHandler(storage)).Methods("POST")
 
 	// MCP — protected by a static bearer token (HCW_MCP_TOKEN).
 	// If the token is empty the endpoint responds 503 so it is never accidentally open.
