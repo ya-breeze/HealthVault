@@ -1,0 +1,6 @@
+frontend/node_modules
+frontend/.next
+frontend/out
+backend/bin
+hcw.db
+*.db

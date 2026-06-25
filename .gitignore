@@ -1,0 +1,8 @@
+backend/bin/
+*.db
+*.db-shm
+*.db-wal
+node_modules/
+frontend/.next/
+frontend/out/
+.env

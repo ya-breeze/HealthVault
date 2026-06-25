@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      HCW_PORT: "8080"
+      HCW_DBPATH: /data/hcw.db
+      HCW_SEED_USERS: ${HCW_SEED_USERS:-TestFamily:alice:pass1}
+      HCW_JWT_SECRET: ${HCW_JWT_SECRET:-hcw-wip-secret}
+      HCW_COOKIE_SECURE: "false"
+      HCW_MCP_TOKEN: ${HCW_MCP_TOKEN}
+    volumes:
+      - /mnt/eight-2/eight-2/data/data/hcw-wip:/data
+    networks:
+      - hcw-network
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+      - "9888:443"
+    depends_on:
+      - backend
+    networks:
+      - hcw-network
+
+networks:
+  hcw-network:
