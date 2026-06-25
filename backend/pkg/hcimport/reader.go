@@ -3,6 +3,7 @@ package hcimport
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -36,29 +37,27 @@ func Read(dbPath string) (*ingest.PayloadJSON, *Counts, error) {
 	p := &ingest.PayloadJSON{}
 	c := &Counts{}
 
-	if err := readHeartRate(db, p, c); err != nil {
-		return nil, nil, err
+	type reader struct {
+		name string
+		fn   func(*sql.DB, *ingest.PayloadJSON, *Counts) error
 	}
-	if err := readSteps(db, p, c); err != nil {
-		return nil, nil, err
+	readers := []reader{
+		{"heart_rate", readHeartRate},
+		{"steps", readSteps},
+		{"sleep", readSleep},
+		{"exercise", readExercise},
+		{"distance", readDistance},
+		{"total_calories", readTotalCalories},
+		{"oxygen_saturation", readOxygenSaturation},
+		{"speed", readSpeed},
 	}
-	if err := readSleep(db, p, c); err != nil {
-		return nil, nil, err
-	}
-	if err := readExercise(db, p, c); err != nil {
-		return nil, nil, err
-	}
-	if err := readDistance(db, p, c); err != nil {
-		return nil, nil, err
-	}
-	if err := readTotalCalories(db, p, c); err != nil {
-		return nil, nil, err
-	}
-	if err := readOxygenSaturation(db, p, c); err != nil {
-		return nil, nil, err
-	}
-	if err := readSpeed(db, p, c); err != nil {
-		return nil, nil, err
+	for _, r := range readers {
+		t := time.Now()
+		if err := r.fn(db, p, c); err != nil {
+			slog.Error("hcimport: read table failed", "table", r.name, "err", err)
+			return nil, nil, err
+		}
+		slog.Info("hcimport: table read", "table", r.name, "duration", time.Since(t))
 	}
 
 	return p, c, nil
