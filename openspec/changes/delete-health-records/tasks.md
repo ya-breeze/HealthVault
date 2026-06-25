@@ -30,5 +30,5 @@
 
 - [x] 6.1 Run `make lint` (or equivalent) in the backend; fix any issues
 - [x] 6.2 Run backend tests: `make test` or `go test ./...`
-- [ ] 6.3 Deploy to WIP stack and manually verify: delete a weight record, confirm it disappears from the table and does not reappear on reload
-- [ ] 6.4 Run E2E tests against the WIP stack
+- [x] 6.3 Deploy to WIP stack and manually verify: delete a weight record, confirm it disappears from the table and does not reappear on reload
+- [x] 6.4 Run E2E tests against the WIP stack
