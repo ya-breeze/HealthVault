@@ -59,6 +59,13 @@ func (s *storageImpl) DeleteRecord(tableName string, id uuid.UUID, userID uuid.U
 	if result.RowsAffected == 0 {
 		return ErrNotFound
 	}
+	// Sleep rows own SleepStage children; SQLite FK enforcement is off by default,
+	// so we cascade manually to avoid orphaned stage rows.
+	if tableName == "sleeps" {
+		if err := s.db.Exec("DELETE FROM sleep_stages WHERE sleep_id = ?", id).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -115,6 +115,45 @@ func TestDeleteRecord_NonExistentID(t *testing.T) {
 	}
 }
 
+func TestDeleteRecord_SleepCascadesStages(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	sleep := database.Sleep{
+		UserID:          userID,
+		SourcePayloadID: uuid.New(),
+		StartTime:       time.Now().Add(-8 * time.Hour),
+		SessionEndTime:  time.Now(),
+		DurationSeconds: 28800,
+	}
+	sleep.ID = uuid.New()
+	sleep.FamilyID = familyID
+	if err := s.DB().Create(&sleep).Error; err != nil {
+		t.Fatalf("create sleep: %v", err)
+	}
+
+	stage := database.SleepStage{
+		SleepID:         sleep.ID,
+		Stage:           "deep",
+		StartTime:       sleep.StartTime,
+		EndTime:         sleep.SessionEndTime,
+		DurationSeconds: 28800,
+	}
+	if err := s.DB().Create(&stage).Error; err != nil {
+		t.Fatalf("create sleep_stage: %v", err)
+	}
+
+	if err := s.DeleteRecord("sleeps", sleep.ID, userID); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
+	}
+
+	var count int64
+	s.DB().Table("sleep_stages").Where("sleep_id = ?", sleep.ID).Count(&count)
+	if count != 0 {
+		t.Errorf("expected sleep_stages to be cascade-deleted, got %d rows", count)
+	}
+}
+
 func TestAllTablesCreated(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	tmpDir := t.TempDir()

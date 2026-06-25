@@ -18,6 +18,8 @@ export default function DataTypeClient({ type }: Props) {
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [from, setFrom] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -27,6 +29,8 @@ export default function DataTypeClient({ type }: Props) {
 
   useEffect(() => {
     setLoading(true);
+    setPendingDeleteId(null);
+    setDeleteError(null);
     api.data(type, `${from}T00:00:00Z`, `${to}T23:59:59Z`, userParam)
       .then(data => {
         setRecords(data);
@@ -59,11 +63,18 @@ export default function DataTypeClient({ type }: Props) {
     : records;
 
   const handleConfirmDelete = async (id: string) => {
+    setDeleting(true);
+    setDeleteError(null);
     try {
       await api.deleteRecord(type, id);
       setRecords(prev => prev.filter(r => r.id !== id));
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
-      setPendingDeleteId(null);
+      setDeleting(false);
+      // Use functional update to avoid clearing a *different* row's pending state
+      // if the user clicked another trash icon while this fetch was in flight.
+      setPendingDeleteId(prev => prev === id ? null : prev);
     }
   };
 
@@ -97,6 +108,12 @@ export default function DataTypeClient({ type }: Props) {
             />
           </label>
         </div>
+
+        {deleteError && (
+          <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
+            Delete failed: {deleteError}
+          </div>
+        )}
 
         {numericKey && timeKey && records.length > 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 mb-6">
@@ -139,18 +156,21 @@ export default function DataTypeClient({ type }: Props) {
                       {k}
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">
-                    Actions
-                  </th>
+                  {/* Delete column only shown for own data, not when viewing a family member */}
+                  {!userParam && (
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {records.map((r, i) => {
+                {records.map(r => {
                   const id = r.id as string;
                   const isPending = id === pendingDeleteId;
                   return (
                     <tr
-                      key={i}
+                      key={id}
                       className={isPending
                         ? 'bg-red-50 dark:bg-red-900/20'
                         : 'hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors'}
@@ -162,32 +182,36 @@ export default function DataTypeClient({ type }: Props) {
                             : String(r[k] ?? '')}
                         </td>
                       ))}
-                      <td className="px-4 py-3">
-                        {isPending ? (
-                          <span className="flex items-center gap-2">
+                      {!userParam && (
+                        <td className="px-4 py-3">
+                          {isPending ? (
+                            <span className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleConfirmDelete(id)}
+                                disabled={deleting}
+                                className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {deleting ? '…' : 'Confirm'}
+                              </button>
+                              <button
+                                onClick={() => setPendingDeleteId(null)}
+                                disabled={deleting}
+                                className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Cancel
+                              </button>
+                            </span>
+                          ) : (
                             <button
-                              onClick={() => handleConfirmDelete(id)}
-                              className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                              onClick={() => { setDeleteError(null); setPendingDeleteId(id); }}
+                              aria-label="Delete record"
+                              className="text-gray-400 hover:text-red-500 transition-colors"
                             >
-                              Confirm
+                              🗑
                             </button>
-                            <button
-                              onClick={() => setPendingDeleteId(null)}
-                              className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500"
-                            >
-                              Cancel
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => setPendingDeleteId(id)}
-                            aria-label="Delete record"
-                            className="text-gray-400 hover:text-red-500 transition-colors"
-                          >
-                            🗑
-                          </button>
-                        )}
-                      </td>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

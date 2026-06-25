@@ -10,6 +10,15 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+async function apiFetchNoBody(path: string, options?: RequestInit): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, {
+    credentials: 'include',
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+  });
+  if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
+}
+
 async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
@@ -49,13 +58,8 @@ export const api = {
     );
   },
 
-  deleteRecord: async (type: string, id: string): Promise<void> => {
-    const res = await fetch(`${BASE}/data/${type}/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
-    if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
-  },
+  deleteRecord: (type: string, id: string): Promise<void> =>
+    apiFetchNoBody(`/data/${type}/${id}`, { method: 'DELETE' }),
 
   importHealthConnect: (file: File): Promise<Record<string, number>> => {
     const form = new FormData();
