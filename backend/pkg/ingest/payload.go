@@ -29,6 +29,7 @@ type PayloadJSON struct {
 	LeanBodyMass         []LeanBodyMassJSON         `json:"lean_body_mass,omitempty"`
 	VO2Max               []VO2MaxJSON               `json:"vo2_max,omitempty"`
 	BoneMass             []BoneMassJSON             `json:"bone_mass,omitempty"`
+	Speed                []SpeedJSON                `json:"speed,omitempty"`
 }
 
 type StepsJSON struct {
@@ -151,4 +152,8 @@ type VO2MaxJSON struct {
 type BoneMassJSON struct {
 	Kilograms float64 `json:"kilograms"`
 	Time      string  `json:"time"`
+}
+type SpeedJSON struct {
+	MetersPerSecond float64 `json:"meters_per_second"`
+	Time            string  `json:"time"`
 }

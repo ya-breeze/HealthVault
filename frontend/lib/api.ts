@@ -38,6 +38,19 @@ export const api = {
       `/data/summary?${params}`
     );
   },
+
+  importHealthConnect: (file: File): Promise<Record<string, number>> => {
+    const form = new FormData();
+    form.append('file', file);
+    return fetch(`${BASE}/import/health-connect`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    }).then(async res => {
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    });
+  },
 };
 
 export const DATA_TYPES = [
@@ -46,6 +59,7 @@ export const DATA_TYPES = [
   'blood_glucose', 'oxygen_saturation', 'body_temperature', 'skin_temperature',
   'respiratory_rate', 'resting_heart_rate', 'exercise', 'hydration', 'nutrition',
   'basal_metabolic_rate', 'body_fat', 'lean_body_mass', 'vo2_max', 'bone_mass',
+  'speed',
 ] as const;
 
 export type DataType = typeof DATA_TYPES[number];

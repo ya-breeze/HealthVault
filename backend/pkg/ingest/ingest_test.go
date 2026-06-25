@@ -80,6 +80,51 @@ func TestProcess_UpsertUpdatesValue(t *testing.T) {
 	}
 }
 
+func TestProcess_Speed(t *testing.T) {
+	db, _ := database.Open(slog.New(slog.NewTextHandler(os.Stderr, nil)), ":memory:")
+	userID, familyID, payloadID := uuid.New(), uuid.New(), uuid.New()
+
+	p := &ingest.PayloadJSON{
+		Speed: []ingest.SpeedJSON{
+			{MetersPerSecond: 2.5, Time: "2026-06-24T10:00:00Z"},
+			{MetersPerSecond: 3.1, Time: "2026-06-24T10:00:01Z"},
+		},
+	}
+	if err := ingest.Process(db, userID, familyID, payloadID, p); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	var speeds []database.Speed
+	db.Find(&speeds)
+	if len(speeds) != 2 {
+		t.Fatalf("want 2 speed records, got %d", len(speeds))
+	}
+}
+
+func TestProcess_SpeedDeduplication(t *testing.T) {
+	db, _ := database.Open(slog.New(slog.NewTextHandler(os.Stderr, nil)), ":memory:")
+	userID, familyID := uuid.New(), uuid.New()
+
+	p := &ingest.PayloadJSON{
+		Speed: []ingest.SpeedJSON{
+			{MetersPerSecond: 2.5, Time: "2026-06-24T10:00:00Z"},
+		},
+	}
+	ingest.Process(db, userID, familyID, uuid.New(), p) //nolint:errcheck
+	// Re-send same record with updated value — upsert should overwrite
+	p.Speed[0].MetersPerSecond = 3.0
+	ingest.Process(db, userID, familyID, uuid.New(), p) //nolint:errcheck
+
+	var speeds []database.Speed
+	db.Find(&speeds)
+	if len(speeds) != 1 {
+		t.Fatalf("deduplication failed: want 1 record, got %d", len(speeds))
+	}
+	if speeds[0].MetersPerSecond != 3.0 {
+		t.Errorf("upsert did not update value: want 3.0, got %v", speeds[0].MetersPerSecond)
+	}
+}
+
 func TestProcess_SleepDeduplication(t *testing.T) {
 	db, _ := database.Open(slog.New(slog.NewTextHandler(os.Stderr, nil)), ":memory:")
 	userID, familyID := uuid.New(), uuid.New()

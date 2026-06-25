@@ -35,6 +35,7 @@ func TestAllTablesCreated(t *testing.T) {
 		"skin_temperatures", "respiratory_rates", "resting_heart_rates", "exercises",
 		"hydrations", "nutritions", "basal_metabolic_rates", "body_fats", "lean_body_masses",
 		"vo2_maxes", "bone_masses",
+		"speeds",
 	}
 	for _, tbl := range tables {
 		if !db.Migrator().HasTable(tbl) {

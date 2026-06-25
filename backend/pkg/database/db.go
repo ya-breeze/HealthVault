@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ya-breeze/kin-core/authdb"
@@ -31,7 +32,12 @@ func (g *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 }
 
 func Open(l *slog.Logger, dbPath string) (*gorm.DB, error) {
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	sep := "?"
+	if strings.Contains(dbPath, "?") {
+		sep = "&"
+	}
+	dsn := dbPath + sep + "_busy_timeout=30000&_journal_mode=WAL"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: &slogGormLogger{l: l},
 	})
 	if err != nil {
@@ -51,6 +57,7 @@ func Open(l *slog.Logger, dbPath string) (*gorm.DB, error) {
 		&BloodPressure{}, &SkinTemperature{},
 		&Sleep{}, &SleepStage{},
 		&Exercise{}, &Nutrition{},
+		&Speed{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
