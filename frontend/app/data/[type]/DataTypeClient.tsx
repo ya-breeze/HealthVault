@@ -17,6 +17,7 @@ export default function DataTypeClient({ type }: Props) {
 
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [from, setFrom] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -56,6 +57,15 @@ export default function DataTypeClient({ type }: Props) {
   const chartData = timeKey
     ? records.map(r => ({ ...r, [timeKey]: new Date(r[timeKey] as string).getTime() }))
     : records;
+
+  const handleConfirmDelete = async (id: string) => {
+    try {
+      await api.deleteRecord(type, id);
+      setRecords(prev => prev.filter(r => r.id !== id));
+    } finally {
+      setPendingDeleteId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -129,20 +139,58 @@ export default function DataTypeClient({ type }: Props) {
                       {k}
                     </th>
                   ))}
+                  <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {records.map((r, i) => (
-                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                    {displayColumns.map(k => (
-                      <td key={k} className="px-4 py-3 text-gray-900 dark:text-gray-200">
-                        {typeof r[k] === 'string' && (r[k] as string).includes('T')
-                          ? new Date(r[k] as string).toLocaleString()
-                          : String(r[k] ?? '')}
+                {records.map((r, i) => {
+                  const id = r.id as string;
+                  const isPending = id === pendingDeleteId;
+                  return (
+                    <tr
+                      key={i}
+                      className={isPending
+                        ? 'bg-red-50 dark:bg-red-900/20'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors'}
+                    >
+                      {displayColumns.map(k => (
+                        <td key={k} className="px-4 py-3 text-gray-900 dark:text-gray-200">
+                          {typeof r[k] === 'string' && (r[k] as string).includes('T')
+                            ? new Date(r[k] as string).toLocaleString()
+                            : String(r[k] ?? '')}
+                        </td>
+                      ))}
+                      <td className="px-4 py-3">
+                        {isPending ? (
+                          <span className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleConfirmDelete(id)}
+                              className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setPendingDeleteId(null)}
+                              className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setPendingDeleteId(id)}
+                            aria-label="Delete record"
+                            className="text-gray-400 hover:text-red-500 transition-colors"
+                          >
+                            🗑
+                          </button>
+                        )}
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

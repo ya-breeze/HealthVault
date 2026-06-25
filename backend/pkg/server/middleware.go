@@ -15,6 +15,9 @@ type contextKey string
 
 const claimsKey contextKey = "claims"
 
+// ClaimsContextKey is the exported form of claimsKey, used in tests to inject claims directly.
+const ClaimsContextKey = claimsKey
+
 // RequireAuth returns a middleware that validates the kin_access JWT cookie.
 // It checks the DB blacklist via the provided *gorm.DB.
 func RequireAuth(jwtSecret []byte, cookieCfg cookies.Config, db *gorm.DB) func(http.Handler) http.Handler {

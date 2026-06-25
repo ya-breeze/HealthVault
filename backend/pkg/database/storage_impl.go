@@ -48,6 +48,20 @@ func (s *storageImpl) SaveWebhookPayload(p *WebhookPayload) error {
 	return s.db.Create(p).Error
 }
 
+func (s *storageImpl) DeleteRecord(tableName string, id uuid.UUID, userID uuid.UUID) error {
+	result := s.db.Exec(
+		"DELETE FROM "+tableName+" WHERE id = ? AND user_id = ?",
+		id, userID,
+	)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *storageImpl) QueryRecords(tableName string, timeCol string, userID uuid.UUID, tr TimeRange) ([]map[string]any, error) {
 	var results []map[string]any
 	query := fmt.Sprintf("user_id = ? AND %s >= ? AND %s <= ?", timeCol, timeCol)

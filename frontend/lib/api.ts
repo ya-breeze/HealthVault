@@ -49,6 +49,14 @@ export const api = {
     );
   },
 
+  deleteRecord: async (type: string, id: string): Promise<void> => {
+    const res = await fetch(`${BASE}/data/${type}/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
+  },
+
   importHealthConnect: (file: File): Promise<Record<string, number>> => {
     const form = new FormData();
     form.append('file', file);

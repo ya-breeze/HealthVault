@@ -1,10 +1,14 @@
 package database_test
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	kinmodels "github.com/ya-breeze/kin-core/models"
 	"github.com/ya-breeze/healthvault/pkg/database"
 )
 
@@ -16,6 +20,98 @@ func TestOpen(t *testing.T) {
 	sqlDB, _ := db.DB()
 	if err := sqlDB.Ping(); err != nil {
 		t.Fatalf("Ping: %v", err)
+	}
+}
+
+func newTestStorage(t *testing.T) database.Storage {
+	t.Helper()
+	db, err := database.Open(slog.New(slog.NewTextHandler(os.Stderr, nil)), ":memory:")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	return database.NewStorage(db)
+}
+
+func seedUserAndFamily(t *testing.T, s database.Storage) (userID, familyID uuid.UUID) {
+	t.Helper()
+	familyID = uuid.New()
+	userID = uuid.New()
+	family := kinmodels.Family{ID: familyID, Name: "TestFamily"}
+	if err := s.DB().Create(&family).Error; err != nil {
+		t.Fatalf("create family: %v", err)
+	}
+	user := kinmodels.User{ID: userID, Username: "testuser", PasswordHash: "x", FamilyID: familyID}
+	if err := s.DB().Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	return userID, familyID
+}
+
+func TestDeleteRecord_OwnRecord(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	rec := database.Weight{
+		UserID:          userID,
+		SourcePayloadID: uuid.New(),
+		Time:            time.Now(),
+		Kilograms:       70.0,
+	}
+	rec.ID = uuid.New()
+	rec.FamilyID = familyID
+	if err := s.DB().Create(&rec).Error; err != nil {
+		t.Fatalf("create weight: %v", err)
+	}
+
+	if err := s.DeleteRecord("weights", rec.ID, userID); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
+	}
+
+	// Confirm row is gone.
+	var count int64
+	s.DB().Table("weights").Where("id = ?", rec.ID).Count(&count)
+	if count != 0 {
+		t.Errorf("expected 0 rows after delete, got %d", count)
+	}
+}
+
+func TestDeleteRecord_OtherUsersRecord(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+	otherUserID := uuid.New()
+
+	rec := database.Weight{
+		UserID:          userID,
+		SourcePayloadID: uuid.New(),
+		Time:            time.Now(),
+		Kilograms:       70.0,
+	}
+	rec.ID = uuid.New()
+	rec.FamilyID = familyID
+	if err := s.DB().Create(&rec).Error; err != nil {
+		t.Fatalf("create weight: %v", err)
+	}
+
+	err := s.DeleteRecord("weights", rec.ID, otherUserID)
+	if !errors.Is(err, database.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+
+	// Confirm row still exists.
+	var count int64
+	s.DB().Table("weights").Where("id = ?", rec.ID).Count(&count)
+	if count != 1 {
+		t.Errorf("expected row to still exist, got count=%d", count)
+	}
+}
+
+func TestDeleteRecord_NonExistentID(t *testing.T) {
+	s := newTestStorage(t)
+	userID, _ := seedUserAndFamily(t, s)
+
+	err := s.DeleteRecord("weights", uuid.New(), userID)
+	if !errors.Is(err, database.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
 
