@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -134,6 +135,42 @@ func summaryHandler(storage database.Storage) http.HandlerFunc {
 			"avg_heart_rate": avgHR,
 			"sleep_seconds":  sleepSec,
 		})
+	}
+}
+
+// DeleteRecordHandler hard-deletes a single health record owned by the authenticated user.
+// Exported for use in tests.
+func DeleteRecordHandler(storage database.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		typeName := vars["type"]
+		info, ok := typeRegistry[typeName]
+		if !ok {
+			http.Error(w, "unknown type", http.StatusNotFound)
+			return
+		}
+
+		id, err := uuid.Parse(vars["id"])
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		claims := ClaimsFromCtx(r)
+		if claims == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if err := storage.DeleteRecord(info.table, id, claims.UserID); err != nil {
+			if errors.Is(err, database.ErrNotFound) {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "delete error", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

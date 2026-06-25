@@ -48,6 +48,27 @@ func (s *storageImpl) SaveWebhookPayload(p *WebhookPayload) error {
 	return s.db.Create(p).Error
 }
 
+func (s *storageImpl) DeleteRecord(tableName string, id uuid.UUID, userID uuid.UUID) error {
+	result := s.db.Exec(
+		"DELETE FROM "+tableName+" WHERE id = ? AND user_id = ?",
+		id, userID,
+	)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	// Sleep rows own SleepStage children; SQLite FK enforcement is off by default,
+	// so we cascade manually to avoid orphaned stage rows.
+	if tableName == "sleeps" {
+		if err := s.db.Exec("DELETE FROM sleep_stages WHERE sleep_id = ?", id).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *storageImpl) QueryRecords(tableName string, timeCol string, userID uuid.UUID, tr TimeRange) ([]map[string]any, error) {
 	var results []map[string]any
 	query := fmt.Sprintf("user_id = ? AND %s >= ? AND %s <= ?", timeCol, timeCol)
