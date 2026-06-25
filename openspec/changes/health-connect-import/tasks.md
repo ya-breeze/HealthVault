@@ -52,10 +52,10 @@
 
 ## 7. Deploy and verify
 
-- [ ] 7.1 Commit all changes on the feature branch and push to GitHub
-- [ ] 7.2 Redeploy `healthvault-wip` stack from the feature branch via Portainer
-- [ ] 7.3 Wait for the stack to come up (`portainer.py wait healthvault-wip`)
-- [ ] 7.4 Log in to the WIP UI and navigate to the Import page
-- [ ] 7.5 Upload the Health Connect zip and verify import counts match expected values (heart_rate ≈ 271942, steps ≈ 5392, sleep ≈ 318, etc.)
-- [ ] 7.6 Confirm `GET /api/data/speed` returns speed records for the importing user
-- [ ] 7.7 Re-upload the same zip and confirm record counts in DB are unchanged (idempotency)
+- [x] 7.1 Commit all changes on the feature branch and push to GitHub
+- [x] 7.2 Redeploy `healthvault-wip` stack from the feature branch via Portainer
+- [x] 7.3 Wait for the stack to come up (`portainer.py wait healthvault-wip`)
+- [x] 7.4 Log in to the WIP UI and navigate to the Import page
+- [x] 7.5 Upload the Health Connect zip and verify import counts match expected values (heart_rate ≈ 271942, steps ≈ 5392, sleep ≈ 318, etc.)
+- [x] 7.6 Confirm `GET /api/data/speed` returns speed records for the importing user
+- [x] 7.7 Re-upload the same zip and confirm record counts in DB are unchanged (idempotency)
