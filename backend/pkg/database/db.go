@@ -31,7 +31,7 @@ func (g *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 }
 
 func Open(l *slog.Logger, dbPath string) (*gorm.DB, error) {
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(dbPath+"?_busy_timeout=30000&_journal_mode=WAL"), &gorm.Config{
 		Logger: &slogGormLogger{l: l},
 	})
 	if err != nil {
