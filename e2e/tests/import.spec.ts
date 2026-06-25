@@ -22,7 +22,7 @@ test.describe('Import page', () => {
   test('import page loads with file input', async ({ page }) => {
     await login(page);
     await page.goto('/import/');
-    await expect(page.getByText(/health connect/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /import health connect/i })).toBeVisible();
     await expect(page.locator('input[type="file"]')).toBeVisible();
     await expect(page.getByRole('button', { name: /import/i })).toBeVisible();
   });
