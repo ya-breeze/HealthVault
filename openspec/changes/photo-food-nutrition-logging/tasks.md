@@ -32,3 +32,13 @@
 - [ ] 6.2 Create interactive clarification questions modal
 - [ ] 6.3 Create portion weight adjuster slider and itemized macro summary card
 - [ ] 6.4 Create custom food entry modal
+- [ ] 6.5 Create calibration sample capture and management UI for photos, food identities, and measured gram weights
+
+## 7. Model Calibration
+
+- [ ] 7.1 Add `FoodCalibrationSample` GORM model, migration, tenant-scoped storage queries, and photo cleanup
+- [ ] 7.2 Add authenticated create/list/delete calibration sample endpoints without creating meal or `Nutrition` records
+- [ ] 7.3 Refactor the production Vision client to accept a per-call model override and return requested/actual model IDs, token usage, latency, and structured-output errors
+- [ ] 7.4 Implement `hcw calibrate-food-models` user/sample dataset selection, dry-run and explicitly confirmed execution modes with runtime model IDs, repeated trials, and operator-supplied pricing
+- [ ] 7.5 Implement deterministic ground-truth matching, detection/weight accuracy metrics, latency and cost aggregation, quality thresholds, Pareto-frontier selection, and reproducible JSON/Markdown reports
+- [ ] 7.6 Add unit and integration tests for sample isolation, dry-run zero-call behavior, partial model failures, metric calculations, price calculations, threshold selection, and deterministic report metadata
