@@ -1,13 +1,30 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  HealthVault — personal health data aggregator.
+
+  Tech stack: Go 1.26 backend (GORM + SQLite, gorilla/mux, cobra CLI, viper config),
+  Next.js 20 + TypeScript frontend, Playwright E2E in e2e/.
+
+  Conventions that are easy to get wrong:
+  - Config is loaded through viper with `SetEnvPrefix("HCW")` (backend/pkg/config/config.go).
+    Every environment variable is therefore `HCW_*`. Do not introduce bare or
+    differently-prefixed names such as `OPENAI_API_KEY` or `HEALTHVAULT_UPLOADS_DIR`.
+  - Models embed `models.TenantModel` from `github.com/ya-breeze/kin-core`. It has NO
+    `BeforeCreate` hook, so `ID` (uuid.New()) and `FamilyID` must be assigned explicitly
+    on every Create(). See backend/pkg/ingest/ingest.go for the pattern.
+  - Health metric tables are ingested telemetry: every row carries a non-null
+    `source_payload_id` tracing to a webhook or import. User-authored data must not be
+    written into those tables — it has no payload lineage and cannot be distinguished
+    from ingested rows afterwards.
+  - Ownership errors return 404, never 403, to avoid information disclosure.
+    Unauthenticated requests return 401.
+  - There is no background job infrastructure. `ListenAndServe` is the only goroutine in
+    the backend. Prefer synchronous work or an operator-run CLI command over introducing
+    a scheduler, and if a background job is genuinely required, specify its crash-recovery
+    behaviour explicitly.
+  - Bulk data loading is done through explicit import endpoints or CLI commands
+    (/api/import/health-connect, /api/import/libra), not scheduled pollers.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.

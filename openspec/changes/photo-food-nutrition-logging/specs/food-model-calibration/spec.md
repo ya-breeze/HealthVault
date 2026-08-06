@@ -5,11 +5,15 @@ Captures weighed-food ground truth and provides a manually invoked, reproducible
 ## ADDED Requirements
 
 ### Requirement: Calibration Ground-Truth Samples
-The system SHALL allow an authenticated user to save a calibration photo with one or more expected food identities and measured gram weights. Calibration samples SHALL remain user/tenant scoped, SHALL use the same protected media storage controls as meal photos, and SHALL NOT create `FoodMeal` or `Nutrition` records.
+The system SHALL allow an authenticated user to save a calibration photo with one or more expected food identities and measured gram weights. Calibration samples SHALL remain user/tenant scoped, SHALL be subject to the same upload validation and owner-scoped photo access controls as meal photos (served via `GET /api/food/calibration-samples/{id}/photo`), and SHALL NOT create `FoodMeal` records.
 
 #### Scenario: Save a weighed-food sample
 - **WHEN** an authenticated user uploads a food photo with valid food labels and positive measured gram weights
-- **THEN** the system stores the protected photo and ground truth as a calibration sample without affecting meal history or nutrition totals
+- **THEN** the system stores the protected photo and ground truth as a calibration sample without affecting meal history
+
+#### Scenario: Delete a calibration sample
+- **WHEN** the owner deletes a calibration sample
+- **THEN** the system removes the sample row and its stored photo file from disk
 
 #### Scenario: Cross-user calibration access
 - **WHEN** another user attempts to list, read, or delete a calibration sample they do not own
@@ -31,7 +35,7 @@ The system SHALL calculate per-model structured-output success rate, food detect
 
 #### Scenario: Select the lowest-cost acceptable model
 - **WHEN** one or more candidates meet the operator-supplied minimum detection F1 and maximum weight-error thresholds
-- **THEN** the report identifies the cheapest passing candidate and also presents the cost/quality Pareto frontier
+- **THEN** the report identifies the cheapest passing candidate and also presents the cost/quality Pareto frontier, without altering the configured production model
 
 #### Scenario: No model meets quality thresholds
 - **WHEN** no candidate meets all supplied quality thresholds
