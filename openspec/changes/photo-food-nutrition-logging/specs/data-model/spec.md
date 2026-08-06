@@ -84,13 +84,29 @@ The system SHALL persist user-authored food logging data in four family-scoped t
 | `CustomFood`              | A user's own per-100g food profile                              | —              |
 | `FoodCalibrationSample`   | A weighed-food ground-truth photo for model benchmarking        | `captured_at`  |
 
-`FoodMeal.status` SHALL be one of `processing`, `pending_clarification`, `pending_review`, `confirmed`, `failed`. `FoodItem` SHALL record whether it resolved to a reference food via a `matched` flag, with `fdc_id` and `custom_food_id` both nullable. Nutrient field names SHALL match the existing `Nutrition` model (`dietary_fiber_grams`, `sodium_grams`) so the two are directly comparable.
+`FoodMeal.status` SHALL be one of `processing`, `pending_clarification`, `pending_review`, `confirmed`, `failed`, and `FoodMeal.logged_at` SHALL always be non-zero. Nutrient field names SHALL match the existing `Nutrition` model (`dietary_fiber_grams`, `sodium_grams`) so the two are directly comparable.
+
+`FoodItem` SHALL carry `macro_source`, one of:
+
+| Value       | Meaning                                                     | In the meal aggregate |
+|-------------|-------------------------------------------------------------|-----------------------|
+| `reference` | Bound to an `fdc_id` or `custom_food_id`; macros scaled by weight | yes               |
+| `manual`    | Macro values supplied directly by the user                    | yes                 |
+| `none`      | Unresolved; macros zero, awaiting user resolution             | no                  |
+
+`fdc_id` and `custom_food_id` SHALL both be nullable. `macro_source` replaces a plain matched/unmatched boolean because "bound to a reference food" and "has usable macros" are different questions, and a manually entered item is the case where they diverge.
+
+`CustomFood` SHALL be uniquely indexed on `(user_id, name)`, so that name-based precedence over USDA entries has exactly one winner.
 
 There SHALL be no unique constraint on `(user_id, logged_at)` for `FoodMeal`, because a user may legitimately log more than one meal at the same recorded time.
 
 #### Scenario: Meal stored with items
 - **WHEN** a meal is created with recognized food items
-- **THEN** the system SHALL persist the `FoodMeal` row and its `FoodItem` rows with matching `family_id` and a `meal_id` link
+- **THEN** the system SHALL persist the `FoodMeal` row and its `FoodItem` rows with matching `family_id`, the same `user_id` as the parent meal, and a `meal_id` link
+
+#### Scenario: Items are user-scoped, not only family-scoped
+- **WHEN** a `FoodItem` row is created
+- **THEN** it SHALL carry the owning `user_id`, because the shared tenant model supplies only `family_id` and every ownership rule in this capability is scoped by user
 
 #### Scenario: Two meals at the same logged time
 - **WHEN** a user logs two separate meals that carry the same `logged_at` value

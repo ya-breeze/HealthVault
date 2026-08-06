@@ -4,7 +4,7 @@ context: |
   HealthVault — personal health data aggregator.
 
   Tech stack: Go 1.26 backend (GORM + SQLite, gorilla/mux, cobra CLI, viper config),
-  Next.js 20 + TypeScript frontend, Playwright E2E in e2e/.
+  Next.js 16 + React 19 + TypeScript frontend, Playwright E2E in e2e/.
 
   Conventions that are easy to get wrong:
   - Config is loaded through viper with `SetEnvPrefix("HCW")` (backend/pkg/config/config.go).
@@ -25,6 +25,14 @@ context: |
     behaviour explicitly.
   - Bulk data loading is done through explicit import endpoints or CLI commands
     (/api/import/health-connect, /api/import/libra), not scheduled pollers.
+  - The frontend is a static export (`output: 'export'` in next.config.ts). Every dynamic
+    route segment must be enumerable at build time via generateStaticParams, so pages keyed
+    by a runtime UUID must take it as a query parameter instead of a path segment.
+  - `GET /api/data/{type}` returns whole rows and the frontend renders every column outside
+    a short denylist. A new registered type must declare which columns it exposes, or
+    internal fields will be published to the API and rendered in the UI.
+  - `/api/data/*` honours `?user=<username>` for family members. Registering a type there
+    grants family read access to it — decide that deliberately rather than by omission.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.

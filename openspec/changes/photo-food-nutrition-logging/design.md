@@ -33,12 +33,14 @@ Rationale: vision latency is typically 3–10s, which is acceptable for a single
 
 The `processing` status is still persisted, because the photo-first commit happens before the call. A meal found in `processing` after a restart is a crash remnant and is recoverable through the same retry endpoint that serves `failed` meals — no separate reconciliation job is needed.
 
+**`processing` is ambiguous, and retry must not treat it as always-stale.** During the normal 3–10s call, `processing` is the *live* state, not a remnant. A user who re-taps while the request appears to hang would otherwise start a second concurrent analysis of the same meal: both write status and items, the later writer wins (so a failure landing after a success flips a good meal to `failed`), the provider is billed twice, and the meal ends with duplicated items. Retry is therefore accepted only when the meal is `failed`, or is `processing` **and** its `updated_at` is older than `HCW_VISION_TIMEOUT` — by which point any live call has already given up. Every analysis run, initial or retry, replaces the meal's existing `FoodItem` rows in the same transaction that writes the new status, so a retry can never append a second set.
+
 **Trade-off:** the client holds an open request for the duration of the vision call. The upload endpoint documents a server-side timeout (`HCW_VISION_TIMEOUT`, default 60s); on timeout the meal is marked `failed` with the photo retained.
 
 ### 2. Photo Storage & Media Access
 
 - **Storage Location**: Local directory specified by `HCW_UPLOADS_DIR` (defaults to `./data/uploads`).
-- **File Naming**: `{user_id}/{owner_kind}/{owner_id}.{ext}`, where `owner_kind` is `meal` or `calibration` and `{ext}` is derived from the **sniffed** content type (`jpg`, `png`, `heic`, `webp`) — not from the client-supplied filename or `Content-Type` header. The path is **entirely server-generated**, so path traversal is not a concern.
+- **File Naming**: `{user_id}/{owner_kind}/{owner_id}.{ext}`, where `owner_kind` is `meal` or `calibration` and `{ext}` is derived from the **sniffed** content type (`jpg`, `png`, `webp`) — not from the client-supplied filename or `Content-Type` header. The path is **entirely server-generated**, so path traversal is not a concern.
 - **Media Endpoints**: Photos are addressed through their owning resource rather than a standalone photo ID, because no model carries a photo identifier — only a `PhotoPath`:
   - `GET /api/food/meals/{id}/photo`
   - `GET /api/food/calibration-samples/{id}/photo`
@@ -59,8 +61,9 @@ type FoodMeal struct {
     Name         string     `gorm:"type:text"`
     RawResponse  string     `gorm:"type:text"` // last structured response from OpenAI Vision
     ClarifyRound int        `gorm:"not null;default:0"`
+    ClarifyLog   string     `gorm:"type:text"` // JSON array of {round, question, answer}, accumulated
 
-    // Aggregate of the meal's matched items, written on confirmation.
+    // Aggregate of items whose MacroSource is reference or manual, written on confirmation.
     Calories          float64 `gorm:"not null;default:0"`
     ProteinGrams      float64 `gorm:"not null;default:0"`
     CarbsGrams        float64 `gorm:"not null;default:0"`
@@ -75,11 +78,12 @@ type FoodMeal struct {
 
 type FoodItem struct {
     models.TenantModel
+    UserID            uuid.UUID  `gorm:"type:uuid;not null;index"` // denormalized from the meal, so item queries are user-scoped
     MealID            uuid.UUID  `gorm:"type:uuid;not null;index"`
     Name              string     `gorm:"not null"`
     FdcID             *int64     `gorm:"index"`
     CustomFoodID      *uuid.UUID `gorm:"type:uuid;index"`
-    Matched           bool       `gorm:"not null;default:false"`
+    MacroSource       string     `gorm:"type:varchar(16);not null;default:'none'"` // reference | manual | none
     WeightGrams       float64    `gorm:"not null"`
     Confidence        float64    `gorm:"not null"`
     Calories          float64    `gorm:"not null"`
@@ -93,8 +97,8 @@ type FoodItem struct {
 
 type CustomFood struct {
     models.TenantModel
-    UserID                uuid.UUID `gorm:"type:uuid;not null;index"`
-    Name                  string    `gorm:"not null;index"`
+    UserID                uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_custom_food_user_name"`
+    Name                  string    `gorm:"not null;uniqueIndex:idx_custom_food_user_name"`
     CaloriesPer100g       float64   `gorm:"not null"`
     ProteinPer100g        float64   `gorm:"not null"`
     CarbsPer100g          float64   `gorm:"not null"`
@@ -115,6 +119,16 @@ type FoodCalibrationSample struct {
 
 Nutrient field names follow the existing `Nutrition` model (`DietaryFiberGrams`, `SodiumGrams`) so the two are directly comparable. `SodiumGrams` is grams, not milligrams, matching the existing column.
 
+`FoodItem.MacroSource` replaces a plain "matched" boolean, because "did it resolve to a USDA/custom food?" and "does it have usable macros?" are different questions and conflating them zeroes out manually entered items:
+
+| `MacroSource` | Meaning                                              | Counts toward the meal aggregate |
+|---------------|------------------------------------------------------|----------------------------------|
+| `reference`   | Bound to an FDC or custom food; macros scaled by weight | yes                            |
+| `manual`      | User supplied macro values directly (e.g. package label) | yes                            |
+| `none`        | Unresolved; macros are zero and the UI prompts the user | no                             |
+
+`CustomFood` is uniquely indexed on `(user_id, name)` so an exact-name match has exactly one winner; without it, two custom foods sharing a name make precedence arbitrary.
+
 ### 4. USDA Storage and Candidate Matching
 
 - **Separate database file** at `HCW_USDA_DB_PATH` (default `./data/usda.db`), holding `usda_foods` and the `usda_foods_fts` FTS5 virtual table. Keeping reference data out of `hcw.db` means an import can rebuild it by atomic file rename without touching user data.
@@ -124,7 +138,7 @@ Nutrient field names follow the existing `Nutrition` model (`DietaryFiberGrams`,
   1. Query `custom_foods` for the user's own entries first; an exact (case-insensitive) name hit wins outright.
   2. Otherwise query `usda_foods_fts` for the top N (default 5) ranked candidates.
   3. The vision model is given the shortlist and selects, or returns "none of these".
-  4. If nothing is selected, the item is stored with `Matched = false` and zeroed macros, and the UI prompts the user to pick a food or enter macros manually. Items are never silently matched to a low-scoring candidate.
+  4. If nothing is selected, the item is stored with `MacroSource = none` and zeroed macros, and the review UI prompts the user to pick a food or enter macros manually via `PATCH /api/food/meals/{id}/items/{item_id}`. Items are never silently bound to a low-scoring candidate.
 
 ### 5. Clarification Rounds
 
@@ -140,22 +154,43 @@ Rounds are bounded by `ClarifyRound` (max 3). On exceeding the bound the meal mo
 - `GET /api/food/meals/{id}/photo` — stream the stored photo, owner-scoped.
 - `POST /api/food/meals/{id}/retry` — re-run analysis on the stored photo for a meal in `failed` or `processing`.
 - `POST /api/food/meals/{id}/clarify` — submit clarification answers.
+- `PATCH /api/food/meals/{id}/items/{item_id}` — resolve one item: bind it to an `fdc_id` or `custom_food_id`, or supply macros directly, or change its weight. This is the API the unmatched-item review UI calls; `confirm` finalizes a meal but does not itself bind foods.
 - `PUT /api/food/meals/{id}/confirm` — finalize items and weights, set status `confirmed`.
-- `POST /api/food/custom`, `GET /api/food/custom` — custom food create/list.
+- `POST /api/food/custom`, `GET /api/food/custom`, `PUT /api/food/custom/{id}`, `DELETE /api/food/custom/{id}` — custom food CRUD. Update and delete are not optional extras: a custom food shadows USDA entries for its exact name, so one saved with a typo'd macro value would otherwise poison matching for that name permanently, with no in-app way to correct it.
 - `GET /api/food/search` — search custom + USDA foods.
 - `POST|GET /api/food/calibration-samples`, `DELETE /api/food/calibration-samples/{id}`, `GET /api/food/calibration-samples/{id}/photo`.
 
 Meals are additionally exposed read-only through the existing generic registry as `GET /api/data/food_meal` and deleted through `DELETE /api/data/food_meal/{id}`. The generic list handler returns meal rows without their items; the dedicated `GET /api/food/meals/{id}` is the detail view.
 
-### 7. Upload Validation
+**`logged_at`** defaults to the time the upload is received. `POST /api/food/meals/manual` accepts an explicit `logged_at`, and `PUT .../confirm` may correct it, so a user can log yesterday's dinner. It is never left zero — the generic query endpoint defaults to a trailing 7-day window (`api.go:183-188`), so a zero-valued anchor would produce meals that never appear in any query.
 
-The upload endpoint enforces a maximum body size (`HCW_MAX_UPLOAD_BYTES`, default 10 MiB) and validates the content by sniffing the decoded image header, accepting only JPEG, PNG, HEIC and WebP. The declared `Content-Type` and the client filename are both untrusted and neither determines the stored path or type.
+**Two access rules meet at `food_meal`, and the split is deliberate.** The generic query endpoint honours `?user=<username>` for family members (`data-api` "Family member data access"), while every `/api/food/*` route is owner-only. Rather than let registration silently widen access, the split is stated explicitly: meal **metadata and macros** are family-visible through `GET /api/data/food_meal`, exactly like weight or nutrition; the **photo** and every **mutation** stay owner-only and return 404 to a family member. A family member can see that you ate 2,100 kcal; they cannot open the picture or edit the meal.
 
-### 8. Third-Party Disclosure and Retention
+**Column projection.** `QueryRecords` (`storage_impl.go:75-77`) does an unprojected `Find` into `[]map[string]any`, and `DataTypeClient.tsx:53` renders every returned column except a small denylist. Registering `food_meal` unchanged would therefore render `photo_path` (a server filesystem path) and `raw_response` (the full raw LLM JSON) into table cells. The registry entry for `food_meal` must carry an explicit column allowlist — `logged_at`, `name`, `status`, and the 7 aggregate macros — and the query path must honour it. `logged_at` must also be added to the frontend's time-column detection list (`DataTypeClient.tsx:48`), which currently recognizes only `time`, `start_time`, and `timestamp`.
+
+### 7. Frontend Routing Under Static Export
+
+`frontend/next.config.ts` sets `output: 'export'`, so every dynamic route segment must be enumerable at build time via `generateStaticParams` — which is why `app/data/[type]/page.tsx` enumerates `DATA_TYPES`. Meal IDs are UUIDs created at runtime and cannot be enumerated, so the review flow **cannot** use an `/food/meals/[id]` segment.
+
+The review, clarification and confirmation flow therefore lives on a single statically-exported page that reads the meal ID from a query parameter — `/food/review/?meal=<uuid>` — matching the existing `?user=` and `?from=/?to=` convention already used across the data pages.
+
+### 8. Upload Validation and the HEIC Problem
+
+The upload endpoint enforces a maximum body size (`HCW_MAX_UPLOAD_BYTES`, default 10 MiB) and validates content by sniffing the image header. The declared `Content-Type` and the client filename are both untrusted and neither determines the stored path or type.
+
+**Accepted formats are exactly JPEG, PNG and WebP** — the intersection of what we can store and what OpenAI Vision accepts. HEIC is deliberately *not* accepted, which matters because it is the iPhone camera default and would otherwise be the single most common upload:
+
+- Accepting HEIC without transcoding would be the worst outcome: the file passes validation, is stored, and then fails every vision call and every retry, parking the meal in `failed` permanently.
+- Transcoding server-side would mean a cgo HEIF dependency (Go has no stdlib HEIC decoder), for one input format.
+- Instead the **client avoids producing HEIC in the first place**. The file input declares `accept="image/jpeg,image/png,image/webp"`, which makes iOS transcode a HEIC library photo to JPEG during selection, and the in-app camera path encodes via `canvas.toBlob('image/jpeg')`. Server-side rejection is then defense in depth for non-browser clients, returning a distinct, actionable error rather than a generic 400.
+
+Sniffing note: Go's `http.DetectContentType` recognizes JPEG, PNG and WebP but does **not** recognize HEIC, so HEIC detection is an explicit ISO-BMFF brand check (`ftyp` box with a `heic`/`heix`/`mif1` brand) purely so the rejection message can name the format.
+
+### 9. Third-Party Disclosure and Retention
 
 Meal photos are sent to OpenAI. The production vision client sets `store: false` on every request, matching the calibration client, and the upload UI states that the photo will be sent to an external model. Photos are retained until their owning meal or calibration sample is deleted; deleting either removes the row and its file.
 
-### 9. Manual Model Calibration CLI
+### 10. Manual Model Calibration CLI
 
 - **Invocation**: Add an operator-run `hcw calibrate-food-models` command. It reads calibration samples from the configured HealthVault database and uploads directory. The operator selects a dataset with required `--user <username>` scope and optional `--sample-ids`; there is no scheduler. Concurrent access alongside a running server is safe — `backend/pkg/database/db.go` already opens SQLite with `_journal_mode=WAL&_busy_timeout=30000`, and the command only reads.
 - **Runtime Model Selection**: Candidate model IDs are passed with `--models` so newly available image-capable models can be evaluated without a code release. The production model is included only when explicitly named.
