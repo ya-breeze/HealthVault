@@ -14,6 +14,7 @@ func main() {
 	root := &cobra.Command{Use: "hcw", Short: "HealthVault"}
 	root.AddCommand(commands.CmdServer(logger))
 	root.AddCommand(commands.CmdMCPConfig(logger))
+	root.AddCommand(commands.CmdImportUSDA(logger))
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
