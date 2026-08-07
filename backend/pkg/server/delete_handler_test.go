@@ -61,7 +61,7 @@ func TestDeleteRecordHandler_Success(t *testing.T) {
 		},
 	}
 
-	h := server.DeleteRecordHandler(st)
+	h := server.DeleteRecordHandler(st, nil)
 	w := httptest.NewRecorder()
 	r := withClaims(newDeleteRequest("weight", recID.String()), userID)
 	h.ServeHTTP(w, r)
@@ -73,7 +73,7 @@ func TestDeleteRecordHandler_Success(t *testing.T) {
 
 func TestDeleteRecordHandler_UnknownType(t *testing.T) {
 	st := &mockStorage{deleteFunc: func(_ string, _ uuid.UUID, _ uuid.UUID) error { return nil }}
-	h := server.DeleteRecordHandler(st)
+	h := server.DeleteRecordHandler(st, nil)
 	w := httptest.NewRecorder()
 	r := withClaims(newDeleteRequest("unknown_type", uuid.New().String()), uuid.New())
 	h.ServeHTTP(w, r)
@@ -86,7 +86,7 @@ func TestDeleteRecordHandler_NotFound(t *testing.T) {
 	st := &mockStorage{
 		deleteFunc: func(_ string, _ uuid.UUID, _ uuid.UUID) error { return database.ErrNotFound },
 	}
-	h := server.DeleteRecordHandler(st)
+	h := server.DeleteRecordHandler(st, nil)
 	w := httptest.NewRecorder()
 	r := withClaims(newDeleteRequest("weight", uuid.New().String()), uuid.New())
 	h.ServeHTTP(w, r)
@@ -97,7 +97,7 @@ func TestDeleteRecordHandler_NotFound(t *testing.T) {
 
 func TestDeleteRecordHandler_Unauthenticated(t *testing.T) {
 	st := &mockStorage{deleteFunc: func(_ string, _ uuid.UUID, _ uuid.UUID) error { return nil }}
-	h := server.DeleteRecordHandler(st)
+	h := server.DeleteRecordHandler(st, nil)
 	w := httptest.NewRecorder()
 	// No claims injected — simulates missing/invalid JWT.
 	r := newDeleteRequest("weight", uuid.New().String())
@@ -109,7 +109,7 @@ func TestDeleteRecordHandler_Unauthenticated(t *testing.T) {
 
 func TestDeleteRecordHandler_InvalidUUID(t *testing.T) {
 	st := &mockStorage{deleteFunc: func(_ string, _ uuid.UUID, _ uuid.UUID) error { return nil }}
-	h := server.DeleteRecordHandler(st)
+	h := server.DeleteRecordHandler(st, nil)
 	w := httptest.NewRecorder()
 	r := withClaims(newDeleteRequest("weight", "not-a-uuid"), uuid.New())
 	h.ServeHTTP(w, r)

@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 	kinmodels "github.com/ya-breeze/kin-core/models"
 	"github.com/ya-breeze/healthvault/pkg/database"
+	photostorage "github.com/ya-breeze/healthvault/pkg/storage"
 )
 
 // typeInfo maps URL type names to (table name, primary time column).
@@ -42,6 +43,11 @@ var typeRegistry = map[string]typeInfo{
 	"vo2_max":                {"vo2_maxes", "time"},
 	"bone_mass":              {"bone_masses", "time"},
 	"speed":                  {"speeds", "time"},
+	// food_meal is user-authored, not ingested telemetry, and is exposed here
+	// read-only: metadata and macros only (see columnAllowlist in
+	// pkg/database/storage_impl.go), never the photo or clarify_log. Every
+	// mutation stays under /api/food/*, owner-only.
+	"food_meal": {"food_meals", "logged_at"},
 }
 
 // meHandler returns the authenticated user's profile.
@@ -139,8 +145,9 @@ func summaryHandler(storage database.Storage) http.HandlerFunc {
 }
 
 // DeleteRecordHandler hard-deletes a single health record owned by the authenticated user.
-// Exported for use in tests.
-func DeleteRecordHandler(storage database.Storage) http.HandlerFunc {
+// photos may be nil; it is only consulted for the food_meal type, whose photo
+// file must be removed alongside the row. Exported for use in tests.
+func DeleteRecordHandler(storage database.Storage, photos *photostorage.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		typeName := vars["type"]
@@ -162,6 +169,16 @@ func DeleteRecordHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
+		// The photo path must be read before the row is deleted; DeleteRecord
+		// removes it, and food_meal's own column allowlist blocks reading
+		// photo_path back out through the generic query path.
+		var photoPath string
+		if typeName == "food_meal" {
+			storage.DB().Table(info.table).
+				Where("id = ? AND user_id = ?", id, claims.UserID).
+				Limit(1).Pluck("photo_path", &photoPath) //nolint:errcheck // best-effort; absence just skips cleanup
+		}
+
 		if err := storage.DeleteRecord(info.table, id, claims.UserID); err != nil {
 			if errors.Is(err, database.ErrNotFound) {
 				http.Error(w, "not found", http.StatusNotFound)
@@ -169,6 +186,10 @@ func DeleteRecordHandler(storage database.Storage) http.HandlerFunc {
 			}
 			http.Error(w, "delete error", http.StatusInternalServerError)
 			return
+		}
+
+		if photoPath != "" && photos != nil {
+			photos.Remove(photoPath) //nolint:errcheck // best-effort; the row is already gone either way
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

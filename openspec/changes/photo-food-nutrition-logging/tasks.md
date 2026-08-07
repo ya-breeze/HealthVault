@@ -40,11 +40,12 @@
 
 ## 6. Registry Integration & Deletion
 
-- [ ] 6.1 Register `food_meal` in `typeRegistry` (`backend/pkg/server/api.go`) anchored on `logged_at`; add to the frontend type list and MCP tool type list
-- [ ] 6.2 Add a per-type column allowlist to the registry and honour it in `QueryRecords`, which currently does an unprojected `Find` into `[]map[string]any`; `food_meal` exposes only `id`, `logged_at`, `name`, `status` and the 7 aggregate macros
-- [ ] 6.3 Add `logged_at` to the frontend time-column detection in `DataTypeClient.tsx`, which recognizes only `time`/`start_time`/`timestamp`
-- [ ] 6.4 Extend the delete path so `food_meal` cascades to `FoodItem` rows and removes the photo file
+- [x] 6.1 Register `food_meal` in `typeRegistry` (`backend/pkg/server/api.go`) anchored on `logged_at`; add to the frontend type list and MCP tool type list
+- [x] 6.2 Add a per-type column allowlist to the registry and honour it in `QueryRecords`, which currently does an unprojected `Find` into `[]map[string]any`; `food_meal` exposes only `id`, `logged_at`, `name`, `status` and the 7 aggregate macros
+- [x] 6.3 Add `logged_at` to the frontend time-column detection in `DataTypeClient.tsx`, which recognizes only `time`/`start_time`/`timestamp`
+- [x] 6.4 Extend the delete path so `food_meal` cascades to `FoodItem` rows and removes the photo file
 - [ ] 6.5 Tests: `GET /api/data/food_meal` returns meals without nested items, response omits `photo_path` and `raw_response`, family member can read meal macros via `?user=` but gets 404 on the photo, delete cascades to items and photo, delete succeeds when the photo file is already missing, cross-user delete returns 404 and removes nothing
+      — done except "family member ... 404 on the photo", which needs the photo endpoint from task 2.3 (not yet implemented). Covered so far: column allowlist (`TestQueryRecords_FoodMealColumnAllowlist`), cascade delete + photo removal (`TestDeleteRecordHandler_FoodMealCascadesItemsAndPhoto`), missing-photo-file delete (`TestDeleteRecordHandler_FoodMealMissingPhotoFileStillSucceeds`), cross-user delete (`TestDeleteRecordHandler_FoodMealCrossUserReturns404AndRemovesNothing`).
 
 ## 7. Frontend UI Components
 

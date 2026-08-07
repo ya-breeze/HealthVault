@@ -80,7 +80,7 @@ export const DATA_TYPES = [
   'blood_glucose', 'oxygen_saturation', 'body_temperature', 'skin_temperature',
   'respiratory_rate', 'resting_heart_rate', 'exercise', 'hydration', 'nutrition',
   'basal_metabolic_rate', 'body_fat', 'lean_body_mass', 'vo2_max', 'bone_mass',
-  'speed',
+  'speed', 'food_meal',
 ] as const;
 
 export type DataType = typeof DATA_TYPES[number];
