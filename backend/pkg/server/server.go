@@ -83,6 +83,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/food/custom/{id}", fh.UpdateCustomFood).Methods("PUT")
 	api.HandleFunc("/food/custom/{id}", fh.DeleteCustomFood).Methods("DELETE")
 	api.HandleFunc("/food/meals/manual", fh.CreateManualMeal).Methods("POST")
+	api.HandleFunc("/food/meals/{id}/photo", fh.MealPhoto).Methods("GET")
+	api.HandleFunc("/food/calibration-samples/{id}/photo", fh.CalibrationSamplePhoto).Methods("GET")
 
 	// MCP — protected by a static bearer token (HCW_MCP_TOKEN).
 	// If the token is empty the endpoint responds 503 so it is never accidentally open.

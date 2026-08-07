@@ -10,9 +10,10 @@
 
 - [x] 2.1 Implement server-generated path storage helper in `backend/pkg/storage` (client filename never used)
 - [x] 2.2 Implement upload validation: max body size, content sniffing accepting only JPEG/PNG/WebP, plus an explicit ISO-BMFF brand check so HEIC is rejected with a 415 naming the format
-- [ ] 2.3 Implement owner-scoped photo handlers for `GET /api/food/meals/{id}/photo` and `GET /api/food/calibration-samples/{id}/photo`
+- [x] 2.3 Implement owner-scoped photo handlers for `GET /api/food/meals/{id}/photo` and `GET /api/food/calibration-samples/{id}/photo`
 - [ ] 2.4 Implement photo-first persistence in `POST /api/food/meals`: save file, commit `FoodMeal` as `processing`, then analyze
 - [ ] 2.5 Tests: oversized upload rejected, non-image rejected, HEIC rejected with 415, traversal-shaped filename ignored, 401 unauthenticated, 404 cross-user photo access, 404 photo access by a family member
+      — photo-endpoint-only cases done (`TestMealPhoto_Unauthenticated`, `TestMealPhoto_CrossUserReturns404`, `TestMealPhoto_FamilyMemberReturns404`, `TestCalibrationSamplePhoto_CrossUserReturns404`). Upload-specific cases (oversized/non-image/HEIC/traversal) wait on the 2.4 upload handler.
 
 ## 3. USDA Import & Candidate Search
 
@@ -44,8 +45,8 @@
 - [x] 6.2 Add a per-type column allowlist to the registry and honour it in `QueryRecords`, which currently does an unprojected `Find` into `[]map[string]any`; `food_meal` exposes only `id`, `logged_at`, `name`, `status` and the 7 aggregate macros
 - [x] 6.3 Add `logged_at` to the frontend time-column detection in `DataTypeClient.tsx`, which recognizes only `time`/`start_time`/`timestamp`
 - [x] 6.4 Extend the delete path so `food_meal` cascades to `FoodItem` rows and removes the photo file
-- [ ] 6.5 Tests: `GET /api/data/food_meal` returns meals without nested items, response omits `photo_path` and `raw_response`, family member can read meal macros via `?user=` but gets 404 on the photo, delete cascades to items and photo, delete succeeds when the photo file is already missing, cross-user delete returns 404 and removes nothing
-      — done except "family member ... 404 on the photo", which needs the photo endpoint from task 2.3 (not yet implemented). Covered so far: column allowlist (`TestQueryRecords_FoodMealColumnAllowlist`), cascade delete + photo removal (`TestDeleteRecordHandler_FoodMealCascadesItemsAndPhoto`), missing-photo-file delete (`TestDeleteRecordHandler_FoodMealMissingPhotoFileStillSucceeds`), cross-user delete (`TestDeleteRecordHandler_FoodMealCrossUserReturns404AndRemovesNothing`).
+- [x] 6.5 Tests: `GET /api/data/food_meal` returns meals without nested items, response omits `photo_path` and `raw_response`, family member can read meal macros via `?user=` but gets 404 on the photo, delete cascades to items and photo, delete succeeds when the photo file is already missing, cross-user delete returns 404 and removes nothing
+      — covered by `TestQueryRecords_FoodMealColumnAllowlist`, `TestDeleteRecordHandler_FoodMealCascadesItemsAndPhoto`, `TestDeleteRecordHandler_FoodMealMissingPhotoFileStillSucceeds`, `TestDeleteRecordHandler_FoodMealCrossUserReturns404AndRemovesNothing`, `TestMealPhoto_FamilyMemberReturns404`.
 
 ## 7. Frontend UI Components
 
