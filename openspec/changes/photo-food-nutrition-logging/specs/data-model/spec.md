@@ -96,6 +96,8 @@ The system SHALL persist user-authored food logging data in four family-scoped t
 
 `fdc_id` and `custom_food_id` SHALL both be nullable. `macro_source` replaces a plain matched/unmatched boolean because "bound to a reference food" and "has usable macros" are different questions, and a manually entered item is the case where they diverge.
 
+`FoodItem` SHALL also carry `preparation` and `state`, each permitted to be empty for unknown. They are persisted rather than merely used in-flight so that a later clarification answer can re-run food lookup without re-analyzing the photo.
+
 `CustomFood` SHALL be uniquely indexed on `(user_id, name)`, so that name-based precedence over USDA entries has exactly one winner.
 
 There SHALL be no unique constraint on `(user_id, logged_at)` for `FoodMeal`, because a user may legitimately log more than one meal at the same recorded time.

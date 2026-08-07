@@ -90,6 +90,31 @@ The system SHALL set `store: false` on every request to the external vision mode
 - **WHEN** a user opens the meal photo upload interface
 - **THEN** the interface states that the photo will be sent to an external model provider for analysis
 
+### Requirement: Recognized Item Preparation and State
+Each recognized item SHALL carry a `preparation` (one of `raw`, `boiled`, `steamed`, `roasted`, `baked`, `grilled`, `fried`, `breaded_fried`, `braised`, or unknown) and a `state` (`raw`, `cooked`, or unknown) alongside its name. Both SHALL be permitted to be unknown.
+
+These exist because the reference data encodes preparation and state as trailing description qualifiers, so a name-only lookup leaves those tokens unused and ranks short processed entries above the canonical whole food. State also drives magnitude directly: raw and cooked forms of the same food differ by roughly a factor of three for grains.
+
+#### Scenario: Preparation and state accompany a recognized item
+- **WHEN** the vision model recognizes a food whose preparation is evident from the photo
+- **THEN** the returned item includes both `preparation` and `state` alongside its name, weight, and confidence
+
+#### Scenario: Preparation is not evident
+- **WHEN** the vision model cannot determine preparation or state from the photo
+- **THEN** it returns them as unknown rather than guessing, and the item is still returned with its name and weight
+
+#### Scenario: Preparation and state are persisted
+- **WHEN** an item is stored
+- **THEN** its `preparation` and `state` are persisted with it, so that a later clarification answer can re-run food lookup without re-analyzing the photo
+
+### Requirement: Clarification Answers Refine Food Lookup
+When a clarification answer resolves a previously unknown preparation or state, the system SHALL re-run food lookup for the affected item using the enriched terms.
+
+#### Scenario: Cooking method answer improves the match
+- **GIVEN** an item whose preparation was unknown and whose food lookup produced no suitable candidate
+- **WHEN** the user answers a clarification question identifying the cooking method
+- **THEN** the system re-runs lookup for that item with the answer included and offers the updated candidates
+
 ### Requirement: Food Recognition and Clarification Questions
 The system SHALL analyze the food image using OpenAI Vision and return recognized food items with estimated weights in grams, confidence scores, and any clarification questions.
 

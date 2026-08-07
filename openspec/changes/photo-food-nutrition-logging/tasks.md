@@ -1,6 +1,6 @@
 ## 1. Database & Models
 
-- [ ] 1.1 Add `FoodMeal`, `FoodItem`, `CustomFood` GORM models to `backend/pkg/database/models.go`, all embedding `models.TenantModel`; `FoodItem` carries `user_id` and `macro_source`; `FoodMeal` carries `clarify_log` and the 7 aggregate columns
+- [ ] 1.1 Add `FoodMeal`, `FoodItem`, `CustomFood` GORM models to `backend/pkg/database/models.go`, all embedding `models.TenantModel`; `FoodItem` carries `user_id`, `macro_source`, `preparation` and `state`; `FoodMeal` carries `clarify_log` and the 7 aggregate columns
 - [ ] 1.2 Add AutoMigrate entries in `backend/pkg/database/db.go`, including the `(user_id, name)` unique index on `CustomFood`
 - [ ] 1.3 Add USDA SQLite schema (separate DB file) and FTS5 candidate-retrieval queries in `backend/pkg/usda`
 - [ ] 1.4 Add config fields and env vars under the existing `HCW` viper prefix: `HCW_OPENAI_API_KEY`, `HCW_OPENAI_MODEL`, `HCW_UPLOADS_DIR`, `HCW_USDA_DB_PATH`, `HCW_MAX_UPLOAD_BYTES`, `HCW_VISION_TIMEOUT`
@@ -17,21 +17,21 @@
 ## 3. USDA Import & Candidate Search
 
 - [ ] 3.1 Implement `hcw import-usda`: download Foundation/SR Legacy, build FTS5 index into a temp file, validate minimum row count, atomic rename
-- [ ] 3.2 Implement candidate search: custom foods first (exact case-insensitive), then top-N FTS5 candidates
+- [ ] 3.2 Implement candidate search: custom foods first (exact case-insensitive), then top-N FTS5 candidates, with the query built from name + preparation + state as ranking hints (never filters)
 - [ ] 3.3 Tests: failed import leaves prior DB serving, search before first import returns empty + error state, custom food precedence, cross-user custom food isolation
 
 ## 4. OpenAI Vision Integration
 
-- [ ] 4.1 Create vision client in `backend/pkg/vision` with structured output parsing, per-call model override, `store: false`, and returned model ID / token usage / latency
+- [ ] 4.1 Create vision client in `backend/pkg/vision` with structured output parsing, per-call model override, `store: false`, and returned model ID / token usage / latency. The item schema includes `preparation` and `state` (both may be unknown)
 - [ ] 4.2 Integrate synchronous analysis into `POST /api/food/meals` bounded by `HCW_VISION_TIMEOUT`; mark `failed` and retain the photo on error or timeout
 - [ ] 4.3 Implement candidate-shortlist selection: pass retrieved candidates to the model, record explicit non-match as `macro_source = none`
 - [ ] 4.4 Make every analysis run replace the meal's existing `FoodItem` rows in the same transaction as the status write
-- [ ] 4.5 Tests: analysis failure retains photo and sets `failed`, timeout path, unresolved item stores zeroed macros and is excluded from the aggregate, re-analysis leaves no leftover items
+- [ ] 4.5 Tests: analysis failure retains photo and sets `failed`, timeout path, unresolved item stores zeroed macros and is excluded from the aggregate, re-analysis leaves no leftover items, a wrong preparation guess still leaves the correct food in the shortlist
 
 ## 5. Meal Lifecycle Endpoints
 
 - [ ] 5.1 Implement `GET /api/food/meals/{id}` (detail with items) and `POST /api/food/meals/{id}/retry`, accepting only `failed` or `processing` whose `updated_at` is older than `HCW_VISION_TIMEOUT`, 409 otherwise
-- [ ] 5.2 Implement `POST /api/food/meals/{id}/clarify`: text-only rounds that do not re-send the image, persisting each Q/A pair to `clarify_log` and replaying the full history each round, capped at 3 then `pending_review`
+- [ ] 5.2 Implement `POST /api/food/meals/{id}/clarify`: text-only rounds that do not re-send the image, persisting each Q/A pair to `clarify_log` and replaying the full history each round, re-running food lookup when an answer resolves a previously unknown preparation or state, capped at 3 then `pending_review`
 - [ ] 5.3 Implement `PUT /api/food/meals/{id}/confirm`: recalculate scaled macros, aggregate items whose `macro_source` is `reference` or `manual`, allow correcting `logged_at`, set `confirmed` — no `Nutrition` write
 - [ ] 5.4 Implement `PATCH /api/food/meals/{id}/items/{item_id}` to bind a reference food, supply macros directly, or change weight; 409 once the meal is confirmed
 - [ ] 5.5 Implement `POST /api/food/meals/manual` for photo-free entry from food references or direct macro values, accepting an explicit `logged_at`

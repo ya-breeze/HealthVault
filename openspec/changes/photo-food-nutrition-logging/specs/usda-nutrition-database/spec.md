@@ -15,6 +15,21 @@ The system SHALL maintain a local SQLite database, separate from the application
 - **WHEN** a search term matches no indexed food
 - **THEN** the system returns an empty candidate list rather than an unranked or arbitrary fallback
 
+### Requirement: Retrieval Terms Include Preparation and State
+The retrieval query for a recognized item SHALL be built from its name together with its preparation and state when those are known. Preparation and state SHALL act only as ranking hints and SHALL NOT be used to filter or exclude candidates, so that an incorrect model guess can never remove the correct food from the shortlist. An unknown preparation or state SHALL contribute no term and SHALL degrade to a name-only query rather than an empty one.
+
+#### Scenario: Preparation improves ranking
+- **WHEN** an item's preparation is known and included in the retrieval query
+- **THEN** the canonical whole-food entry ranks no worse than it does for the name-only query
+
+#### Scenario: An incorrect preparation guess is not fatal
+- **WHEN** the recorded preparation does not match the food's actual preparation
+- **THEN** the correct food is still present in the returned candidate shortlist, having been re-weighted rather than filtered out
+
+#### Scenario: Unknown preparation degrades gracefully
+- **WHEN** both preparation and state are unknown
+- **THEN** retrieval runs on the item name alone and still returns candidates
+
 ### Requirement: Match Selection and Explicit Non-Match
 The system SHALL resolve a recognized food name to a reference food by offering the retrieved candidate shortlist for selection, and SHALL record an explicit non-match rather than binding to a low-ranked candidate. Custom foods owned by the user SHALL take precedence: a case-insensitive exact name match against the user's custom foods SHALL be selected without consulting the USDA index.
 

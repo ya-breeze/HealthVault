@@ -81,6 +81,8 @@ type FoodItem struct {
     UserID            uuid.UUID  `gorm:"type:uuid;not null;index"` // denormalized from the meal, so item queries are user-scoped
     MealID            uuid.UUID  `gorm:"type:uuid;not null;index"`
     Name              string     `gorm:"not null"`
+    Preparation       string     `gorm:"type:varchar(24)"` // roasted, fried, ... ; "" when unknown
+    State             string     `gorm:"type:varchar(16)"` // raw | cooked; "" when unknown
     FdcID             *int64     `gorm:"index"`
     CustomFoodID      *uuid.UUID `gorm:"type:uuid;index"`
     MacroSource       string     `gorm:"type:varchar(16);not null;default:'none'"` // reference | manual | none
@@ -134,9 +136,15 @@ Nutrient field names follow the existing `Nutrition` model (`DietaryFiberGrams`,
 - **Separate database file** at `HCW_USDA_DB_PATH` (default `./data/usda.db`), holding `usda_foods` and the `usda_foods_fts` FTS5 virtual table. Keeping reference data out of `hcw.db` means an import can rebuild it by atomic file rename without touching user data.
 - **Import is a one-shot CLI command**, `hcw import-usda`, not a scheduled job. SR Legacy is frozen (final release April 2018) and Foundation Foods publishes roughly twice a year, so a monthly background poll would be machinery for an event that happens 0–2 times a year — and would be the first background job in the codebase. The command downloads to a temporary file, builds the index, validates a minimum row count, and only then renames into place, so a failed import leaves the previous database serving.
 
+- **The retrieval query carries preparation and state, not just the food name.** SR Legacy encodes both as trailing qualifiers — `Chicken, broilers or fryers, breast, meat only, **cooked, roasted**` — and those tokens sit in the index unused when the query is built from the name alone. The vision model can see preparation and state directly in the photo (browning, grill marks, breading, oil sheen; raw grains versus cooked), so this signal exists and is otherwise discarded at the query boundary. Measured on the real dataset, adding one word moved the correct food from rank 12 to rank 3 for "chicken breast".
+
+  State matters more than preparation for magnitude: raw white rice is ~360 kcal/100g against ~130 cooked, so a missing "cooked" is a 2.8× error — and raw versus cooked is among the easiest things to read off a photo.
+
+  **Preparation and state are ranking hints, never filters.** Because terms are OR-joined, adding them can only introduce and re-weight matches, never exclude a row: a model that guesses "grilled" for something pan-fried degrades ranking slightly and the correct food is still within the shortlist. Implementing them as a `WHERE preparation = ?` filter would be the obvious-looking alternative and the dangerous one — a wrong guess would delete the right answer outright.
+
 - **Matching is candidate retrieval, not auto-assignment.** This is the step most likely to produce silently wrong macros: SR Legacy descriptions read like `Chicken, broilers or fryers, breast, meat only, cooked, roasted`, while the vision model emits `grilled chicken breast`, and BM25 across that gap is unreliable. A confidently wrong match is worse than no match. So:
   1. Query `custom_foods` for the user's own entries first; an exact (case-insensitive) name hit wins outright.
-  2. Otherwise query `usda_foods_fts` for the top N (default 30) ranked candidates.
+  2. Otherwise query `usda_foods_fts` with the combined name + preparation + state term for the top N (default 30) ranked candidates.
 
      N is 30 rather than a handful because BM25 penalizes long documents, and SR Legacy's
      canonical whole-food entries are long and heavily qualified while processed and deli
@@ -147,13 +155,36 @@ Nutrient field names follow the existing `Nutrition` model (`DietaryFiberGrams`,
   3. The vision model is given the shortlist and selects, or returns "none of these".
   4. If nothing is selected, the item is stored with `MacroSource = none` and zeroed macros, and the review UI prompts the user to pick a food or enter macros manually via `PATCH /api/food/meals/{id}/items/{item_id}`. Items are never silently bound to a low-scoring candidate.
 
-### 5. Clarification Rounds
+### 5. Vision Structured Output
+
+Each recognized item carries preparation and state alongside the name, so the retrieval query above has them to work with:
+
+```json
+{
+  "items": [
+    {
+      "name": "chicken breast",
+      "preparation": "roasted",
+      "state": "cooked",
+      "weight_grams": 180,
+      "confidence": 0.82
+    }
+  ],
+  "clarification_questions": []
+}
+```
+
+`preparation` is a controlled vocabulary — `raw`, `boiled`, `steamed`, `roasted`, `baked`, `grilled`, `fried`, `breaded_fried`, `braised`, `unknown` — and `state` is `raw` | `cooked` | `unknown`. Both may be `unknown`; an unknown value simply contributes no token to the query rather than blocking retrieval.
+
+### 6. Clarification Rounds
 
 Clarification is **text-only**. Round 1 sends the image; subsequent rounds send the stored structured result plus the question/answer pairs, and **do not re-send the image**. Re-uploading the photo each round would make image tokens the dominant cost of the feature for no additional information.
 
+When a clarification answer resolves a preparation or state that was `unknown`, retrieval is **re-run** for that item with the enriched query. The clarification loop already asks about cooking method when it is ambiguous; the answer is precisely the token that was missing from the original query, so discarding it for retrieval purposes would waste the round that was just spent obtaining it.
+
 Rounds are bounded by `ClarifyRound` (max 3). On exceeding the bound the meal moves to `pending_review` and the user completes it manually.
 
-### 6. API Endpoints
+### 7. API Endpoints
 
 - `POST /api/food/meals` — multipart photo upload; creates the meal, runs analysis, returns the meal with items.
 - `POST /api/food/meals/manual` — create a meal with no photo, from user-supplied items.
@@ -175,13 +206,13 @@ Meals are additionally exposed read-only through the existing generic registry a
 
 **Column projection.** `QueryRecords` (`storage_impl.go:75-77`) does an unprojected `Find` into `[]map[string]any`, and `DataTypeClient.tsx:53` renders every returned column except a small denylist. Registering `food_meal` unchanged would therefore render `photo_path` (a server filesystem path) and `raw_response` (the full raw LLM JSON) into table cells. The registry entry for `food_meal` must carry an explicit column allowlist — `logged_at`, `name`, `status`, and the 7 aggregate macros — and the query path must honour it. `logged_at` must also be added to the frontend's time-column detection list (`DataTypeClient.tsx:48`), which currently recognizes only `time`, `start_time`, and `timestamp`.
 
-### 7. Frontend Routing Under Static Export
+### 8. Frontend Routing Under Static Export
 
 `frontend/next.config.ts` sets `output: 'export'`, so every dynamic route segment must be enumerable at build time via `generateStaticParams` — which is why `app/data/[type]/page.tsx` enumerates `DATA_TYPES`. Meal IDs are UUIDs created at runtime and cannot be enumerated, so the review flow **cannot** use an `/food/meals/[id]` segment.
 
 The review, clarification and confirmation flow therefore lives on a single statically-exported page that reads the meal ID from a query parameter — `/food/review/?meal=<uuid>` — matching the existing `?user=` and `?from=/?to=` convention already used across the data pages.
 
-### 8. Upload Validation and the HEIC Problem
+### 9. Upload Validation and the HEIC Problem
 
 The upload endpoint enforces a maximum body size (`HCW_MAX_UPLOAD_BYTES`, default 10 MiB) and validates content by sniffing the image header. The declared `Content-Type` and the client filename are both untrusted and neither determines the stored path or type.
 
@@ -193,11 +224,11 @@ The upload endpoint enforces a maximum body size (`HCW_MAX_UPLOAD_BYTES`, defaul
 
 Sniffing note: Go's `http.DetectContentType` recognizes JPEG, PNG and WebP but does **not** recognize HEIC, so HEIC detection is an explicit ISO-BMFF brand check (`ftyp` box with a `heic`/`heix`/`mif1` brand) purely so the rejection message can name the format.
 
-### 9. Third-Party Disclosure and Retention
+### 10. Third-Party Disclosure and Retention
 
 Meal photos are sent to OpenAI. The production vision client sets `store: false` on every request, matching the calibration client, and the upload UI states that the photo will be sent to an external model. Photos are retained until their owning meal or calibration sample is deleted; deleting either removes the row and its file.
 
-### 10. Manual Model Calibration CLI
+### 11. Manual Model Calibration CLI
 
 - **Invocation**: Add an operator-run `hcw calibrate-food-models` command. It reads calibration samples from the configured HealthVault database and uploads directory. The operator selects a dataset with required `--user <username>` scope and optional `--sample-ids`; there is no scheduler. Concurrent access alongside a running server is safe — `backend/pkg/database/db.go` already opens SQLite with `_journal_mode=WAL&_busy_timeout=30000`, and the command only reads.
 - **Runtime Model Selection**: Candidate model IDs are passed with `--models` so newly available image-capable models can be evaluated without a code release. The production model is included only when explicitly named.

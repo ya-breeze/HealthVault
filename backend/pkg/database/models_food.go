@@ -71,9 +71,18 @@ type ClarifyEntry struct {
 // meal so item queries are user-scoped; TenantModel supplies only FamilyID.
 type FoodItem struct {
 	models.TenantModel
-	UserID       uuid.UUID  `gorm:"type:uuid;not null;index"`
-	MealID       uuid.UUID  `gorm:"type:uuid;not null;index"`
-	Name         string     `gorm:"not null"`
+	UserID uuid.UUID `gorm:"type:uuid;not null;index"`
+	MealID uuid.UUID `gorm:"type:uuid;not null;index"`
+	Name   string    `gorm:"not null"`
+
+	// Preparation and State feed the retrieval query alongside Name. SR Legacy
+	// encodes both as trailing description qualifiers ("...cooked, roasted"), so
+	// omitting them leaves indexed tokens unused and ranks the wrong food first.
+	// Empty means unknown, which contributes no query token rather than blocking
+	// retrieval. Persisted so a clarification answer can re-run retrieval.
+	Preparation string `gorm:"type:varchar(24)"`
+	State       string `gorm:"type:varchar(16)"`
+
 	FdcID        *int64     `gorm:"index"`
 	CustomFoodID *uuid.UUID `gorm:"type:uuid;index"`
 	MacroSource  string     `gorm:"type:varchar(16);not null;default:'none'"`
