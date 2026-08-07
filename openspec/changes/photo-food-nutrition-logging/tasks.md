@@ -35,7 +35,7 @@
 - [ ] 5.3 Implement `PUT /api/food/meals/{id}/confirm`: recalculate scaled macros, aggregate items whose `macro_source` is `reference` or `manual`, allow correcting `logged_at`, set `confirmed` — no `Nutrition` write
 - [ ] 5.4 Implement `PATCH /api/food/meals/{id}/items/{item_id}` to bind a reference food, supply macros directly, or change weight; 409 once the meal is confirmed
 - [ ] 5.5 Implement `POST /api/food/meals/manual` for photo-free entry from food references or direct macro values, accepting an explicit `logged_at`
-- [ ] 5.6 Implement custom food CRUD (`POST|GET /api/food/custom`, `PUT|DELETE /api/food/custom/{id}`) and `GET /api/food/search`
+- [x] 5.6 Implement custom food CRUD (`POST|GET /api/food/custom`, `PUT|DELETE /api/food/custom/{id}`) and `GET /api/food/search`
 - [ ] 5.7 Tests: retry rejected while a call is in flight and accepted once stale, clarify request carries no image content and replays earlier answers, round cap, confirm writes zero `Nutrition` rows, manual-only meal aggregates non-zero, item patch rescales macros, 404 on cross-user custom food mutation, manual meal never enters `processing`
 
 ## 6. Registry Integration & Deletion

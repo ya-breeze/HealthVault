@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	kinmodels "github.com/ya-breeze/kin-core/models"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
 	"github.com/ya-breeze/healthvault/pkg/usda"
+	kinmodels "github.com/ya-breeze/kin-core/models"
 )
 
 func newFoodTestStorage(t *testing.T) database.Storage {

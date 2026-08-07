@@ -35,11 +35,11 @@ func NewFoodHandlers(storage database.Storage, usdaIndex *usda.Index, uploadsDir
 // FoodSearchResult is one candidate returned by GET /api/food/search: either
 // the user's own custom food or a USDA reference food.
 type FoodSearchResult struct {
-	Source       string                    `json:"source"` // "custom" or "usda"
-	CustomFoodID *uuid.UUID                `json:"custom_food_id,omitempty"`
-	FdcID        *int64                    `json:"fdc_id,omitempty"`
-	Name         string                    `json:"name"`
-	Profile      database.NutrientProfile  `json:"profile"`
+	Source       string                   `json:"source"` // "custom" or "usda"
+	CustomFoodID *uuid.UUID               `json:"custom_food_id,omitempty"`
+	FdcID        *int64                   `json:"fdc_id,omitempty"`
+	Name         string                   `json:"name"`
+	Profile      database.NutrientProfile `json:"profile"`
 }
 
 // FoodSearchResponse is the body of GET /api/food/search.
@@ -117,6 +117,11 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
+	writeJSONStatus(w, http.StatusOK, v)
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v) //nolint:errcheck
 }

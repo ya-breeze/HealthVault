@@ -8,11 +8,11 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/ya-breeze/kin-core/cookies"
 	"github.com/ya-breeze/healthvault/pkg/config"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/mcpserver"
 	"github.com/ya-breeze/healthvault/pkg/usda"
+	"github.com/ya-breeze/kin-core/cookies"
 )
 
 // requireBearerToken wraps h so that every request must carry
@@ -78,6 +78,10 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/import/health-connect", importHealthConnectHandler(storage)).Methods("POST")
 	api.HandleFunc("/import/libra", importLibraHandler(storage)).Methods("POST")
 	api.HandleFunc("/food/search", fh.Search).Methods("GET")
+	api.HandleFunc("/food/custom", fh.CreateCustomFood).Methods("POST")
+	api.HandleFunc("/food/custom", fh.ListCustomFoods).Methods("GET")
+	api.HandleFunc("/food/custom/{id}", fh.UpdateCustomFood).Methods("PUT")
+	api.HandleFunc("/food/custom/{id}", fh.DeleteCustomFood).Methods("DELETE")
 
 	// MCP — protected by a static bearer token (HCW_MCP_TOKEN).
 	// If the token is empty the endpoint responds 503 so it is never accidentally open.
