@@ -136,7 +136,14 @@ Nutrient field names follow the existing `Nutrition` model (`DietaryFiberGrams`,
 
 - **Matching is candidate retrieval, not auto-assignment.** This is the step most likely to produce silently wrong macros: SR Legacy descriptions read like `Chicken, broilers or fryers, breast, meat only, cooked, roasted`, while the vision model emits `grilled chicken breast`, and BM25 across that gap is unreliable. A confidently wrong match is worse than no match. So:
   1. Query `custom_foods` for the user's own entries first; an exact (case-insensitive) name hit wins outright.
-  2. Otherwise query `usda_foods_fts` for the top N (default 5) ranked candidates.
+  2. Otherwise query `usda_foods_fts` for the top N (default 30) ranked candidates.
+
+     N is 30 rather than a handful because BM25 penalizes long documents, and SR Legacy's
+     canonical whole-food entries are long and heavily qualified while processed and deli
+     entries are short. Measured against the real 7,793-row dataset, the correct food ranked
+     12th for "chicken breast" and 17th for "white rice" — outside any small shortlist, so the
+     model would only ever be able to answer "none of these". Thirty candidate descriptions
+     cost a few hundred prompt tokens against an image that costs far more.
   3. The vision model is given the shortlist and selects, or returns "none of these".
   4. If nothing is selected, the item is stored with `MacroSource = none` and zeroed macros, and the review UI prompts the user to pick a food or enter macros manually via `PATCH /api/food/meals/{id}/items/{item_id}`. Items are never silently bound to a low-scoring candidate.
 
@@ -207,7 +214,7 @@ Meal photos are sent to OpenAI. The production vision client sets `store: false`
 ## Risks / Trade-offs
 
 - **[Risk] Synchronous vision call holds an HTTP request for seconds** → **Mitigation**: bounded by `HCW_VISION_TIMEOUT`; the photo and meal row are already committed before the call, so a timeout costs the analysis, never the photo. Revisit only if latency becomes a real complaint.
-- **[Risk] FTS5 fails to retrieve the right candidate for LLM-phrased food names** → **Mitigation**: retrieve top-N and let the model select rather than auto-assigning rank 1; surface unmatched items to the user instead of guessing. Match quality is measurable through the same calibration dataset.
+- **[Risk] FTS5 fails to retrieve the right candidate for LLM-phrased food names** → **Mitigation**: retrieve top-N (N=30, sized from measured ranks on the real dataset) and let the model select rather than auto-assigning rank 1; surface unmatched items to the user instead of guessing. Match quality is measurable through the same calibration dataset. Note this is mitigated, not solved: BM25's bias toward short processed-food descriptions is structural, and FTS5's `bm25()` exposes only column weights, not the length-normalization parameter, so it cannot be tuned away directly.
 - **[Risk] Meal totals and Health Connect nutrition data cannot be summed together** → **Accepted**: this is the deliberate consequence of not writing to `Nutrition`. Unifying them requires a source discriminator and is deferred to its own change.
 - **[Risk] USDA import produces a broken or partial database** → **Mitigation**: build into a temporary file, validate a minimum row count, atomic rename; the previous database keeps serving until the new one is complete.
 - **[Risk] Calibration overfits a small or unrepresentative sample set** → **Mitigation**: preserve per-sample results and dataset size in the report, warn for a single sample, and present thresholds plus a Pareto frontier rather than silently declaring an overall winner.

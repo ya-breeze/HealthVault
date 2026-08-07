@@ -107,6 +107,30 @@ func TestSearch_NoMatchReturnsEmptyNotError(t *testing.T) {
 	}
 }
 
+// A non-positive limit falls back to the default shortlist size. The default is
+// large because the correct food ranked 12th and 17th for two ordinary queries
+// on the real dataset; a small shortlist simply would not contain it.
+func TestSearch_DefaultCandidateLimit(t *testing.T) {
+	if usda.DefaultCandidates < 30 {
+		t.Fatalf("DefaultCandidates = %d, want at least 30", usda.DefaultCandidates)
+	}
+	// The filler rows all share a description, so an unbounded search matches
+	// far more rows than the default allows through.
+	idx, err := usda.Open(buildIndex(t))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer idx.Close() //nolint:errcheck
+
+	got, err := idx.Search("filler food", 0)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != usda.DefaultCandidates {
+		t.Errorf("got %d candidates for limit 0, want DefaultCandidates (%d)", len(got), usda.DefaultCandidates)
+	}
+}
+
 func TestByFdcID(t *testing.T) {
 	idx, err := usda.Open(buildIndex(t, food(42, "Oats, raw", 389)))
 	if err != nil {

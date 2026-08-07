@@ -30,6 +30,17 @@ var ErrNoDatabase = errors.New("USDA reference database not present")
 // over a good database. Foundation + SR Legacy is roughly 8k foods.
 const MinExpectedRows = 1000
 
+// DefaultCandidates is the shortlist size handed to the caller for selection.
+//
+// Deliberately large. BM25 penalizes long documents, and SR Legacy's canonical
+// whole-food rows are long and heavily qualified ("Chicken, broilers or fryers,
+// breast, meat only, cooked, roasted") while processed and deli rows are short
+// ("Chicken breast tenders, breaded"). The short processed rows therefore
+// outrank the whole foods for ordinary queries. Measured on the real 7,793-row
+// dataset, the correct food ranked 12th for "chicken breast" and 17th for
+// "white rice", so a five-item shortlist never contained the right answer.
+const DefaultCandidates = 30
+
 // Food is one USDA reference food with its per-100g profile.
 type Food struct {
 	FdcID       int64                    `json:"fdc_id"`
@@ -76,7 +87,7 @@ func (i *Index) Search(term string, limit int) ([]Food, error) {
 		return nil, ErrNoDatabase
 	}
 	if limit <= 0 {
-		limit = 5
+		limit = DefaultCandidates
 	}
 	q := sanitizeFTSQuery(term)
 	if q == "" {
