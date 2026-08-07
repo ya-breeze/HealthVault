@@ -1,24 +1,24 @@
 ## 1. Database & Models
 
-- [ ] 1.1 Add `FoodMeal`, `FoodItem`, `CustomFood` GORM models to `backend/pkg/database/models.go`, all embedding `models.TenantModel`; `FoodItem` carries `user_id`, `macro_source`, `preparation` and `state`; `FoodMeal` carries `clarify_log` and the 7 aggregate columns
-- [ ] 1.2 Add AutoMigrate entries in `backend/pkg/database/db.go`, including the `(user_id, name)` unique index on `CustomFood`
-- [ ] 1.3 Add USDA SQLite schema (separate DB file) and FTS5 candidate-retrieval queries in `backend/pkg/usda`
-- [ ] 1.4 Add config fields and env vars under the existing `HCW` viper prefix: `HCW_OPENAI_API_KEY`, `HCW_OPENAI_MODEL`, `HCW_UPLOADS_DIR`, `HCW_USDA_DB_PATH`, `HCW_MAX_UPLOAD_BYTES`, `HCW_VISION_TIMEOUT`
-- [ ] 1.5 Unit tests: tenant field assignment (`ID`/`FamilyID` set explicitly), `FoodItem.user_id` matches its meal, two meals sharing one `logged_at` both persist, duplicate custom food name rejected
+- [x] 1.1 Add `FoodMeal`, `FoodItem`, `CustomFood` GORM models to `backend/pkg/database/models.go`, all embedding `models.TenantModel`; `FoodItem` carries `user_id`, `macro_source`, `preparation` and `state`; `FoodMeal` carries `clarify_log` and the 7 aggregate columns
+- [x] 1.2 Add AutoMigrate entries in `backend/pkg/database/db.go`, including the `(user_id, name)` unique index on `CustomFood`
+- [x] 1.3 Add USDA SQLite schema (separate DB file) and FTS5 candidate-retrieval queries in `backend/pkg/usda`
+- [x] 1.4 Add config fields and env vars under the existing `HCW` viper prefix: `HCW_OPENAI_API_KEY`, `HCW_OPENAI_MODEL`, `HCW_UPLOADS_DIR`, `HCW_USDA_DB_PATH`, `HCW_MAX_UPLOAD_BYTES`, `HCW_VISION_TIMEOUT`
+- [x] 1.5 Unit tests: tenant field assignment (`ID`/`FamilyID` set explicitly), `FoodItem.user_id` matches its meal, two meals sharing one `logged_at` both persist, duplicate custom food name rejected
 
 ## 2. Media Storage & Upload Pipeline
 
-- [ ] 2.1 Implement server-generated path storage helper in `backend/pkg/storage` (client filename never used)
-- [ ] 2.2 Implement upload validation: max body size, content sniffing accepting only JPEG/PNG/WebP, plus an explicit ISO-BMFF brand check so HEIC is rejected with a 415 naming the format
+- [x] 2.1 Implement server-generated path storage helper in `backend/pkg/storage` (client filename never used)
+- [x] 2.2 Implement upload validation: max body size, content sniffing accepting only JPEG/PNG/WebP, plus an explicit ISO-BMFF brand check so HEIC is rejected with a 415 naming the format
 - [ ] 2.3 Implement owner-scoped photo handlers for `GET /api/food/meals/{id}/photo` and `GET /api/food/calibration-samples/{id}/photo`
 - [ ] 2.4 Implement photo-first persistence in `POST /api/food/meals`: save file, commit `FoodMeal` as `processing`, then analyze
 - [ ] 2.5 Tests: oversized upload rejected, non-image rejected, HEIC rejected with 415, traversal-shaped filename ignored, 401 unauthenticated, 404 cross-user photo access, 404 photo access by a family member
 
 ## 3. USDA Import & Candidate Search
 
-- [ ] 3.1 Implement `hcw import-usda`: download Foundation/SR Legacy, build FTS5 index into a temp file, validate minimum row count, atomic rename
-- [ ] 3.2 Implement candidate search: custom foods first (exact case-insensitive), then top-N FTS5 candidates, with the query built from name + preparation + state as ranking hints (never filters)
-- [ ] 3.3 Tests: failed import leaves prior DB serving, search before first import returns empty + error state, custom food precedence, cross-user custom food isolation
+- [x] 3.1 Implement `hcw import-usda`: download Foundation/SR Legacy, build FTS5 index into a temp file, validate minimum row count, atomic rename
+- [x] 3.2 Implement candidate search: custom foods first (exact case-insensitive), then top-N FTS5 candidates, with the query built from name + preparation + state as ranking hints (never filters)
+- [x] 3.3 Tests: failed import leaves prior DB serving, search before first import returns empty + error state, custom food precedence, cross-user custom food isolation
 
 ## 4. OpenAI Vision Integration
 

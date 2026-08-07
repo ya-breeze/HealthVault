@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/config"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/mcpserver"
+	"github.com/ya-breeze/healthvault/pkg/usda"
 )
 
 // requireBearerToken wraps h so that every request must carry
@@ -43,6 +45,17 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 		cookieCfg: cookieCfg,
 	}
 
+	// USDA index is optional at startup: no import has necessarily run yet,
+	// and the food search endpoint degrades to "unavailable" rather than
+	// failing the whole server.
+	usdaIndex, err := usda.Open(cfg.USDADBPath)
+	if err != nil && !errors.Is(err, usda.ErrNoDatabase) {
+		return fmt.Errorf("open usda index: %w", err)
+	}
+	defer usdaIndex.Close() //nolint:errcheck
+
+	fh := NewFoodHandlers(storage, usdaIndex, cfg.UploadsDir)
+
 	r := mux.NewRouter()
 
 	// Webhook (unauthenticated) — implemented in Task 5
@@ -64,6 +77,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/data/{type}/{id}", DeleteRecordHandler(storage)).Methods("DELETE")
 	api.HandleFunc("/import/health-connect", importHealthConnectHandler(storage)).Methods("POST")
 	api.HandleFunc("/import/libra", importLibraHandler(storage)).Methods("POST")
+	api.HandleFunc("/food/search", fh.Search).Methods("GET")
 
 	// MCP — protected by a static bearer token (HCW_MCP_TOKEN).
 	// If the token is empty the endpoint responds 503 so it is never accidentally open.
