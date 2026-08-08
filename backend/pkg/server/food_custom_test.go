@@ -165,10 +165,48 @@ func TestDeleteCustomFood_Success(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
 	}
+	// Unscoped: a plain Count silently applies the same soft-delete filter as
+	// the app's own reads, so it would report 0 even for a soft-deleted row
+	// still occupying the unique (user_id, name) slot — exactly the bug this
+	// test needs to catch. See TestDeleteCustomFood_NameIsReusableAfterDelete.
 	var count int64
-	st.DB().Model(&database.CustomFood{}).Where("id = ?", c.ID).Count(&count)
+	st.DB().Unscoped().Model(&database.CustomFood{}).Where("id = ?", c.ID).Count(&count)
 	if count != 0 {
-		t.Errorf("expected food to be deleted, count=%d", count)
+		t.Errorf("expected food to be hard-deleted (no row at all), count=%d", count)
+	}
+}
+
+// A soft delete leaves the row in place with deleted_at set; the unique
+// index on (user_id, name) has no deleted_at clause, so it would keep
+// blocking that name forever — the opposite of delete-and-recreate being a
+// working way to fix a mistaken custom food. Regression test for a real bug
+// caught by the food E2E suite (Playwright hit a 409 recreating a name that
+// its own preceding test had already "deleted").
+func TestDeleteCustomFood_NameIsReusableAfterDelete(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	mk := func() *database.CustomFood {
+		c := database.CustomFood{UserID: userID, Name: "Yogurt", CaloriesPer100g: 60}
+		c.ID = uuid.New()
+		c.FamilyID = familyID
+		return &c
+	}
+	first := mk()
+	if err := st.DB().Create(first).Error; err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+
+	r := withIDVar(withClaims(httptest.NewRequest(http.MethodDelete, "/api/food/custom/"+first.ID.String(), nil), userID), first.ID.String())
+	w := httptest.NewRecorder()
+	h.DeleteCustomFood(w, r)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if err := st.DB().Create(mk()).Error; err != nil {
+		t.Fatalf("expected the name to be reusable after delete, got: %v", err)
 	}
 }
 

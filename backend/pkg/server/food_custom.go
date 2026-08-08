@@ -170,7 +170,13 @@ func (h *foodHandlers) DeleteCustomFood(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	res := h.storage.DB().Where("id = ? AND user_id = ?", id, claims.UserID).Delete(&database.CustomFood{})
+	// Unscoped: CustomFood embeds TenantModel, so a plain Delete soft-deletes
+	// (sets deleted_at) rather than removing the row. The (user_id, name)
+	// unique index has no deleted_at clause, so a soft-deleted row would
+	// permanently block ever creating that name again — the opposite of
+	// "delete and re-add" being a working correction path.
+	res := h.storage.DB().Unscoped().
+		Where("id = ? AND user_id = ?", id, claims.UserID).Delete(&database.CustomFood{})
 	if res.Error != nil {
 		http.Error(w, "delete error", http.StatusInternalServerError)
 		return
