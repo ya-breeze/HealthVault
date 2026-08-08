@@ -77,10 +77,24 @@ type SelectResult struct {
 	Raw              string
 }
 
+// ClarifyTurn is one question/answer pair replayed to the model on a
+// clarification round.
+type ClarifyTurn struct {
+	Question string
+	Answer   string
+}
+
 // Client recognizes foods in a photo and selects among retrieved candidates.
 // Every implementation sets store:false on outbound requests — see design.md
 // "Third-Party Disclosure and Retention".
 type Client interface {
 	Recognize(ctx context.Context, image []byte, mimeType string) (*RecognizeResult, error)
+	// Clarify is text-only: it does not re-send the photo, only the items
+	// recognized so far and the full question/answer history. It returns the
+	// same RecognizeResult shape — updated items, and further
+	// ClarificationQuestions if still ambiguous. See design.md "Clarification
+	// Rounds": re-sending the image every round would make image tokens the
+	// dominant cost for no additional information.
+	Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn) (*RecognizeResult, error)
 	Select(ctx context.Context, itemCandidates []ItemCandidates) (*SelectResult, error)
 }

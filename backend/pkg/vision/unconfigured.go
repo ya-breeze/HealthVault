@@ -19,6 +19,10 @@ func (Unconfigured) Recognize(context.Context, []byte, string) (*RecognizeResult
 	return nil, ErrNotConfigured
 }
 
+func (Unconfigured) Clarify(context.Context, []Item, []ClarifyTurn) (*RecognizeResult, error) {
+	return nil, ErrNotConfigured
+}
+
 func (Unconfigured) Select(context.Context, []ItemCandidates) (*SelectResult, error) {
 	return nil, ErrNotConfigured
 }

@@ -202,6 +202,10 @@ func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string) (*
 	return nil, ctx.Err()
 }
 
+func (slowRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn) (*vision.RecognizeResult, error) {
+	return &vision.RecognizeResult{}, nil
+}
+
 func (slowRecognizeClient) Select(context.Context, []vision.ItemCandidates) (*vision.SelectResult, error) {
 	return &vision.SelectResult{}, nil
 }

@@ -52,12 +52,21 @@ func (h *foodHandlers) RetryMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
-		Update("status", database.MealStatusProcessing).Error; err != nil {
+	// A retry restarts analysis from the stored photo, so any clarification
+	// rounds from a prior attempt no longer apply — see analyzeMeal's fresh
+	// Recognize call, which starts back at round 1.
+	updates := map[string]any{
+		"status":        database.MealStatusProcessing,
+		"clarify_round": 0,
+		"clarify_log":   "",
+	}
+	if err := h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).Updates(updates).Error; err != nil {
 		http.Error(w, "update error", http.StatusInternalServerError)
 		return
 	}
 	meal.Status = database.MealStatusProcessing
+	meal.ClarifyRound = 0
+	meal.ClarifyLog = ""
 
 	h.analyzeMeal(r.Context(), &meal)
 	writeJSON(w, meal)

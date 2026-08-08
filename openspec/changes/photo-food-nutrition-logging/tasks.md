@@ -33,13 +33,13 @@
 ## 5. Meal Lifecycle Endpoints
 
 - [x] 5.1 Implement `GET /api/food/meals/{id}` (detail with items) and `POST /api/food/meals/{id}/retry`, accepting only `failed` or `processing` whose `updated_at` is older than `HCW_VISION_TIMEOUT`, 409 otherwise
-- [ ] 5.2 Implement `POST /api/food/meals/{id}/clarify`: text-only rounds that do not re-send the image, persisting each Q/A pair to `clarify_log` and replaying the full history each round, re-running food lookup when an answer resolves a previously unknown preparation or state, capped at 3 then `pending_review`
+- [x] 5.2 Implement `POST /api/food/meals/{id}/clarify`: text-only rounds that do not re-send the image, persisting each Q/A pair to `clarify_log` and replaying the full history each round, re-running food lookup when an answer resolves a previously unknown preparation or state, capped at 3 then `pending_review`
 - [x] 5.3 Implement `PUT /api/food/meals/{id}/confirm`: recalculate scaled macros, aggregate items whose `macro_source` is `reference` or `manual`, allow correcting `logged_at`, set `confirmed` — no `Nutrition` write
 - [x] 5.4 Implement `PATCH /api/food/meals/{id}/items/{item_id}` to bind a reference food, supply macros directly, or change weight; 409 once the meal is confirmed
 - [x] 5.5 Implement `POST /api/food/meals/manual` for photo-free entry from food references or direct macro values, accepting an explicit `logged_at`
 - [x] 5.6 Implement custom food CRUD (`POST|GET /api/food/custom`, `PUT|DELETE /api/food/custom/{id}`) and `GET /api/food/search`
-- [ ] 5.7 Tests: retry rejected while a call is in flight and accepted once stale, clarify request carries no image content and replays earlier answers, round cap, confirm writes zero `Nutrition` rows, manual-only meal aggregates non-zero, item patch rescales macros, 404 on cross-user custom food mutation, manual meal never enters `processing`
-      — done except the clarify-round cases (wait on 5.2): `TestRetryMeal_LiveProcessingRejectedWith409`, `TestRetryMeal_StaleProcessingIsAccepted`, `TestConfirmMeal_NoNutritionRowWritten`, `TestCreateManualMeal_DirectMacros` (manual-only aggregates non-zero), `TestPatchMealItem_WeightOnlyChangeRescalesFromExistingBinding`, `TestCreateManualMeal_CrossUserCustomFoodReturns404`, `TestCreateManualMeal_NeverEntersProcessing`.
+- [x] 5.7 Tests: retry rejected while a call is in flight and accepted once stale, clarify request carries no image content and replays earlier answers, round cap, confirm writes zero `Nutrition` rows, manual-only meal aggregates non-zero, item patch rescales macros, 404 on cross-user custom food mutation, manual meal never enters `processing`
+      — `TestRetryMeal_LiveProcessingRejectedWith409`, `TestRetryMeal_StaleProcessingIsAccepted`, `TestClarifyMeal_AnswerResolvesToReviewCarriesNoImage` (no-image is a structural guarantee: `vision.Client.Clarify` takes no image parameter), `TestClarifyMeal_MultipleRoundsUpToCapThenPendingReview` (round cap + full-history replay), `TestConfirmMeal_NoNutritionRowWritten`, `TestCreateManualMeal_DirectMacros`, `TestPatchMealItem_WeightOnlyChangeRescalesFromExistingBinding`, `TestCreateManualMeal_CrossUserCustomFoodReturns404`, `TestCreateManualMeal_NeverEntersProcessing`.
 
 ## 6. Registry Integration & Deletion
 

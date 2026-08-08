@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -82,15 +83,9 @@ func writeUploadError(w http.ResponseWriter, err error) {
 	}
 }
 
-// analyzeMeal runs the two-call vision pipeline and persists its outcome:
-//   - failed, on any error including a timeout — the photo is retained.
-//   - pending_clarification, when the model could not confidently recognize
-//     the photo — items are stored unresolved, awaiting a future clarify
-//     round (POST /api/food/meals/{id}/clarify).
-//   - pending_review, once every item has been offered its candidate
-//     shortlist and either bound or left unresolved.
-//
-// The meal's own aggregate is left at zero; it is computed only on confirm.
+// analyzeMeal runs the vision recognition call and persists its outcome via
+// processRecognition. Any error, including a timeout, marks the meal failed
+// with the photo retained.
 func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal) {
 	ctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
 	defer cancel()
@@ -106,15 +101,49 @@ func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal)
 		h.failMeal(meal)
 		return
 	}
+	h.processRecognition(ctx, meal, recognized)
+}
 
-	if len(recognized.ClarificationQuestions) > 0 {
+// processRecognition persists the outcome of a Recognize or Clarify call.
+// Shared by both, since a clarify round returns the same RecognizeResult
+// shape and needs the same branching:
+//   - pending_clarification, with the next round's questions appended to
+//     clarify_log, when the model is still unsure and the round cap
+//     (database.MaxClarifyRounds) has not been reached.
+//   - pending_review otherwise: every item is offered its candidate
+//     shortlist and either bound or left unresolved.
+//
+// The meal's own aggregate is left at zero; it is computed only on confirm.
+func (h *foodHandlers) processRecognition(ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult) {
+	nextRound := meal.ClarifyRound + 1
+	if len(recognized.ClarificationQuestions) > 0 && nextRound <= database.MaxClarifyRounds {
 		items := unresolvedItemsFrom(recognized.Items, meal.ID, meal.UserID, meal.FamilyID)
 		h.persistAnalysis(meal, database.MealStatusPendingClarification, recognized.Raw, items)
+		h.appendPendingQuestions(meal, nextRound, recognized.ClarificationQuestions)
 		return
 	}
 
 	items := h.resolveItems(ctx, meal, recognized.Items)
 	h.persistAnalysis(meal, database.MealStatusPendingReview, recognized.Raw, items)
+}
+
+// appendPendingQuestions appends round's questions (each with an empty
+// Answer, marking them unanswered) to the meal's existing clarify_log.
+func (h *foodHandlers) appendPendingQuestions(meal *database.FoodMeal, round int, questions []string) {
+	var entries []database.ClarifyEntry
+	if meal.ClarifyLog != "" {
+		json.Unmarshal([]byte(meal.ClarifyLog), &entries) //nolint:errcheck
+	}
+	for _, q := range questions {
+		entries = append(entries, database.ClarifyEntry{Round: round, Question: q, Answer: ""})
+	}
+	b, err := json.Marshal(entries)
+	if err != nil {
+		return
+	}
+	h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+		Update("clarify_log", string(b)) //nolint:errcheck
+	meal.ClarifyLog = string(b)
 }
 
 // resolveItems retrieves a candidate shortlist per recognized item, offers

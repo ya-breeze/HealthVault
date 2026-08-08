@@ -93,6 +93,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/food/meals/{id}", fh.GetMeal).Methods("GET")
 	api.HandleFunc("/food/meals/{id}/photo", fh.MealPhoto).Methods("GET")
 	api.HandleFunc("/food/meals/{id}/retry", fh.RetryMeal).Methods("POST")
+	api.HandleFunc("/food/meals/{id}/clarify", fh.ClarifyMeal).Methods("POST")
 	api.HandleFunc("/food/meals/{id}/confirm", fh.ConfirmMeal).Methods("PUT")
 	api.HandleFunc("/food/meals/{id}/items/{item_id}", fh.PatchMealItem).Methods("PATCH")
 	api.HandleFunc("/food/calibration-samples/{id}/photo", fh.CalibrationSamplePhoto).Methods("GET")
