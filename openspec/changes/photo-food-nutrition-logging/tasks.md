@@ -70,7 +70,11 @@
 
 ## 9. Validation
 
-- [ ] 9.1 Run `make lint` and `make test`; fix all findings
-- [ ] 9.2 Add Playwright coverage in `e2e/tests` for the upload → review → confirm flow and the manual entry flow
-- [ ] 9.3 Run the E2E suite against the deployed WIP stack with `BASE_URL` set, and record the result
-- [ ] 9.4 Run `openspec validate --changes --strict`
+- [x] 9.1 Run `make lint` and `make test`; fix all findings
+      — clean throughout; also `cd frontend && npx tsc --noEmit` and a full `next build` static export, both clean.
+- [x] 9.2 Add Playwright coverage in `e2e/tests` for the upload → review → confirm flow and the manual entry flow
+      — `e2e/tests/food.spec.ts`: manual meal entry (confirmed status, macros shown), custom food CRUD via the UI, and photo upload → review (asserts a real terminal/actionable status is reached, not a specific recognition outcome, since the fixture photo is synthetic).
+- [x] 9.3 Run the E2E suite against the deployed WIP stack with `BASE_URL` set, and record the result
+      — hcw-wip repointed to this branch; ran `hcw import-usda` against the shared volume (7,793 foods) and restarted so the running server picked up the index. Full suite (27 tests, all specs) green against `http://192.168.1.54:8888`. The photo-upload path was exercised against the **real** OpenAI API (`gpt-5.6-luna`) end-to-end via direct curl too: Recognize correctly asked for clarification on the synthetic test image rather than hallucinating food ("abstract colored shapes"); a follow-up Clarify call correctly interpreted a free-text answer into 3 items; Select correctly bound all 3 to real USDA FDC IDs with correct scaled macros; Confirm correctly aggregated (501.5 kcal). hcw-wip is `class: dogfood` (single real account, no separate prod), corrected in `data.json` after this was flagged — every meal/custom-food created during testing was deleted afterward and verified against the live `hcw.db` (0 residual rows). Found and fixed a real bug along the way: `DeleteCustomFood` soft-deleted, permanently blocking name reuse (see the `food_custom.go` fix commit).
+- [x] 9.4 Run `openspec validate --changes --strict`
+      — passes.
