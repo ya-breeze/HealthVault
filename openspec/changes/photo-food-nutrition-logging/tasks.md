@@ -22,8 +22,8 @@
 
 ## 4. OpenAI Vision Integration
 
-- [ ] 4.1 Create vision client in `backend/pkg/vision` with structured output parsing, per-call model override, `store: false`, and returned model ID / token usage / latency. The item schema includes `preparation` and `state` (both may be unknown)
-      — the `vision.Client` interface, `RecognizeResult`/`SelectResult` types, a `Fake` for tests, and an `Unconfigured` client (returns `vision.ErrNotConfigured`, wired into the server today) are done. The real OpenAI-backed implementation is deliberately deferred: the user chose to keep vision behind the interface/stub for now rather than supply `HCW_OPENAI_API_KEY` in this session. Ask for the key before implementing this.
+- [x] 4.1 Create vision client in `backend/pkg/vision` with structured output parsing, per-call model override, `store: false`, and returned model ID / token usage / latency. The item schema includes `preparation` and `state` (both may be unknown)
+      — `OpenAIClient` (`pkg/vision/openai.go`) implements `Client` against OpenAI's Chat Completions API with `response_format: json_schema` (strict), sending `store: false` on every request. Recognize sends the photo as a base64 data URL; Clarify and Select are text-only (no image content, verified by `TestOpenAIClient_Clarify_SendsNoImageContent`). Returns the response's own `model` id, prompt/completion token counts, and latency. `preparation`/`state` "unknown" is mapped to `""`, the backend's own unknown convention. Wired into `server.go`: used when `HCW_OPENAI_API_KEY` is set, `Unconfigured` otherwise. Tested against a mock HTTP server (no live API calls in the test suite).
 - [x] 4.2 Integrate synchronous analysis into `POST /api/food/meals` bounded by `HCW_VISION_TIMEOUT`; mark `failed` and retain the photo on error or timeout
 - [x] 4.3 Implement candidate-shortlist selection: pass retrieved candidates to the model, record explicit non-match as `macro_source = none`
 - [x] 4.4 Make every analysis run replace the meal's existing `FoodItem` rows in the same transaction as the status write
