@@ -67,17 +67,26 @@ export default function DataTypeClient({ type }: Props) {
     setPendingDeleteId(null);
     setDeleteError(null);
 
-    const effectiveBucket = hasChart ? bucket : undefined;
-    const rawPromise = api.data(type, from, to, userParam);
-    const chartPromise = effectiveBucket ? api.data(type, from, to, userParam, effectiveBucket) : rawPromise;
-
-    Promise.all([rawPromise, chartPromise])
-      .then(([raw, chart]) => {
+    // Raw and chart data are fetched independently: a raw-fetch failure
+    // means the session is invalid (same signal the app has always used to
+    // redirect to /login), but a chart/bucket-fetch failure is a narrower,
+    // non-fatal problem — it should leave the chart empty, not log the user
+    // out for an unrelated error.
+    api.data(type, from, to, userParam)
+      .then(raw => {
         setRecords(raw);
-        setChartRows(chart);
         setLoading(false);
       })
       .catch(() => router.push('/login'));
+
+    const effectiveBucket = hasChart ? bucket : undefined;
+    if (effectiveBucket) {
+      api.data(type, from, to, userParam, effectiveBucket)
+        .then(setChartRows)
+        .catch(() => setChartRows([]));
+    } else {
+      setChartRows([]);
+    }
   }, [type, from, to, bucket, hasChart, userParam, router]);
 
   const isDay = zoom === 'day';
@@ -123,10 +132,15 @@ export default function DataTypeClient({ type }: Props) {
     diaAvg: num(r.diastolic_avg), diaMin: num(r.diastolic_min), diaBand: num(r.diastolic_max) - num(r.diastolic_min),
   }));
 
-  // A single flattened series driving the stats row, uniform across Day
-  // (raw records) and Week/Month/Year (bucketed) — see chart-zoom-aggregation's
-  // "Chart summary stats follow the active zoom" requirement.
-  const primarySeries = useMemo(() => {
+  // Two flattened series driving the stats row, uniform across Day (raw
+  // records) and Week/Month/Year (bucketed) — see chart-zoom-aggregation's
+  // "Chart summary stats follow the active zoom" requirement. Kept separate
+  // because for point-family types Week/Month/Year only reads a bucket's
+  // avg for the Avg/Total stats, but must read that bucket's own `max` for
+  // the Max stat — the highest per-bucket average is not the highest
+  // recorded value, which is exactly what the chart's shaded band already
+  // shows and the stats row should agree with.
+  const primaryAvgSeries = useMemo(() => {
     if (isBloodPressure) {
       return isDay ? records.map(r => num(r.systolic)) : chartRows.map(r => num(r.systolic_avg));
     }
@@ -139,10 +153,23 @@ export default function DataTypeClient({ type }: Props) {
     return chartRows.map(r => (meta?.family === 'cumulative' ? num(r.sum) : num(r.avg)));
   }, [isBloodPressure, isNutrition, isDay, records, chartRows, numericKey, macro, meta]);
 
+  const primaryMaxSeries = useMemo(() => {
+    // Day (raw points) and cumulative types, including nutrition (whose
+    // bucketed response has no separate max column — a bucket's sum *is*
+    // the quantity of interest) use the same series as Avg/Total.
+    if (isDay || meta?.family === 'cumulative') {
+      return primaryAvgSeries;
+    }
+    if (isBloodPressure) {
+      return chartRows.map(r => num(r.systolic_max));
+    }
+    return chartRows.map(r => num(r.max));
+  }, [isDay, isBloodPressure, chartRows, meta, primaryAvgSeries]);
+
   const stats = {
-    avg: mean(primarySeries),
-    max: primarySeries.length ? Math.max(...primarySeries) : 0,
-    total: primarySeries.reduce((a, b) => a + b, 0),
+    avg: mean(primaryAvgSeries),
+    max: primaryMaxSeries.length ? Math.max(...primaryMaxSeries) : 0,
+    total: primaryAvgSeries.reduce((a, b) => a + b, 0),
   };
   const showTotal = !isBloodPressure && meta?.family === 'cumulative';
 
