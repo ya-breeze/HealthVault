@@ -98,7 +98,12 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !req.Manual && req.FdcID == nil && req.CustomFoodID == nil && req.WeightGrams == nil && req.Name == nil {
+	// A name that's empty or whitespace-only carries nothing to apply — treat
+	// it as absent here so it can't alone satisfy "something to update" and
+	// then silently no-op past the guard below.
+	hasName := req.Name != nil && strings.TrimSpace(*req.Name) != ""
+
+	if !req.Manual && req.FdcID == nil && req.CustomFoodID == nil && req.WeightGrams == nil && !hasName {
 		http.Error(w, "nothing to update: specify manual, fdc_id, custom_food_id, weight_grams, or name", http.StatusBadRequest)
 		return
 	}

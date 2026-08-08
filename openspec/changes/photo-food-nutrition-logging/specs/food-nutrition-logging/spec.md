@@ -69,6 +69,10 @@ The system SHALL expose `PATCH /api/food/meals/{id}/items/{item_id}`, allowing t
 - **WHEN** the owner patches an item with only a `name` and no `fdc_id`, `custom_food_id`, `manual`, or `weight_grams`
 - **THEN** the system updates the name and returns 200 without changing `macro_source` or any stored macro value
 
+#### Scenario: A blank name alone is not something to update
+- **WHEN** the owner patches an item with only an empty or whitespace-only `name` and no other field
+- **THEN** the system returns HTTP 400 rather than accepting a request with nothing meaningful to apply
+
 #### Scenario: Patch an item of a confirmed meal
 - **WHEN** the owner patches an item belonging to a meal whose status is `confirmed`
 - **THEN** the system returns HTTP 409 and does not modify the item

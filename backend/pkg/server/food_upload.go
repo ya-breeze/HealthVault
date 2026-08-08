@@ -20,6 +20,11 @@ import (
 // multipartOverheadBytes is added to the request-body cap on top of
 // MaxUploadBytes, so a photo legitimately right at the limit isn't rejected
 // for the few extra bytes of multipart boundaries and headers around it.
+//
+// This cap only matters if nginx's client_max_body_size on the /api/
+// location (nginx/nginx.conf) stays above MaxUploadBytes+this — raising
+// HCW_MAX_UPLOAD_BYTES without also raising nginx's limit silently
+// reintroduces a 413-before-the-backend-ever-sees-it bug.
 const multipartOverheadBytes = 64 * 1024
 
 // CreateMeal handles POST /api/food/meals: a multipart upload with the photo

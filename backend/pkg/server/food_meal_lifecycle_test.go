@@ -378,6 +378,25 @@ func TestPatchMealItem_NameAloneIsAcceptedAndDoesNotTouchMacros(t *testing.T) {
 	}
 }
 
+// Regression: an empty or whitespace-only name has nothing to apply, so it
+// must not alone satisfy "something to update" — otherwise the request
+// silently 200s and changes nothing, which defeats the point of the guard.
+func TestPatchMealItem_BlankNameAloneReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	for _, name := range []string{"", "   "} {
+		r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"name": name})
+		w := httptest.NewRecorder()
+		h.PatchMealItem(w, withClaims(r, userID))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("name=%q: expected 400, got %d: %s", name, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestPatchMealItem_SupplyMacrosDirectly(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
