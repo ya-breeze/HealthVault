@@ -8,14 +8,15 @@ services:
       HCW_PORT: ${HCW_PORT:-8080}
       HCW_DBPATH: ${HCW_DBPATH:-/data/hcw.db}
       HCW_SEED_USERS: ${HCW_SEED_USERS:-}
-      HCW_JWT_SECRET: ${HCW_JWT_SECRET:-}
+      HCW_JWT_SECRET: ${HCW_JWT_SECRET:?HCW_JWT_SECRET must be set}
       HCW_COOKIE_SECURE: ${HCW_COOKIE_SECURE:-true}
+      HCW_MCP_TOKEN: ${HCW_MCP_TOKEN:-}
       HCW_UPLOADS_DIR: ${HCW_UPLOADS_DIR:-/data/uploads}
       HCW_USDA_DB_PATH: ${HCW_USDA_DB_PATH:-/data/usda.db}
       HCW_OPENAI_API_KEY: ${HCW_OPENAI_API_KEY:-}
       HCW_OPENAI_MODEL: ${HCW_OPENAI_MODEL:-gpt-4o-mini}
     volumes:
-      - backend_data:/data
+      - ${HCW_DATA_PATH:?HCW_DATA_PATH must be set}:/data
     networks:
       - hcw-network
 
@@ -25,7 +26,8 @@ services:
       dockerfile: ./nginx/Dockerfile
     restart: unless-stopped
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${HCW_HTTP_PORT:?HCW_HTTP_PORT must be set}:80"
+      - "${HCW_HTTPS_PORT:?HCW_HTTPS_PORT must be set}:443"
     depends_on:
       - backend
     networks:
@@ -33,6 +35,3 @@ services:
 
 networks:
   hcw-network:
-
-volumes:
-  backend_data:
