@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { api, FoodMeal, pendingClarifyQuestions } from '@/lib/api';
 import ClarifyModal from '@/components/food/ClarifyModal';
 import MealItemRow from '@/components/food/MealItemRow';
 import MacroSummary from '@/components/food/MacroSummary';
+import Header from '@/components/Header';
 
 const STATUS_LABEL: Record<string, string> = {
   processing: 'Analyzing…',
@@ -65,15 +65,20 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   };
 
   if (loading) {
-    return <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">Loading…</p>;
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header />
+        <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">Loading…</p>
+      </div>
+    );
   }
   if (loadError || !meal) {
     return (
-      <div className="p-6 text-center">
-        <p className="text-sm text-red-600 dark:text-red-400">{loadError ?? 'Meal not found'}</p>
-        <Link href="/" className="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-2 inline-block">
-          Back to dashboard
-        </Link>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header />
+        <div className="p-6 text-center">
+          <p className="text-sm text-red-600 dark:text-red-400">{loadError ?? 'Meal not found'}</p>
+        </div>
       </div>
     );
   }
@@ -84,18 +89,12 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="max-w-md mx-auto flex items-center gap-4">
-          <Link href="/" className="text-blue-600 dark:text-blue-400 hover:underline text-sm">
-            &#8592; Dashboard
-          </Link>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            {meal.name || 'Meal'}
-          </h1>
-        </div>
-      </header>
+      <Header />
 
       <main className="max-w-md mx-auto px-6 py-6">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+          {meal.name || 'Meal'}
+        </h1>
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
             {STATUS_LABEL[meal.status] ?? meal.status}

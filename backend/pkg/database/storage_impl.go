@@ -102,6 +102,95 @@ func (s *storageImpl) QueryRecords(tableName string, timeCol string, userID uuid
 	return results, err
 }
 
+// bucketExpr returns a SQLite expression that truncates timeCol to the start
+// of its day or month bucket, formatted as RFC3339 UTC. strftime only
+// substitutes its %-directives; the literal "T00:00:00Z" (and "-01" for
+// month) is copied through unchanged, so this doubles as both the GROUP BY
+// key and the bucket_start value.
+func bucketExpr(bucket Bucket, timeCol string) (string, error) {
+	switch bucket {
+	case BucketDay:
+		return fmt.Sprintf("strftime('%%Y-%%m-%%dT00:00:00Z', %s)", timeCol), nil
+	case BucketMonth:
+		return fmt.Sprintf("strftime('%%Y-%%m-01T00:00:00Z', %s)", timeCol), nil
+	default:
+		return "", fmt.Errorf("unknown bucket %q", bucket)
+	}
+}
+
+func (s *storageImpl) QueryAggregate(
+	tableName, timeCol, valueCol string, family AggFamily, bucket Bucket, userID uuid.UUID, tr TimeRange,
+) ([]map[string]any, error) {
+	be, err := bucketExpr(bucket, timeCol)
+	if err != nil {
+		return nil, err
+	}
+	var selectExpr string
+	switch family {
+	case AggFamilyCumulative:
+		selectExpr = fmt.Sprintf("%s AS bucket_start, COUNT(*) AS count, SUM(%s) AS sum", be, valueCol)
+	case AggFamilyPoint:
+		selectExpr = fmt.Sprintf(
+			"%s AS bucket_start, COUNT(*) AS count, AVG(%s) AS avg, MIN(%s) AS min, MAX(%s) AS max",
+			be, valueCol, valueCol, valueCol,
+		)
+	default:
+		return nil, fmt.Errorf("unknown aggregation family %q", family)
+	}
+	var results []map[string]any
+	whereClause := fmt.Sprintf("user_id = ? AND %s >= ? AND %s <= ?", timeCol, timeCol)
+	err = s.db.Table(tableName).
+		Select(selectExpr).
+		Where(whereClause, userID, tr.From, tr.To).
+		Group(be).
+		Order(be).
+		Find(&results).Error
+	return results, err
+}
+
+func (s *storageImpl) QueryAggregateBloodPressure(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error) {
+	be, err := bucketExpr(bucket, "time")
+	if err != nil {
+		return nil, err
+	}
+	selectExpr := fmt.Sprintf(
+		`%s AS bucket_start, COUNT(*) AS count,
+		AVG(systolic) AS systolic_avg, MIN(systolic) AS systolic_min, MAX(systolic) AS systolic_max,
+		AVG(diastolic) AS diastolic_avg, MIN(diastolic) AS diastolic_min, MAX(diastolic) AS diastolic_max`,
+		be,
+	)
+	var results []map[string]any
+	err = s.db.Table("blood_pressures").
+		Select(selectExpr).
+		Where("user_id = ? AND time >= ? AND time <= ?", userID, tr.From, tr.To).
+		Group(be).
+		Order(be).
+		Find(&results).Error
+	return results, err
+}
+
+func (s *storageImpl) QueryAggregateNutrition(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error) {
+	be, err := bucketExpr(bucket, "start_time")
+	if err != nil {
+		return nil, err
+	}
+	selectExpr := fmt.Sprintf(
+		`%s AS bucket_start, COUNT(*) AS count,
+		SUM(calories) AS sum_calories, SUM(protein_grams) AS sum_protein_grams, SUM(carbs_grams) AS sum_carbs_grams,
+		SUM(fat_grams) AS sum_fat_grams, SUM(sugar_grams) AS sum_sugar_grams, SUM(sodium_grams) AS sum_sodium_grams,
+		SUM(dietary_fiber_grams) AS sum_dietary_fiber_grams`,
+		be,
+	)
+	var results []map[string]any
+	err = s.db.Table("nutritions").
+		Select(selectExpr).
+		Where("user_id = ? AND start_time >= ? AND start_time <= ?", userID, tr.From, tr.To).
+		Group(be).
+		Order(be).
+		Find(&results).Error
+	return results, err
+}
+
 func (s *storageImpl) SummarySteps(userID uuid.UUID, tr TimeRange) (int, error) {
 	var total int
 	err := s.db.Model(&Steps{}).

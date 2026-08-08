@@ -17,30 +17,34 @@ test.describe('Dashboard', () => {
     await login(page);
   });
 
-  test('shows summary cards', async ({ page }) => {
-    await expect(page.getByText('Steps (last 7 days)')).toBeVisible();
-    await expect(page.getByText('Avg Heart Rate')).toBeVisible();
-    await expect(page.getByText('Sleep (last night)')).toBeVisible();
+  test('shows the vitals grid with all 8 primary metrics', async ({ page }) => {
+    for (const label of ['Steps', 'Heart Rate', 'Sleep', 'HRV', 'Distance', 'Weight', 'Blood Pressure', 'Oxygen Sat.']) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    }
   });
 
-  test('shows logged-in username', async ({ page }) => {
-    await expect(page.locator('select')).toHaveValue(USER);
+  test('shows logged-in username in the header', async ({ page }) => {
+    await expect(page.getByText(USER, { exact: true })).toBeVisible();
   });
 
-  test('has links to data type pages', async ({ page }) => {
-    const stepsLink = page.getByRole('link', { name: 'steps' }).first();
-    await expect(stepsLink).toBeVisible();
-    await stepsLink.click();
+  test('vitals grid card links to its data page', async ({ page }) => {
+    await page.locator('a[href="/data/steps/"]').first().click();
     await expect(page).toHaveURL(/\/data\/steps/);
+  });
+
+  test('secondary "more data" row links to a non-primary data page', async ({ page }) => {
+    const link = page.locator('a[href="/data/vo2_max/"]').first();
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(/\/data\/vo2_max/);
   });
 });
 
 test.describe('Webhook ingest + dashboard', () => {
-  test('webhook POST stores data visible in dashboard summary', async ({ page, request }) => {
+  test('webhook POST is reflected in the steps vital card and its bucketed API response', async ({ page, request }) => {
     const ts = new Date().toISOString();
     const stepCount = Math.floor(Math.random() * 5000) + 3000;
 
-    // POST a fresh webhook payload
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59).toISOString();
@@ -54,21 +58,19 @@ test.describe('Webhook ingest + dashboard', () => {
     });
     expect(resp.status()).toBe(204);
 
-    // Login and check dashboard shows non-zero steps
     await login(page);
-    // The summary fetches the last 7 days, so our step record should appear
-    await expect(page.getByText('Steps (last 7 days)')).toBeVisible();
-    // Verify the API summary includes our steps
-    const summaryResp = await request.get(`${BASE_URL}/api/data/summary`, {
-      params: { from: startOfDay, to: endOfDay, user: USER },
-    });
-    // Note: summary requires auth cookie — use page context instead
-    const summary = await page.evaluate(async (params) => {
-      const r = await fetch(`/api/data/summary?from=${params.from}&to=${params.to}&user=${params.user}`, {
+    await expect(page.getByText('Steps', { exact: true })).toBeVisible();
+
+    // The dashboard's vitals grid fetches ?bucket=day — confirm today's bucket
+    // reflects the posted steps rather than scraping a formatted number from the DOM.
+    const bucketed = await page.evaluate(async (params) => {
+      const r = await fetch(`/api/data/steps?bucket=day&from=${params.from}&to=${params.to}`, {
         credentials: 'include',
       });
       return r.json();
-    }, { from: startOfDay, to: endOfDay, user: USER });
-    expect(summary.steps).toBeGreaterThanOrEqual(stepCount);
+    }, { from: startOfDay, to: endOfDay });
+    expect(Array.isArray(bucketed)).toBe(true);
+    const total = bucketed.reduce((sum: number, b: { sum?: number }) => sum + (b.sum ?? 0), 0);
+    expect(total).toBeGreaterThanOrEqual(stepCount);
   });
 });

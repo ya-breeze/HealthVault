@@ -168,11 +168,12 @@ export const api = {
 
   me: () => apiFetch<{ id: string; username: string; family_id: string }>('/users/me'),
 
-  data: (type: string, from?: string, to?: string, user?: string) => {
+  data: (type: string, from?: string, to?: string, user?: string, bucket?: 'day' | 'month') => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     if (user) params.set('user', user);
+    if (bucket) params.set('bucket', bucket);
     return apiFetch<Record<string, unknown>[]>(`/data/${type}?${params}`);
   },
 
