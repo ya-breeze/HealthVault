@@ -88,11 +88,33 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	}
 	meal.ClarifyLog = string(logBytes)
 	meal.ClarifyRound = pendingRound
-	if err := h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
-		Updates(map[string]any{"clarify_round": meal.ClarifyRound, "clarify_log": meal.ClarifyLog}).Error; err != nil {
+
+	// Claim the round atomically: the WHERE clause repeats the status check
+	// above, but as part of the same conditional UPDATE rather than a prior
+	// read, so two requests racing this endpoint for the same round can't
+	// both pass it. Only the winner proceeds to call vision.Clarify; the
+	// loser's RowsAffected is 0. Without this, two near-simultaneous
+	// submissions (a double-click, two tabs) can both read
+	// pending_clarification, both bill a real vision call, and race each
+	// other's writes with no defined winner. Moving to processing here also
+	// reuses RetryMeal's existing staleness recovery if this call hangs or
+	// the process crashes mid-call.
+	claim := h.storage.DB().Model(&database.FoodMeal{}).
+		Where("id = ? AND status = ?", meal.ID, database.MealStatusPendingClarification).
+		Updates(map[string]any{
+			"clarify_round": meal.ClarifyRound,
+			"clarify_log":   meal.ClarifyLog,
+			"status":        database.MealStatusProcessing,
+		})
+	if claim.Error != nil {
 		http.Error(w, "update error", http.StatusInternalServerError)
 		return
 	}
+	if claim.RowsAffected == 0 {
+		http.Error(w, "meal is not awaiting clarification", http.StatusConflict)
+		return
+	}
+	meal.Status = database.MealStatusProcessing
 
 	history := make([]vision.ClarifyTurn, len(entries))
 	for i, e := range entries {

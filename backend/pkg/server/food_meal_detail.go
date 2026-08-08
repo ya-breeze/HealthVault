@@ -85,6 +85,16 @@ func (h *foodHandlers) ConfirmMeal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "query error", http.StatusInternalServerError)
 		return
 	}
+	// Only pending_review makes sense to confirm: processing is a live or
+	// stale analysis (racing its own status write), failed has no usable
+	// items, pending_clarification hasn't finished resolving items, and
+	// confirmed has already run once — PATCH .../items rejects edits past
+	// that point, so a second confirm could only recompute the same
+	// aggregate, not a meaningful re-confirmation.
+	if meal.Status != database.MealStatusPendingReview {
+		http.Error(w, "meal is not ready to confirm", http.StatusConflict)
+		return
+	}
 
 	var req confirmMealRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {

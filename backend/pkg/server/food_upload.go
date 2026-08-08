@@ -268,12 +268,19 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 }
 
 // persistAnalysis replaces the meal's FoodItem rows and writes its status in
-// one transaction, so a re-analysis (a future retry endpoint) can never
-// append a second set alongside the first. On a write failure the meal is
-// left failed rather than silently stuck in processing.
+// one transaction, so a re-analysis (retry, or a clarify round moving to
+// pending_review) can never append a second set alongside the first. On a
+// write failure the meal is left failed rather than silently stuck in
+// processing.
 func (h *foodHandlers) persistAnalysis(meal *database.FoodMeal, status, rawResponse string, items []database.FoodItem) {
 	err := h.storage.DB().Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("meal_id = ?", meal.ID).Delete(&database.FoodItem{}).Error; err != nil {
+		// Unscoped: FoodItem embeds TenantModel, so a plain Delete soft-deletes
+		// (sets deleted_at) rather than removing the row. GORM's own reads
+		// (Preload("Items"), Find) filter deleted_at automatically, so the app
+		// never shows the stale rows — but they'd never actually go away
+		// either, growing without bound across retries and clarify rounds, and
+		// contradicting "replaces" above.
+		if err := tx.Unscoped().Where("meal_id = ?", meal.ID).Delete(&database.FoodItem{}).Error; err != nil {
 			return err
 		}
 		if len(items) > 0 {

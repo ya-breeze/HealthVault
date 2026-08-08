@@ -2,10 +2,12 @@ package server_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -248,5 +250,70 @@ func TestClarifyMeal_VisionErrorMarksFailed(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
 	if got.Status != database.MealStatusFailed {
 		t.Errorf("expected failed, got %s", got.Status)
+	}
+}
+
+// slowClarifyClient blocks for delay before returning, widening the race
+// window between "load meal, see pending_clarification" and "claim the
+// round" enough for two real goroutines to land inside it.
+type slowClarifyClient struct{ delay time.Duration }
+
+func (c slowClarifyClient) Recognize(context.Context, []byte, string) (*vision.RecognizeResult, error) {
+	return &vision.RecognizeResult{}, nil
+}
+func (c slowClarifyClient) Clarify(_ context.Context, _ []vision.Item, _ []vision.ClarifyTurn) (*vision.RecognizeResult, error) {
+	time.Sleep(c.delay)
+	return &vision.RecognizeResult{Items: []vision.Item{{Name: "Sauce", WeightGrams: 30}}}, nil
+}
+func (c slowClarifyClient) Select(context.Context, []vision.ItemCandidates) (*vision.SelectResult, error) {
+	return &vision.SelectResult{}, nil
+}
+
+// Two genuinely concurrent submissions of the same clarify round (a
+// double-click, or two tabs) must not both succeed: only one may claim the
+// round and bill a real vision call, the other must be rejected outright
+// rather than racing an unguarded write.
+func TestClarifyMeal_ConcurrentDoubleSubmitOnlyOneWins(t *testing.T) {
+	st := newFoodTestStorage(t)
+	// :memory: SQLite gives each pooled connection its own separate
+	// database unless using shared-cache mode; database.Open never limits
+	// pool size. Pin to one connection so this test exercises the app's
+	// actual concurrency guard instead of a spurious "which connection sees
+	// which database" artifact — production uses a file-based DB, which is
+	// genuinely shared across connections and doesn't have this problem.
+	sqlDB, err := st.DB().DB()
+	if err != nil {
+		t.Fatalf("underlying sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
+	userID, familyID := seedFoodUser(t, st)
+	meal := createPendingClarificationMeal(t, st, userID, familyID)
+
+	client := slowClarifyClient{delay: 50 * time.Millisecond}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(client, 10<<20, time.Second)
+
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+	for i := range 2 {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			r := clarifyRequest(meal.ID.String(), []string{"answer"})
+			w := httptest.NewRecorder()
+			h.ClarifyMeal(w, withClaims(r, userID))
+			codes[idx] = w.Code
+		}(i)
+	}
+	wg.Wait()
+
+	successes := 0
+	for _, c := range codes {
+		if c == http.StatusOK {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Errorf("expected exactly 1 of 2 concurrent submissions to succeed, got codes %v", codes)
 	}
 }

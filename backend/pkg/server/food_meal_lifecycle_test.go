@@ -201,6 +201,44 @@ func TestConfirmMeal_CrossUserReturns404(t *testing.T) {
 	}
 }
 
+// Only pending_review is a valid state to confirm from — not processing (a
+// live or stale analysis racing its own status write), not failed (no
+// usable items), not pending_clarification (items not yet resolved), and
+// not an already-confirmed meal (items are frozen past that point, so a
+// second confirm has nothing meaningful left to do).
+func TestConfirmMeal_RejectsNonPendingReviewStatuses(t *testing.T) {
+	for _, status := range []string{
+		database.MealStatusProcessing,
+		database.MealStatusFailed,
+		database.MealStatusPendingClarification,
+		database.MealStatusConfirmed,
+	} {
+		t.Run(status, func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, familyID := seedFoodUser(t, st)
+			meal := database.FoodMeal{UserID: userID, Status: status, LoggedAt: time.Now()}
+			meal.ID = uuid.New()
+			meal.FamilyID = familyID
+			if err := st.DB().Create(&meal).Error; err != nil {
+				t.Fatalf("create meal: %v", err)
+			}
+
+			h := server.NewFoodHandlers(st, nil, t.TempDir())
+			w := httptest.NewRecorder()
+			h.ConfirmMeal(w, withClaims(mealDetailRequest(http.MethodPut, meal.ID.String()), userID))
+			if w.Code != http.StatusConflict {
+				t.Errorf("status=%s: expected 409, got %d: %s", status, w.Code, w.Body.String())
+			}
+
+			var persisted database.FoodMeal
+			st.DB().First(&persisted, "id = ?", meal.ID) //nolint:errcheck
+			if persisted.Status != status {
+				t.Errorf("status=%s: expected status to stay unchanged, got %s", status, persisted.Status)
+			}
+		})
+	}
+}
+
 // --- PatchMealItem ---
 
 func itemPatchRequest(mealID, itemID string, body map[string]any) *http.Request {
@@ -448,6 +486,17 @@ func TestRetryMeal_ReplacesItemsNotAppends(t *testing.T) {
 	st.DB().Where("meal_id = ?", meal.ID).Find(&items) //nolint:errcheck
 	if len(items) != 1 || items[0].Name != "Fresh" {
 		t.Errorf("expected exactly the new item set, got %+v", items)
+	}
+
+	// Unscoped: a plain Find on FoodItem (which embeds TenantModel) silently
+	// applies the same soft-delete filter as the bug this test needs to
+	// catch, so it can't tell "hard-deleted" from "soft-deleted and hidden"
+	// apart — exactly like TestDeleteCustomFood_Success couldn't, before
+	// persistAnalysis was fixed to Unscoped().Delete().
+	var allRowsEver int64
+	st.DB().Unscoped().Model(&database.FoodItem{}).Where("meal_id = ?", meal.ID).Count(&allRowsEver)
+	if allRowsEver != 1 {
+		t.Errorf("expected the leftover row to be hard-deleted (1 row total), got %d rows including soft-deleted", allRowsEver)
 	}
 }
 
