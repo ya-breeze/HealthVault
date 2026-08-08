@@ -108,4 +108,54 @@ test.describe('Photo upload', () => {
 
     await deleteMeal(request, cookies, mealId);
   });
+
+  test('API: a photo above nginx default 1MB but within the app limit is accepted, not 413', async ({
+    page,
+    request,
+  }) => {
+    // Regression for a real bug: the nginx /api/ location had no
+    // client_max_body_size override, so it fell back to nginx's 1MB default
+    // and rejected any phone-camera-sized photo before it reached the app,
+    // even though the backend itself allows up to 10MB. Pad a valid JPEG
+    // (decoders stop at the EOI marker, so trailing bytes don't affect
+    // decoding) well past 1MB but under the app's limit.
+    await login(page);
+    const cookies = await cookieHeader(page);
+
+    const fs = await import('fs');
+    const base = fs.readFileSync(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    const padded = Buffer.concat([base, Buffer.alloc(3 * 1024 * 1024)]);
+
+    const res = await request.post(`${BASE_URL}/api/food/meals`, {
+      headers: { Cookie: cookies },
+      multipart: { photo: { name: 'meal.jpg', mimeType: 'image/jpeg', buffer: padded } },
+      timeout: 90_000,
+    });
+
+    expect(res.status()).not.toBe(413);
+    expect(res.status()).toBe(201);
+    const meal = await res.json();
+    await deleteMeal(request, cookies, meal.id);
+  });
+});
+
+test.describe('In-app camera capture', () => {
+  test('shows a graceful in-page error instead of crashing when no secure-context camera is available', async ({
+    page,
+  }) => {
+    // Regression for a real bug: CameraCapture called
+    // navigator.mediaDevices.getUserMedia(...) unconditionally.
+    // navigator.mediaDevices is undefined outside a secure context (HTTPS or
+    // localhost) — this deployment's plain-HTTP IP origin is exactly that —
+    // so the call threw synchronously, before any promise existed for
+    // .catch() to handle, crashing the whole page to Next.js's error
+    // boundary instead of showing the component's own error state.
+    await login(page);
+    await page.goto('/food/upload/');
+    await page.getByRole('button', { name: 'Take Photo' }).click();
+
+    await expect(page.getByText(/secure.*HTTPS|HTTPS.*secure/i)).toBeVisible({ timeout: 5_000 });
+    // The page itself must still be alive and showing the app, not a crash screen.
+    await expect(page.getByRole('heading', { name: /log a meal/i })).toBeVisible();
+  });
 });

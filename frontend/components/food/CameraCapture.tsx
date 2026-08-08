@@ -16,6 +16,16 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // navigator.mediaDevices is undefined outside a secure context (HTTPS or
+    // localhost) — calling .getUserMedia on it throws synchronously, before
+    // any promise exists, so a .catch() below can't handle it. Guard first.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError(
+        'Camera capture needs a secure (HTTPS) connection. Use "Choose Photo" instead, or open this site over HTTPS.'
+      );
+      return;
+    }
+
     let cancelled = false;
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: 'environment' } })
