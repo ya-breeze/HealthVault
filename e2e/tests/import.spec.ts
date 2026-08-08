@@ -27,10 +27,10 @@ test.describe('Import page', () => {
     await expect(page.getByRole('button', { name: /import/i }).first()).toBeVisible();
   });
 
-  test('dashboard link on import page navigates home', async ({ page }) => {
+  test('HealthVault brand link on import page navigates home', async ({ page }) => {
     await login(page);
     await page.goto('/import/');
-    await page.getByRole('link', { name: /dashboard/i }).click();
+    await page.getByRole('link', { name: 'HealthVault', exact: true }).click();
     await expect(page).toHaveURL('/');
   });
 

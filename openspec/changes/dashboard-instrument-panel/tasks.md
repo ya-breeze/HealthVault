@@ -37,7 +37,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Update `e2e/tests/dashboard.spec.ts` for the vitals grid structure
-- [ ] 6.2 Update `e2e/tests/data-types.spec.ts` for the zoom control and per-family chart rendering
+- [x] 6.1 Update `e2e/tests/dashboard.spec.ts` for the vitals grid structure
+- [x] 6.2 Update `e2e/tests/data-types.spec.ts` for the zoom control and per-family chart rendering (new "Zoom control" describe block + bucketed-API assertions)
 - [x] 6.3 Run `go build`/`go vet`/`make test` (backend) and `tsc --noEmit`/`next build` (frontend, no lint config in this project) and fix findings
-- [ ] 6.4 Deploy to `hcw-wip`, run the full E2E suite against it, fix failures before requesting review
+- [x] 6.4 Deploy to `hcw-wip`, run the full E2E suite against it, fix failures before requesting review — fixed one pre-existing `import.spec.ts` test that targeted the old "← Dashboard" header link; 41/41 pass
