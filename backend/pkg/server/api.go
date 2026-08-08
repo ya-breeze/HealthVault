@@ -14,40 +14,80 @@ import (
 	photostorage "github.com/ya-breeze/healthvault/pkg/storage"
 )
 
-// typeInfo maps URL type names to (table name, primary time column).
-type typeInfo struct{ table, timeCol string }
+// typeInfo maps URL type names to (table name, primary time column,
+// aggregation family, value column). family and valueCol are the zero value
+// ("") for food_meal, which never accepts ?bucket=, and valueCol is also ""
+// for blood_pressure and nutrition, whose multiple value columns need the
+// dedicated QueryAggregateBloodPressure / QueryAggregateNutrition queries
+// instead of the single-valueCol QueryAggregate path.
+type typeInfo struct {
+	table    string
+	timeCol  string
+	family   database.AggFamily
+	valueCol string
+}
 
 var typeRegistry = map[string]typeInfo{
-	"steps":                  {"steps", "start_time"},
-	"heart_rate":             {"heart_rates", "time"},
-	"heart_rate_variability": {"heart_rate_variabilities", "time"},
-	"sleep":                  {"sleeps", "start_time"},
-	"distance":               {"distances", "start_time"},
-	"active_calories":        {"active_calories", "start_time"},
-	"total_calories":         {"total_calories", "start_time"},
-	"weight":                 {"weights", "time"},
-	"height":                 {"heights", "time"},
-	"blood_pressure":         {"blood_pressures", "time"},
-	"blood_glucose":          {"blood_glucoses", "time"},
-	"oxygen_saturation":      {"oxygen_saturations", "time"},
-	"body_temperature":       {"body_temperatures", "time"},
-	"skin_temperature":       {"skin_temperatures", "time"},
-	"respiratory_rate":       {"respiratory_rates", "time"},
-	"resting_heart_rate":     {"resting_heart_rates", "time"},
-	"exercise":               {"exercises", "start_time"},
-	"hydration":              {"hydrations", "start_time"},
-	"nutrition":              {"nutritions", "start_time"},
-	"basal_metabolic_rate":   {"basal_metabolic_rates", "time"},
-	"body_fat":               {"body_fats", "time"},
-	"lean_body_mass":         {"lean_body_masses", "time"},
-	"vo2_max":                {"vo2_maxes", "time"},
-	"bone_mass":              {"bone_masses", "time"},
-	"speed":                  {"speeds", "time"},
+	"steps":                  {table: "steps", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "count"},
+	"heart_rate":             {table: "heart_rates", timeCol: "time", family: database.AggFamilyPoint, valueCol: "bpm"},
+	"heart_rate_variability": {table: "heart_rate_variabilities", timeCol: "time", family: database.AggFamilyPoint, valueCol: "rmssd_millis"},
+	// sleep is bucketed by start_time (the type's night anchor), which is
+	// unindexed — Sleep's unique index covers session_end_time instead. See
+	// design.md: a full scan is fine given sleep's row volume.
+	"sleep":                {table: "sleeps", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "duration_seconds"},
+	"distance":             {table: "distances", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "meters"},
+	"active_calories":      {table: "active_calories", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "calories"},
+	"total_calories":       {table: "total_calories", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "calories"},
+	"weight":               {table: "weights", timeCol: "time", family: database.AggFamilyPoint, valueCol: "kilograms"},
+	"height":               {table: "heights", timeCol: "time", family: database.AggFamilyPoint, valueCol: "meters"},
+	"blood_pressure":       {table: "blood_pressures", timeCol: "time", family: database.AggFamilyPoint}, // multi-column: see QueryAggregateBloodPressure
+	"blood_glucose":        {table: "blood_glucoses", timeCol: "time", family: database.AggFamilyPoint, valueCol: "mmol_per_liter"},
+	"oxygen_saturation":    {table: "oxygen_saturations", timeCol: "time", family: database.AggFamilyPoint, valueCol: "percentage"},
+	"body_temperature":     {table: "body_temperatures", timeCol: "time", family: database.AggFamilyPoint, valueCol: "celsius"},
+	"skin_temperature":     {table: "skin_temperatures", timeCol: "time", family: database.AggFamilyPoint, valueCol: "delta_celsius"},
+	"respiratory_rate":     {table: "respiratory_rates", timeCol: "time", family: database.AggFamilyPoint, valueCol: "rate"},
+	"resting_heart_rate":   {table: "resting_heart_rates", timeCol: "time", family: database.AggFamilyPoint, valueCol: "bpm"},
+	"exercise":             {table: "exercises", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "duration_seconds"},
+	"hydration":            {table: "hydrations", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "liters"},
+	"nutrition":            {table: "nutritions", timeCol: "start_time", family: database.AggFamilyCumulative}, // multi-column: see QueryAggregateNutrition
+	"basal_metabolic_rate": {table: "basal_metabolic_rates", timeCol: "time", family: database.AggFamilyPoint, valueCol: "watts"},
+	"body_fat":             {table: "body_fats", timeCol: "time", family: database.AggFamilyPoint, valueCol: "percentage"},
+	"lean_body_mass":       {table: "lean_body_masses", timeCol: "time", family: database.AggFamilyPoint, valueCol: "kilograms"},
+	"vo2_max":              {table: "vo2_maxes", timeCol: "time", family: database.AggFamilyPoint, valueCol: "ml_per_kg_per_min"},
+	"bone_mass":            {table: "bone_masses", timeCol: "time", family: database.AggFamilyPoint, valueCol: "kilograms"},
+	"speed":                {table: "speeds", timeCol: "time", family: database.AggFamilyPoint, valueCol: "meters_per_second"},
 	// food_meal is user-authored, not ingested telemetry, and is exposed here
 	// read-only: metadata and macros only (see columnAllowlist in
 	// pkg/database/storage_impl.go), never the photo or clarify_log. Every
-	// mutation stays under /api/food/*, owner-only.
-	"food_meal": {"food_meals", "logged_at"},
+	// mutation stays under /api/food/*, owner-only. It never accepts
+	// ?bucket= (see DataHandler), so it carries no aggregation family.
+	"food_meal": {table: "food_meals", timeCol: "logged_at"},
+}
+
+// errInvalidBucket is returned (as HTTP 400) for an unrecognized ?bucket=
+// value or a bucketed request against food_meal, which never aggregates.
+var errInvalidBucket = errors.New("bucket must be 'day' or 'month'")
+
+// queryBucketed dispatches a bucketed aggregation query to the right storage
+// method: the two multi-value-column special cases, or the generic
+// single-valueCol path for every other type.
+func queryBucketed(
+	storage database.Storage, typeName string, info typeInfo, bucket database.Bucket, userID uuid.UUID, tr database.TimeRange,
+) ([]map[string]any, error) {
+	if typeName == "food_meal" {
+		return nil, errInvalidBucket
+	}
+	if bucket != database.BucketDay && bucket != database.BucketMonth {
+		return nil, errInvalidBucket
+	}
+	switch typeName {
+	case "blood_pressure":
+		return storage.QueryAggregateBloodPressure(bucket, userID, tr)
+	case "nutrition":
+		return storage.QueryAggregateNutrition(bucket, userID, tr)
+	default:
+		return storage.QueryAggregate(info.table, info.timeCol, info.valueCol, info.family, bucket, userID, tr)
+	}
 }
 
 // meHandler returns the authenticated user's profile.
@@ -72,10 +112,11 @@ func meHandler(storage database.Storage) http.HandlerFunc {
 	}
 }
 
-// dataHandler returns health records for a given type within a time range.
+// DataHandler returns health records for a given type within a time range.
 // The {type} URL param is validated against typeRegistry before use in SQL to
 // prevent SQL injection through user-controlled table/column names.
-func dataHandler(storage database.Storage) http.HandlerFunc {
+// Exported for use in tests.
+func DataHandler(storage database.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		typeName := mux.Vars(r)["type"]
 		info, ok := typeRegistry[typeName]
@@ -98,10 +139,25 @@ func dataHandler(storage database.Storage) http.HandlerFunc {
 		}
 
 		from, to := parseTimeRange(r)
-		records, err := storage.QueryRecords(info.table, info.timeCol, targetUser.ID, database.TimeRange{From: from, To: to})
-		if err != nil {
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
+		tr := database.TimeRange{From: from, To: to}
+
+		var records []map[string]any
+		if bucketParam := r.URL.Query().Get("bucket"); bucketParam != "" {
+			records, err = queryBucketed(storage, typeName, info, database.Bucket(bucketParam), targetUser.ID, tr)
+			if err != nil {
+				if errors.Is(err, errInvalidBucket) {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				http.Error(w, "query error", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			records, err = storage.QueryRecords(info.table, info.timeCol, targetUser.ID, tr)
+			if err != nil {
+				http.Error(w, "query error", http.StatusInternalServerError)
+				return
+			}
 		}
 		// Normalize nil to empty slice so clients always get a JSON array.
 		if records == nil {

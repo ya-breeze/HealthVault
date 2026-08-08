@@ -1,43 +1,95 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ResponsiveContainer,
 } from 'recharts';
-import { api } from '@/lib/api';
+import { api, DataType } from '@/lib/api';
+import { metricColorVar } from '@/lib/tokens';
+import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom } from '@/lib/dataTypeMeta';
+import Header from '@/components/Header';
 
 interface Props {
   type: string;
+}
+
+const ZOOMS: { key: Zoom; label: string }[] = [
+  { key: 'day', label: 'Day' },
+  { key: 'week', label: 'Week' },
+  { key: 'month', label: 'Month' },
+  { key: 'year', label: 'Year' },
+];
+
+function num(v: unknown): number {
+  return typeof v === 'number' ? v : Number(v ?? 0);
+}
+
+function bucketLabel(bucketStart: unknown, zoom: Zoom): string {
+  const d = new Date(String(bucketStart));
+  if (isNaN(d.getTime())) return String(bucketStart ?? '');
+  return zoom === 'year'
+    ? d.toLocaleDateString(undefined, { month: 'short' })
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function mean(values: number[]): number {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
 }
 
 export default function DataTypeClient({ type }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userParam = searchParams.get('user') ?? undefined;
+  const dataType = type as DataType;
+  const meta = TYPE_META[dataType];
+  const isBloodPressure = type === 'blood_pressure';
+  const isNutrition = type === 'nutrition';
+  // food_meal never accepts ?bucket= (see data-api spec) and fits neither
+  // aggregation family, so it gets the zoom control's time-range picking
+  // but no chart — table only, always raw.
+  const hasChart = type !== 'food_meal';
+  const color = metricColorVar(dataType);
 
+  const [zoom, setZoom] = useState<Zoom>('week');
+  const [macro, setMacro] = useState<string>('calories');
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [chartRows, setChartRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [from, setFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().slice(0, 10);
-  });
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const { from, to, bucket } = useMemo(() => rangeForZoom(zoom), [zoom]);
 
   useEffect(() => {
     setLoading(true);
     setPendingDeleteId(null);
     setDeleteError(null);
-    api.data(type, `${from}T00:00:00Z`, `${to}T23:59:59Z`, userParam)
-      .then(data => {
-        setRecords(data);
+
+    // Raw and chart data are fetched independently: a raw-fetch failure
+    // means the session is invalid (same signal the app has always used to
+    // redirect to /login), but a chart/bucket-fetch failure is a narrower,
+    // non-fatal problem — it should leave the chart empty, not log the user
+    // out for an unrelated error.
+    api.data(type, from, to, userParam)
+      .then(raw => {
+        setRecords(raw);
         setLoading(false);
       })
       .catch(() => router.push('/login'));
-  }, [type, from, to, userParam, router]);
+
+    const effectiveBucket = hasChart ? bucket : undefined;
+    if (effectiveBucket) {
+      api.data(type, from, to, userParam, effectiveBucket)
+        .then(setChartRows)
+        .catch(() => setChartRows([]));
+    } else {
+      setChartRows([]);
+    }
+  }, [type, from, to, bucket, hasChart, userParam, router]);
+
+  const isDay = zoom === 'day';
 
   const numericKey = records.length > 0
     ? Object.entries(records[0]).find(([k, v]) =>
@@ -55,12 +107,71 @@ export default function DataTypeClient({ type }: Props) {
       )
     : [];
 
-  const fromMs = new Date(`${from}T00:00:00Z`).getTime();
-  const toMs = new Date(`${to}T23:59:59Z`).getTime();
+  const fromMs = new Date(from).getTime();
+  const toMs = new Date(to).getTime();
 
-  const chartData = timeKey
+  const dayLineData = timeKey
     ? records.map(r => ({ ...r, [timeKey]: new Date(r[timeKey] as string).getTime() }))
     : records;
+
+  const bucketBarData = chartRows.map(r => ({
+    label: bucketLabel(r.bucket_start, zoom),
+    value: isNutrition ? num(r[`sum_${macro}`]) : num(r.sum),
+  }));
+
+  const bucketBandData = chartRows.map(r => ({
+    label: bucketLabel(r.bucket_start, zoom),
+    avg: num(r.avg),
+    min: num(r.min),
+    band: num(r.max) - num(r.min),
+  }));
+
+  const bucketBPData = chartRows.map(r => ({
+    label: bucketLabel(r.bucket_start, zoom),
+    sysAvg: num(r.systolic_avg), sysMin: num(r.systolic_min), sysBand: num(r.systolic_max) - num(r.systolic_min),
+    diaAvg: num(r.diastolic_avg), diaMin: num(r.diastolic_min), diaBand: num(r.diastolic_max) - num(r.diastolic_min),
+  }));
+
+  // Two flattened series driving the stats row, uniform across Day (raw
+  // records) and Week/Month/Year (bucketed) — see chart-zoom-aggregation's
+  // "Chart summary stats follow the active zoom" requirement. Kept separate
+  // because for point-family types Week/Month/Year only reads a bucket's
+  // avg for the Avg/Total stats, but must read that bucket's own `max` for
+  // the Max stat — the highest per-bucket average is not the highest
+  // recorded value, which is exactly what the chart's shaded band already
+  // shows and the stats row should agree with.
+  const primaryAvgSeries = useMemo(() => {
+    if (isBloodPressure) {
+      return isDay ? records.map(r => num(r.systolic)) : chartRows.map(r => num(r.systolic_avg));
+    }
+    if (isNutrition) {
+      return isDay ? records.map(r => num(r[macro])) : chartRows.map(r => num(r[`sum_${macro}`]));
+    }
+    if (isDay) {
+      return numericKey ? records.map(r => num(r[numericKey])) : [];
+    }
+    return chartRows.map(r => (meta?.family === 'cumulative' ? num(r.sum) : num(r.avg)));
+  }, [isBloodPressure, isNutrition, isDay, records, chartRows, numericKey, macro, meta]);
+
+  const primaryMaxSeries = useMemo(() => {
+    // Day (raw points) and cumulative types, including nutrition (whose
+    // bucketed response has no separate max column — a bucket's sum *is*
+    // the quantity of interest) use the same series as Avg/Total.
+    if (isDay || meta?.family === 'cumulative') {
+      return primaryAvgSeries;
+    }
+    if (isBloodPressure) {
+      return chartRows.map(r => num(r.systolic_max));
+    }
+    return chartRows.map(r => num(r.max));
+  }, [isDay, isBloodPressure, chartRows, meta, primaryAvgSeries]);
+
+  const stats = {
+    avg: mean(primaryAvgSeries),
+    max: primaryMaxSeries.length ? Math.max(...primaryMaxSeries) : 0,
+    total: primaryAvgSeries.reduce((a, b) => a + b, 0),
+  };
+  const showTotal = !isBloodPressure && meta?.family === 'cumulative';
 
   const handleConfirmDelete = async (id: string) => {
     setDeleting(true);
@@ -72,42 +183,50 @@ export default function DataTypeClient({ type }: Props) {
       setDeleteError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setDeleting(false);
-      // Use functional update to avoid clearing a *different* row's pending state
-      // if the user clicked another trash icon while this fetch was in flight.
       setPendingDeleteId(prev => prev === id ? null : prev);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <a href="/" className="text-blue-600 dark:text-blue-400 hover:underline text-sm">&#8592; Dashboard</a>
-          <h1 className="text-xl font-bold capitalize text-gray-900 dark:text-white">{type.replace(/_/g, ' ')}</h1>
-        </div>
-      </header>
+    <div className="min-h-screen bg-bg">
+      <Header />
 
       <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="flex gap-3 mb-6">
-          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            From{' '}
-            <input
-              type="date"
-              value={from}
-              onChange={e => setFrom(e.target.value)}
-              className="border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            To{' '}
-            <input
-              type="date"
-              value={to}
-              onChange={e => setTo(e.target.value)}
-              className="border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </label>
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+          <h1 className="text-xl font-bold capitalize text-text flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
+            {type.replace(/_/g, ' ')}
+          </h1>
+          <div className="flex gap-1 bg-bg-elevated border border-border rounded-lg p-1">
+            {ZOOMS.map(z => (
+              <button
+                key={z.key}
+                onClick={() => setZoom(z.key)}
+                className={`font-[family-name:var(--font-data)] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ${
+                  zoom === z.key ? 'bg-border text-accent' : 'text-text-muted hover:text-text'
+                }`}
+              >
+                {z.label}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {isNutrition && (
+          <div className="flex gap-1.5 flex-wrap mb-4">
+            {NUTRITION_MACROS.map(m => (
+              <button
+                key={m.key}
+                onClick={() => setMacro(m.key)}
+                className={`font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md border transition-colors ${
+                  macro === m.key ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {deleteError && (
           <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
@@ -115,68 +234,133 @@ export default function DataTypeClient({ type }: Props) {
           </div>
         )}
 
-        {numericKey && timeKey && records.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 mb-6">
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
-                <XAxis
-                  dataKey={timeKey}
-                  type="number"
-                  scale="time"
-                  domain={[fromMs, toMs]}
-                  tickFormatter={(v: number) => new Date(v).toLocaleDateString()}
-                  tick={{ fill: '#9ca3af', fontSize: 12 }}
-                />
-                <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                <Tooltip
-                  labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()}
-                  contentStyle={{
-                    backgroundColor: 'var(--color-background, #1f2937)',
-                    border: '1px solid #374151',
-                    borderRadius: '8px',
-                    color: '#f9fafb',
-                  }}
-                />
-                <Line type="monotone" dataKey={numericKey} stroke="#3b82f6" dot={true} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+        {hasChart && (
+        <div className="bg-bg-elevated rounded-[12px] border border-border p-4 mb-4">
+          <ResponsiveContainer width="100%" height={280}>
+            {isDay ? (
+              isBloodPressure ? (
+                <LineChart data={dayLineData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                  <XAxis
+                    dataKey={timeKey}
+                    type="number"
+                    scale="time"
+                    domain={[fromMs, toMs]}
+                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                  />
+                  <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line type="monotone" dataKey="systolic" stroke={color} dot strokeWidth={2} name="Systolic" />
+                  <Line type="monotone" dataKey="diastolic" stroke={color} strokeDasharray="4 3" dot strokeWidth={2} name="Diastolic" />
+                </LineChart>
+              ) : (
+                <LineChart data={dayLineData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                  <XAxis
+                    dataKey={timeKey}
+                    type="number"
+                    scale="time"
+                    domain={[fromMs, toMs]}
+                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                  />
+                  <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} />
+                  <Line
+                    type="monotone"
+                    dataKey={isNutrition ? macro : numericKey}
+                    stroke={color}
+                    dot
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              )
+            ) : isBloodPressure ? (
+              <ComposedChart data={bucketBPData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area dataKey="sysMin" stackId="sys" stroke="none" fill="transparent" legendType="none" />
+                <Area dataKey="sysBand" stackId="sys" stroke="none" fill={color} fillOpacity={0.15} legendType="none" />
+                <Area dataKey="diaMin" stackId="dia" stroke="none" fill="transparent" legendType="none" />
+                <Area dataKey="diaBand" stackId="dia" stroke="none" fill={color} fillOpacity={0.08} legendType="none" />
+                <Line type="monotone" dataKey="sysAvg" stroke={color} strokeWidth={2} dot={false} name="Systolic" />
+                <Line type="monotone" dataKey="diaAvg" stroke={color} strokeDasharray="4 3" strokeWidth={2} dot={false} name="Diastolic" />
+              </ComposedChart>
+            ) : meta?.family === 'cumulative' ? (
+              <BarChart data={bucketBarData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <Tooltip />
+                <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            ) : (
+              <ComposedChart data={bucketBandData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <Tooltip />
+                <Area dataKey="min" stackId="a" stroke="none" fill="transparent" legendType="none" />
+                <Area dataKey="band" stackId="a" stroke="none" fill={color} fillOpacity={0.18} legendType="none" />
+                <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} />
+              </ComposedChart>
+            )}
+          </ResponsiveContainer>
+
+          <div className="flex gap-6 mt-3 pt-3 border-t border-border">
+            <div>
+              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Avg</p>
+              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{stats.avg.toFixed(1)}</p>
+            </div>
+            <div>
+              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Max</p>
+              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{stats.max.toFixed(1)}</p>
+            </div>
+            {showTotal && (
+              <div>
+                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Total</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{stats.total.toLocaleString()}</p>
+              </div>
+            )}
           </div>
+        </div>
         )}
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-auto">
+        <div className="bg-bg-elevated rounded-[12px] border border-border overflow-auto">
           {loading ? (
-            <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">Loading...</p>
+            <p className="p-6 text-text-muted text-center text-sm">Loading...</p>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+              <thead className="bg-bg border-b border-border">
                 <tr>
                   {displayColumns.map(k => (
-                    <th key={k} className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">
+                    <th key={k} className="px-4 py-3 text-left font-medium text-text-muted text-xs uppercase tracking-wider">
                       {k}
                     </th>
                   ))}
-                  {/* Delete column only shown for own data, not when viewing a family member */}
                   {!userParam && (
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left font-medium text-text-muted text-xs uppercase tracking-wider">
                       Actions
                     </th>
                   )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              <tbody className="divide-y divide-border">
                 {records.map(r => {
                   const id = r.id as string;
                   const isPending = id === pendingDeleteId;
                   return (
                     <tr
                       key={id}
-                      className={isPending
-                        ? 'bg-red-50 dark:bg-red-900/20'
-                        : 'hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors'}
+                      className={isPending ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-bg transition-colors'}
                     >
                       {displayColumns.map(k => (
-                        <td key={k} className="px-4 py-3 text-gray-900 dark:text-gray-200">
+                        <td key={k} className="px-4 py-3 text-text">
                           {typeof r[k] === 'string' && (r[k] as string).includes('T')
                             ? new Date(r[k] as string).toLocaleString()
                             : String(r[k] ?? '')}
@@ -196,7 +380,7 @@ export default function DataTypeClient({ type }: Props) {
                               <button
                                 onClick={() => setPendingDeleteId(null)}
                                 disabled={deleting}
-                                className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="text-xs px-2 py-1 rounded bg-border text-text hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Cancel
                               </button>
@@ -205,7 +389,7 @@ export default function DataTypeClient({ type }: Props) {
                             <button
                               onClick={() => { setDeleteError(null); setPendingDeleteId(id); }}
                               aria-label="Delete record"
-                              className="text-gray-400 hover:text-red-500 transition-colors"
+                              className="text-text-muted hover:text-red-500 transition-colors"
                             >
                               🗑
                             </button>
@@ -219,7 +403,7 @@ export default function DataTypeClient({ type }: Props) {
             </table>
           )}
           {!loading && records.length === 0 && (
-            <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">No data in this range.</p>
+            <p className="p-6 text-text-muted text-center text-sm">No data in this range.</p>
           )}
         </div>
       </main>

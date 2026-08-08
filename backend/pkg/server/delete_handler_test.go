@@ -31,6 +31,17 @@ func (m *mockStorage) SaveWebhookPayload(_ *database.WebhookPayload) error      
 func (m *mockStorage) QueryRecords(_ string, _ string, _ uuid.UUID, _ database.TimeRange) ([]map[string]any, error) {
 	return nil, nil
 }
+func (m *mockStorage) QueryAggregate(
+	_, _, _ string, _ database.AggFamily, _ database.Bucket, _ uuid.UUID, _ database.TimeRange,
+) ([]map[string]any, error) {
+	return nil, nil
+}
+func (m *mockStorage) QueryAggregateBloodPressure(_ database.Bucket, _ uuid.UUID, _ database.TimeRange) ([]map[string]any, error) {
+	return nil, nil
+}
+func (m *mockStorage) QueryAggregateNutrition(_ database.Bucket, _ uuid.UUID, _ database.TimeRange) ([]map[string]any, error) {
+	return nil, nil
+}
 func (m *mockStorage) SummarySteps(_ uuid.UUID, _ database.TimeRange) (int, error)            { return 0, nil }
 func (m *mockStorage) SummaryAvgHeartRate(_ uuid.UUID, _ database.TimeRange) (float64, error) { return 0, nil }
 func (m *mockStorage) SummarySleepSeconds(_ uuid.UUID, _ database.TimeRange) (int, error)     { return 0, nil }

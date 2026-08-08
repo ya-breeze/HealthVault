@@ -1,26 +1,99 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Instrument Panel tokens. Dark (below, under prefers-color-scheme) is the
+     primary designed palette; this light set is derived from it, matching
+     the existing convention of defining :root as the default and overriding
+     under the dark media query. */
+  --bg: #f7f8fa;
+  --bg-elevated: #ffffff;
+  --border: #dde1e6;
+  --text: #171a1f;
+  --text-muted: #5b6470;
+  --accent: #0f9c8c;
+
+  /* One accent per registered type (26), shared by the dashboard vitals
+     grid and every data page's own chart — see dashboard-ui's "Consistent
+     per-metric color" requirement. */
+  --c-steps: #b3760c;
+  --c-heart_rate: #c73b31;
+  --c-heart_rate_variability: #7d3fbe;
+  --c-sleep: #4b3fc7;
+  --c-distance: #1f9d63;
+  --c-active_calories: #c2591a;
+  --c-total_calories: #c2871a;
+  --c-weight: #9c7c0f;
+  --c-height: #0f7d9c;
+  --c-blood_pressure: #c23464;
+  --c-blood_glucose: #b8551a;
+  --c-oxygen_saturation: #1288a8;
+  --c-body_temperature: #c2574b;
+  --c-skin_temperature: #b8722f;
+  --c-respiratory_rate: #2f8cb8;
+  --c-resting_heart_rate: #b83f5c;
+  --c-exercise: #2f9c4e;
+  --c-hydration: #1a8fc2;
+  --c-nutrition: #b87a1a;
+  --c-basal_metabolic_rate: #7a5ac2;
+  --c-body_fat: #ad7a12;
+  --c-lean_body_mass: #4e9c2f;
+  --c-vo2_max: #1f9c7c;
+  --c-bone_mass: #6b7280;
+  --c-speed: #2f7cc2;
+  --c-food_meal: #b8722f;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-data);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #10141a;
+    --bg-elevated: #171d25;
+    --border: #2a323d;
+    --text: #eef1f4;
+    --text-muted: #8a93a0;
+    --accent: #4fd8c4;
+
+    --c-steps: #f2a53c;
+    --c-heart_rate: #ef5b52;
+    --c-heart_rate_variability: #c266e6;
+    --c-sleep: #8f7bf5;
+    --c-distance: #35c98d;
+    --c-active_calories: #e87a45;
+    --c-total_calories: #e8b545;
+    --c-weight: #d4b23a;
+    --c-height: #3fc0e8;
+    --c-blood_pressure: #f0567e;
+    --c-blood_glucose: #e8935a;
+    --c-oxygen_saturation: #3fc0e8;
+    --c-body_temperature: #ef8a7d;
+    --c-skin_temperature: #e0a25c;
+    --c-respiratory_rate: #5cb8e8;
+    --c-resting_heart_rate: #e86b8a;
+    --c-exercise: #4fd88a;
+    --c-hydration: #4fb8e8;
+    --c-nutrition: #e8a545;
+    --c-basal_metabolic_rate: #a58af0;
+    --c-body_fat: #e8b545;
+    --c-lean_body_mass: #7fd858;
+    --c-vo2_max: #4fe8c0;
+    --c-bone_mass: #b0b8c0;
+    --c-speed: #5c9ce8;
+    --c-food_meal: #e0a25c;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body), ui-sans-serif, sans-serif;
 }

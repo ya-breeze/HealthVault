@@ -1,7 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
-import Link from 'next/link';
 import { api } from '@/lib/api';
+import Header from '@/components/Header';
 
 const TYPE_LABELS: Record<string, string> = {
   heart_rate: 'Heart Rate',
@@ -125,19 +125,10 @@ function ImportCard({ title, description, accept, label, onImport }: ImportCardP
 export default function ImportPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="max-w-2xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">HealthVault</h1>
-          <Link
-            href="/"
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium"
-          >
-            ← Dashboard
-          </Link>
-        </div>
-      </header>
+      <Header />
 
       <main className="max-w-2xl mx-auto px-6 py-10">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Import Data</h1>
         <ImportCard
           title="Import Health Connect"
           description="Upload the zip archive exported from Android's Health Connect app to import your health history."

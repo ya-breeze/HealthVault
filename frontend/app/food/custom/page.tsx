@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { api, CustomFood, CustomFoodInput } from '@/lib/api';
 import CustomFoodModal from '@/components/food/CustomFoodModal';
+import Header from '@/components/Header';
 
 export default function CustomFoodsPage() {
   const router = useRouter();
@@ -49,16 +49,10 @@ export default function CustomFoodsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="max-w-md mx-auto flex items-center gap-4">
-          <Link href="/" className="text-blue-600 dark:text-blue-400 hover:underline text-sm">
-            &#8592; Dashboard
-          </Link>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Custom Foods</h1>
-        </div>
-      </header>
+      <Header />
 
       <main className="max-w-md mx-auto px-6 py-6">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Custom Foods</h1>
         <button
           onClick={() => setEditing('new')}
           className="w-full mb-4 py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"

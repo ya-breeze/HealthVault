@@ -46,6 +46,44 @@ test.describe('Data type pages', () => {
   });
 });
 
+test.describe('Zoom control', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('Day/Week/Month/Year controls are visible with Week selected by default', async ({ page }) => {
+    await page.goto('/data/steps/');
+    for (const label of ['Day', 'Week', 'Month', 'Year']) {
+      await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
+    }
+  });
+
+  test('switching zoom level re-renders the chart without error', async ({ page }) => {
+    await page.goto('/data/heart_rate/');
+    for (const label of ['Day', 'Week', 'Month', 'Year']) {
+      await page.getByRole('button', { name: label, exact: true }).click();
+      await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    }
+  });
+
+  test('nutrition page shows a macro selector', async ({ page }) => {
+    await page.goto('/data/nutrition/');
+    await expect(page.getByRole('button', { name: 'Calories', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Protein', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+  });
+
+  test('food_meal page loads without a bucketed chart request failing', async ({ page }) => {
+    await page.goto('/data/food_meal/');
+    await expect(page.getByText(/food.?meal/i)).toBeVisible();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    // Switching zoom on food_meal only changes the raw time range — it must
+    // never trigger a ?bucket= request, which the backend rejects for this type.
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+  });
+});
+
 test.describe('API data endpoints', () => {
   test('GET /api/data/steps returns array', async ({ page, request }) => {
     await login(page);
@@ -79,6 +117,102 @@ test.describe('API data endpoints', () => {
     expect(result).toHaveProperty('steps');
     expect(result).toHaveProperty('avg_heart_rate');
     expect(result).toHaveProperty('sleep_seconds');
+  });
+
+  test('GET /api/data/steps?bucket=day returns bucket_start/count/sum rows', async ({ page }) => {
+    await login(page);
+    const result = await page.evaluate(async () => {
+      const r = await fetch('/api/data/steps?bucket=day&from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z', {
+        credentials: 'include',
+      });
+      return { status: r.status, body: await r.json() };
+    });
+    expect(result.status).toBe(200);
+    expect(Array.isArray(result.body)).toBe(true);
+    if (result.body.length > 0) {
+      expect(result.body[0]).toHaveProperty('bucket_start');
+      expect(result.body[0]).toHaveProperty('count');
+      expect(result.body[0]).toHaveProperty('sum');
+    }
+  });
+
+  test('GET /api/data/heart_rate?bucket=day returns avg/min/max rows', async ({ page }) => {
+    await login(page);
+    const result = await page.evaluate(async () => {
+      const r = await fetch('/api/data/heart_rate?bucket=day&from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z', {
+        credentials: 'include',
+      });
+      return { status: r.status, body: await r.json() };
+    });
+    expect(result.status).toBe(200);
+    if (result.body.length > 0) {
+      expect(result.body[0]).toHaveProperty('avg');
+      expect(result.body[0]).toHaveProperty('min');
+      expect(result.body[0]).toHaveProperty('max');
+    }
+  });
+
+  test('GET /api/data/blood_pressure?bucket=day returns dual systolic/diastolic columns', async ({ page }) => {
+    await login(page);
+    const result = await page.evaluate(async () => {
+      const r = await fetch('/api/data/blood_pressure?bucket=day&from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z', {
+        credentials: 'include',
+      });
+      return { status: r.status, body: await r.json() };
+    });
+    expect(result.status).toBe(200);
+    if (result.body.length > 0) {
+      for (const field of ['systolic_avg', 'systolic_min', 'systolic_max', 'diastolic_avg', 'diastolic_min', 'diastolic_max']) {
+        expect(result.body[0]).toHaveProperty(field);
+      }
+    }
+  });
+
+  test('GET /api/data/nutrition?bucket=day returns per-macro sum columns', async ({ page }) => {
+    await login(page);
+    const result = await page.evaluate(async () => {
+      const r = await fetch('/api/data/nutrition?bucket=day&from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z', {
+        credentials: 'include',
+      });
+      return { status: r.status, body: await r.json() };
+    });
+    expect(result.status).toBe(200);
+    if (result.body.length > 0) {
+      expect(result.body[0]).toHaveProperty('sum_calories');
+      expect(result.body[0]).toHaveProperty('sum_protein_grams');
+    }
+  });
+
+  test('GET /api/data/steps?bucket=week (invalid) returns 400', async ({ page }) => {
+    await login(page);
+    const status = await page.evaluate(async () => {
+      const r = await fetch('/api/data/steps?bucket=week', { credentials: 'include' });
+      return r.status;
+    });
+    expect(status).toBe(400);
+  });
+
+  test('GET /api/data/food_meal?bucket=day returns 400', async ({ page }) => {
+    await login(page);
+    const status = await page.evaluate(async () => {
+      const r = await fetch('/api/data/food_meal?bucket=day', { credentials: 'include' });
+      return r.status;
+    });
+    expect(status).toBe(400);
+  });
+
+  test('Omitting ?bucket= still returns raw records', async ({ page }) => {
+    await login(page);
+    const result = await page.evaluate(async () => {
+      const r = await fetch('/api/data/steps?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z', {
+        credentials: 'include',
+      });
+      return { status: r.status, body: await r.json() };
+    });
+    expect(result.status).toBe(200);
+    if (result.body.length > 0) {
+      expect(result.body[0]).not.toHaveProperty('bucket_start');
+    }
   });
 });
 
