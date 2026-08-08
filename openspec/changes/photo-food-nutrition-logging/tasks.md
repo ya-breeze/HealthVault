@@ -27,18 +27,19 @@
 - [x] 4.2 Integrate synchronous analysis into `POST /api/food/meals` bounded by `HCW_VISION_TIMEOUT`; mark `failed` and retain the photo on error or timeout
 - [x] 4.3 Implement candidate-shortlist selection: pass retrieved candidates to the model, record explicit non-match as `macro_source = none`
 - [x] 4.4 Make every analysis run replace the meal's existing `FoodItem` rows in the same transaction as the status write
-- [ ] 4.5 Tests: analysis failure retains photo and sets `failed`, timeout path, unresolved item stores zeroed macros and is excluded from the aggregate, re-analysis leaves no leftover items, a wrong preparation guess still leaves the correct food in the shortlist
-      — done: failure retains photo (`TestCreateMeal_RecognizeErrorMarksFailedAndRetainsPhoto`), timeout (`TestCreateMeal_TimeoutMarksFailed`), unresolved item zeroed (`TestCreateMeal_NoMatchLeavesItemUnresolved`), wrong-preparation-keeps-correct-food (already covered at the usda layer by `TestQueryFor_WrongPreparationDoesNotExcludeCorrectFood`). Not yet testable: "re-analysis leaves no leftover items" needs the retry endpoint (task 5.1) to trigger a second analysis pass through the real HTTP path.
+- [x] 4.5 Tests: analysis failure retains photo and sets `failed`, timeout path, unresolved item stores zeroed macros and is excluded from the aggregate, re-analysis leaves no leftover items, a wrong preparation guess still leaves the correct food in the shortlist
+      — failure retains photo (`TestCreateMeal_RecognizeErrorMarksFailedAndRetainsPhoto`), timeout (`TestCreateMeal_TimeoutMarksFailed`), unresolved item zeroed (`TestCreateMeal_NoMatchLeavesItemUnresolved`), re-analysis replaces items (`TestRetryMeal_ReplacesItemsNotAppends`), wrong-preparation-keeps-correct-food (usda layer: `TestQueryFor_WrongPreparationDoesNotExcludeCorrectFood`).
 
 ## 5. Meal Lifecycle Endpoints
 
-- [ ] 5.1 Implement `GET /api/food/meals/{id}` (detail with items) and `POST /api/food/meals/{id}/retry`, accepting only `failed` or `processing` whose `updated_at` is older than `HCW_VISION_TIMEOUT`, 409 otherwise
+- [x] 5.1 Implement `GET /api/food/meals/{id}` (detail with items) and `POST /api/food/meals/{id}/retry`, accepting only `failed` or `processing` whose `updated_at` is older than `HCW_VISION_TIMEOUT`, 409 otherwise
 - [ ] 5.2 Implement `POST /api/food/meals/{id}/clarify`: text-only rounds that do not re-send the image, persisting each Q/A pair to `clarify_log` and replaying the full history each round, re-running food lookup when an answer resolves a previously unknown preparation or state, capped at 3 then `pending_review`
-- [ ] 5.3 Implement `PUT /api/food/meals/{id}/confirm`: recalculate scaled macros, aggregate items whose `macro_source` is `reference` or `manual`, allow correcting `logged_at`, set `confirmed` — no `Nutrition` write
-- [ ] 5.4 Implement `PATCH /api/food/meals/{id}/items/{item_id}` to bind a reference food, supply macros directly, or change weight; 409 once the meal is confirmed
+- [x] 5.3 Implement `PUT /api/food/meals/{id}/confirm`: recalculate scaled macros, aggregate items whose `macro_source` is `reference` or `manual`, allow correcting `logged_at`, set `confirmed` — no `Nutrition` write
+- [x] 5.4 Implement `PATCH /api/food/meals/{id}/items/{item_id}` to bind a reference food, supply macros directly, or change weight; 409 once the meal is confirmed
 - [x] 5.5 Implement `POST /api/food/meals/manual` for photo-free entry from food references or direct macro values, accepting an explicit `logged_at`
 - [x] 5.6 Implement custom food CRUD (`POST|GET /api/food/custom`, `PUT|DELETE /api/food/custom/{id}`) and `GET /api/food/search`
 - [ ] 5.7 Tests: retry rejected while a call is in flight and accepted once stale, clarify request carries no image content and replays earlier answers, round cap, confirm writes zero `Nutrition` rows, manual-only meal aggregates non-zero, item patch rescales macros, 404 on cross-user custom food mutation, manual meal never enters `processing`
+      — done except the clarify-round cases (wait on 5.2): `TestRetryMeal_LiveProcessingRejectedWith409`, `TestRetryMeal_StaleProcessingIsAccepted`, `TestConfirmMeal_NoNutritionRowWritten`, `TestCreateManualMeal_DirectMacros` (manual-only aggregates non-zero), `TestPatchMealItem_WeightOnlyChangeRescalesFromExistingBinding`, `TestCreateManualMeal_CrossUserCustomFoodReturns404`, `TestCreateManualMeal_NeverEntersProcessing`.
 
 ## 6. Registry Integration & Deletion
 

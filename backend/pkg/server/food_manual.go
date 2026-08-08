@@ -82,7 +82,7 @@ func (h *foodHandlers) CreateManualMeal(w http.ResponseWriter, r *http.Request) 
 
 		switch itemReq.Source {
 		case "reference":
-			profile, status, err := h.resolveReferenceProfile(claims.UserID, itemReq)
+			profile, status, err := h.resolveReferenceProfile(claims.UserID, itemReq.FdcID, itemReq.CustomFoodID)
 			if err != nil {
 				http.Error(w, err.Error(), status)
 				return
@@ -129,18 +129,19 @@ func (h *foodHandlers) CreateManualMeal(w http.ResponseWriter, r *http.Request) 
 	writeJSONStatus(w, http.StatusCreated, meal)
 }
 
-// resolveReferenceProfile looks up the per-100g profile for a "reference"
-// item, scoped to userID for custom foods. The returned status is only
-// meaningful when err is non-nil.
+// resolveReferenceProfile looks up the per-100g profile for a reference
+// binding (an fdc_id or custom_food_id, scoped to userID for custom foods).
+// The returned status is only meaningful when err is non-nil. Shared by
+// manual meal item creation and the item PATCH endpoint (food_item.go).
 func (h *foodHandlers) resolveReferenceProfile(
-	userID uuid.UUID, itemReq manualMealItemRequest,
+	userID uuid.UUID, fdcID *int64, customFoodID *uuid.UUID,
 ) (database.NutrientProfile, int, error) {
 	switch {
-	case itemReq.FdcID != nil:
+	case fdcID != nil:
 		if h.usda == nil {
 			return database.NutrientProfile{}, http.StatusBadRequest, errors.New("usda index unavailable")
 		}
-		food, err := h.usda.ByFdcID(*itemReq.FdcID)
+		food, err := h.usda.ByFdcID(*fdcID)
 		if err != nil {
 			return database.NutrientProfile{}, http.StatusInternalServerError, errors.New("usda lookup error")
 		}
@@ -148,8 +149,8 @@ func (h *foodHandlers) resolveReferenceProfile(
 			return database.NutrientProfile{}, http.StatusBadRequest, errors.New("unknown fdc_id")
 		}
 		return food.Profile, 0, nil
-	case itemReq.CustomFoodID != nil:
-		cf, err := h.findOwnedCustomFood(*itemReq.CustomFoodID, userID)
+	case customFoodID != nil:
+		cf, err := h.findOwnedCustomFood(*customFoodID, userID)
 		if errors.Is(err, database.ErrNotFound) {
 			return database.NutrientProfile{}, http.StatusNotFound, errors.New("custom food not found")
 		}
