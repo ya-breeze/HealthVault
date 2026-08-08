@@ -4,11 +4,6 @@ export type AggFamily = 'cumulative' | 'point';
 
 export interface TypeMeta {
   family: AggFamily;
-  /** Raw-row column holding the value, for types with exactly one. Absent for
-   * blood_pressure (two columns) and nutrition (seven) — those types render
-   * their own special-cased chart paths in DataTypeClient. */
-  valueCol?: string;
-  unit?: string;
 }
 
 /**
@@ -18,31 +13,31 @@ export interface TypeMeta {
  * has no data page of its own in this UI.
  */
 export const TYPE_META: Partial<Record<DataType, TypeMeta>> = {
-  steps: { family: 'cumulative', valueCol: 'count' },
-  distance: { family: 'cumulative', valueCol: 'meters', unit: 'km' },
-  active_calories: { family: 'cumulative', valueCol: 'calories', unit: 'kcal' },
-  total_calories: { family: 'cumulative', valueCol: 'calories', unit: 'kcal' },
-  hydration: { family: 'cumulative', valueCol: 'liters', unit: 'L' },
-  exercise: { family: 'cumulative', valueCol: 'duration_seconds', unit: 'min' },
-  sleep: { family: 'cumulative', valueCol: 'duration_seconds', unit: 'h' },
+  steps: { family: 'cumulative' },
+  distance: { family: 'cumulative' },
+  active_calories: { family: 'cumulative' },
+  total_calories: { family: 'cumulative' },
+  hydration: { family: 'cumulative' },
+  exercise: { family: 'cumulative' },
+  sleep: { family: 'cumulative' },
   nutrition: { family: 'cumulative' },
-  heart_rate: { family: 'point', valueCol: 'bpm', unit: 'bpm' },
-  heart_rate_variability: { family: 'point', valueCol: 'rmssd_millis', unit: 'ms' },
-  weight: { family: 'point', valueCol: 'kilograms', unit: 'kg' },
-  height: { family: 'point', valueCol: 'meters', unit: 'm' },
+  heart_rate: { family: 'point' },
+  heart_rate_variability: { family: 'point' },
+  weight: { family: 'point' },
+  height: { family: 'point' },
   blood_pressure: { family: 'point' },
-  blood_glucose: { family: 'point', valueCol: 'mmol_per_liter', unit: 'mmol/L' },
-  oxygen_saturation: { family: 'point', valueCol: 'percentage', unit: '%' },
-  body_temperature: { family: 'point', valueCol: 'celsius', unit: '°C' },
-  skin_temperature: { family: 'point', valueCol: 'delta_celsius', unit: '°C' },
-  respiratory_rate: { family: 'point', valueCol: 'rate', unit: '/min' },
-  resting_heart_rate: { family: 'point', valueCol: 'bpm', unit: 'bpm' },
-  basal_metabolic_rate: { family: 'point', valueCol: 'watts', unit: 'W' },
-  body_fat: { family: 'point', valueCol: 'percentage', unit: '%' },
-  lean_body_mass: { family: 'point', valueCol: 'kilograms', unit: 'kg' },
-  vo2_max: { family: 'point', valueCol: 'ml_per_kg_per_min', unit: 'mL/kg/min' },
-  bone_mass: { family: 'point', valueCol: 'kilograms', unit: 'kg' },
-  speed: { family: 'point', valueCol: 'meters_per_second', unit: 'm/s' },
+  blood_glucose: { family: 'point' },
+  oxygen_saturation: { family: 'point' },
+  body_temperature: { family: 'point' },
+  skin_temperature: { family: 'point' },
+  respiratory_rate: { family: 'point' },
+  resting_heart_rate: { family: 'point' },
+  basal_metabolic_rate: { family: 'point' },
+  body_fat: { family: 'point' },
+  lean_body_mass: { family: 'point' },
+  vo2_max: { family: 'point' },
+  bone_mass: { family: 'point' },
+  speed: { family: 'point' },
 };
 
 export const NUTRITION_MACROS = [
