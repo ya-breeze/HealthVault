@@ -58,6 +58,7 @@ func Open(l *slog.Logger, dbPath string) (*gorm.DB, error) {
 		&Sleep{}, &SleepStage{},
 		&Exercise{}, &Nutrition{},
 		&Speed{},
+		&FoodMeal{}, &FoodItem{}, &CustomFood{}, &FoodCalibrationSample{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}

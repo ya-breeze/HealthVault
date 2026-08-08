@@ -1,5 +1,11 @@
+## Purpose
+
+Lets an authenticated user permanently delete their own health records, via a `DELETE` endpoint and a per-row confirm-then-delete UI in the data table.
+## Requirements
 ### Requirement: Authenticated user can delete an owned health record
 The system SHALL provide a `DELETE /api/data/{type}/{id}` endpoint. The endpoint SHALL permanently remove the record from storage when the authenticated user owns the record. The `{type}` parameter SHALL be validated against the known type registry; unknown types SHALL return 404. The `{id}` parameter SHALL be a UUID. If the record does not exist or belongs to a different user, the endpoint SHALL return 404 (not 403, to avoid information disclosure).
+
+Deletion SHALL account for types that own dependent rows or files. A type in the registry MAY declare cleanup beyond the single-row delete; deleting `food_meal` SHALL remove the meal's `FoodItem` rows and its stored photo file in the same operation, so that a generic row delete cannot leave orphaned items or files behind.
 
 #### Scenario: Successful delete of own record
 - **WHEN** an authenticated user sends `DELETE /api/data/weight/<id>` where `<id>` is a record owned by that user
@@ -20,6 +26,14 @@ The system SHALL provide a `DELETE /api/data/{type}/{id}` endpoint. The endpoint
 #### Scenario: Unauthenticated delete attempt
 - **WHEN** a request without a valid JWT sends `DELETE /api/data/steps/<id>`
 - **THEN** the server returns HTTP 401
+
+#### Scenario: Delete of a meal cascades to items and photo
+- **WHEN** an authenticated user sends `DELETE /api/data/food_meal/<id>` for a meal they own that has items and a stored photo
+- **THEN** the server returns HTTP 204, and the meal row, its `FoodItem` rows, and the photo file are all removed
+
+#### Scenario: Delete of another user's meal
+- **WHEN** an authenticated user sends `DELETE /api/data/food_meal/<id>` for a meal owned by a different user
+- **THEN** the server returns HTTP 404, and neither the meal, its items, nor its photo are removed
 
 ### Requirement: UI provides per-row delete with inline confirmation
 The frontend data-type table SHALL display a delete affordance (trash icon) on each row when viewing the authenticated user's own data. Activating the delete affordance SHALL transition the row into a confirm state rather than immediately deleting. In the confirm state the row SHALL display Confirm and Cancel controls. Confirming SHALL call the delete endpoint and, on success, remove the row from the displayed list without a full page reload. Cancelling SHALL return the row to its normal state. At most one row SHALL be in confirm state at a time — activating delete on a second row SHALL automatically cancel the first. The delete affordance SHALL NOT be shown when viewing another family member's data.
@@ -51,3 +65,4 @@ The frontend data-type table SHALL display a delete affordance (trash icon) on e
 #### Scenario: Delete failure shows error
 - **WHEN** the delete API call fails (network error, server error)
 - **THEN** an error message is displayed and the row remains in the table
+

@@ -48,6 +48,21 @@ func (s *storageImpl) SaveWebhookPayload(p *WebhookPayload) error {
 	return s.db.Create(p).Error
 }
 
+// columnAllowlist restricts QueryRecords to a safe column set for tables
+// whose schema carries fields that must never reach a generic API response.
+// food_meals carries photo_path (a server filesystem path) and raw_response
+// (the full raw vision model JSON); an unprojected Find would render both
+// into the frontend's generic data table and expose them to any consumer
+// of GET /api/data/food_meal, including family members. Tables absent from
+// this map are queried unrestricted (select *).
+var columnAllowlist = map[string][]string{
+	"food_meals": {
+		"id", "logged_at", "name", "status",
+		"calories", "protein_grams", "carbs_grams", "fat_grams",
+		"sugar_grams", "sodium_grams", "dietary_fiber_grams",
+	},
+}
+
 func (s *storageImpl) DeleteRecord(tableName string, id uuid.UUID, userID uuid.UUID) error {
 	result := s.db.Exec(
 		"DELETE FROM "+tableName+" WHERE id = ? AND user_id = ?",
@@ -60,9 +75,15 @@ func (s *storageImpl) DeleteRecord(tableName string, id uuid.UUID, userID uuid.U
 		return ErrNotFound
 	}
 	// Sleep rows own SleepStage children; SQLite FK enforcement is off by default,
-	// so we cascade manually to avoid orphaned stage rows.
-	if tableName == "sleeps" {
+	// so we cascade manually to avoid orphaned stage rows. FoodMeal rows own
+	// FoodItem children the same way.
+	switch tableName {
+	case "sleeps":
 		if err := s.db.Exec("DELETE FROM sleep_stages WHERE sleep_id = ?", id).Error; err != nil {
+			return err
+		}
+	case "food_meals":
+		if err := s.db.Exec("DELETE FROM food_items WHERE meal_id = ?", id).Error; err != nil {
 			return err
 		}
 	}
@@ -71,9 +92,12 @@ func (s *storageImpl) DeleteRecord(tableName string, id uuid.UUID, userID uuid.U
 
 func (s *storageImpl) QueryRecords(tableName string, timeCol string, userID uuid.UUID, tr TimeRange) ([]map[string]any, error) {
 	var results []map[string]any
+	q := s.db.Table(tableName)
+	if cols, ok := columnAllowlist[tableName]; ok {
+		q = q.Select(cols)
+	}
 	query := fmt.Sprintf("user_id = ? AND %s >= ? AND %s <= ?", timeCol, timeCol)
-	err := s.db.Table(tableName).
-		Where(query, userID, tr.From, tr.To).
+	err := q.Where(query, userID, tr.From, tr.To).
 		Find(&results).Error
 	return results, err
 }

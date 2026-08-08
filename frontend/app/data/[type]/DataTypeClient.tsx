@@ -46,7 +46,7 @@ export default function DataTypeClient({ type }: Props) {
     : undefined;
 
   const timeKey = records.length > 0
-    ? (['time', 'start_time', 'timestamp'].find(k => k in records[0]))
+    ? (['time', 'start_time', 'timestamp', 'logged_at'].find(k => k in records[0]))
     : undefined;
 
   const displayColumns = records.length > 0

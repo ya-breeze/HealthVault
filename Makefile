@@ -1,17 +1,22 @@
 ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
+# SQLite FTS5 is a compile-time option in mattn/go-sqlite3. Without this tag,
+# "CREATE VIRTUAL TABLE ... USING fts5" fails at runtime with "no such module: fts5",
+# which the USDA food index depends on. Keep it on build, test and vet alike.
+GO_TAGS := sqlite_fts5
+
 .PHONY: all build test lint run-backend
 
 all: build
 
 build:
-	@cd $(ROOT_DIR)/backend/cmd && go build -o ../bin/hcw .
+	@cd $(ROOT_DIR)/backend/cmd && go build -tags $(GO_TAGS) -o ../bin/hcw .
 
 test:
-	@cd $(ROOT_DIR)/backend && go test ./...
+	@cd $(ROOT_DIR)/backend && go test -tags $(GO_TAGS) ./...
 
 lint:
-	@cd $(ROOT_DIR)/backend && go vet ./...
+	@cd $(ROOT_DIR)/backend && go vet -tags $(GO_TAGS) ./...
 
 run-backend: build
 	@HCW_DBPATH=$(ROOT_DIR)hcw.db \

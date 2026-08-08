@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	kinmodels "github.com/ya-breeze/kin-core/models"
 	"github.com/ya-breeze/healthvault/pkg/database"
+	kinmodels "github.com/ya-breeze/kin-core/models"
 )
 
 func TestOpen(t *testing.T) {
@@ -112,6 +112,68 @@ func TestDeleteRecord_NonExistentID(t *testing.T) {
 	err := s.DeleteRecord("weights", uuid.New(), userID)
 	if !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestDeleteRecord_FoodMealCascadesItems(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := s.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+
+	item := database.FoodItem{UserID: userID, MealID: meal.ID, Name: "Rice", WeightGrams: 100}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := s.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	if err := s.DeleteRecord("food_meals", meal.ID, userID); err != nil {
+		t.Fatalf("DeleteRecord: %v", err)
+	}
+
+	var count int64
+	s.DB().Table("food_items").Where("meal_id = ?", meal.ID).Count(&count)
+	if count != 0 {
+		t.Errorf("expected food_items to be cascade-deleted, got %d rows", count)
+	}
+}
+
+func TestQueryRecords_FoodMealColumnAllowlist(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	meal := database.FoodMeal{
+		UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: time.Now(),
+		Name: "Lunch", PhotoPath: "secret/path.jpg", RawResponse: `{"raw":"llm output"}`,
+	}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := s.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+
+	results, err := s.QueryRecords("food_meals", "logged_at", userID,
+		database.TimeRange{From: time.Now().Add(-time.Hour), To: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatalf("QueryRecords: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if _, ok := results[0]["photo_path"]; ok {
+		t.Error("expected photo_path to be excluded from results")
+	}
+	if _, ok := results[0]["raw_response"]; ok {
+		t.Error("expected raw_response to be excluded from results")
+	}
+	if results[0]["name"] != "Lunch" {
+		t.Errorf("expected name=Lunch, got %v", results[0]["name"])
 	}
 }
 

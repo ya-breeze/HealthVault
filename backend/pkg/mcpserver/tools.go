@@ -37,6 +37,7 @@ var typeTimeCol = map[string][2]string{
 	"lean_body_mass":         {"lean_body_masses", "time"},
 	"vo2_max":                {"vo2_maxes", "time"},
 	"bone_mass":              {"bone_masses", "time"},
+	"food_meal":              {"food_meals", "logged_at"},
 }
 
 type queryInput struct {
@@ -108,7 +109,9 @@ func registerTools(server *mcp.Server, storage database.Storage) {
 			"active_calories, total_calories, weight, height, blood_pressure, blood_glucose, " +
 			"oxygen_saturation, body_temperature, skin_temperature, respiratory_rate, " +
 			"resting_heart_rate, exercise, hydration, nutrition, basal_metabolic_rate, " +
-			"body_fat, lean_body_mass, vo2_max, bone_mass.",
+			"body_fat, lean_body_mass, vo2_max, bone_mass, food_meal. " +
+			"food_meal returns metadata and aggregate macros only (no photo, no raw response); " +
+			"it is independent of nutrition and the two should not be summed.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

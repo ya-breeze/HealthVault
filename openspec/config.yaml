@@ -1,0 +1,57 @@
+schema: spec-driven
+
+context: |
+  HealthVault — personal health data aggregator.
+
+  Tech stack: Go 1.26 backend (GORM + SQLite, gorilla/mux, cobra CLI, viper config),
+  Next.js 16 + React 19 + TypeScript frontend, Playwright E2E in e2e/.
+
+  Conventions that are easy to get wrong:
+  - Config is loaded through viper with `SetEnvPrefix("HCW")` (backend/pkg/config/config.go).
+    Every environment variable is therefore `HCW_*`. Do not introduce bare or
+    differently-prefixed names such as `OPENAI_API_KEY` or `HEALTHVAULT_UPLOADS_DIR`.
+  - Models embed `models.TenantModel` from `github.com/ya-breeze/kin-core`. It has NO
+    `BeforeCreate` hook, so `ID` (uuid.New()) and `FamilyID` must be assigned explicitly
+    on every Create(). See backend/pkg/ingest/ingest.go for the pattern.
+  - Health metric tables are ingested telemetry: every row carries a non-null
+    `source_payload_id` tracing to a webhook or import. User-authored data must not be
+    written into those tables — it has no payload lineage and cannot be distinguished
+    from ingested rows afterwards.
+  - Ownership errors return 404, never 403, to avoid information disclosure.
+    Unauthenticated requests return 401.
+  - There is no background job infrastructure. `ListenAndServe` is the only goroutine in
+    the backend. Prefer synchronous work or an operator-run CLI command over introducing
+    a scheduler, and if a background job is genuinely required, specify its crash-recovery
+    behaviour explicitly.
+  - Bulk data loading is done through explicit import endpoints or CLI commands
+    (/api/import/health-connect, /api/import/libra), not scheduled pollers.
+  - The frontend is a static export (`output: 'export'` in next.config.ts). Every dynamic
+    route segment must be enumerable at build time via generateStaticParams, so pages keyed
+    by a runtime UUID must take it as a query parameter instead of a path segment.
+  - `GET /api/data/{type}` returns whole rows and the frontend renders every column outside
+    a short denylist. A new registered type must declare which columns it exposes, or
+    internal fields will be published to the API and rendered in the UI.
+  - `/api/data/*` honours `?user=<username>` for family members. Registering a type there
+    grants family read access to it — decide that deliberately rather than by omission.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

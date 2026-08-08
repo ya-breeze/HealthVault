@@ -1,0 +1,76 @@
+package vision
+
+import "context"
+
+// Fake is a scripted Client for tests. A zero-value Fake succeeds every call
+// with an empty result; set the *Result or *Err fields to control behavior.
+// ClarifyResults, if set, are consumed one per Clarify call, in order — so a
+// multi-round clarification test can script each round's response; once
+// exhausted, ClarifyResult (singular) or a zero-value result is used.
+type Fake struct {
+	RecognizeResult *RecognizeResult
+	RecognizeErr    error
+	ClarifyResult   *RecognizeResult
+	ClarifyResults  []*RecognizeResult
+	ClarifyErr      error
+	SelectResult    *SelectResult
+	SelectErr       error
+
+	// RecognizeCalls, ClarifyCalls, and SelectCalls record each call's
+	// arguments, in order, so a test can assert on what was actually sent
+	// (e.g. that a re-analysis used the same photo, that a clarify round
+	// carried no image content, or which candidates were offered).
+	RecognizeCalls []RecognizeCall
+	ClarifyCalls   []ClarifyCall
+	SelectCalls    [][]ItemCandidates
+}
+
+// RecognizeCall records one Recognize invocation.
+type RecognizeCall struct {
+	Image    []byte
+	MimeType string
+}
+
+// ClarifyCall records one Clarify invocation.
+type ClarifyCall struct {
+	PriorItems []Item
+	History    []ClarifyTurn
+}
+
+func (f *Fake) Recognize(_ context.Context, image []byte, mimeType string) (*RecognizeResult, error) {
+	f.RecognizeCalls = append(f.RecognizeCalls, RecognizeCall{Image: image, MimeType: mimeType})
+	if f.RecognizeErr != nil {
+		return nil, f.RecognizeErr
+	}
+	if f.RecognizeResult != nil {
+		return f.RecognizeResult, nil
+	}
+	return &RecognizeResult{}, nil
+}
+
+func (f *Fake) Clarify(_ context.Context, priorItems []Item, history []ClarifyTurn) (*RecognizeResult, error) {
+	f.ClarifyCalls = append(f.ClarifyCalls, ClarifyCall{PriorItems: priorItems, History: history})
+	if f.ClarifyErr != nil {
+		return nil, f.ClarifyErr
+	}
+	if idx := len(f.ClarifyCalls) - 1; idx < len(f.ClarifyResults) {
+		return f.ClarifyResults[idx], nil
+	}
+	if f.ClarifyResult != nil {
+		return f.ClarifyResult, nil
+	}
+	return &RecognizeResult{}, nil
+}
+
+func (f *Fake) Select(_ context.Context, itemCandidates []ItemCandidates) (*SelectResult, error) {
+	f.SelectCalls = append(f.SelectCalls, itemCandidates)
+	if f.SelectErr != nil {
+		return nil, f.SelectErr
+	}
+	if f.SelectResult != nil {
+		return f.SelectResult, nil
+	}
+	return &SelectResult{}, nil
+}
+
+var _ Client = (*Fake)(nil)

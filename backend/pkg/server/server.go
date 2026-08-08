@@ -2,15 +2,18 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/ya-breeze/kin-core/cookies"
 	"github.com/ya-breeze/healthvault/pkg/config"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/mcpserver"
+	"github.com/ya-breeze/healthvault/pkg/usda"
+	"github.com/ya-breeze/healthvault/pkg/vision"
+	"github.com/ya-breeze/kin-core/cookies"
 )
 
 // requireBearerToken wraps h so that every request must carry
@@ -43,6 +46,24 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 		cookieCfg: cookieCfg,
 	}
 
+	// USDA index is optional at startup: no import has necessarily run yet,
+	// and the food search endpoint degrades to "unavailable" rather than
+	// failing the whole server.
+	usdaIndex, err := usda.Open(cfg.USDADBPath)
+	if err != nil && !errors.Is(err, usda.ErrNoDatabase) {
+		return fmt.Errorf("open usda index: %w", err)
+	}
+	defer usdaIndex.Close() //nolint:errcheck
+
+	// Without an API key, every photo upload fails with vision.ErrNotConfigured;
+	// manual entry, custom foods, and search need no vision access at all.
+	var visionClient vision.Client = vision.Unconfigured{}
+	if cfg.OpenAIAPIKey != "" {
+		visionClient = vision.NewOpenAIClient(cfg.OpenAIAPIKey, cfg.OpenAIModel)
+	}
+	fh := NewFoodHandlers(storage, usdaIndex, cfg.UploadsDir).
+		WithVision(visionClient, cfg.MaxUploadBytes, cfg.VisionTimeout)
+
 	r := mux.NewRouter()
 
 	// Webhook (unauthenticated) — implemented in Task 5
@@ -61,9 +82,23 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	// gorilla/mux routing "summary" as the {type} variable.
 	api.HandleFunc("/data/summary", summaryHandler(storage)).Methods("GET")
 	api.HandleFunc("/data/{type}", dataHandler(storage)).Methods("GET")
-	api.HandleFunc("/data/{type}/{id}", DeleteRecordHandler(storage)).Methods("DELETE")
+	api.HandleFunc("/data/{type}/{id}", DeleteRecordHandler(storage, fh.photos)).Methods("DELETE")
 	api.HandleFunc("/import/health-connect", importHealthConnectHandler(storage)).Methods("POST")
 	api.HandleFunc("/import/libra", importLibraHandler(storage)).Methods("POST")
+	api.HandleFunc("/food/search", fh.Search).Methods("GET")
+	api.HandleFunc("/food/custom", fh.CreateCustomFood).Methods("POST")
+	api.HandleFunc("/food/custom", fh.ListCustomFoods).Methods("GET")
+	api.HandleFunc("/food/custom/{id}", fh.UpdateCustomFood).Methods("PUT")
+	api.HandleFunc("/food/custom/{id}", fh.DeleteCustomFood).Methods("DELETE")
+	api.HandleFunc("/food/meals", fh.CreateMeal).Methods("POST")
+	api.HandleFunc("/food/meals/manual", fh.CreateManualMeal).Methods("POST")
+	api.HandleFunc("/food/meals/{id}", fh.GetMeal).Methods("GET")
+	api.HandleFunc("/food/meals/{id}/photo", fh.MealPhoto).Methods("GET")
+	api.HandleFunc("/food/meals/{id}/retry", fh.RetryMeal).Methods("POST")
+	api.HandleFunc("/food/meals/{id}/clarify", fh.ClarifyMeal).Methods("POST")
+	api.HandleFunc("/food/meals/{id}/confirm", fh.ConfirmMeal).Methods("PUT")
+	api.HandleFunc("/food/meals/{id}/items/{item_id}", fh.PatchMealItem).Methods("PATCH")
+	api.HandleFunc("/food/calibration-samples/{id}/photo", fh.CalibrationSamplePhoto).Methods("GET")
 
 	// MCP — protected by a static bearer token (HCW_MCP_TOKEN).
 	// If the token is empty the endpoint responds 503 so it is never accidentally open.
