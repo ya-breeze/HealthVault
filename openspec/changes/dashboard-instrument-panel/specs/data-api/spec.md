@@ -11,8 +11,9 @@ The `food_meal` response SHALL be limited to an explicit column allowlist — `i
 
 Because `logged_at` is this type's time anchor, it SHALL also be recognized by the frontend's time-column detection, which otherwise handles only `time`, `start_time`, and `timestamp`.
 
-The endpoint SHALL additionally accept an optional `?bucket=` parameter with value `day`, `week`, or `month`. When present and the type is not `food_meal`, the system SHALL return one aggregated row per bucket instead of raw records, each with `bucket_start` (RFC3339, the bucket's start in UTC), `count` (number of raw records in the bucket), and:
+The endpoint SHALL additionally accept an optional `?bucket=` parameter with value `day` or `month` — the UI's Week and Month zoom levels both request `day` buckets and differ only in time range, so no separate week-sized bucket exists. When present and the type is not `food_meal`, the system SHALL return one aggregated row per bucket instead of raw records, each with `bucket_start` (RFC3339, the bucket's start in UTC), `count` (number of raw records in the bucket), and:
 - for cumulative types (`steps`, `distance`, `active_calories`, `total_calories`, `hydration`, `exercise`, `sleep`): `sum` — the bucket's summed value column (`sleep` sums `duration_seconds` per night rather than per calendar bucket boundary).
+- for `nutrition` (also cumulative, but with seven value columns): `sum_calories`, `sum_protein_grams`, `sum_carbs_grams`, `sum_fat_grams`, `sum_sugar_grams`, `sum_sodium_grams`, `sum_dietary_fiber_grams` — each column summed independently within the bucket.
 - for point-in-time types (every other non-`food_meal` type, including both columns of `blood_pressure` reported as `systolic_avg`/`systolic_min`/`systolic_max` and `diastolic_avg`/`diastolic_min`/`diastolic_max`): `avg`, `min`, and `max` of the value column within the bucket.
 
 `?bucket=` on `food_meal` or an unrecognized bucket value SHALL return HTTP 400. Omitting `?bucket=` SHALL preserve today's raw-record response exactly, so existing callers are unaffected.
@@ -42,8 +43,12 @@ The endpoint SHALL additionally accept an optional `?bucket=` parameter with val
 - **THEN** the system SHALL return HTTP 200 with one JSON object per month containing `bucket_start`, `count`, and `sum`, and SHALL NOT include individual raw step records
 
 #### Scenario: Bucketed query for a point-in-time type
-- **WHEN** an authenticated user calls `GET /api/data/heart_rate?bucket=week`
-- **THEN** the system SHALL return HTTP 200 with one JSON object per week containing `bucket_start`, `count`, `avg`, `min`, and `max`
+- **WHEN** an authenticated user calls `GET /api/data/heart_rate?bucket=day`
+- **THEN** the system SHALL return HTTP 200 with one JSON object per day containing `bucket_start`, `count`, `avg`, `min`, and `max`
+
+#### Scenario: Bucketed query for nutrition
+- **WHEN** an authenticated user calls `GET /api/data/nutrition?bucket=day`
+- **THEN** each returned bucket SHALL include `sum_calories`, `sum_protein_grams`, `sum_carbs_grams`, `sum_fat_grams`, `sum_sugar_grams`, `sum_sodium_grams`, and `sum_dietary_fiber_grams`
 
 #### Scenario: Bucketed query for blood pressure
 - **WHEN** an authenticated user calls `GET /api/data/blood_pressure?bucket=day`
@@ -54,7 +59,7 @@ The endpoint SHALL additionally accept an optional `?bucket=` parameter with val
 - **THEN** the system SHALL return HTTP 400
 
 #### Scenario: Invalid bucket value
-- **WHEN** a request includes `?bucket=hour` or any value other than `day`, `week`, or `month`
+- **WHEN** a request includes `?bucket=week`, `?bucket=hour`, or any value other than `day` or `month`
 - **THEN** the system SHALL return HTTP 400
 
 #### Scenario: Omitting bucket preserves existing behavior

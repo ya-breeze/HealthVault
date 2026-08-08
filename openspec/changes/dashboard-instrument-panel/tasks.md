@@ -1,6 +1,6 @@
 ## 1. Design tokens & icon set
 
-- [ ] 1.1 Add the Instrument Panel token set (graphite palette, 8 metric-color map, type scale) as a shared module (`app/lib/tokens.ts` or a `globals.css` `@theme` block)
+- [ ] 1.1 Add the Instrument Panel token set (graphite palette, a 26-type metric-color map — every registered type, not just the 8 vitals-grid metrics — type scale) as a shared module (`app/lib/tokens.ts` or a `globals.css` `@theme` block)
 - [ ] 1.2 Build the inline-SVG icon set (camera, pencil, link/webhook, import, logout, chevron) as small React components
 - [ ] 1.3 Swap Geist for the chosen sans/mono font stack in `app/layout.tsx`
 
@@ -12,11 +12,11 @@
 
 ## 3. Backend: bucketed aggregation endpoint
 
-- [ ] 3.1 Add a `family` field (`cumulative` | `point`) to each `typeRegistry` entry in `backend/pkg/server/api.go`
-- [ ] 3.2 Implement `QueryAggregate(table, timeCol, valueCol, family, bucket, userID, TimeRange)` in `backend/pkg/database/storage.go` / `storage_impl.go`, using `strftime`-based `GROUP BY` for `day`/`week`/`month`
-- [ ] 3.3 Add the `blood_pressure` two-column special case (`systolic_*`, `diastolic_*`) as a distinct query path from the single-value-column case
-- [ ] 3.4 Wire `?bucket=` into `dataHandler`: validate the value (400 on unrecognized or on `food_meal`), call the aggregate query when present, keep the existing raw-record path when absent
-- [ ] 3.5 Backend tests: bucketed response shape per family, blood pressure dual columns, 400 on invalid bucket, 400 on `food_meal` + bucket, unchanged raw response when `?bucket=` is omitted
+- [ ] 3.1 Add a `family` field (`cumulative` | `point`) to each of the 25 non-`food_meal` `typeRegistry` entries in `backend/pkg/server/api.go` — including `height` (`point`) and `nutrition` (`cumulative`), easy to miss since neither is a dashboard vital
+- [ ] 3.2 Implement `QueryAggregate(table, timeCol, valueCol, family, bucket, userID, TimeRange)` in `backend/pkg/database/storage.go` / `storage_impl.go`, using `strftime`-based `GROUP BY` for `day`/`month` (no `week` bucket — see design.md)
+- [ ] 3.3 Add the `blood_pressure` two-column (`systolic_*`, `diastolic_*`) and `nutrition` seven-column (`sum_calories`, `sum_protein_grams`, ...) special cases as distinct query paths from the single-value-column case
+- [ ] 3.4 Wire `?bucket=` into `dataHandler`: validate the value (400 on unrecognized — including `week` — or on `food_meal`), call the aggregate query when present, keep the existing raw-record path when absent
+- [ ] 3.5 Backend tests: bucketed response shape per family (including nutrition's 7 columns and blood pressure's 2), 400 on invalid bucket (including `week`), 400 on `food_meal` + bucket, unchanged raw response when `?bucket=` is omitted
 
 ## 4. Frontend: dashboard vitals grid
 
@@ -27,11 +27,11 @@
 
 ## 5. Frontend: zoom-aware chart
 
-- [ ] 5.1 Add `bucket?: 'day' | 'week' | 'month'` to `api.data()` in `lib/api.ts`
-- [ ] 5.2 Build the Day/Week/Month/Year segmented control in `DataTypeClient.tsx`, defaulting to Week
-- [ ] 5.3 Implement the cumulative-family chart renderer (line for Day, bars for Week/Month/Year) reading `sum`
+- [ ] 5.1 Add `bucket?: 'day' | 'month'` to `api.data()` in `lib/api.ts`
+- [ ] 5.2 Build the Day/Week/Month/Year segmented control in `DataTypeClient.tsx`, defaulting to Week; Week and Month both request `bucket=day` (different time ranges), Year requests `bucket=month`
+- [ ] 5.3 Implement the cumulative-family chart renderer (line for Day, bars for Week/Month/Year) reading `sum` (or, for `nutrition`, the selected macro's `sum_*` column)
 - [ ] 5.4 Implement the point-family chart renderer (line for Day, averaged line + min–max band for Week/Month/Year) reading `avg`/`min`/`max`
-- [ ] 5.5 Special-case `blood_pressure` rendering: two lines/bands (systolic, diastolic) sharing one chart
+- [ ] 5.5 Special-case `blood_pressure` rendering (two lines/bands, systolic + diastolic) and `nutrition` rendering (macro selector, default `calories`)
 - [ ] 5.6 Recompute the stats row (avg/max/total as applicable) from the same bucketed response driving the chart
 - [ ] 5.7 Keep the existing raw data table below the chart, restyled to match the new tokens
 
