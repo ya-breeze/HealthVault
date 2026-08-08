@@ -38,25 +38,25 @@ const MaxClarifyRounds = 3
 // processing before the vision call runs, so no analysis outcome can lose the photo.
 type FoodMeal struct {
 	models.TenantModel
-	UserID       uuid.UUID `gorm:"type:uuid;not null;index"`
-	PhotoPath    string    `gorm:"type:text"` // relative to the uploads dir; empty for manual entries
-	Status       string    `gorm:"type:varchar(32);not null;default:'processing'"`
-	LoggedAt     time.Time `gorm:"not null;index"`
-	Name         string    `gorm:"type:text"`
-	RawResponse  string    `gorm:"type:text"` // last structured response from the vision model
-	ClarifyRound int       `gorm:"not null;default:0"`
-	ClarifyLog   string    `gorm:"type:text"` // JSON []ClarifyEntry, accumulated across rounds
+	UserID       uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	PhotoPath    string    `gorm:"type:text" json:"photo_path,omitempty"` // relative to the uploads dir; empty for manual entries
+	Status       string    `gorm:"type:varchar(32);not null;default:'processing'" json:"status"`
+	LoggedAt     time.Time `gorm:"not null;index" json:"logged_at"`
+	Name         string    `gorm:"type:text" json:"name"`
+	RawResponse  string    `gorm:"type:text" json:"raw_response,omitempty"` // last structured response from the vision model
+	ClarifyRound int       `gorm:"not null;default:0" json:"clarify_round"`
+	ClarifyLog   string    `gorm:"type:text" json:"clarify_log,omitempty"` // JSON []ClarifyEntry, accumulated across rounds
 
 	// Aggregate over items whose MacroSource is reference or manual, written on confirm.
-	Calories          float64 `gorm:"not null;default:0"`
-	ProteinGrams      float64 `gorm:"not null;default:0"`
-	CarbsGrams        float64 `gorm:"not null;default:0"`
-	FatGrams          float64 `gorm:"not null;default:0"`
-	SugarGrams        float64 `gorm:"not null;default:0"`
-	SodiumGrams       float64 `gorm:"not null;default:0"`
-	DietaryFiberGrams float64 `gorm:"not null;default:0"`
+	Calories          float64 `gorm:"not null;default:0" json:"calories"`
+	ProteinGrams      float64 `gorm:"not null;default:0" json:"protein_grams"`
+	CarbsGrams        float64 `gorm:"not null;default:0" json:"carbs_grams"`
+	FatGrams          float64 `gorm:"not null;default:0" json:"fat_grams"`
+	SugarGrams        float64 `gorm:"not null;default:0" json:"sugar_grams"`
+	SodiumGrams       float64 `gorm:"not null;default:0" json:"sodium_grams"`
+	DietaryFiberGrams float64 `gorm:"not null;default:0" json:"dietary_fiber_grams"`
 
-	Items []FoodItem `gorm:"foreignKey:MealID"`
+	Items []FoodItem `gorm:"foreignKey:MealID" json:"items,omitempty"`
 }
 
 // ClarifyEntry is one question/answer pair, persisted so later rounds can replay
@@ -71,31 +71,31 @@ type ClarifyEntry struct {
 // meal so item queries are user-scoped; TenantModel supplies only FamilyID.
 type FoodItem struct {
 	models.TenantModel
-	UserID uuid.UUID `gorm:"type:uuid;not null;index"`
-	MealID uuid.UUID `gorm:"type:uuid;not null;index"`
-	Name   string    `gorm:"not null"`
+	UserID uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	MealID uuid.UUID `gorm:"type:uuid;not null;index" json:"meal_id"`
+	Name   string    `gorm:"not null" json:"name"`
 
 	// Preparation and State feed the retrieval query alongside Name. SR Legacy
 	// encodes both as trailing description qualifiers ("...cooked, roasted"), so
 	// omitting them leaves indexed tokens unused and ranks the wrong food first.
 	// Empty means unknown, which contributes no query token rather than blocking
 	// retrieval. Persisted so a clarification answer can re-run retrieval.
-	Preparation string `gorm:"type:varchar(24)"`
-	State       string `gorm:"type:varchar(16)"`
+	Preparation string `gorm:"type:varchar(24)" json:"preparation,omitempty"`
+	State       string `gorm:"type:varchar(16)" json:"state,omitempty"`
 
-	FdcID        *int64     `gorm:"index"`
-	CustomFoodID *uuid.UUID `gorm:"type:uuid;index"`
-	MacroSource  string     `gorm:"type:varchar(16);not null;default:'none'"`
-	WeightGrams  float64    `gorm:"not null"`
-	Confidence   float64    `gorm:"not null"`
+	FdcID        *int64     `gorm:"index" json:"fdc_id,omitempty"`
+	CustomFoodID *uuid.UUID `gorm:"type:uuid;index" json:"custom_food_id,omitempty"`
+	MacroSource  string     `gorm:"type:varchar(16);not null;default:'none'" json:"macro_source"`
+	WeightGrams  float64    `gorm:"not null" json:"weight_grams"`
+	Confidence   float64    `gorm:"not null" json:"confidence"`
 
-	Calories          float64 `gorm:"not null"`
-	ProteinGrams      float64 `gorm:"not null"`
-	CarbsGrams        float64 `gorm:"not null"`
-	FatGrams          float64 `gorm:"not null"`
-	SugarGrams        float64 `gorm:"not null"`
-	SodiumGrams       float64 `gorm:"not null"`
-	DietaryFiberGrams float64 `gorm:"not null"`
+	Calories          float64 `gorm:"not null" json:"calories"`
+	ProteinGrams      float64 `gorm:"not null" json:"protein_grams"`
+	CarbsGrams        float64 `gorm:"not null" json:"carbs_grams"`
+	FatGrams          float64 `gorm:"not null" json:"fat_grams"`
+	SugarGrams        float64 `gorm:"not null" json:"sugar_grams"`
+	SodiumGrams       float64 `gorm:"not null" json:"sodium_grams"`
+	DietaryFiberGrams float64 `gorm:"not null" json:"dietary_fiber_grams"`
 }
 
 // HasMacros reports whether the item contributes to its meal's aggregate.
@@ -107,26 +107,26 @@ func (i FoodItem) HasMacros() bool {
 // Unique on (user_id, name) so name-based precedence over USDA has one winner.
 type CustomFood struct {
 	models.TenantModel
-	UserID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_custom_food_user_name"`
-	Name   string    `gorm:"not null;uniqueIndex:idx_custom_food_user_name"`
+	UserID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_custom_food_user_name" json:"user_id"`
+	Name   string    `gorm:"not null;uniqueIndex:idx_custom_food_user_name" json:"name"`
 
-	CaloriesPer100g     float64 `gorm:"not null"`
-	ProteinPer100g      float64 `gorm:"not null"`
-	CarbsPer100g        float64 `gorm:"not null"`
-	FatPer100g          float64 `gorm:"not null"`
-	SugarPer100g        float64 `gorm:"not null"`
-	SodiumPer100g       float64 `gorm:"not null"`
-	DietaryFiberPer100g float64 `gorm:"not null"`
+	CaloriesPer100g     float64 `gorm:"not null" json:"calories_per_100g"`
+	ProteinPer100g      float64 `gorm:"not null" json:"protein_per_100g"`
+	CarbsPer100g        float64 `gorm:"not null" json:"carbs_per_100g"`
+	FatPer100g          float64 `gorm:"not null" json:"fat_per_100g"`
+	SugarPer100g        float64 `gorm:"not null" json:"sugar_per_100g"`
+	SodiumPer100g       float64 `gorm:"not null" json:"sodium_per_100g"`
+	DietaryFiberPer100g float64 `gorm:"not null" json:"dietary_fiber_per_100g"`
 }
 
 // FoodCalibrationSample is a weighed-food ground-truth photo used to benchmark
 // vision models. It never produces a FoodMeal.
 type FoodCalibrationSample struct {
 	models.TenantModel
-	UserID      uuid.UUID `gorm:"type:uuid;not null;index"`
-	PhotoPath   string    `gorm:"type:text;not null"`
-	GroundTruth string    `gorm:"type:text;not null"` // JSON []GroundTruthItem
-	CapturedAt  time.Time `gorm:"not null"`
+	UserID      uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	PhotoPath   string    `gorm:"type:text;not null" json:"photo_path"`
+	GroundTruth string    `gorm:"type:text;not null" json:"ground_truth"` // JSON []GroundTruthItem
+	CapturedAt  time.Time `gorm:"not null" json:"captured_at"`
 }
 
 // GroundTruthItem is one expected food in a calibration sample. Aliases and

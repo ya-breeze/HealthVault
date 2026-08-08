@@ -1,6 +1,7 @@
 package database_test
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -174,4 +175,84 @@ func TestFoodMeal_AggregateIsIdempotent(t *testing.T) {
 	if m.Calories != 100 {
 		t.Errorf("Calories = %v after two aggregates, want 100", m.Calories)
 	}
+}
+
+// Frontend types are hand-written against snake_case field names (lib/api.ts),
+// so a struct field with no json tag — which encodes as its Go name, e.g.
+// "WeightGrams" instead of "weight_grams" — silently breaks every consumer.
+// These guard the wire format directly rather than relying on a Go-to-Go
+// round trip, which can't detect a missing tag because both sides agree on
+// whatever name encoding/json picked.
+func TestFoodMeal_JSONFieldsAreSnakeCase(t *testing.T) {
+	m := database.FoodMeal{
+		UserID: uuid.New(), Status: database.MealStatusConfirmed, LoggedAt: time.Now(),
+		Name: "Lunch", ClarifyRound: 1, Calories: 100,
+		Items: []database.FoodItem{{Name: "Rice", MacroSource: database.MacroSourceManual}},
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for _, key := range []string{
+		"id", "family_id", "user_id", "status", "logged_at", "name",
+		"clarify_round", "calories", "protein_grams", "carbs_grams", "fat_grams",
+		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "items",
+	} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("expected JSON key %q, got keys %v", key, keysOf(raw))
+		}
+	}
+}
+
+func TestFoodItem_JSONFieldsAreSnakeCase(t *testing.T) {
+	fdcID := int64(1)
+	it := database.FoodItem{
+		UserID: uuid.New(), MealID: uuid.New(), Name: "Rice",
+		FdcID: &fdcID, MacroSource: database.MacroSourceReference,
+		WeightGrams: 100, Calories: 130,
+	}
+	b, err := json.Marshal(it)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for _, key := range []string{
+		"id", "meal_id", "name", "fdc_id", "macro_source", "weight_grams", "calories", "protein_grams",
+	} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("expected JSON key %q, got keys %v", key, keysOf(raw))
+		}
+	}
+}
+
+func TestCustomFood_JSONFieldsAreSnakeCase(t *testing.T) {
+	c := database.CustomFood{UserID: uuid.New(), Name: "Yogurt", CaloriesPer100g: 60}
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for _, key := range []string{"id", "user_id", "name", "calories_per_100g", "protein_per_100g"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("expected JSON key %q, got keys %v", key, keysOf(raw))
+		}
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
