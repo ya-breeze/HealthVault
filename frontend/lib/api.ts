@@ -29,6 +29,133 @@ async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
   return res.json();
 }
 
+export interface NutrientProfile {
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+  sugar_per_100g: number;
+  sodium_per_100g: number;
+  dietary_fiber_per_100g: number;
+}
+
+export interface FoodSearchResult {
+  source: 'custom' | 'usda';
+  custom_food_id?: string;
+  fdc_id?: number;
+  name: string;
+  profile: NutrientProfile;
+}
+
+export interface FoodSearchResponse {
+  results: FoodSearchResult[];
+  usda_unavailable?: boolean;
+}
+
+export interface CustomFood {
+  id: string;
+  name: string;
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+  sugar_per_100g: number;
+  sodium_per_100g: number;
+  dietary_fiber_per_100g: number;
+}
+
+export type CustomFoodInput = Omit<CustomFood, 'id'>;
+
+export type MealStatus =
+  | 'processing' | 'pending_clarification' | 'pending_review' | 'confirmed' | 'failed';
+
+export type MacroSource = 'reference' | 'manual' | 'none';
+
+export interface FoodItem {
+  id: string;
+  meal_id: string;
+  name: string;
+  preparation: string;
+  state: string;
+  fdc_id?: number;
+  custom_food_id?: string;
+  macro_source: MacroSource;
+  weight_grams: number;
+  confidence: number;
+  calories: number;
+  protein_grams: number;
+  carbs_grams: number;
+  fat_grams: number;
+  sugar_grams: number;
+  sodium_grams: number;
+  dietary_fiber_grams: number;
+}
+
+export interface FoodMeal {
+  id: string;
+  photo_path?: string;
+  status: MealStatus;
+  logged_at: string;
+  name: string;
+  clarify_round: number;
+  clarify_log: string;
+  calories: number;
+  protein_grams: number;
+  carbs_grams: number;
+  fat_grams: number;
+  sugar_grams: number;
+  sodium_grams: number;
+  dietary_fiber_grams: number;
+  items: FoodItem[] | null;
+}
+
+export interface ClarifyEntry {
+  round: number;
+  question: string;
+  answer: string;
+}
+
+export function pendingClarifyQuestions(meal: FoodMeal): string[] {
+  if (!meal.clarify_log) return [];
+  let entries: ClarifyEntry[];
+  try {
+    entries = JSON.parse(meal.clarify_log);
+  } catch {
+    return [];
+  }
+  const pendingRound = meal.clarify_round + 1;
+  return entries.filter(e => e.round === pendingRound && e.answer === '').map(e => e.question);
+}
+
+export interface ManualMealItemInput {
+  name: string;
+  source: 'reference' | 'manual';
+  weight_grams?: number;
+  fdc_id?: number;
+  custom_food_id?: string;
+  calories?: number;
+  protein_grams?: number;
+  carbs_grams?: number;
+  fat_grams?: number;
+  sugar_grams?: number;
+  sodium_grams?: number;
+  dietary_fiber_grams?: number;
+}
+
+export interface PatchItemInput {
+  manual?: boolean;
+  fdc_id?: number;
+  custom_food_id?: string;
+  weight_grams?: number;
+  calories?: number;
+  protein_grams?: number;
+  carbs_grams?: number;
+  fat_grams?: number;
+  sugar_grams?: number;
+  sodium_grams?: number;
+  dietary_fiber_grams?: number;
+}
+
 export const api = {
   login: (username: string, password: string) =>
     apiFetch('/auth/login', {
@@ -72,6 +199,44 @@ export const api = {
     form.append('file', file);
     return apiFetchForm('/import/libra', form);
   },
+
+  searchFood: (q: string, preparation?: string, state?: string) => {
+    const params = new URLSearchParams({ q });
+    if (preparation) params.set('preparation', preparation);
+    if (state) params.set('state', state);
+    return apiFetch<FoodSearchResponse>(`/food/search?${params}`);
+  },
+
+  listCustomFoods: () => apiFetch<CustomFood[]>('/food/custom'),
+  createCustomFood: (input: CustomFoodInput) =>
+    apiFetch<CustomFood>('/food/custom', { method: 'POST', body: JSON.stringify(input) }),
+  updateCustomFood: (id: string, input: CustomFoodInput) =>
+    apiFetch<CustomFood>(`/food/custom/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+  deleteCustomFood: (id: string): Promise<void> =>
+    apiFetchNoBody(`/food/custom/${id}`, { method: 'DELETE' }),
+
+  uploadMeal: (file: File): Promise<FoodMeal> => {
+    const form = new FormData();
+    form.append('photo', file);
+    return apiFetchForm('/food/meals', form);
+  },
+  createManualMeal: (input: { name?: string; logged_at?: string; items: ManualMealItemInput[] }) =>
+    apiFetch<FoodMeal>('/food/meals/manual', { method: 'POST', body: JSON.stringify(input) }),
+  getMeal: (id: string) => apiFetch<FoodMeal>(`/food/meals/${id}`),
+  mealPhotoUrl: (id: string) => `${BASE}/food/meals/${id}/photo`,
+  retryMeal: (id: string) => apiFetch<FoodMeal>(`/food/meals/${id}/retry`, { method: 'POST' }),
+  clarifyMeal: (id: string, answers: string[]) =>
+    apiFetch<FoodMeal>(`/food/meals/${id}/clarify`, { method: 'POST', body: JSON.stringify({ answers }) }),
+  confirmMeal: (id: string, loggedAt?: string) =>
+    apiFetch<FoodMeal>(`/food/meals/${id}/confirm`, {
+      method: 'PUT',
+      body: JSON.stringify(loggedAt ? { logged_at: loggedAt } : {}),
+    }),
+  patchMealItem: (mealId: string, itemId: string, input: PatchItemInput) =>
+    apiFetch<FoodItem>(`/food/meals/${mealId}/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
 };
 
 export const DATA_TYPES = [

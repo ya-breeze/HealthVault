@@ -139,6 +139,12 @@ export default function Dashboard() {
               </div>
             )}
             <a
+              href="/food/custom/"
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium border border-gray-200 dark:border-gray-600 rounded-md px-2.5 py-1.5 transition-colors"
+            >
+              Custom Foods
+            </a>
+            <a
               href="/import"
               className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium border border-gray-200 dark:border-gray-600 rounded-md px-2.5 py-1.5 transition-colors"
             >
@@ -190,6 +196,22 @@ export default function Dashboard() {
         {summaryError && (
           <p className="text-gray-500 dark:text-gray-400 text-sm mb-8">Could not load summary data.</p>
         )}
+
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Log Food</h2>
+        <div className="flex gap-3 mb-8">
+          <a
+            href="/food/upload/"
+            className="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 flex items-center justify-center gap-2 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+          >
+            📷 Photo
+          </a>
+          <a
+            href="/food/manual/"
+            className="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 flex items-center justify-center gap-2 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all text-sm font-medium text-gray-700 dark:text-gray-200"
+          >
+            ✏️ Manual
+          </a>
+        </div>
 
         <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Browse Data</h2>
         <div className="grid grid-cols-4 gap-3 mb-8">
