@@ -42,11 +42,7 @@ func (h *foodHandlers) servePhoto(w http.ResponseWriter, relPath string) {
 	}
 	defer f.Close() //nolint:errcheck
 
-	ext := ""
-	for i := len(relPath) - 1; i >= 0 && relPath[i] != '.'; i-- {
-		ext = string(relPath[i]) + ext
-	}
-	w.Header().Set("Content-Type", contentTypeForExt(ext))
+	w.Header().Set("Content-Type", contentTypeForExt(extOf(relPath)))
 	io.Copy(w, f) //nolint:errcheck
 }
 

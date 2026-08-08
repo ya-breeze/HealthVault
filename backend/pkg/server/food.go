@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -12,6 +13,7 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/database"
 	photostorage "github.com/ya-breeze/healthvault/pkg/storage"
 	"github.com/ya-breeze/healthvault/pkg/usda"
+	"github.com/ya-breeze/healthvault/pkg/vision"
 )
 
 // foodHandlers bundles the dependencies shared by the food logging HTTP
@@ -20,16 +22,43 @@ type foodHandlers struct {
 	storage database.Storage
 	usda    *usda.Index // nil if no import has run yet
 	photos  *photostorage.Store
+
+	vision         vision.Client
+	maxUploadBytes int64
+	visionTimeout  time.Duration
 }
+
+// defaultMaxUploadBytes and defaultVisionTimeout mirror config.go's own
+// viper defaults, so a foodHandlers built without WithVision (any test that
+// doesn't exercise CreateMeal) still fails safe rather than rejecting every
+// upload as oversized against a zero-value limit.
+const (
+	defaultMaxUploadBytes = 10 * 1024 * 1024
+	defaultVisionTimeout  = 60 * time.Second
+)
 
 // NewFoodHandlers builds the food logging handler bundle. usdaIndex may be
 // nil if no import has run yet; the handlers degrade rather than fail.
+// vision defaults to vision.Unconfigured{} — call WithVision to set a real
+// client and non-default upload limits; tests that don't exercise the photo
+// upload/analysis pipeline can skip that call entirely.
 func NewFoodHandlers(storage database.Storage, usdaIndex *usda.Index, uploadsDir string) *foodHandlers {
 	return &foodHandlers{
-		storage: storage,
-		usda:    usdaIndex,
-		photos:  photostorage.New(uploadsDir),
+		storage:        storage,
+		usda:           usdaIndex,
+		photos:         photostorage.New(uploadsDir),
+		vision:         vision.Unconfigured{},
+		maxUploadBytes: defaultMaxUploadBytes,
+		visionTimeout:  defaultVisionTimeout,
 	}
+}
+
+// WithVision sets the vision client and upload limits used by CreateMeal.
+func (h *foodHandlers) WithVision(client vision.Client, maxUploadBytes int64, visionTimeout time.Duration) *foodHandlers {
+	h.vision = client
+	h.maxUploadBytes = maxUploadBytes
+	h.visionTimeout = visionTimeout
+	return h
 }
 
 // FoodSearchResult is one candidate returned by GET /api/food/search: either

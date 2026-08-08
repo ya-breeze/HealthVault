@@ -12,6 +12,7 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/mcpserver"
 	"github.com/ya-breeze/healthvault/pkg/usda"
+	"github.com/ya-breeze/healthvault/pkg/vision"
 	"github.com/ya-breeze/kin-core/cookies"
 )
 
@@ -54,7 +55,12 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	}
 	defer usdaIndex.Close() //nolint:errcheck
 
-	fh := NewFoodHandlers(storage, usdaIndex, cfg.UploadsDir)
+	// The real OpenAI-backed vision.Client (task 4.1) is not wired up yet —
+	// deferred until HCW_OPENAI_API_KEY is available to build and test
+	// against. Every photo upload fails with vision.ErrNotConfigured until
+	// then; manual entry, custom foods, and search need no vision access.
+	fh := NewFoodHandlers(storage, usdaIndex, cfg.UploadsDir).
+		WithVision(vision.Unconfigured{}, cfg.MaxUploadBytes, cfg.VisionTimeout)
 
 	r := mux.NewRouter()
 
@@ -82,6 +88,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/food/custom", fh.ListCustomFoods).Methods("GET")
 	api.HandleFunc("/food/custom/{id}", fh.UpdateCustomFood).Methods("PUT")
 	api.HandleFunc("/food/custom/{id}", fh.DeleteCustomFood).Methods("DELETE")
+	api.HandleFunc("/food/meals", fh.CreateMeal).Methods("POST")
 	api.HandleFunc("/food/meals/manual", fh.CreateManualMeal).Methods("POST")
 	api.HandleFunc("/food/meals/{id}/photo", fh.MealPhoto).Methods("GET")
 	api.HandleFunc("/food/calibration-samples/{id}/photo", fh.CalibrationSamplePhoto).Methods("GET")

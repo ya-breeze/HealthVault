@@ -1,0 +1,363 @@
+package server_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/ya-breeze/healthvault/pkg/database"
+	"github.com/ya-breeze/healthvault/pkg/server"
+	"github.com/ya-breeze/healthvault/pkg/vision"
+)
+
+func newMealUploadRequest(t *testing.T, filename string, data []byte) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("photo", filename)
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		t.Fatalf("write photo bytes: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/food/meals", &buf)
+	r.Header.Set("Content-Type", mw.FormDataContentType())
+	return r
+}
+
+func TestCreateMeal_NoMatchLeavesItemUnresolved(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Mystery food", WeightGrams: 100, Confidence: 0.5}},
+			Model: "fake-model", Raw: `{"items":[{"name":"Mystery food"}]}`,
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	if err := json.NewDecoder(w.Body).Decode(&meal); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if meal.Status != database.MealStatusPendingReview {
+		t.Errorf("expected pending_review, got %s", meal.Status)
+	}
+	if meal.PhotoPath == "" {
+		t.Error("expected a stored photo path")
+	}
+	if len(meal.Items) != 1 || meal.Items[0].MacroSource != database.MacroSourceNone {
+		t.Errorf("expected one unresolved item, got %+v", meal.Items)
+	}
+	if len(fake.RecognizeCalls) != 1 {
+		t.Fatalf("expected exactly one Recognize call, got %d", len(fake.RecognizeCalls))
+	}
+}
+
+func TestCreateMeal_USDAMatchViaSelect(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(42, "Chicken, broilers or fryers, breast, meat only, cooked, roasted", 165))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "chicken breast", Preparation: "roasted", State: "cooked", WeightGrams: 180, Confidence: 0.9}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if len(meal.Items) != 1 {
+		t.Fatalf("expected one item, got %+v", meal.Items)
+	}
+	item := meal.Items[0]
+	if item.MacroSource != database.MacroSourceReference {
+		t.Errorf("expected reference macro source, got %s", item.MacroSource)
+	}
+	if item.FdcID == nil || *item.FdcID != 42 {
+		t.Errorf("expected fdc_id 42, got %v", item.FdcID)
+	}
+	// 165 kcal/100g * 1.8 = 297
+	if item.Calories < 296.9 || item.Calories > 297.1 {
+		t.Errorf("expected calories ~297, got %v", item.Calories)
+	}
+	// The meal's own aggregate is left at zero until confirm.
+	if meal.Calories != 0 {
+		t.Errorf("expected meal aggregate to stay zero pre-confirm, got %v", meal.Calories)
+	}
+	if len(fake.SelectCalls) != 1 || len(fake.SelectCalls[0]) != 1 {
+		t.Fatalf("expected exactly one Select call with one item, got %+v", fake.SelectCalls)
+	}
+}
+
+func TestCreateMeal_ClarificationQuestionsSetPendingClarification(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items:                  []vision.Item{{Name: "some sauce", WeightGrams: 30}},
+			ClarificationQuestions: []string{"Is this a cream-based or tomato-based sauce?"},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if meal.Status != database.MealStatusPendingClarification {
+		t.Errorf("expected pending_clarification, got %s", meal.Status)
+	}
+	if len(fake.SelectCalls) != 0 {
+		t.Errorf("expected no Select call when clarification is needed, got %d", len(fake.SelectCalls))
+	}
+}
+
+func TestCreateMeal_RecognizeErrorMarksFailedAndRetainsPhoto(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	fake := &vision.Fake{RecognizeErr: errors.New("vision provider unavailable")}
+	dir := t.TempDir()
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 (the meal row itself is created), got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if meal.Status != database.MealStatusFailed {
+		t.Errorf("expected failed, got %s", meal.Status)
+	}
+	if meal.PhotoPath == "" {
+		t.Error("expected photo path to be retained on failure")
+	}
+
+	var persisted database.FoodMeal
+	if err := st.DB().First(&persisted, "id = ?", meal.ID).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if persisted.Status != database.MealStatusFailed {
+		t.Errorf("expected persisted status failed, got %s", persisted.Status)
+	}
+}
+
+func TestCreateMeal_UnconfiguredVisionMarksFailed(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	// No WithVision call: exercises NewFoodHandlers' own defaults
+	// (vision.Unconfigured{}, a real upload byte limit and timeout).
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if meal.Status != database.MealStatusFailed {
+		t.Errorf("expected failed when vision is unconfigured, got %s", meal.Status)
+	}
+}
+
+// slowRecognizeClient blocks until its context is cancelled, standing in for
+// a vision call that outruns HCW_VISION_TIMEOUT.
+type slowRecognizeClient struct{}
+
+func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string) (*vision.RecognizeResult, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (slowRecognizeClient) Select(context.Context, []vision.ItemCandidates) (*vision.SelectResult, error) {
+	return &vision.SelectResult{}, nil
+}
+
+func TestCreateMeal_TimeoutMarksFailed(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).
+		WithVision(slowRecognizeClient{}, 10<<20, time.Millisecond)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if meal.Status != database.MealStatusFailed {
+		t.Errorf("expected failed on timeout, got %s", meal.Status)
+	}
+	if meal.PhotoPath == "" {
+		t.Error("expected photo to be retained on timeout")
+	}
+}
+
+func TestCreateMeal_MissingPhotoFieldReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(&vision.Fake{}, 10<<20, time.Second)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.Close() //nolint:errcheck
+	r := httptest.NewRequest(http.MethodPost, "/api/food/meals", &buf)
+	r.Header.Set("Content-Type", mw.FormDataContentType())
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(r, userID))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestCreateMeal_OversizedUploadReturns413(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(&vision.Fake{}, 16, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateMeal_HEICRejectedWith415(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(&vision.Fake{}, 10<<20, time.Second)
+
+	heic := make([]byte, 40)
+	copy(heic[4:8], "ftyp")
+	copy(heic[8:12], "heic")
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.heic", heic), userID))
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("expected 415, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateMeal_NonImageRejected(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(&vision.Fake{}, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "not-an-image.txt", []byte("hello world")), userID))
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("expected 415, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateMeal_TraversalShapedFilenameIgnored(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	dir := t.TempDir()
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(&vision.Fake{}, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "../../../../etc/passwd.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if meal.PhotoPath == "" {
+		t.Fatal("expected a stored photo path")
+	}
+	if bytes.Contains([]byte(meal.PhotoPath), []byte("..")) || bytes.Contains([]byte(meal.PhotoPath), []byte("etc")) {
+		t.Errorf("expected the client filename to have no effect on the stored path, got %q", meal.PhotoPath)
+	}
+}
+
+func TestCreateMeal_Unauthenticated(t *testing.T) {
+	st := newFoodTestStorage(t)
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(&vision.Fake{}, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes))
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestCreateMeal_CustomFoodWinsOverUSDAInSelection(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(1, "Oats, raw", 389))
+
+	custom := database.CustomFood{UserID: userID, Name: "Overnight Oats", CaloriesPer100g: 150}
+	custom.ID = uuid.New()
+	custom.FamilyID = familyID
+	if err := st.DB().Create(&custom).Error; err != nil {
+		t.Fatalf("create custom food: %v", err)
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Overnight Oats", WeightGrams: 200}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if len(meal.Items) != 1 || meal.Items[0].CustomFoodID == nil || *meal.Items[0].CustomFoodID != custom.ID {
+		t.Fatalf("expected the custom food to be offered as the sole candidate, got %+v", meal.Items)
+	}
+	// Exactly one candidate should have been offered to Select (the custom
+	// food), never the USDA "Oats, raw" match too.
+	if len(fake.SelectCalls) != 1 || len(fake.SelectCalls[0][0].Candidates) != 1 {
+		t.Fatalf("expected exactly one candidate offered, got %+v", fake.SelectCalls)
+	}
+}

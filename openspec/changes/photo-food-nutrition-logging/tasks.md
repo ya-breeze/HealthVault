@@ -11,9 +11,8 @@
 - [x] 2.1 Implement server-generated path storage helper in `backend/pkg/storage` (client filename never used)
 - [x] 2.2 Implement upload validation: max body size, content sniffing accepting only JPEG/PNG/WebP, plus an explicit ISO-BMFF brand check so HEIC is rejected with a 415 naming the format
 - [x] 2.3 Implement owner-scoped photo handlers for `GET /api/food/meals/{id}/photo` and `GET /api/food/calibration-samples/{id}/photo`
-- [ ] 2.4 Implement photo-first persistence in `POST /api/food/meals`: save file, commit `FoodMeal` as `processing`, then analyze
-- [ ] 2.5 Tests: oversized upload rejected, non-image rejected, HEIC rejected with 415, traversal-shaped filename ignored, 401 unauthenticated, 404 cross-user photo access, 404 photo access by a family member
-      — photo-endpoint-only cases done (`TestMealPhoto_Unauthenticated`, `TestMealPhoto_CrossUserReturns404`, `TestMealPhoto_FamilyMemberReturns404`, `TestCalibrationSamplePhoto_CrossUserReturns404`). Upload-specific cases (oversized/non-image/HEIC/traversal) wait on the 2.4 upload handler.
+- [x] 2.4 Implement photo-first persistence in `POST /api/food/meals`: save file, commit `FoodMeal` as `processing`, then analyze
+- [x] 2.5 Tests: oversized upload rejected, non-image rejected, HEIC rejected with 415, traversal-shaped filename ignored, 401 unauthenticated, 404 cross-user photo access, 404 photo access by a family member
 
 ## 3. USDA Import & Candidate Search
 
@@ -24,10 +23,12 @@
 ## 4. OpenAI Vision Integration
 
 - [ ] 4.1 Create vision client in `backend/pkg/vision` with structured output parsing, per-call model override, `store: false`, and returned model ID / token usage / latency. The item schema includes `preparation` and `state` (both may be unknown)
-- [ ] 4.2 Integrate synchronous analysis into `POST /api/food/meals` bounded by `HCW_VISION_TIMEOUT`; mark `failed` and retain the photo on error or timeout
-- [ ] 4.3 Implement candidate-shortlist selection: pass retrieved candidates to the model, record explicit non-match as `macro_source = none`
-- [ ] 4.4 Make every analysis run replace the meal's existing `FoodItem` rows in the same transaction as the status write
+      — the `vision.Client` interface, `RecognizeResult`/`SelectResult` types, a `Fake` for tests, and an `Unconfigured` client (returns `vision.ErrNotConfigured`, wired into the server today) are done. The real OpenAI-backed implementation is deliberately deferred: the user chose to keep vision behind the interface/stub for now rather than supply `HCW_OPENAI_API_KEY` in this session. Ask for the key before implementing this.
+- [x] 4.2 Integrate synchronous analysis into `POST /api/food/meals` bounded by `HCW_VISION_TIMEOUT`; mark `failed` and retain the photo on error or timeout
+- [x] 4.3 Implement candidate-shortlist selection: pass retrieved candidates to the model, record explicit non-match as `macro_source = none`
+- [x] 4.4 Make every analysis run replace the meal's existing `FoodItem` rows in the same transaction as the status write
 - [ ] 4.5 Tests: analysis failure retains photo and sets `failed`, timeout path, unresolved item stores zeroed macros and is excluded from the aggregate, re-analysis leaves no leftover items, a wrong preparation guess still leaves the correct food in the shortlist
+      — done: failure retains photo (`TestCreateMeal_RecognizeErrorMarksFailedAndRetainsPhoto`), timeout (`TestCreateMeal_TimeoutMarksFailed`), unresolved item zeroed (`TestCreateMeal_NoMatchLeavesItemUnresolved`), wrong-preparation-keeps-correct-food (already covered at the usda layer by `TestQueryFor_WrongPreparationDoesNotExcludeCorrectFood`). Not yet testable: "re-analysis leaves no leftover items" needs the retry endpoint (task 5.1) to trigger a second analysis pass through the real HTTP path.
 
 ## 5. Meal Lifecycle Endpoints
 
