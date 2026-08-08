@@ -5,20 +5,24 @@ import { api, FoodSearchResult } from '@/lib/api';
 interface Props {
   itemName: string;
   onBind: (result: FoodSearchResult) => Promise<void>;
-  onManual: (macros: {
+  onManual: (name: string, macros: {
     calories: number; protein_grams: number; carbs_grams: number; fat_grams: number;
     sugar_grams: number; sodium_grams: number; dietary_fiber_grams: number;
   }) => Promise<void>;
 }
 
-// The review UI for a macro_source=none item: search for a reference food to
-// bind, or fall back to entering macros directly (e.g. from a package label).
+// The review UI for correcting an item's food match: search for a reference
+// food to bind (the item's displayed name updates to the match's real name),
+// or fall back to entering a name and macros directly (e.g. from a package
+// label). Reachable for any item, matched or not, until the meal is
+// confirmed — not just ones the vision model left unresolved.
 export default function ItemResolver({ itemName, onBind, onManual }: Props) {
   const [mode, setMode] = useState<'search' | 'manual'>('search');
   const [query, setQuery] = useState(itemName);
   const [results, setResults] = useState<FoodSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manualName, setManualName] = useState(itemName);
   const [macros, setMacros] = useState({
     calories: 0, protein_grams: 0, carbs_grams: 0, fat_grams: 0,
     sugar_grams: 0, sodium_grams: 0, dietary_fiber_grams: 0,
@@ -48,8 +52,13 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
 
   const handleManualSubmit = async () => {
     setError(null);
+    const name = manualName.trim();
+    if (!name) {
+      setError('Name is required');
+      return;
+    }
     try {
-      await onManual(macros);
+      await onManual(name, macros);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save macros');
     }
@@ -114,6 +123,15 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
+          <label className="col-span-2 text-xs text-gray-600 dark:text-gray-300">
+            Name
+            <input
+              type="text"
+              value={manualName}
+              onChange={e => setManualName(e.target.value)}
+              className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            />
+          </label>
           {(
             [
               ['calories', 'Calories'], ['protein_grams', 'Protein (g)'], ['carbs_grams', 'Carbs (g)'],

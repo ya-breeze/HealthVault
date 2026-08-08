@@ -147,6 +147,7 @@ export interface PatchItemInput {
   fdc_id?: number;
   custom_food_id?: string;
   weight_grams?: number;
+  name?: string;
   calories?: number;
   protein_grams?: number;
   carbs_grams?: number;

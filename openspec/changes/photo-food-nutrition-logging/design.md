@@ -192,7 +192,7 @@ Rounds are bounded by `ClarifyRound` (max 3). On exceeding the bound the meal mo
 - `GET /api/food/meals/{id}/photo` — stream the stored photo, owner-scoped.
 - `POST /api/food/meals/{id}/retry` — re-run analysis on the stored photo for a meal in `failed` or `processing`.
 - `POST /api/food/meals/{id}/clarify` — submit clarification answers.
-- `PATCH /api/food/meals/{id}/items/{item_id}` — resolve one item: bind it to an `fdc_id` or `custom_food_id`, or supply macros directly, or change its weight. This is the API the unmatched-item review UI calls; `confirm` finalizes a meal but does not itself bind foods.
+- `PATCH /api/food/meals/{id}/items/{item_id}` — resolve or re-resolve one item: bind it to an `fdc_id` or `custom_food_id`, supply macros directly, change its weight, or correct its `name`. Reachable for any item up to confirmation, not just ones the vision model left unresolved — a wrong match needs the same correction path as a missing one. `confirm` finalizes a meal but does not itself bind foods.
 - `PUT /api/food/meals/{id}/confirm` — finalize items and weights, set status `confirmed`.
 - `POST /api/food/custom`, `GET /api/food/custom`, `PUT /api/food/custom/{id}`, `DELETE /api/food/custom/{id}` — custom food CRUD. Update and delete are not optional extras: a custom food shadows USDA entries for its exact name, so one saved with a typo'd macro value would otherwise poison matching for that name permanently, with no in-app way to correct it.
 - `GET /api/food/search` — search custom + USDA foods.

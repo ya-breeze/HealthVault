@@ -48,22 +48,26 @@ export default function MealItemRow({ mealId, item, readOnly, onUpdated }: Props
       fdc_id: r.fdc_id,
       custom_food_id: r.custom_food_id,
       weight_grams: weight,
+      name: r.name,
     });
     onUpdated(updated);
     setResolving(false);
   };
 
-  const handleManual = async (macros: Parameters<typeof api.patchMealItem>[2]) => {
-    const updated = await api.patchMealItem(mealId, item.id, { manual: true, ...macros });
+  const handleManual = async (
+    name: string,
+    macros: Omit<Parameters<typeof api.patchMealItem>[2], 'manual' | 'name'>
+  ) => {
+    const updated = await api.patchMealItem(mealId, item.id, { manual: true, name, ...macros });
     onUpdated(updated);
     setResolving(false);
   };
 
   return (
     <div className="py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{item.name}</p>
+          <p className="text-sm font-medium text-gray-900 dark:text-white break-words">{item.name}</p>
           <span className={`inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded ${SOURCE_COLOR[item.macro_source]}`}>
             {SOURCE_LABEL[item.macro_source]}
           </span>
@@ -87,12 +91,16 @@ export default function MealItemRow({ mealId, item, readOnly, onUpdated }: Props
         {item.fat_grams.toFixed(1)}g
       </div>
 
-      {!readOnly && item.macro_source === 'none' && !resolving && (
+      {!readOnly && !resolving && (
         <button
           onClick={() => setResolving(true)}
-          className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline"
+          className={
+            item.macro_source === 'none'
+              ? 'mt-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline'
+              : 'mt-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline'
+          }
         >
-          Resolve this item
+          {item.macro_source === 'none' ? 'Resolve this item' : 'Change match'}
         </button>
       )}
       {!readOnly && resolving && (

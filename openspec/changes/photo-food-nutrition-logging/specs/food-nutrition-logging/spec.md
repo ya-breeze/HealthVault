@@ -51,7 +51,7 @@ Every meal SHALL carry a non-zero `logged_at`, defaulting to the time the upload
 - **THEN** the system stores that time, and the meal is returned by a query whose range covers it
 
 ### Requirement: Item Resolution
-The system SHALL expose `PATCH /api/food/meals/{id}/items/{item_id}`, allowing the owner to bind an item to an `fdc_id` or `custom_food_id`, supply macro values directly, or change its weight, before the meal is confirmed. This is the endpoint backing the unresolved-item review UI.
+The system SHALL expose `PATCH /api/food/meals/{id}/items/{item_id}`, allowing the owner to bind an item to an `fdc_id` or `custom_food_id`, supply macro values directly, change its weight, or correct its displayed `name`, before the meal is confirmed. This applies to any item regardless of its current `macro_source` — an item that is already matched is not locked once bound, since a matched-but-wrong food (e.g. the vision model guessing "dark berries" for what are actually cherries) is exactly as much a review concern as an unresolved one. When the caller supplies a `name` alongside a binding, the system SHALL store it as the item's new displayed name, so the review UI reflects what was actually confirmed rather than the original vision-model guess.
 
 #### Scenario: Bind an unresolved item to a food
 - **WHEN** the owner patches an item with a chosen `fdc_id`
@@ -60,6 +60,14 @@ The system SHALL expose `PATCH /api/food/meals/{id}/items/{item_id}`, allowing t
 #### Scenario: Supply macros directly for an unresolved item
 - **WHEN** the owner patches an item with direct macro values
 - **THEN** the system sets `macro_source = manual` and stores those values as given
+
+#### Scenario: Correct an already-matched item
+- **WHEN** the owner patches an item that already has `macro_source = reference` with a different `fdc_id` and a `name`
+- **THEN** the system rebinds it, rescales macros from the new profile, and replaces the displayed name with the one supplied
+
+#### Scenario: Renaming an item does not require touching its macros
+- **WHEN** the owner patches an item with only a `name` and no `fdc_id`, `custom_food_id`, `manual`, or `weight_grams`
+- **THEN** the system updates the name and returns 200 without changing `macro_source` or any stored macro value
 
 #### Scenario: Patch an item of a confirmed meal
 - **WHEN** the owner patches an item belonging to a meal whose status is `confirmed`

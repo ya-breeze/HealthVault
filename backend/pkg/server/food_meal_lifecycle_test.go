@@ -272,6 +272,112 @@ func TestPatchMealItem_BindToFdcID(t *testing.T) {
 	}
 }
 
+// Regression: binding an item to a food match previously left item.Name as
+// whatever the vision model guessed, forever, even when that guess was
+// wrong (e.g. "dark berries" bound to a "Cherries, sweet, raw" search
+// result would still display as "dark berries"). The frontend now sends the
+// matched food's real name alongside fdc_id; the backend must apply it.
+func TestPatchMealItem_BindUpdatesNameWhenProvided(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+	w := httptest.NewRecorder()
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"fdc_id": 7, "name": "Chicken breast",
+	})
+	h.PatchMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodItem
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Name != "Chicken breast" {
+		t.Errorf("expected name to update to the bound match, got %q", got.Name)
+	}
+}
+
+// Regression: an item that's already matched (macro_source=reference or
+// manual) previously had no way to be corrected in the UI — the backend
+// itself never restricted this, but confirm it still isn't restricted now
+// that the frontend relies on it: re-binding a matched item to a different
+// food changes both its macros and its name.
+func TestPatchMealItem_RebindAlreadyMatchedItemChangesNameAndMacros(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	idx := buildUSDAIndex(t, usdaFood(7, "Dark berries", 43), usdaFood(8, "Cherries, sweet, raw", 63))
+
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	first := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"fdc_id": 7, "name": "Dark berries",
+	})
+	w1 := httptest.NewRecorder()
+	h.PatchMealItem(w1, withClaims(first, userID))
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 on first bind, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	second := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"fdc_id": 8, "name": "Cherries, sweet, raw",
+	})
+	w2 := httptest.NewRecorder()
+	h.PatchMealItem(w2, withClaims(second, userID))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 on rebind of an already-matched item, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var got database.FoodItem
+	json.NewDecoder(w2.Body).Decode(&got) //nolint:errcheck
+	if got.Name != "Cherries, sweet, raw" {
+		t.Errorf("expected name to reflect the corrected match, got %q", got.Name)
+	}
+	// 63 kcal/100g * 1.0 (100g) = 63
+	if got.Calories < 62.9 || got.Calories > 63.1 {
+		t.Errorf("expected calories from the new match (~63), got %v", got.Calories)
+	}
+}
+
+// Regression: renaming an item with no other field set previously hit the
+// "nothing to update" 400 — name-only edits (manual mode without changing
+// macros) must be accepted.
+func TestPatchMealItem_NameAloneIsAcceptedAndDoesNotTouchMacros(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	bind := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"fdc_id": 7})
+	w1 := httptest.NewRecorder()
+	h.PatchMealItem(w1, withClaims(bind, userID))
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 on bind, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	rename := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"name": "Grilled chicken"})
+	w2 := httptest.NewRecorder()
+	h.PatchMealItem(w2, withClaims(rename, userID))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 on name-only patch, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var got database.FoodItem
+	json.NewDecoder(w2.Body).Decode(&got) //nolint:errcheck
+	if got.Name != "Grilled chicken" {
+		t.Errorf("expected name to update, got %q", got.Name)
+	}
+	if got.MacroSource != database.MacroSourceReference {
+		t.Errorf("expected macro_source to stay reference, got %s", got.MacroSource)
+	}
+	// 165 kcal/100g * 1.0 (100g) = 165 — must not have been touched by the rename.
+	if got.Calories < 164.9 || got.Calories > 165.1 {
+		t.Errorf("expected calories to stay ~165 from the earlier bind, got %v", got.Calories)
+	}
+}
+
 func TestPatchMealItem_SupplyMacrosDirectly(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

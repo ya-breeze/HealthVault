@@ -40,6 +40,8 @@
 - [x] 5.6 Implement custom food CRUD (`POST|GET /api/food/custom`, `PUT|DELETE /api/food/custom/{id}`) and `GET /api/food/search`
 - [x] 5.7 Tests: retry rejected while a call is in flight and accepted once stale, clarify request carries no image content and replays earlier answers, round cap, confirm writes zero `Nutrition` rows, manual-only meal aggregates non-zero, item patch rescales macros, 404 on cross-user custom food mutation, manual meal never enters `processing`
       — `TestRetryMeal_LiveProcessingRejectedWith409`, `TestRetryMeal_StaleProcessingIsAccepted`, `TestClarifyMeal_AnswerResolvesToReviewCarriesNoImage` (no-image is a structural guarantee: `vision.Client.Clarify` takes no image parameter), `TestClarifyMeal_MultipleRoundsUpToCapThenPendingReview` (round cap + full-history replay), `TestConfirmMeal_NoNutritionRowWritten`, `TestCreateManualMeal_DirectMacros`, `TestPatchMealItem_WeightOnlyChangeRescalesFromExistingBinding`, `TestCreateManualMeal_CrossUserCustomFoodReturns404`, `TestCreateManualMeal_NeverEntersProcessing`.
+- [x] 5.8 Extend `PATCH .../items/{item_id}` to accept an optional `name`, applied independently of the manual/reference/weight branch (including a `name`-only patch with no other field, which must not hit the "nothing to update" 400) — corrects the displayed description without implying a macro change
+      — found via real dogfood use: binding an item to a corrected food left the original vision-model guess on screen forever, with no way to fix it. `TestPatchMealItem_BindUpdatesNameWhenProvided`, `TestPatchMealItem_RebindAlreadyMatchedItemChangesNameAndMacros`, `TestPatchMealItem_NameAloneIsAcceptedAndDoesNotTouchMacros` in `food_meal_lifecycle_test.go`.
 
 ## 6. Registry Integration & Deletion
 
@@ -58,6 +60,8 @@
 - [x] 7.4 Portion weight adjuster and itemized macro summary card, including the resolution UI for `macro_source = none` items backed by the item PATCH endpoint
 - [x] 7.5 Custom food entry modal with edit and delete
 - [x] 7.6 Manual (photo-free) meal entry form
+- [x] 7.8 Make the item resolution UI reachable for any item, not just `macro_source = none` ones, so the owner can correct an already-matched item; item names wrap instead of single-line-truncating so the full vision-model guess is always readable; binding to a search result syncs the item's displayed name to the match; manual mode gains an editable name field
+      — found via real dogfood use (screenshot showed truncated names and no way to fix a wrong match). `frontend/components/food/MealItemRow.tsx`, `frontend/components/food/ItemResolver.tsx`.
 - [ ] 7.7 Calibration sample capture and management UI for photos, food identities, and measured gram weights
       — blocked on task 8.2 (calibration sample CRUD endpoints don't exist yet); not started.
 

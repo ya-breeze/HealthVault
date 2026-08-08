@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -13,16 +14,23 @@ import (
 )
 
 // patchItemRequest is the JSON body for PATCH /api/food/meals/{id}/items/{item_id}.
-// Exactly one of these applies, in this precedence:
+// Exactly one of Manual/FdcID-or-CustomFoodID/WeightGrams-alone applies, in
+// this precedence:
 //  1. Manual: the 7 macro fields are stored as given, macro_source = manual.
 //  2. FdcID or CustomFoodID: bound to that reference food, macro_source =
 //     reference, macros scaled from its profile by WeightGrams.
 //  3. WeightGrams alone: rescales the item from its existing binding, if any.
+//
+// Name is independent of the above and may be sent alongside any of them, or
+// alone: it corrects the item's displayed description (e.g. the vision
+// model's guess was "dark berries" but it's actually cherries) without
+// implying anything about macro_source.
 type patchItemRequest struct {
 	Manual       bool       `json:"manual,omitempty"`
 	FdcID        *int64     `json:"fdc_id,omitempty"`
 	CustomFoodID *uuid.UUID `json:"custom_food_id,omitempty"`
 	WeightGrams  *float64   `json:"weight_grams,omitempty"`
+	Name         *string    `json:"name,omitempty"`
 
 	Calories          float64 `json:"calories,omitempty"`
 	ProteinGrams      float64 `json:"protein_grams,omitempty"`
@@ -90,6 +98,11 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !req.Manual && req.FdcID == nil && req.CustomFoodID == nil && req.WeightGrams == nil && req.Name == nil {
+		http.Error(w, "nothing to update: specify manual, fdc_id, custom_food_id, weight_grams, or name", http.StatusBadRequest)
+		return
+	}
+
 	switch {
 	case req.Manual:
 		item.FdcID = nil
@@ -127,9 +140,12 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			}
 			item.ApplyProfile(profile)
 		}
-	default:
-		http.Error(w, "nothing to update: specify manual, fdc_id, custom_food_id, or weight_grams", http.StatusBadRequest)
-		return
+	}
+
+	if req.Name != nil {
+		if name := strings.TrimSpace(*req.Name); name != "" {
+			item.Name = name
+		}
 	}
 
 	if err := h.storage.DB().Save(&item).Error; err != nil {
