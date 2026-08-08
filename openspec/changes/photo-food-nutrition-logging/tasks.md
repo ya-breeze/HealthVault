@@ -52,13 +52,14 @@
 
 ## 7. Frontend UI Components
 
-- [ ] 7.1 Photo upload and camera capture component with loading state and the external-model disclosure; file input declares `accept="image/jpeg,image/png,image/webp"` so iOS transcodes HEIC on selection, and camera capture encodes via `canvas.toBlob('image/jpeg')`
-- [ ] 7.2 Add the meal review page as a statically-exportable route reading the meal ID from a query parameter (`/food/review/?meal=<uuid>`) — `output: 'export'` means a `[id]` segment cannot be generated for runtime UUIDs
-- [ ] 7.3 Clarification questions modal
-- [ ] 7.4 Portion weight adjuster and itemized macro summary card, including the resolution UI for `macro_source = none` items backed by the item PATCH endpoint
-- [ ] 7.5 Custom food entry modal with edit and delete
-- [ ] 7.6 Manual (photo-free) meal entry form
+- [x] 7.1 Photo upload and camera capture component with loading state and the external-model disclosure; file input declares `accept="image/jpeg,image/png,image/webp"` so iOS transcodes HEIC on selection, and camera capture encodes via `canvas.toBlob('image/jpeg')`
+- [x] 7.2 Add the meal review page as a statically-exportable route reading the meal ID from a query parameter (`/food/review/?meal=<uuid>`) — `output: 'export'` means a `[id]` segment cannot be generated for runtime UUIDs
+- [x] 7.3 Clarification questions modal
+- [x] 7.4 Portion weight adjuster and itemized macro summary card, including the resolution UI for `macro_source = none` items backed by the item PATCH endpoint
+- [x] 7.5 Custom food entry modal with edit and delete
+- [x] 7.6 Manual (photo-free) meal entry form
 - [ ] 7.7 Calibration sample capture and management UI for photos, food identities, and measured gram weights
+      — blocked on task 8.2 (calibration sample CRUD endpoints don't exist yet); not started.
 
 ## 8. Model Calibration
 
