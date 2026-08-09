@@ -183,21 +183,42 @@ export interface PatchMealInput {
   logged_at?: string;
 }
 
+// Both error classes below set `.name` explicitly and restore the prototype
+// chain via Object.setPrototypeOf in their constructors. TypeScript/SWC
+// transpilation of `class X extends Error` can silently break `instanceof`
+// checks against the subclass (a well-documented gotcha: Error's own
+// constructor can return a different object than `this`, severing the
+// prototype chain when downleveled) — the explicit `.name` tag gives
+// callers a transpilation-proof way to distinguish them even if
+// `instanceof` doesn't hold in some build configuration.
+
 // ReanalyzeFailedError is thrown for HTTP 502 from POST .../reanalyze: the
 // backend guarantees the meal is left exactly as it was found on this
 // outcome (see design.md "Reanalyze failure reverts to the meal's prior
 // state"), so callers can show "try again, nothing changed" rather than a
 // generic error.
-export class ReanalyzeFailedError extends Error {}
+export class ReanalyzeFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReanalyzeFailedError';
+    Object.setPrototypeOf(this, ReanalyzeFailedError.prototype);
+  }
+}
 
-// ReanalyzeSupersededError is thrown for HTTP 409 from POST .../reanalyze —
+// ReanalyzeSupersededError is thrown for HTTP 412 from POST .../reanalyze —
 // a materially different outcome from ReanalyzeFailedError's 502. It means
 // this reanalysis attempt failed AND a newer operation (e.g. a concurrent
 // Retry) claimed the meal in the meantime, so the "meal is unchanged"
 // guarantee does not hold: the newer operation may already have changed it.
 // Callers should refetch rather than assume the previously displayed meal
 // is still current.
-export class ReanalyzeSupersededError extends Error {}
+export class ReanalyzeSupersededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReanalyzeSupersededError';
+    Object.setPrototypeOf(this, ReanalyzeSupersededError.prototype);
+  }
+}
 
 export const api = {
   login: (username: string, password: string) =>

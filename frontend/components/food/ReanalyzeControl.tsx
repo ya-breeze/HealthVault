@@ -48,9 +48,15 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
       setOpen(false);
       setHint('');
     } catch (err) {
-      if (err instanceof ReanalyzeFailedError) {
+      // Checks both instanceof and the explicit .name tag — see the
+      // comment on these classes in lib/api.ts for why instanceof alone
+      // isn't trusted here.
+      const isFailed = err instanceof ReanalyzeFailedError || (err as { name?: string })?.name === 'ReanalyzeFailedError';
+      const isSuperseded =
+        err instanceof ReanalyzeSupersededError || (err as { name?: string })?.name === 'ReanalyzeSupersededError';
+      if (isFailed) {
         setError('Reanalysis failed — the meal is unchanged. You can try again.');
-      } else if (err instanceof ReanalyzeSupersededError) {
+      } else if (isSuperseded) {
         setError('Another operation (e.g. a retry) took over this meal while reanalyzing — showing its current state.');
         try {
           onReanalyzed(await api.getMeal(mealId));

@@ -435,7 +435,14 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
     await page.locator('textarea').fill('a hint that will be rejected by the mocked backend');
     await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
 
-    await expect(page.getByText('Reanalysis failed')).toBeVisible();
+    // Asserts on text unique to ReanalyzeControl's custom 502 copy ("You can
+    // try again"), not just "Reanalysis failed" — that substring also
+    // appears in the raw backend error body, so it would pass even if the
+    // instanceof/name check misfired and the code fell through to the
+    // generic fallback message. This is what let a real instanceof-under-
+    // transpilation bug through undetected until the sibling 412 test (whose
+    // assertion was already unique) caught it.
+    await expect(page.getByText('You can try again')).toBeVisible();
     // Unchanged: still the original item, still confirmed.
     await expect(page.getByText('Old Item')).toBeVisible();
     await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
@@ -449,24 +456,26 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
       items: [{ ...mockFoodMeal().items[0], id: 'item-3', name: 'Superseding Item' }],
     });
 
-    // The first GET (on load) returns the original meal; a second GET (the
-    // refetch ReanalyzeControl issues on 412) returns what a newer
-    // operation — e.g. a concurrent Retry — left behind. Distinct from the
-    // 502 case above: there, no refetch happens at all, since the backend
-    // guarantees nothing changed.
-    let getCount = 0;
+    // Any GET before the reanalyze POST fires returns the original meal;
+    // any GET after it (the refetch ReanalyzeControl issues on 412) returns
+    // what a newer operation — e.g. a concurrent Retry — left behind. Keyed
+    // on whether reanalyze has been attempted, not a raw call count, since
+    // the exact number of incidental GETs before that point isn't this
+    // test's concern. Distinct from the 502 case above: there, no refetch
+    // happens at all, since the backend guarantees nothing changed.
+    let reanalyzeAttempted = false;
     await page.route('**/api/food/meals/mock-meal-id', route => {
       if (route.request().method() !== 'GET') return route.continue();
-      getCount++;
-      return route.fulfill({ json: getCount === 1 ? initial : superseded });
+      return route.fulfill({ json: reanalyzeAttempted ? superseded : initial });
     });
-    await page.route('**/api/food/meals/mock-meal-id/reanalyze', route =>
-      route.fulfill({
+    await page.route('**/api/food/meals/mock-meal-id/reanalyze', route => {
+      reanalyzeAttempted = true;
+      return route.fulfill({
         status: 412,
         contentType: 'text/plain',
         body: 'reanalysis failed; the meal was claimed by another operation',
-      })
-    );
+      });
+    });
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await expect(page.getByText('Old Item')).toBeVisible();
