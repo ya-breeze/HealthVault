@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -66,14 +67,27 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read the whole bounded body before decoding, rather than handing the
+	// MaxBytesReader straight to json.Decoder: Decode stops as soon as it has
+	// parsed one complete JSON value and never reads further, so trailing
+	// bytes past a small, valid JSON prefix (e.g. a real hint followed by
+	// thousands of padding bytes) would never actually reach the
+	// MaxBytesReader's limit check, silently defeating the 4 KiB cap this
+	// requirement promises. io.ReadAll reads to EOF, so oversized trailing
+	// content is guaranteed to trip the limit here.
 	r.Body = http.MaxBytesReader(w, r.Body, maxReanalyzeBodyBytes)
-	var req reanalyzeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	var req reanalyzeRequest
+	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}

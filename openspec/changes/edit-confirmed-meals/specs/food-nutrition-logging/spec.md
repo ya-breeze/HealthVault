@@ -9,6 +9,8 @@ Whenever a request causes the item to be scaled from a reference food's profile 
 
 The system SHALL apply the item change and, if the owning meal's status is `confirmed`, recompute and persist the meal's macro aggregate from its current items, within a single database transaction (see the "Meal Aggregate Recomputed After Edit While Confirmed" requirement). The response body SHALL be the full updated `FoodMeal`, including its current items and (for a `confirmed` meal) its freshly recomputed aggregate — not the item alone — so a caller can update its full view of the meal from one response.
 
+The item SHALL be loaded and mutated within the same transaction as the write that persists it, not loaded beforehand and mutated in memory — and that write SHALL be conditioned on the item's `updated_at` still matching what was observed when it was loaded within this transaction. If a concurrent request has modified the same item in between (detected either by the conditional write affecting zero rows, or by the database rejecting the write outright because the read it was based on is no longer current), the system SHALL reject this request with HTTP 409 and SHALL NOT apply any part of its change, rather than silently overwriting the concurrent request's already-applied change with a stale copy of every other column.
+
 #### Scenario: Bind an unresolved item to a food
 - **WHEN** the owner patches an item with a chosen `fdc_id`
 - **THEN** the system sets `macro_source = reference`, rescales the 7 macros from that profile and the item's weight, includes the item in subsequent aggregates, and returns the full updated meal
@@ -44,6 +46,15 @@ The system SHALL apply the item change and, if the owning meal's status is `conf
 #### Scenario: Cross-user item patch is rejected
 - **WHEN** a user patches an item belonging to a meal owned by a different user
 - **THEN** the system returns HTTP 404 and does not modify the item
+
+#### Scenario: Manual macros combined with a food reference is rejected
+- **WHEN** the owner patches an item with `manual: true` together with an `fdc_id` or `custom_food_id`
+- **THEN** the system returns HTTP 400 rather than silently preferring one and discarding the other
+
+#### Scenario: Two concurrent patches to the same item do not silently clobber each other
+- **GIVEN** an item with an existing binding
+- **WHEN** two PATCH requests for the same item (e.g. a weight change and a rebind) are submitted close enough together that the second request's write is based on a read taken before the first request committed
+- **THEN** exactly one of them applies; the other returns HTTP 409 and does not modify the item — neither request's write silently overwrites the other's already-committed columns
 
 ## ADDED Requirements
 

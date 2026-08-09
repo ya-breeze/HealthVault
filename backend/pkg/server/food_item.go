@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/mattn/go-sqlite3"
 	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
@@ -54,6 +55,20 @@ func editableMealStatus(status string) bool {
 // concurrent Reanalyze claimed the meal (and, on success, replaced its items
 // and zeroed its aggregate) in that window. Callers map it to HTTP 409.
 var errMealNoLongerEditable = errors.New("meal is no longer editable")
+
+// itemMutationError carries an HTTP status/message pair out of an
+// applyItemMutation closure for a validation failure that can only be
+// determined once the item's current row has been loaded inside the
+// transaction — e.g. PatchMealItem's weight/macro-source checks, which
+// depend on the item's state at the moment of the write, not at request
+// start. Distinct from errMealNoLongerEditable, which every applyItemMutation
+// caller maps to 409 uniformly regardless of the specific status/message.
+type itemMutationError struct {
+	status int
+	msg    string
+}
+
+func (e *itemMutationError) Error() string { return e.msg }
 
 // applyItemMutation runs fn (an item create/update/delete) inside a
 // transaction. It re-reads the meal's status *inside* that transaction and
@@ -151,19 +166,6 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var item database.FoodItem
-	err = h.storage.DB().
-		Where("id = ? AND meal_id = ? AND user_id = ?", itemID, mealID, claims.UserID).
-		First(&item).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "query error", http.StatusInternalServerError)
-		return
-	}
-
 	var req patchItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -183,72 +185,150 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "specify at most one of fdc_id or custom_food_id", http.StatusBadRequest)
 		return
 	}
-
-	switch {
-	case req.Manual:
-		item.FdcID = nil
-		item.CustomFoodID = nil
-		item.MacroSource = database.MacroSourceManual
-		if req.WeightGrams != nil {
-			item.WeightGrams = *req.WeightGrams
-		}
-		item.Calories = req.Calories
-		item.ProteinGrams = req.ProteinGrams
-		item.CarbsGrams = req.CarbsGrams
-		item.FatGrams = req.FatGrams
-		item.SugarGrams = req.SugarGrams
-		item.SodiumGrams = req.SodiumGrams
-		item.DietaryFiberGrams = req.DietaryFiberGrams
-	case req.FdcID != nil || req.CustomFoodID != nil:
-		if req.WeightGrams != nil {
-			item.WeightGrams = *req.WeightGrams
-		}
-		// item.WeightGrams may already be positive from a prior vision
-		// recognition or edit even when this request omits weight_grams — but
-		// it can also be zero (an unresolved vision item) or, per this
-		// request, explicitly non-positive. Either way, binding a reference
-		// food scales its profile by this weight (ApplyProfile below), so a
-		// non-positive value here would persist negative or zero item macros
-		// and, via applyItemMutation's recompute, a negative meal aggregate.
-		if item.WeightGrams <= 0 {
-			http.Error(w, "weight_grams must be positive to bind a reference food", http.StatusBadRequest)
-			return
-		}
-		profile, status, err := h.resolveReferenceProfile(claims.UserID, req.FdcID, req.CustomFoodID)
-		if err != nil {
-			http.Error(w, err.Error(), status)
-			return
-		}
-		item.FdcID = req.FdcID
-		item.CustomFoodID = req.CustomFoodID
-		item.ApplyProfile(profile)
-	case req.WeightGrams != nil:
-		item.WeightGrams = *req.WeightGrams
-		if item.MacroSource == database.MacroSourceReference {
-			if item.WeightGrams <= 0 {
-				http.Error(w, "weight_grams must be positive for a reference item", http.StatusBadRequest)
-				return
-			}
-			profile, status, err := h.resolveReferenceProfile(claims.UserID, item.FdcID, item.CustomFoodID)
-			if err != nil {
-				http.Error(w, err.Error(), status)
-				return
-			}
-			item.ApplyProfile(profile)
-		}
+	if req.Manual && (req.FdcID != nil || req.CustomFoodID != nil) {
+		http.Error(w, "specify manual macros or a food reference, not both", http.StatusBadRequest)
+		return
 	}
 
-	if req.Name != nil {
-		if name := strings.TrimSpace(*req.Name); name != "" {
-			item.Name = name
-		}
-	}
-
+	// Everything above depends only on the request body, so it can be
+	// validated before opening a transaction. Everything below depends on
+	// the item's current row (its existing weight/macro_source), so it must
+	// be loaded and mutated *inside* applyItemMutation's transaction, not
+	// loaded here and mutated in memory — see itemMutationError's doc
+	// comment for the race this closes: the shipped UI can fire a
+	// weight-only PATCH (weight input's onBlur) and a binding PATCH (search
+	// result click) for the same item close together, and a stale
+	// outside-the-transaction snapshot lets whichever request's Save commits
+	// second silently overwrite the other's already-committed change with
+	// its own stale copy of every other column.
+	//
+	// Loading inside the transaction alone only narrows that window — it
+	// doesn't close it, since resolveReferenceProfile below still does I/O
+	// between this load and the eventual write, during which a concurrent
+	// request's own transaction can fully commit. The final write is
+	// therefore also conditioned on the item's updated_at still matching
+	// what was just observed (the same optimistic-concurrency pattern used
+	// throughout this codebase for meals — see analyzeMeal's lease-token doc
+	// comment in food_upload.go): if it no longer matches, something else
+	// changed this item in between and this write is rejected as a conflict
+	// rather than blindly overwriting it.
 	updated, err := h.applyItemMutation(mealID, claims.UserID, func(tx *gorm.DB) error {
-		return tx.Save(&item).Error
+		var item database.FoodItem
+		if err := tx.Where("id = ? AND meal_id = ? AND user_id = ?", itemID, mealID, claims.UserID).First(&item).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &itemMutationError{status: http.StatusNotFound, msg: "not found"}
+			}
+			return err
+		}
+		observedUpdatedAt := item.UpdatedAt
+
+		switch {
+		case req.Manual:
+			item.FdcID = nil
+			item.CustomFoodID = nil
+			item.MacroSource = database.MacroSourceManual
+			if req.WeightGrams != nil {
+				item.WeightGrams = *req.WeightGrams
+			}
+			item.Calories = req.Calories
+			item.ProteinGrams = req.ProteinGrams
+			item.CarbsGrams = req.CarbsGrams
+			item.FatGrams = req.FatGrams
+			item.SugarGrams = req.SugarGrams
+			item.SodiumGrams = req.SodiumGrams
+			item.DietaryFiberGrams = req.DietaryFiberGrams
+		case req.FdcID != nil || req.CustomFoodID != nil:
+			if req.WeightGrams != nil {
+				item.WeightGrams = *req.WeightGrams
+			}
+			// item.WeightGrams may already be positive from a prior vision
+			// recognition or edit even when this request omits weight_grams —
+			// but it can also be zero (an unresolved vision item) or, per
+			// this request, explicitly non-positive. Either way, binding a
+			// reference food scales its profile by this weight (ApplyProfile
+			// below), so a non-positive value here would persist negative or
+			// zero item macros and, via applyItemMutation's recompute, a
+			// negative meal aggregate.
+			if item.WeightGrams <= 0 {
+				return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive to bind a reference food"}
+			}
+			profile, status, err := h.resolveReferenceProfile(claims.UserID, req.FdcID, req.CustomFoodID)
+			if err != nil {
+				return &itemMutationError{status: status, msg: err.Error()}
+			}
+			item.FdcID = req.FdcID
+			item.CustomFoodID = req.CustomFoodID
+			item.ApplyProfile(profile)
+		case req.WeightGrams != nil:
+			item.WeightGrams = *req.WeightGrams
+			if item.MacroSource == database.MacroSourceReference {
+				if item.WeightGrams <= 0 {
+					return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive for a reference item"}
+				}
+				profile, status, err := h.resolveReferenceProfile(claims.UserID, item.FdcID, item.CustomFoodID)
+				if err != nil {
+					return &itemMutationError{status: status, msg: err.Error()}
+				}
+				item.ApplyProfile(profile)
+			}
+		}
+
+		if req.Name != nil {
+			if name := strings.TrimSpace(*req.Name); name != "" {
+				item.Name = name
+			}
+		}
+
+		res := tx.Model(&database.FoodItem{}).
+			Where("id = ? AND updated_at = ?", item.ID, observedUpdatedAt).
+			Updates(map[string]any{
+				"fdc_id":              item.FdcID,
+				"custom_food_id":      item.CustomFoodID,
+				"macro_source":        item.MacroSource,
+				"weight_grams":        item.WeightGrams,
+				"name":                item.Name,
+				"calories":            item.Calories,
+				"protein_grams":       item.ProteinGrams,
+				"carbs_grams":         item.CarbsGrams,
+				"fat_grams":           item.FatGrams,
+				"sugar_grams":         item.SugarGrams,
+				"sodium_grams":        item.SodiumGrams,
+				"dietary_fiber_grams": item.DietaryFiberGrams,
+			})
+		if res.Error != nil {
+			// A concurrent write landing between this transaction's read and
+			// this write doesn't always show up as RowsAffected == 0: under
+			// SQLite's WAL-mode snapshot isolation, this transaction's
+			// earlier read established a read snapshot, and a write against
+			// a now-stale snapshot fails outright with SQLITE_BUSY_SNAPSHOT
+			// rather than quietly matching zero rows. That's the same
+			// "something else changed this item first" situation as the
+			// RowsAffected == 0 case below, not a genuine server failure —
+			// report it the same way (409), not as a 500.
+			var sqliteErr sqlite3.Error
+			if errors.As(res.Error, &sqliteErr) && sqliteErr.Code == sqlite3.ErrBusy {
+				return &itemMutationError{
+					status: http.StatusConflict,
+					msg:    "item was modified by another request; reload and try again",
+				}
+			}
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return &itemMutationError{
+				status: http.StatusConflict,
+				msg:    "item was modified by another request; reload and try again",
+			}
+		}
+		return nil
 	})
 	if errors.Is(err, errMealNoLongerEditable) {
 		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
+		return
+	}
+	var mutErr *itemMutationError
+	if errors.As(err, &mutErr) {
+		http.Error(w, mutErr.msg, mutErr.status)
 		return
 	}
 	if err != nil {

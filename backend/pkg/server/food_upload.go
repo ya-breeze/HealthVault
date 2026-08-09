@@ -73,7 +73,11 @@ func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
 
 	// meal.UpdatedAt, set by GORM's Create above, is this attempt's lease
 	// token from the start — see analyzeMeal's doc comment.
-	applied := h.analyzeMeal(r.Context(), &meal, meal.UpdatedAt)
+	applied, failErr := h.analyzeMeal(r.Context(), &meal, meal.UpdatedAt)
+	if failErr != nil {
+		http.Error(w, "update error", http.StatusInternalServerError)
+		return
+	}
 	result, err := h.reloadIfSuperseded(&meal, applied)
 	writeReloadedMeal(w, result, err, http.StatusCreated)
 }
@@ -108,20 +112,24 @@ func writeUploadError(w http.ResponseWriter, err error) {
 // right to write a result — see food_reanalyze.go's claim doc comment for
 // the full scenario this guards against.
 //
-// Returns whether this attempt's own outcome (success or the failMeal
-// fallback) is what actually got persisted. false means a newer attempt's
-// lease pre-empted this one — meal's in-memory fields (still whatever the
-// claim set, since neither persistAnalysis nor failMeal touched it) no
-// longer reflect the database. Callers that respond to an HTTP caller with
-// meal must check this and reload the real current state rather than
+// Returns (applied, err) — see failMeal's doc comment for the distinction
+// between the two: applied is whether this attempt's own outcome (success,
+// or the failMeal fallback) is what actually got persisted; a non-nil err
+// means failMeal's own write failed outright and must be surfaced as this
+// attempt's own failure (e.g. HTTP 500), not silently treated the same as a
+// lost lease. applied==false, err==nil means a newer attempt's lease
+// pre-empted this one — meal's in-memory fields (still whatever the claim
+// set, since neither persistAnalysis nor failMeal touched it) no longer
+// reflect the database. Callers that respond to an HTTP caller with meal
+// must check applied and reload the real current state rather than
 // returning a stale snapshot — see reloadIfSuperseded.
-func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal, lease time.Time) bool {
+func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal, lease time.Time) (applied bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
 	defer cancel()
 	if err := h.runAnalysis(ctx, meal, "", lease); err != nil {
 		return h.failMeal(meal, lease)
 	}
-	return true
+	return true, nil
 }
 
 // reloadIfSuperseded returns meal unchanged if applied is true (this
@@ -444,18 +452,31 @@ func (h *foodHandlers) persistAnalysis(
 
 // failMeal marks meal failed, conditioned on lease still matching — see
 // persistAnalysis. If a newer attempt has since claimed the row, this is a
-// silent no-op (returns false): that attempt owns the meal now, and this one
-// reporting failure over it would be wrong regardless of what this attempt
-// itself observed. Returns true if the write actually applied.
-func (h *foodHandlers) failMeal(meal *database.FoodMeal, lease time.Time) bool {
+// silent no-op (returns applied=false, err=nil): that attempt owns the meal
+// now, and this one reporting failure over it would be wrong regardless of
+// what this attempt itself observed. Callers must treat that case as
+// "reload the real current state" (see reloadIfSuperseded), not as a
+// failure of their own.
+//
+// A non-nil err is a different situation entirely: the conditional UPDATE
+// itself failed (a real database error), not a lost lease. Reloading and
+// responding 200/201 in that case would hide the failure and, if the reload
+// happens to succeed, could report the meal as still `processing` with no
+// indication anything went wrong. Callers must surface a non-nil err as
+// their own failure (e.g. HTTP 500), the same way they already would if the
+// original vision call itself had errored before ever reaching failMeal.
+func (h *foodHandlers) failMeal(meal *database.FoodMeal, lease time.Time) (applied bool, err error) {
 	res := h.storage.DB().Model(&database.FoodMeal{}).
 		Where("id = ? AND updated_at = ?", meal.ID, lease).
 		Update("status", database.MealStatusFailed)
-	if res.Error == nil && res.RowsAffected > 0 {
-		meal.Status = database.MealStatusFailed
-		return true
+	if res.Error != nil {
+		return false, res.Error
 	}
-	return false
+	if res.RowsAffected > 0 {
+		meal.Status = database.MealStatusFailed
+		return true, nil
+	}
+	return false, nil
 }
 
 // extOf returns the stored file extension from a photostorage relative path

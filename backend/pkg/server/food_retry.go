@@ -86,7 +86,11 @@ func (h *foodHandlers) RetryMeal(w http.ResponseWriter, r *http.Request) {
 	meal.ClarifyLog = ""
 	meal.UpdatedAt = lease
 
-	applied := h.analyzeMeal(r.Context(), &meal, lease)
+	applied, failErr := h.analyzeMeal(r.Context(), &meal, lease)
+	if failErr != nil {
+		http.Error(w, "update error", http.StatusInternalServerError)
+		return
+	}
 	result, err := h.reloadIfSuperseded(&meal, applied)
 	writeReloadedMeal(w, result, err, http.StatusOK)
 }

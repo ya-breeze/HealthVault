@@ -143,14 +143,23 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 
 	recognized, err := h.vision.Clarify(ctx, priorItems, history)
 	if err != nil {
-		applied := h.failMeal(meal, lease)
+		applied, failErr := h.failMeal(meal, lease)
+		if failErr != nil {
+			http.Error(w, "update error", http.StatusInternalServerError)
+			return
+		}
 		result, reloadErr := h.reloadIfSuperseded(meal, applied)
 		writeReloadedMeal(w, result, reloadErr, http.StatusOK)
 		return
 	}
 	applied := true
 	if err := h.processRecognition(ctx, meal, recognized, lease); err != nil {
-		applied = h.failMeal(meal, lease)
+		var failErr error
+		applied, failErr = h.failMeal(meal, lease)
+		if failErr != nil {
+			http.Error(w, "update error", http.StatusInternalServerError)
+			return
+		}
 	}
 	result, reloadErr := h.reloadIfSuperseded(meal, applied)
 	writeReloadedMeal(w, result, reloadErr, http.StatusOK)

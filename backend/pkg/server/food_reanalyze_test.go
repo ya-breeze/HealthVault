@@ -227,6 +227,36 @@ func TestReanalyze_OversizedBodyReturns413(t *testing.T) {
 	}
 }
 
+// Regression: round-7 review — json.NewDecoder(r.Body).Decode stops reading
+// as soon as it has parsed one complete JSON value, so a small, valid JSON
+// prefix followed by a large run of trailing bytes never actually reaches
+// the MaxBytesReader's limit check, silently defeating the 4 KiB cap: unlike
+// TestReanalyze_OversizedBodyReturns413 above (where the oversized content is
+// *inside* the JSON value itself, so Decode necessarily reads it), this
+// exploits a valid short hint followed by padding Decode never looks at.
+func TestReanalyze_OversizedTrailingPaddingReturns413(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusPendingReview, 0, "")
+	fake := &vision.Fake{RecognizeResult: &vision.RecognizeResult{Items: []vision.Item{{Name: "Rice", WeightGrams: 100}}}}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+
+	body := []byte(`{"hint":"valid"}`)
+	body = append(body, bytes.Repeat([]byte(" "), 5000)...)
+	r := httptest.NewRequest(http.MethodPost, "/api/food/meals/"+meal.ID.String()+"/reanalyze", bytes.NewBuffer(body))
+	r = mux.SetURLVars(r, map[string]string{"id": meal.ID.String()})
+
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(r, userID))
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 for a valid hint plus oversized trailing padding, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.RecognizeCalls) != 0 {
+		t.Errorf("expected no vision call for an oversized body, got %d", len(fake.RecognizeCalls))
+	}
+}
+
 func TestReanalyze_NoPhotoReturns409(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

@@ -561,6 +561,88 @@ func TestPatchMealItem_BothReferenceIDsReturns400(t *testing.T) {
 	}
 }
 
+// Regression: round-7 review — CreateMealItem already rejected manual
+// combined with a reference ID, and the round-2 design/commit said PATCH
+// does too, but only Create actually implemented the check. A body like
+// {"manual":true,"fdc_id":7,"calories":100} entered the manual branch,
+// cleared any existing binding, and silently discarded the supplied fdc_id.
+func TestPatchMealItem_ManualPlusReferenceReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"manual plus fdc_id", map[string]any{"manual": true, "calories": 100, "fdc_id": 7}},
+		{"manual plus custom_food_id", map[string]any{"manual": true, "calories": 100, "custom_food_id": uuid.New().String()}},
+	}
+	for _, c := range cases {
+		meal := createUnresolvedMeal(t, st, userID, familyID)
+		r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), c.body)
+		w := httptest.NewRecorder()
+		h.PatchMealItem(w, withClaims(r, userID))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d: %s", c.name, w.Code, w.Body.String())
+		}
+	}
+}
+
+// Regression: round-7 review — item was loaded once, outside
+// applyItemMutation's transaction, mutated in memory, and blindly Saved
+// (writing every column) inside the transaction. The shipped UI can fire a
+// weight-only PATCH (the weight input's onBlur) and a binding PATCH (a
+// search result click) for the same item close together; a stale
+// outside-the-transaction snapshot let whichever request's write committed
+// second silently overwrite the other's already-committed change with its
+// own stale copy of every other column. The item is now loaded inside the
+// transaction and the final write is conditioned on its observed
+// updated_at, so a concurrent write landing in between is detected and
+// rejected as a 409 conflict instead of silently clobbered.
+func TestPatchMealItem_ConcurrentModificationReturns409NotSilentOverwrite(t *testing.T) {
+	// File-backed, not :memory: — the hook below issues a genuinely separate
+	// connection-pool write, and an in-memory SQLite database is private per
+	// connection, so a separate connection would see an empty, schema-less
+	// database rather than this test's actual data (see newFileFoodTestStorage's
+	// own doc comment).
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	itemID := meal.Items[0].ID
+
+	registerRaceSimulation(t, st.DB(), func() {
+		// Simulates a second request's PATCH committing in the window
+		// between this request's own item load and its conditional write —
+		// a plain top-level write, not nested in this request's transaction.
+		if err := st.DB().Model(&database.FoodItem{}).Where("id = ?", itemID).
+			Update("name", "Renamed by a concurrent request").Error; err != nil {
+			t.Fatalf("simulate concurrent write: %v", err)
+		}
+	})
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	r := itemPatchRequest(meal.ID.String(), itemID.String(), map[string]any{"weight_grams": 250})
+	h.PatchMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when the item was concurrently modified, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got database.FoodItem
+	if err := st.DB().Where("id = ?", itemID).First(&got).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if got.Name != "Renamed by a concurrent request" {
+		t.Errorf("expected the concurrent request's write to survive, got name=%q", got.Name)
+	}
+	if got.WeightGrams == 250 {
+		t.Error("expected this request's own conflicting write to not have applied")
+	}
+}
+
 func TestPatchMealItem_SupplyMacrosDirectly(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
