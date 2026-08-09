@@ -21,21 +21,59 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(meal.name);
   const [loggedAt, setLoggedAt] = useState(toLocalInputValue(meal.logged_at));
+  // toLocalInputValue truncates to minute granularity (datetime-local has no
+  // seconds by default), so re-deriving logged_at from the input on every
+  // save — even a name-only edit — would silently drop the meal's real
+  // seconds/fractional-seconds and could shift its history ordering. Only
+  // send logged_at when the user actually touched this field.
+  const [loggedAtDirty, setLoggedAtDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const resetDraft = () => {
+    setName(meal.name);
+    setLoggedAt(toLocalInputValue(meal.logged_at));
+    setLoggedAtDirty(false);
+    setError(null);
+  };
+
+  const openEditor = () => {
+    resetDraft();
+    setEditing(true);
+  };
+
+  const cancel = () => {
+    resetDraft();
+    setEditing(false);
+  };
+
   const save = async () => {
-    const parsedDate = loggedAt ? new Date(loggedAt) : null;
-    if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
-      setError('Please enter a valid date and time');
+    const trimmedName = name.trim();
+    const nameChanged = trimmedName !== '' && trimmedName !== meal.name;
+
+    let loggedAtIso: string | undefined;
+    if (loggedAtDirty) {
+      const parsedDate = loggedAt ? new Date(loggedAt) : null;
+      if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+        setError('Please enter a valid date and time');
+        return;
+      }
+      loggedAtIso = parsedDate.toISOString();
+    }
+
+    if (!nameChanged && loggedAtIso === undefined) {
+      // Nothing was actually changed — close without a round trip; an empty
+      // PATCH body would just be rejected by the backend anyway.
+      setEditing(false);
       return;
     }
+
     setBusy(true);
     setError(null);
     try {
       const updated = await api.patchMeal(meal.id, {
-        name: name.trim() || undefined,
-        logged_at: parsedDate.toISOString(),
+        name: nameChanged ? trimmedName : undefined,
+        logged_at: loggedAtIso,
       });
       onUpdated(updated);
       setEditing(false);
@@ -49,7 +87,7 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
   if (!editing) {
     return (
       <button
-        onClick={() => setEditing(true)}
+        onClick={openEditor}
         className="text-xs text-gray-500 dark:text-gray-400 hover:underline"
       >
         Edit name/time
@@ -69,12 +107,15 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
       <input
         type="datetime-local"
         value={loggedAt}
-        onChange={e => setLoggedAt(e.target.value)}
+        onChange={e => {
+          setLoggedAt(e.target.value);
+          setLoggedAtDirty(true);
+        }}
         className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
       />
       <div className="flex justify-end gap-2">
         <button
-          onClick={() => setEditing(false)}
+          onClick={cancel}
           className="text-xs text-gray-500 dark:text-gray-400 hover:underline"
         >
           Cancel

@@ -177,7 +177,12 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)
 	defer cancel()
 
-	if err := h.runAnalysis(ctx, &meal, hint, lease); err != nil {
+	// strict=true: unlike upload/retry/clarify, a Select failure here must
+	// not be swallowed into a silently-unresolved item set — this can
+	// replace a confirmed meal's real, reviewed items, and the whole point
+	// of Reanalyze's contract is that a failure leaves the meal untouched.
+	// See resolveItems's doc comment.
+	if err := h.runAnalysis(ctx, &meal, hint, lease, true); err != nil {
 		// Non-destructive failure: restore exactly what the claim overwrote.
 		// Items and aggregate were never touched — persistAnalysis's
 		// delete-and-replace only runs on a successful recognition — so the

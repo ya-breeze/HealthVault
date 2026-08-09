@@ -323,6 +323,53 @@ func TestReanalyze_FailedVisionCallLeavesMealUnchanged(t *testing.T) {
 	}
 }
 
+// Regression: round-8 review — resolveItems swallowed any h.vision.Select
+// error and silently returned every candidate item unresolved, so
+// processRecognition/persistAnalysis still reported success even though
+// Select failed. Select shares runAnalysis's overall timeout with Recognize,
+// so a slow Recognize call can legitimately leave Select to fail with a
+// context deadline. For Reanalyze specifically that used to mean a
+// confirmed meal's real, reviewed items got replaced with an unresolved set
+// and its aggregate zeroed, and the caller was told 200 — a destructive
+// "success" for what is actually a vision-provider failure. Select is only
+// called when at least one recognized item has a non-empty candidate
+// shortlist, hence the USDA index seeded below.
+func TestReanalyze_SelectErrorTreatedAsFailureNotDegradedSuccess(t *testing.T) {
+	for _, status := range []string{database.MealStatusPendingReview, database.MealStatusConfirmed} {
+		st := newFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		dir := t.TempDir()
+		meal := createReanalyzeMeal(t, st, dir, userID, familyID, status, 0, "")
+
+		idx := buildUSDAIndex(t, usdaFood(7, "Rice", 130))
+		fake := &vision.Fake{
+			RecognizeResult: &vision.RecognizeResult{Items: []vision.Item{{Name: "Rice", WeightGrams: 150}}},
+			SelectErr:       context.DeadlineExceeded,
+		}
+		h := server.NewFoodHandlers(st, idx, dir).WithVision(fake, 10<<20, time.Minute)
+
+		w := httptest.NewRecorder()
+		h.Reanalyze(w, withClaims(reanalyzeHTTPRequest(meal.ID.String(), "this is rice"), userID))
+		if w.Code != http.StatusBadGateway {
+			t.Errorf("status=%s: expected 502 when Select fails, got %d: %s", status, w.Code, w.Body.String())
+		}
+
+		var reloaded database.FoodMeal
+		if err := st.DB().Preload("Items").Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+			t.Fatalf("reload meal: %v", err)
+		}
+		if reloaded.Status != status {
+			t.Errorf("status=%s: expected meal status unchanged, got %s", status, reloaded.Status)
+		}
+		if len(reloaded.Items) != 1 || reloaded.Items[0].Name != "Original item" {
+			t.Errorf("status=%s: expected original item to survive untouched, got %+v", status, reloaded.Items)
+		}
+		if status == database.MealStatusConfirmed && reloaded.Calories != 400 {
+			t.Errorf("expected confirmed meal's aggregate to survive untouched, got %v", reloaded.Calories)
+		}
+	}
+}
+
 // Regression: when the vision result includes clarification questions,
 // processRecognition used to persist the item replacement/status/aggregate
 // (persistAnalysis) and the clarify_log (appendPendingQuestions) as two

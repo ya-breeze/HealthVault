@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { api, FoodItem, FoodMeal, FoodSearchResult } from '@/lib/api';
+import { useEffect, useState } from 'react';
+import { api, ApiError, FoodItem, FoodMeal, FoodSearchResult } from '@/lib/api';
 import ItemResolver from './ItemResolver';
 
 interface Props {
@@ -33,6 +33,17 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(item.macro_source === 'none');
 
+  // Keep the weight draft in sync with the authoritative item prop. A
+  // sibling request for this same item (e.g. a bind PATCH from ItemResolver
+  // winning a race against this row's own in-flight weight PATCH — see
+  // commitWeight's 409 handling below) can change item.weight_grams from
+  // outside this component; useState's initial value is only used on first
+  // render, so without this the input would keep showing whatever it held
+  // before the win, not the food that's actually now bound.
+  useEffect(() => {
+    setWeight(item.weight_grams);
+  }, [item.weight_grams]);
+
   const commitWeight = async () => {
     if (weight === item.weight_grams) return;
     // Mirrors PatchMealItem's server-side check: a non-positive weight on a
@@ -51,8 +62,25 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
       const updated = await api.patchMealItem(mealId, item.id, { weight_grams: weight });
       onUpdated(updated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update weight');
-      setWeight(item.weight_grams);
+      // Checks both instanceof and the explicit .name tag — see ApiError's
+      // doc comment in lib/api.ts for why instanceof alone isn't trusted.
+      const isConflict =
+        (err instanceof ApiError || (err as { name?: string })?.name === 'ApiError') &&
+        (err as ApiError).status === 409;
+      if (isConflict) {
+        // This request's own view of the item was stale by the time it
+        // landed — a concurrent edit (e.g. a bind) won instead. That
+        // winner's item prop has already propagated (or is about to) via
+        // onUpdated further up the tree, and the effect above resyncs this
+        // row's weight draft from it — resetting to *this* request's
+        // now-stale starting point (item.weight_grams, captured in this
+        // closure before the winning edit) would fight that resync and can
+        // leave the field showing neither the old nor the new value.
+        setError('This item was just changed by another edit — showing its current value.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to update weight');
+        setWeight(item.weight_grams);
+      }
     } finally {
       setSaving(false);
     }

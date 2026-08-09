@@ -126,7 +126,7 @@ func writeUploadError(w http.ResponseWriter, err error) {
 func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal, lease time.Time) (applied bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
 	defer cancel()
-	if err := h.runAnalysis(ctx, meal, "", lease); err != nil {
+	if err := h.runAnalysis(ctx, meal, "", lease, false); err != nil {
 		return h.failMeal(meal, lease)
 	}
 	return true, nil
@@ -175,7 +175,10 @@ func writeReloadedMeal(w http.ResponseWriter, meal *database.FoodMeal, err error
 // nothing valuable to lose), while Reanalyze reverts to the meal's prior
 // state instead, since it can be called against a confirmed meal with real
 // content behind it.
-func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal, hint string, lease time.Time) error {
+//
+// strict is threaded to resolveItems — see its doc comment for what it
+// changes and why Reanalyze (unlike upload/retry/clarify) must pass true.
+func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal, hint string, lease time.Time, strict bool) error {
 	photoBytes, err := h.photos.Read(meal.PhotoPath)
 	if err != nil {
 		return err
@@ -184,7 +187,7 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 	if err != nil {
 		return err
 	}
-	return h.processRecognition(ctx, meal, recognized, lease)
+	return h.processRecognition(ctx, meal, recognized, lease, strict)
 }
 
 // processRecognition persists the outcome of a Recognize or Clarify call.
@@ -200,9 +203,10 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 // Returns any persistence error rather than swallowing it: runAnalysis's
 // callers, specifically Reanalyze, need to know a persistence failure
 // happened even though the vision call itself succeeded, so they can revert
-// rather than report success with a mutated meal.
+// rather than report success with a mutated meal. strict is passed straight
+// through to resolveItems.
 func (h *foodHandlers) processRecognition(
-	ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult, lease time.Time,
+	ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult, lease time.Time, strict bool,
 ) error {
 	nextRound := meal.ClarifyRound + 1
 	if len(recognized.ClarificationQuestions) > 0 && nextRound <= database.MaxClarifyRounds {
@@ -214,7 +218,10 @@ func (h *foodHandlers) processRecognition(
 		return h.persistAnalysis(meal, database.MealStatusPendingClarification, recognized.Raw, items, &clarifyLog, lease)
 	}
 
-	items := h.resolveItems(ctx, meal, recognized.Items)
+	items, err := h.resolveItems(ctx, meal, recognized.Items, strict)
+	if err != nil {
+		return err
+	}
 	return h.persistAnalysis(meal, database.MealStatusPendingReview, recognized.Raw, items, nil, lease)
 }
 
@@ -245,9 +252,23 @@ func buildPendingQuestionsLog(existingLog string, round int, questions []string)
 // whatever it chooses. An item with no candidates, or not selected, or
 // selected as "none of these" keeps MacroSource none — see
 // design.md "Matching is candidate retrieval, not auto-assignment."
+//
+// strict controls what happens when the Select call itself errors (e.g. it
+// shares runAnalysis's overall timeout with Recognize, so a slow Recognize
+// call can leave Select to fail with a context deadline): false (upload,
+// retry, clarify — the analyzeMeal/failMeal family, which has nothing
+// valuable to lose) degrades gracefully, leaving every candidate item
+// unresolved rather than failing the whole analysis over a Select hiccup.
+// true (Reanalyze only) returns the error instead, because Reanalyze's own
+// contract is that a failure leaves the meal completely unchanged — silently
+// swallowing a Select failure there would let this function return a
+// "successful" but effectively unresolved item set, and Reanalyze would
+// then replace a confirmed meal's real, reviewed items (and zero its
+// aggregate) with that unresolved set and report 200, when the correct
+// outcome for a vision-provider failure is 502 with nothing changed.
 func (h *foodHandlers) resolveItems(
-	ctx context.Context, meal *database.FoodMeal, recognizedItems []vision.Item,
-) []database.FoodItem {
+	ctx context.Context, meal *database.FoodMeal, recognizedItems []vision.Item, strict bool,
+) ([]database.FoodItem, error) {
 	items := make([]database.FoodItem, len(recognizedItems))
 	candidateSets := make([][]vision.Candidate, len(recognizedItems))
 	itemCandidates := make([]vision.ItemCandidates, 0, len(recognizedItems))
@@ -271,12 +292,15 @@ func (h *foodHandlers) resolveItems(
 	}
 
 	if len(itemCandidates) == 0 {
-		return items
+		return items, nil
 	}
 
 	sel, err := h.vision.Select(ctx, itemCandidates)
 	if err != nil {
-		return items
+		if strict {
+			return nil, err
+		}
+		return items, nil
 	}
 
 	for _, s := range sel.Selections {
@@ -296,7 +320,7 @@ func (h *foodHandlers) resolveItems(
 		items[s.ItemIndex].CustomFoodID = chosen.CustomFoodID
 		items[s.ItemIndex].ApplyProfile(profile)
 	}
-	return items
+	return items, nil
 }
 
 // retrieveCandidates mirrors Search's precedence rule: an exact (case-

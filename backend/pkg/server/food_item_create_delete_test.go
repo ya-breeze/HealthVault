@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
@@ -176,6 +177,116 @@ func TestCreateMealItem_CrossUserReturns404(t *testing.T) {
 	st.DB().Where("meal_id = ?", meal.ID).Find(&items) //nolint:errcheck
 	if len(items) != 1 {
 		t.Errorf("expected no item created, still have the original 1, got %d", len(items))
+	}
+}
+
+// Regression: round-8 review — applyItemMutation's own meal-status read
+// (inside its transaction, meant to close the gap between the handler's
+// earlier ownership check and this write) returned gorm.ErrRecordNotFound
+// straight through when the meal was deleted in that gap (e.g. via the
+// generic DELETE /api/data/food_meal endpoint), and every caller mapped
+// that as a generic 500 instead of 404 — the resource simply doesn't exist
+// anymore. File-backed storage: the hook below issues a genuinely separate
+// connection's delete, and :memory: SQLite is private per connection.
+func TestCreateMealItem_ReturnsNotFoundWhenMealDeletedBetweenCheckAndTransaction(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	const hookName = "test:delete-meal-mid-flight"
+	queries := 0
+	st.DB().Callback().Query().Before("gorm:query").Register(hookName, func(*gorm.DB) {
+		queries++
+		// Query 1 is CreateMealItem's own ownership check, before the
+		// transaction opens; query 2 is applyItemMutation's re-check inside
+		// it — the one this regression targets.
+		if queries != 2 {
+			return
+		}
+		if err := st.DB().Delete(&database.FoodMeal{}, "id = ?", meal.ID).Error; err != nil {
+			t.Fatalf("simulate concurrent delete: %v", err)
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Query().Remove(hookName) })
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	r := createItemRequest(meal.ID.String(), map[string]any{"name": "Side salad", "manual": true, "calories": 100})
+	h.CreateMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 when the meal is deleted between the initial check and the transaction, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// Regression: round-8 review — applyItemMutation's meal-status read is only
+// a plain read in a default deferred transaction. Under SQLite's WAL-mode
+// snapshot isolation, a concurrent operation (e.g. Reanalyze) can commit a
+// status change after this read but before fn's own first write, which then
+// fails outright with SQLITE_BUSY_SNAPSHOT rather than cleanly reflecting
+// the new status. PatchMealItem already translates that error (round 7,
+// for its own item-level write); this proves CreateMealItem gets the same
+// translation from applyItemMutation itself (round 8) instead of a generic
+// 500.
+func TestCreateMealItem_ConcurrentStatusChangeReturns409NotGeneric500(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	const hookName = "test:concurrent-status-change-on-create"
+	fired := false
+	st.DB().Callback().Create().Before("gorm:create").Register(hookName, func(*gorm.DB) {
+		if fired {
+			return
+		}
+		fired = true
+		if err := st.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+			Update("status", database.MealStatusProcessing).Error; err != nil {
+			t.Fatalf("simulate concurrent status change: %v", err)
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Create().Remove(hookName) })
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	r := createItemRequest(meal.ID.String(), map[string]any{"name": "Side salad", "manual": true, "calories": 100})
+	h.CreateMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when a concurrent operation changes the meal's status mid-transaction, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// Same scenario as the CreateMealItem case above, but for DeleteMealItem.
+// GORM soft-delete (setting deleted_at) still runs through the Delete
+// callback chain at the GORM level, even though the resulting SQL is an
+// UPDATE — so the injected race must hook "gorm:delete", not "gorm:update".
+func TestDeleteMealItem_ConcurrentStatusChangeReturns409NotGeneric500(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	const hookName = "test:concurrent-status-change-on-delete"
+	fired := false
+	st.DB().Callback().Delete().Before("gorm:delete").Register(hookName, func(*gorm.DB) {
+		if fired {
+			return
+		}
+		fired = true
+		if err := st.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+			Update("status", database.MealStatusProcessing).Error; err != nil {
+			t.Fatalf("simulate concurrent status change: %v", err)
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Delete().Remove(hookName) })
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	r := deleteItemRequest(meal.ID.String(), meal.Items[0].ID.String())
+	h.DeleteMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when a concurrent operation changes the meal's status mid-transaction, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

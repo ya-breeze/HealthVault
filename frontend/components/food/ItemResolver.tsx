@@ -21,6 +21,14 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
   const [query, setQuery] = useState(itemName);
   const [results, setResults] = useState<FoodSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
+  // Guards onBind/onManual specifically (not search): both trigger a real
+  // mutation (a PATCH or POST to the backend) with no idempotency key, so a
+  // double-click on a result — or a click followed quickly by another —
+  // before the first request's response closes this component can fire two
+  // requests. For AddItemForm's create context that's not merely wasted
+  // work: each POST allocates its own new item ID, so both succeed and the
+  // meal ends up with the same item twice.
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualName, setManualName] = useState(itemName);
   const [macros, setMacros] = useState({
@@ -42,25 +50,33 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
   };
 
   const handleBind = async (r: FoodSearchResult) => {
+    if (submitting) return;
+    setSubmitting(true);
     setError(null);
     try {
       await onBind(r);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to bind food');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleManualSubmit = async () => {
+    if (submitting) return;
     setError(null);
     const name = manualName.trim();
     if (!name) {
       setError('Name is required');
       return;
     }
+    setSubmitting(true);
     try {
       await onManual(name, macros);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save macros');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -108,7 +124,8 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
                 <li key={i}>
                   <button
                     onClick={() => handleBind(r)}
-                    className="w-full text-left py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
+                    disabled={submitting}
+                    className="w-full text-left py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
                   >
                     {r.name}{' '}
                     <span className="text-gray-400">
@@ -152,9 +169,10 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
           ))}
           <button
             onClick={handleManualSubmit}
-            className="col-span-2 mt-1 py-1.5 rounded-md text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white"
+            disabled={submitting}
+            className="col-span-2 mt-1 py-1.5 rounded-md text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
           >
-            Save
+            {submitting ? 'Saving…' : 'Save'}
           </button>
         </div>
       )}

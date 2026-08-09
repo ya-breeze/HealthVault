@@ -117,6 +117,8 @@ The system SHALL apply the same transactional aggregate-recompute-on-confirmed b
 ### Requirement: Meal Aggregate Recomputed After Edit While Confirmed
 Whenever an item is added, edited, or deleted on a meal whose status is `confirmed`, the system SHALL, within the same database transaction as the item write, reload the meal's current items, recompute its macro aggregate (the same computation used at confirm time), and persist it on the `FoodMeal` record — so the stored totals always equal the sum over the meal's current items, and a failure partway through leaves neither the item change nor a stale aggregate committed. A meal whose status is `pending_review` SHALL NOT have its aggregate recomputed by item writes — it remains as before, computed only once, at confirm.
 
+This same transaction SHALL re-verify the meal's existence and editable status immediately before the item write, not rely solely on the check made when the request was first received — closing the gap between that earlier check and this write. If the meal no longer exists (e.g. deleted through the generic meal-delete endpoint in that gap), the system SHALL return HTTP 404. If a concurrent operation has changed the meal's status in that same gap (e.g. a Reanalyze claiming it), the system SHALL return HTTP 409, regardless of whether that's detected by the re-verification finding a different status or by the underlying write itself failing because it was based on a since-invalidated read. Neither case SHALL be reported as a generic server error.
+
 #### Scenario: Editing an item's weight on a confirmed meal updates the meal total
 - **GIVEN** a confirmed meal with a stored total of 500 kcal
 - **WHEN** the owner edits one item's weight in a way that changes its calories by +100 kcal
@@ -141,6 +143,16 @@ Whenever an item is added, edited, or deleted on a meal whose status is `confirm
 - **GIVEN** a confirmed meal
 - **WHEN** an item write's transaction fails partway through (e.g. a storage error during the aggregate update)
 - **THEN** neither the item change nor any aggregate change is committed, and the meal is unchanged from before the request
+
+#### Scenario: An item write reports not found if the meal is deleted mid-flight
+- **GIVEN** an owner's request to add, edit, or delete an item passed the initial ownership check
+- **WHEN** the meal is deleted (e.g. via the generic meal-delete endpoint) before this transaction's own re-verification runs
+- **THEN** the system returns HTTP 404, not a generic server error
+
+#### Scenario: An item write reports a conflict if the meal's status changes mid-flight
+- **GIVEN** an owner's request to add, edit, or delete an item passed the initial editable-status check
+- **WHEN** a concurrent operation (e.g. Reanalyze) changes the meal's status before this transaction's own write completes
+- **THEN** the system returns HTTP 409, not a generic server error, regardless of whether the change is observed directly or only as the underlying write failing against a since-invalidated read
 
 ### Requirement: Meal Name and Logged Time Correction
 The system SHALL expose `PATCH /api/food/meals/{id}`, allowing the owner to correct a meal's `name` and/or `logged_at` independently of confirming it, while the meal's status is `pending_review` or `confirmed`. At least one of `name` or `logged_at` SHALL be supplied. A supplied `logged_at` SHALL be a non-zero timestamp, preserving the existing invariant that every meal carries a non-zero `logged_at`; a zero-value timestamp SHALL be rejected with HTTP 400 rather than silently accepted. The endpoint SHALL be rejected with HTTP 409 for a meal whose status is `processing`, `pending_clarification`, or `failed`.

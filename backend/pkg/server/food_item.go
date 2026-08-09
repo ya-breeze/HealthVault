@@ -70,6 +70,23 @@ type itemMutationError struct {
 
 func (e *itemMutationError) Error() string { return e.msg }
 
+// translateBusySnapshot maps SQLite's SQLITE_BUSY_SNAPSHOT — returned when a
+// transaction's read snapshot (here, applyItemMutation's own meal-status
+// read) goes stale because a concurrent transaction (e.g. a Reanalyze
+// claiming the meal) committed a conflicting change before this
+// transaction's first write — to errMealNoLongerEditable. It's the same
+// underlying situation the status re-check above this function exists to
+// catch; SQLite just surfaces it as a write failure on fn's own statement
+// instead of a value that re-check could see directly by re-reading. Passed
+// through unchanged if err isn't this specific SQLite condition.
+func translateBusySnapshot(err error) error {
+	var sqliteErr sqlite3.Error
+	if errors.As(err, &sqliteErr) && sqliteErr.Code == sqlite3.ErrBusy {
+		return errMealNoLongerEditable
+	}
+	return err
+}
+
 // applyItemMutation runs fn (an item create/update/delete) inside a
 // transaction. It re-reads the meal's status *inside* that transaction and
 // aborts with errMealNoLongerEditable if it's no longer pending_review or
@@ -93,24 +110,35 @@ func (h *foodHandlers) applyItemMutation(
 	err := h.storage.DB().Transaction(func(tx *gorm.DB) error {
 		var meal database.FoodMeal
 		if err := tx.Select("id", "status").Where("id = ?", mealID).First(&meal).Error; err != nil {
+			// Every caller already verified ownership before opening this
+			// transaction, but that check ran on a separate, earlier read —
+			// if the meal was deleted in between (e.g. via the generic
+			// DELETE /api/data/food_meal endpoint), this re-check is where
+			// that's actually discovered. Translate to the same sentinel
+			// loadOwnedMeal uses so callers can map it to 404 like any other
+			// "this meal doesn't exist" case, instead of falling through to
+			// a generic 500 for a resource that simply isn't there anymore.
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return database.ErrNotFound
+			}
 			return err
 		}
 		if !editableMealStatus(meal.Status) {
 			return errMealNoLongerEditable
 		}
 		if err := fn(tx); err != nil {
-			return err
+			return translateBusySnapshot(err)
 		}
 		if meal.Status != database.MealStatusConfirmed {
 			return nil
 		}
 		var items []database.FoodItem
 		if err := tx.Where("meal_id = ?", mealID).Find(&items).Error; err != nil {
-			return err
+			return translateBusySnapshot(err)
 		}
 		var agg database.FoodMeal
 		agg.Aggregate(items)
-		return tx.Model(&database.FoodMeal{}).Where("id = ?", mealID).Updates(map[string]any{
+		err := tx.Model(&database.FoodMeal{}).Where("id = ?", mealID).Updates(map[string]any{
 			"calories":            agg.Calories,
 			"protein_grams":       agg.ProteinGrams,
 			"carbs_grams":         agg.CarbsGrams,
@@ -119,6 +147,7 @@ func (h *foodHandlers) applyItemMutation(
 			"sodium_grams":        agg.SodiumGrams,
 			"dietary_fiber_grams": agg.DietaryFiberGrams,
 		}).Error
+		return translateBusySnapshot(err)
 	})
 	if err != nil {
 		return nil, err
@@ -326,6 +355,10 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
 		return
 	}
+	if errors.Is(err, database.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	var mutErr *itemMutationError
 	if errors.As(err, &mutErr) {
 		http.Error(w, mutErr.msg, mutErr.status)
@@ -461,6 +494,10 @@ func (h *foodHandlers) CreateMealItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
 		return
 	}
+	if errors.Is(err, database.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	if err != nil {
 		http.Error(w, "create error", http.StatusInternalServerError)
 		return
@@ -523,6 +560,10 @@ func (h *foodHandlers) DeleteMealItem(w http.ResponseWriter, r *http.Request) {
 	})
 	if errors.Is(err, errMealNoLongerEditable) {
 		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
+		return
+	}
+	if errors.Is(err, database.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {

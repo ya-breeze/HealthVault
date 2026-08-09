@@ -15,9 +15,17 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
   const [open, setOpen] = useState(false);
   const [weight, setWeight] = useState(100);
   const [error, setError] = useState<string | null>(null);
+  // ItemResolver already guards against a double-click on the same result
+  // firing two POSTs (see its own submitting state), but Cancel is this
+  // component's own button, outside ItemResolver's awareness — without this,
+  // Cancel could hide the form while a create is still in flight, and the
+  // item would still appear in the meal once it resolves after the form (and
+  // any error) is no longer visible.
+  const [creating, setCreating] = useState(false);
 
   const handleBind = async (r: FoodSearchResult) => {
     setError(null);
+    setCreating(true);
     try {
       const updated = await api.createMealItem(mealId, {
         name: r.name,
@@ -29,6 +37,8 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add item');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -37,12 +47,15 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
     macros: Omit<Parameters<typeof api.createMealItem>[1], 'manual' | 'name' | 'weight_grams'>
   ) => {
     setError(null);
+    setCreating(true);
     try {
       const updated = await api.createMealItem(mealId, { manual: true, name, weight_grams: weight, ...macros });
       onAdded(updated);
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add item');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -76,7 +89,8 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
       {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
       <button
         onClick={() => setOpen(false)}
-        className="mt-2 text-xs text-gray-500 dark:text-gray-400 hover:underline"
+        disabled={creating}
+        className="mt-2 text-xs text-gray-500 dark:text-gray-400 hover:underline disabled:opacity-50"
       >
         Cancel
       </button>

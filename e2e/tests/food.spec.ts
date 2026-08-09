@@ -337,6 +337,163 @@ test.describe('Editing a confirmed meal', () => {
   });
 });
 
+test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)', () => {
+  // Regression (round 8): MealMetaEditor always sent logged_at back on save,
+  // even for a name-only edit — and the datetime-local input truncates to
+  // minute granularity, so that silently dropped the meal's real
+  // seconds/fractional-seconds on every save. A meal logged with non-zero
+  // seconds is what actually exposes this, hence the specific timestamp
+  // below rather than a round one.
+  test('a name-only edit does not overwrite logged_at', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal({ logged_at: '2026-01-15T12:34:56.789Z' });
+    let patchBody: Record<string, unknown> | null = null;
+
+    await page.route('**/api/food/meals/mock-meal-id', route => {
+      if (route.request().method() === 'GET') return route.fulfill({ json: initial });
+      if (route.request().method() === 'PATCH') {
+        patchBody = route.request().postDataJSON();
+        return route.fulfill({ json: { ...initial, name: 'Renamed' } });
+      }
+      return route.continue();
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Edit name/time' }).click();
+    await page.locator('input[type="text"]').fill('Renamed');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+    await expect(page.getByText('Renamed')).toBeVisible();
+    expect(patchBody).not.toBeNull();
+    expect(patchBody).toEqual({ name: 'Renamed' });
+  });
+
+  // Regression (round 8): Cancel only hid the editor; name/loggedAt/error
+  // stayed in component state, so reopening showed the canceled draft
+  // instead of the meal's actual current values, and a later Save would
+  // apply the never-actually-wanted edit.
+  test('Cancel discards the draft, even after reopening', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal({ name: 'Original Name' });
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Edit name/time' }).click();
+    await page.locator('input[type="text"]').fill('Discarded Edit');
+    await page.getByRole('button', { name: 'Cancel' }).click();
+
+    await page.getByRole('button', { name: 'Edit name/time' }).click();
+    await expect(page.locator('input[type="text"]')).toHaveValue('Original Name');
+  });
+
+  // Regression (round 8): MealItemRow's weight `useState` only reads its
+  // initial value from props once, so a sibling PATCH winning a race against
+  // this row's own in-flight weight PATCH (the shipped UI can fire both: a
+  // weight change's onBlur, then a bind click, before the first response
+  // lands) left the input showing neither the old nor the new value once the
+  // losing request's 409 handler ran. The weight PATCH is deliberately
+  // delayed here so it resolves *after* the bind PATCH, reproducing the
+  // exact interleaving this regression depends on.
+  test('a weight edit that loses a race against a bind shows the winner, not a stale value', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+    const bound = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], name: 'New Food', macro_source: 'reference', weight_grams: 200, fdc_id: 99 }],
+    });
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/search**', route =>
+      route.fulfill({
+        json: { results: [{ source: 'usda', fdc_id: 99, name: 'New Food', profile: { calories_per_100g: 100, protein_per_100g: 0, carbs_per_100g: 0, fat_per_100g: 0, sugar_per_100g: 0, sodium_per_100g: 0, dietary_fiber_per_100g: 0 } }] },
+      })
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      const body = route.request().postDataJSON() as { fdc_id?: number };
+      if (body.fdc_id !== undefined) {
+        // The bind request: resolves immediately.
+        return route.fulfill({ json: bound });
+      }
+      // The weight-only request: deliberately delayed so it resolves after
+      // the bind above, then rejected — see PatchMealItem's round-7
+      // optimistic-concurrency check.
+      await new Promise(resolve => setTimeout(resolve, 400));
+      return route.fulfill({
+        status: 409,
+        contentType: 'text/plain',
+        body: 'item was modified by another request; reload and try again',
+      });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await expect(page.getByText('Old Item')).toBeVisible();
+
+    await page.locator('input[type="number"]').first().fill('150');
+    await page.locator('input[type="number"]').first().blur();
+    await page.getByRole('button', { name: 'Change match' }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await page.getByRole('button', { name: /New Food/ }).click();
+
+    await expect(page.getByText('New Food')).toBeVisible();
+    await expect(page.locator('input[type="number"]').first()).toHaveValue('200');
+    // The delayed weight PATCH's 409 lands after the bind — confirm it
+    // doesn't revert the winning value once it does.
+    await expect(page.getByText('This item was just changed by another edit')).toBeVisible();
+    await expect(page.locator('input[type="number"]').first()).toHaveValue('200');
+  });
+
+  // Regression (round 8): ItemResolver had no in-flight guard at all, so
+  // its search-result buttons and manual Save stayed enabled for the entire
+  // awaited onBind/onManual call — a double-click sent two POSTs before the
+  // first response closed the form, and since each POST allocates its own
+  // new item ID, both succeeded and the meal ended up with the item twice.
+  // A real double-click can't be replayed faithfully here once the fix is
+  // in place — a disabled <button> doesn't dispatch click events in a real
+  // browser at all, which is exactly the structural protection the fix
+  // relies on — so this asserts the guard directly: the button disables
+  // itself synchronously once clicked (before the POST resolves), and
+  // exactly one request/item results from the one click.
+  test('the search-result button disables itself in flight so it cannot double-submit', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+    const created = mockFoodMeal({
+      items: [...mockFoodMeal().items, { ...mockFoodMeal().items[0], id: 'item-2', name: 'New Item', macro_source: 'reference' }],
+    });
+    let createCalls = 0;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/search**', route =>
+      route.fulfill({
+        json: { results: [{ source: 'usda', fdc_id: 99, name: 'New Item', profile: { calories_per_100g: 100, protein_per_100g: 0, carbs_per_100g: 0, fat_per_100g: 0, sugar_per_100g: 0, sodium_per_100g: 0, dietary_fiber_per_100g: 0 } }] },
+      })
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items', async route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      createCalls++;
+      // Delayed so there's a real window in which a second click, if it
+      // could reach the handler at all, would fire a second POST.
+      await new Promise(resolve => setTimeout(resolve, 300));
+      return route.fulfill({ status: 201, json: created });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: '+ Add item' }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+
+    const result = page.getByRole('button', { name: /New Item/ });
+    await result.click();
+    await expect(result).toBeDisabled();
+
+    await expect(page.getByText('New Item')).toBeVisible();
+    expect(createCalls).toBe(1);
+  });
+});
+
 // A minimal mocked meal shape ReviewClient/ReanalyzeControl need to render
 // and to make canReanalyze true (Boolean(meal.photo_path)). Used by the
 // route-mocked tests below, which verify the UI's *own* success/failure

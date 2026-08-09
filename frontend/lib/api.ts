@@ -12,9 +12,24 @@ async function apiRawFetch(path: string, options?: RequestInit): Promise<Respons
   });
 }
 
+// ApiError carries the HTTP status alongside the message, so callers can
+// branch on a specific status (e.g. a 409 conflict from a concurrent edit —
+// see MealItemRow's commitWeight) without parsing response text. Same
+// transpilation-proof `.name` + prototype-chain treatment as the
+// Reanalyze-specific error classes below — see their comment for why.
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    Object.setPrototypeOf(this, ApiError.prototype);
+  }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await apiRawFetch(path, options);
-  if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
+  if (!res.ok) throw new ApiError(res.status, (await res.text()) || `${res.status} ${res.statusText}`);
   return res.json();
 }
 
@@ -24,7 +39,7 @@ async function apiFetchNoBody(path: string, options?: RequestInit): Promise<void
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
-  if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
+  if (!res.ok) throw new ApiError(res.status, (await res.text()) || `${res.status} ${res.statusText}`);
 }
 
 async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {

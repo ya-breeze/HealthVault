@@ -153,7 +153,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applied := true
-	if err := h.processRecognition(ctx, meal, recognized, lease); err != nil {
+	if err := h.processRecognition(ctx, meal, recognized, lease, false); err != nil {
 		var failErr error
 		applied, failErr = h.failMeal(meal, lease)
 		if failErr != nil {
