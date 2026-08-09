@@ -302,6 +302,63 @@ func TestConfirmMeal_ConcurrentStatusChangeBeforeWriteIsRejected(t *testing.T) {
 	}
 }
 
+// Regression: ConfirmMeal used to aggregate from the item snapshot loaded at
+// the very start of the handler, before any write. A concurrent item edit
+// (permitted while pending_review, and pending_review edits intentionally
+// don't recompute the meal's aggregate) could commit after that snapshot but
+// before confirm's write — and since the item edit never touches the meal's
+// own status, confirm's status-only conditional write would still match,
+// confirming with an aggregate computed from stale items. ConfirmMeal now
+// claims (a write) before reading items, which — per SQLite's single-writer
+// model — means the item read that follows can't be racing a concurrent
+// item-edit transaction: none can acquire the writer lock until this one
+// commits. This test injects the "concurrent" edit via a hook that fires
+// right before the claim's own UPDATE, using a nested connection (hence the
+// file-backed storage — see newFileFoodTestStorage), and checks the
+// confirmed aggregate reflects the injected value, not the pre-handler one.
+func TestConfirmMeal_AggregatesFreshItemsDespiteConcurrentEditBeforeTransaction(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	if err := st.DB().Model(&database.FoodItem{}).Where("id = ?", meal.Items[0].ID).
+		Updates(map[string]any{"macro_source": database.MacroSourceManual, "calories": 100}).Error; err != nil {
+		t.Fatalf("seed item macros: %v", err)
+	}
+
+	registerRaceSimulation(t, st.DB(), func() {
+		sqlDB, err := st.DB().DB()
+		if err != nil {
+			t.Fatalf("get sql.DB: %v", err)
+		}
+		if _, err := sqlDB.Exec(
+			"UPDATE food_items SET calories = ? WHERE id = ?", 500.0, meal.Items[0].ID,
+		); err != nil {
+			t.Fatalf("simulate concurrent item edit: %v", err)
+		}
+	})
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ConfirmMeal(w, withClaims(mealDetailRequest(http.MethodPut, meal.ID.String()), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Calories != 500 {
+		t.Errorf("expected the confirmed aggregate to reflect the item's fresh value (500), not the stale pre-transaction snapshot (100), got %v", got.Calories)
+	}
+
+	var reloaded database.FoodMeal
+	if err := st.DB().Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if reloaded.Calories != 500 {
+		t.Errorf("expected the persisted aggregate to be 500, got %v", reloaded.Calories)
+	}
+}
+
 // registerRaceSimulation registers a one-shot GORM Before-update hook that
 // runs fn immediately before the next Model().Updates() call executes its
 // SQL, then unregisters itself — simulating a concurrent write landing in

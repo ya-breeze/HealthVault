@@ -283,10 +283,16 @@ export const api = {
   deleteMealItem: (mealId: string, itemId: string) =>
     apiFetch<FoodMeal>(`/food/meals/${mealId}/items/${itemId}`, { method: 'DELETE' }),
 
-  listMeals: (opts?: { limit?: number; before?: string }) => {
+  // before_id must be paired with before to get the backend's lossless
+  // (logged_at, id) keyset cursor — a before-only request falls back to a
+  // plain "meals logged before this instant" filter, which can drop meals
+  // that share the exact logged_at at a page boundary. Always pass both
+  // when continuing from a previous page (see the history page's loadMore).
+  listMeals: (opts?: { limit?: number; before?: string; beforeId?: string }) => {
     const params = new URLSearchParams();
     if (opts?.limit) params.set('limit', String(opts.limit));
     if (opts?.before) params.set('before', opts.before);
+    if (opts?.beforeId) params.set('before_id', opts.beforeId);
     const qs = params.toString();
     return apiFetch<MealSummary[]>(`/food/meals${qs ? `?${qs}` : ''}`);
   },

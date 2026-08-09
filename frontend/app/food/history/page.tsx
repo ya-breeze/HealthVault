@@ -44,7 +44,7 @@ export default function FoodHistoryPage() {
     setError(null);
     try {
       const oldest = meals[meals.length - 1];
-      const rows = await api.listMeals({ limit: PAGE_SIZE, before: oldest.logged_at });
+      const rows = await api.listMeals({ limit: PAGE_SIZE, before: oldest.logged_at, beforeId: oldest.id });
       setMeals(m => [...m, ...rows]);
       setHasMore(rows.length > 0);
     } catch (err) {

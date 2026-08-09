@@ -22,13 +22,19 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Count Unicode code points, not UTF-16 code units: JS string.length (and
+  // the native maxLength attribute) count code units, so a character outside
+  // the Basic Multilingual Plane (e.g. most emoji) counts as 2 there but 1
+  // on the backend, which counts runes. Array.from splits on code points.
+  const hintLength = (s: string) => Array.from(s).length;
+
   const submit = async () => {
     const trimmed = hint.trim();
     if (!trimmed) {
       setError('A hint is required');
       return;
     }
-    if (trimmed.length > MAX_HINT_LENGTH) {
+    if (hintLength(trimmed) > MAX_HINT_LENGTH) {
       setError(`Hint must be at most ${MAX_HINT_LENGTH} characters`);
       return;
     }
@@ -71,11 +77,13 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
       <textarea
         value={hint}
         onChange={e => setHint(e.target.value)}
-        maxLength={MAX_HINT_LENGTH}
         placeholder="e.g. this is chicken and rice, not berries"
         rows={2}
         className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
       />
+      <p className="mt-1 text-[11px] text-gray-400 text-right">
+        {hintLength(hint)}/{MAX_HINT_LENGTH}
+      </p>
       <div className="flex justify-end gap-2 mt-2">
         <button
           onClick={() => { setOpen(false); setHint(''); setError(null); }}

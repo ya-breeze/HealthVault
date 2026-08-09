@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
@@ -288,6 +290,67 @@ func TestReanalyze_FailedVisionCallLeavesMealUnchanged(t *testing.T) {
 		if status == database.MealStatusConfirmed && reloaded.Calories != 400 {
 			t.Errorf("expected confirmed meal's aggregate untouched, got %v", reloaded.Calories)
 		}
+	}
+}
+
+// Regression: when the vision result includes clarification questions,
+// processRecognition used to persist the item replacement/status/aggregate
+// (persistAnalysis) and the clarify_log (appendPendingQuestions) as two
+// separate statements. If only the second failed, the error still reached
+// Reanalyze and it reverted — but revertReanalyze only restores
+// status/clarify_round/clarify_log; the items, raw_response, and zeroed
+// aggregate from the first (already-committed) statement stayed applied,
+// contradicting the 502 response's "the meal is unchanged" claim. Both
+// writes are now one transaction inside persistAnalysis, so a failure in
+// either rolls back both. This forces the (now single) meal-level write to
+// fail and checks the meal is left with its ORIGINAL items and status, not
+// a mix of old status and new items.
+func TestReanalyze_ClarificationPersistenceFailureLeavesMealFullyUnchanged(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusPendingReview, 0, "")
+
+	fake := &vision.Fake{RecognizeResult: &vision.RecognizeResult{
+		Items:                  []vision.Item{{Name: "Mystery dish", WeightGrams: 100}},
+		ClarificationQuestions: []string{"Is this spicy?"},
+	}}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+
+	// Update call #1 is Reanalyze's own atomic claim (outside
+	// persistAnalysis's transaction); #2 is persistAnalysis's single
+	// combined status/raw_response/aggregate/clarify_log write, reached via
+	// the pending_clarification branch this Fake result triggers — that's
+	// the one to fail.
+	updateCalls := 0
+	const hookName = "test:fail-clarify-persist"
+	st.DB().Callback().Update().Before("gorm:update").Register(hookName, func(tx *gorm.DB) {
+		updateCalls++
+		if updateCalls == 2 {
+			tx.Error = errors.New("simulated clarify persistence failure")
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Update().Remove(hookName) })
+
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeHTTPRequest(meal.ID.String(), "a hint"), userID))
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded database.FoodMeal
+	if err := st.DB().Preload("Items").Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if reloaded.Status != database.MealStatusPendingReview {
+		t.Errorf("expected status reverted to pending_review, got %s", reloaded.Status)
+	}
+	if len(reloaded.Items) != 1 || reloaded.Items[0].Name != "Original item" {
+		t.Errorf("expected the original item untouched — not replaced by the failed persist — got %+v", reloaded.Items)
+	}
+	if reloaded.ClarifyLog != "" {
+		t.Errorf("expected no clarify_log written on a failed persist, got %q", reloaded.ClarifyLog)
 	}
 }
 

@@ -103,40 +103,65 @@ func (h *foodHandlers) ConfirmMeal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if req.LoggedAt != nil {
-		meal.LoggedAt = *req.LoggedAt
-	}
-	meal.Aggregate(meal.Items)
-	meal.Status = database.MealStatusConfirmed
 
-	updates := map[string]any{
-		"status":              meal.Status,
-		"logged_at":           meal.LoggedAt,
-		"calories":            meal.Calories,
-		"protein_grams":       meal.ProteinGrams,
-		"carbs_grams":         meal.CarbsGrams,
-		"fat_grams":           meal.FatGrams,
-		"sugar_grams":         meal.SugarGrams,
-		"sodium_grams":        meal.SodiumGrams,
-		"dietary_fiber_grams": meal.DietaryFiberGrams,
-	}
-	// Conditional on status still being pending_review, not a blind write:
-	// Reanalyze is now eligible from pending_review too, so a concurrent
-	// reanalysis could have already moved this meal to processing/pending_*
-	// between the read above and this write. Without this guard, confirm
-	// would blindly stomp the status back to confirmed — and persist an
-	// aggregate computed from the item set as it stood before this request
-	// even loaded, ignoring whatever reanalyze is doing to it — regardless
-	// of what else has happened to the meal in between.
-	res := h.storage.DB().Model(&database.FoodMeal{}).
-		Where("id = ? AND status = ?", meal.ID, database.MealStatusPendingReview).
-		Updates(updates)
-	if res.Error != nil {
-		http.Error(w, "update error", http.StatusInternalServerError)
+	// meal.Items above is a snapshot from before this transaction — a
+	// concurrent pending_review item edit (PatchMealItem/CreateMealItem/
+	// DeleteMealItem, all permitted while pending_review) could commit
+	// between that read and here, and pending_review edits intentionally
+	// don't recompute this meal's aggregate (only confirmed meals get that),
+	// so a status-only conditional write wouldn't catch it — status never
+	// changes from an item edit. Aggregating from a stale snapshot would
+	// then confirm the meal with totals that don't match what's actually
+	// stored.
+	//
+	// The fix relies on SQLite's actual concurrency model rather than a
+	// value comparison: only one write transaction can be active on the
+	// whole database at a time, and that lock is acquired by the first
+	// write statement issued, not at BEGIN. So claiming (a write) *before*
+	// reading items — not after, as ConfirmMeal originally did — means
+	// every item read from this point until commit is guaranteed
+	// consistent with what gets written: no concurrent item-edit
+	// transaction can commit in between, because none can even acquire the
+	// writer lock until this one finishes.
+	err = h.storage.DB().Transaction(func(tx *gorm.DB) error {
+		claim := tx.Model(&database.FoodMeal{}).
+			Where("id = ? AND status = ?", id, database.MealStatusPendingReview).
+			Update("status", database.MealStatusConfirmed)
+		if claim.Error != nil {
+			return claim.Error
+		}
+		if claim.RowsAffected == 0 {
+			return errMealNoLongerEditable
+		}
+
+		var items []database.FoodItem
+		if err := tx.Where("meal_id = ?", id).Find(&items).Error; err != nil {
+			return err
+		}
+		meal.Items = items
+		meal.Aggregate(items)
+		meal.Status = database.MealStatusConfirmed
+		if req.LoggedAt != nil {
+			meal.LoggedAt = *req.LoggedAt
+		}
+
+		return tx.Model(&database.FoodMeal{}).Where("id = ?", id).Updates(map[string]any{
+			"logged_at":           meal.LoggedAt,
+			"calories":            meal.Calories,
+			"protein_grams":       meal.ProteinGrams,
+			"carbs_grams":         meal.CarbsGrams,
+			"fat_grams":           meal.FatGrams,
+			"sugar_grams":         meal.SugarGrams,
+			"sodium_grams":        meal.SodiumGrams,
+			"dietary_fiber_grams": meal.DietaryFiberGrams,
+		}).Error
+	})
+	if errors.Is(err, errMealNoLongerEditable) {
+		http.Error(w, "meal is not ready to confirm", http.StatusConflict)
 		return
 	}
-	if res.RowsAffected == 0 {
-		http.Error(w, "meal is not ready to confirm", http.StatusConflict)
+	if err != nil {
+		http.Error(w, "update error", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, meal)
