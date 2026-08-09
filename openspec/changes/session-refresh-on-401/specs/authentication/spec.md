@@ -11,9 +11,13 @@ The frontend API layer (`frontend/lib/api.ts`) SHALL treat a 401 response from a
 - **WHEN** an authenticated request returns 401 and the subsequent `/api/auth/refresh` call also returns 401
 - **THEN** the frontend SHALL surface the original 401 (or the refresh failure) to the caller, which redirects to `/login`
 
-#### Scenario: Concurrent requests hitting 401 around the same time
-- **WHEN** multiple authenticated requests are in flight and more than one receives a 401 before any refresh has completed
+#### Scenario: Concurrent requests hitting 401 around the same time in one tab
+- **WHEN** multiple authenticated requests are in flight in the same browser tab and more than one receives a 401 before any refresh has completed
 - **THEN** the frontend SHALL issue only one `/api/auth/refresh` call, and all affected requests SHALL wait on its result before each retrying once
+
+#### Scenario: Concurrent requests hitting 401 across multiple tabs of the same browser
+- **WHEN** two or more tabs of the same browser (sharing the same `kin_refresh` cookie) each receive a 401 around the same time
+- **THEN** the frontend SHALL issue at most one `POST /api/auth/refresh` call across those tabs; a tab that loses the coordination race SHALL NOT submit the refresh token that another tab has already rotated, and SHALL instead retry its original request using the cookies set by the winning tab's refresh
 
 #### Scenario: 401 from the login or refresh endpoints themselves
 - **WHEN** `/api/auth/login` returns 401 (bad credentials) or `/api/auth/refresh` returns 401 (dead refresh token)
