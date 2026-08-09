@@ -46,7 +46,7 @@ test.describe('Manual meal entry', () => {
     const mealId = url.searchParams.get('meal')!;
     expect(mealId).toBeTruthy();
 
-    await expect(page.getByText('Confirmed')).toBeVisible();
+    await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
     await expect(page.getByText('E2E Test Snack')).toBeVisible();
     await expect(page.getByText('250', { exact: true })).toBeVisible();
 
@@ -157,5 +157,97 @@ test.describe('In-app camera capture', () => {
     await expect(page.getByText(/secure.*HTTPS|HTTPS.*secure/i)).toBeVisible({ timeout: 5_000 });
     // The page itself must still be alive and showing the app, not a crash screen.
     await expect(page.getByRole('heading', { name: /log a meal/i })).toBeVisible();
+  });
+});
+
+// Seeds a confirmed meal directly via the manual-entry API (no vision call,
+// deterministic) so these tests can exercise the review-page UI against a
+// known starting state without depending on photo recognition.
+async function createConfirmedMeal(
+  request: APIRequestContext,
+  cookies: string,
+  name: string,
+  itemName: string,
+  calories: number
+) {
+  const res = await request.post(`${BASE_URL}/api/food/meals/manual`, {
+    headers: { Cookie: cookies },
+    data: { name, items: [{ name: itemName, source: 'manual', weight_grams: 100, calories }] },
+  });
+  expect(res.status()).toBe(201);
+  return res.json();
+}
+
+test.describe('Meal history', () => {
+  test('a confirmed meal appears in the history list and opens its review page', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const meal = await createConfirmedMeal(request, cookies, 'E2E History Meal', 'Snack', 120);
+
+    await page.goto('/food/history/');
+    await expect(page.getByText('E2E History Meal')).toBeVisible();
+
+    await page.getByText('E2E History Meal').click();
+    await page.waitForURL(new RegExp(`meal=${meal.id}`));
+    await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
+
+    await deleteMeal(request, cookies, meal.id);
+  });
+});
+
+test.describe('Editing a confirmed meal', () => {
+  test('editing, adding, and deleting items keeps the visible total in sync', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const meal = await createConfirmedMeal(request, cookies, 'E2E Edit Meal', 'Base item', 100);
+
+    await page.goto(`/food/review/?meal=${meal.id}`);
+    await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
+    await expect(page.getByText('100', { exact: true })).toBeVisible();
+
+    // Editing on a confirmed meal used to be locked (409); it must now work
+    // and leave the meal confirmed, not fail or bounce to a different state.
+    const weightInput = page.locator('input[type="number"]').first();
+    await weightInput.fill('250');
+    await weightInput.blur();
+    await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
+
+    // Add a new item — the total must include it immediately, no reload.
+    await page.getByRole('button', { name: '+ Add item' }).click();
+    await page.getByRole('button', { name: 'Enter macros' }).click();
+    await page.locator('label:has-text("Name") input').fill('Extra snack');
+    await page.locator('label:has-text("Calories") input').fill('50');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await expect(page.getByText('Extra snack')).toBeVisible();
+    await expect(page.getByText('150', { exact: true })).toBeVisible();
+
+    // Delete it again — the total must drop back immediately.
+    await page.locator('button[title="Delete item"]').last().click();
+    await expect(page.getByText('Extra snack')).not.toBeVisible();
+    await expect(page.getByText('100', { exact: true })).toBeVisible();
+
+    await deleteMeal(request, cookies, meal.id);
+  });
+});
+
+test.describe('Reanalyze with a hint', () => {
+  // A successful reanalysis calls the real vision provider (billed, non-
+  // deterministic), so this only exercises the UI affordance and client-side
+  // hint validation — the backend's reanalyze semantics are covered by unit
+  // tests (food_reanalyze_test.go), not repeated here at API-call cost.
+  test('is available on a confirmed meal and requires a non-empty hint', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const meal = await createConfirmedMeal(request, cookies, 'E2E Reanalyze Meal', 'Item', 100);
+
+    await page.goto(`/food/review/?meal=${meal.id}`);
+    await page.getByRole('button', { name: 'Reanalyze with a hint' }).click();
+    await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
+    await expect(page.getByText('A hint is required')).toBeVisible();
+    // Still confirmed — validation failing client-side must not have called the API.
+    await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
+
+    await deleteMeal(request, cookies, meal.id);
   });
 });

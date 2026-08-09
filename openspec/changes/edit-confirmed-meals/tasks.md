@@ -67,5 +67,5 @@
 
 - [x] 10.1 `make lint` / `go vet` (backend), `tsc --noEmit` (frontend)
 - [x] 10.2 Backend unit tests: `make test` or equivalent, all green
-- [ ] 10.3 Deploy to `hcw-wip`, exercise: edit an item on a confirmed meal and see totals update live; add and delete an item on a confirmed meal; rename/re-time a confirmed meal; browse meal history, page to older meals, and open a meal from it; reanalyze a confirmed meal with a hint and confirm it reverts to pending_review with new items and a zeroed total; simulate a reanalyze failure (e.g. bad hint length) and confirm the meal is untouched
-- [ ] 10.4 Add/extend Playwright E2E coverage in `e2e/tests/food.spec.ts` for: history list navigation and "load older", editing/adding/deleting an item on a confirmed meal with the visible total updating immediately, reanalyze-with-hint success and failure flows
+- [x] 10.3 Deploy to `hcw-wip`, exercise: edit an item on a confirmed meal and see totals update live; add and delete an item on a confirmed meal; rename/re-time a confirmed meal; browse meal history, page to older meals, and open a meal from it; reanalyze a confirmed meal with a hint and confirm it reverts to pending_review with new items and a zeroed total; simulate a reanalyze failure (e.g. bad hint length) and confirm the meal is untouched
+- [x] 10.4 Add/extend Playwright E2E coverage in `e2e/tests/food.spec.ts` for: history list navigation and "load older", editing/adding/deleting an item on a confirmed meal with the visible total updating immediately, reanalyze-with-hint success and failure flows
