@@ -104,6 +104,42 @@ func TestCreateMealItem_NoSourceReturns400(t *testing.T) {
 	}
 }
 
+// Regression: the contract requires exactly one source. Without an explicit
+// check, `manual: true` alongside a reference silently took the manual
+// branch and discarded the reference; two reference IDs together silently
+// resolved from fdc_id (resolveReferenceProfile's precedence) while
+// persisting both IDs on the item, leaving it claiming a binding it wasn't
+// actually scaled from.
+func TestCreateMealItem_AmbiguousSourceReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+	customFoodID := uuid.New()
+
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"manual plus fdc_id", map[string]any{"name": "x", "manual": true, "calories": 1, "fdc_id": 7}},
+		{"manual plus custom_food_id", map[string]any{"name": "x", "manual": true, "calories": 1, "custom_food_id": customFoodID.String()}},
+		{"both reference ids", map[string]any{"name": "x", "fdc_id": 7, "custom_food_id": customFoodID.String(), "weight_grams": 100}},
+	}
+	for _, c := range cases {
+		meal := createUnresolvedMeal(t, st, userID, familyID)
+		w := httptest.NewRecorder()
+		h.CreateMealItem(w, withClaims(createItemRequest(meal.ID.String(), c.body), userID))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d: %s", c.name, w.Code, w.Body.String())
+		}
+		var items []database.FoodItem
+		st.DB().Where("meal_id = ?", meal.ID).Find(&items) //nolint:errcheck
+		if len(items) != 1 {
+			t.Errorf("%s: expected no item created (still just the seeded one), got %d", c.name, len(items))
+		}
+	}
+}
+
 func TestCreateMealItem_NonEditableStatusReturns409(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

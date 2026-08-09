@@ -137,6 +137,8 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, meal)
 		return
 	}
-	h.processRecognition(ctx, meal, recognized)
+	if err := h.processRecognition(ctx, meal, recognized); err != nil {
+		h.failMeal(meal)
+	}
 	writeJSON(w, meal)
 }

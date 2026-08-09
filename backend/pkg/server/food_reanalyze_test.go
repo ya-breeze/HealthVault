@@ -184,6 +184,28 @@ func TestReanalyze_OversizedHintReturns400(t *testing.T) {
 	}
 }
 
+// Regression: the hint limit is documented as 500 characters, but len() on a
+// Go string counts UTF-8 bytes. A non-ASCII hint (each Cyrillic character is
+// ~2 bytes) can be well within 500 characters while exceeding 500 bytes —
+// counting bytes would reject it even though it satisfies the documented
+// limit.
+func TestReanalyze_HintLengthCountsCharactersNotBytes(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusPendingReview, 0, "")
+	fake := &vision.Fake{RecognizeResult: &vision.RecognizeResult{Items: []vision.Item{{Name: "Rice", WeightGrams: 100}}}}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+
+	// 500 Cyrillic characters, ~1000 UTF-8 bytes — must be accepted.
+	hint := strings.Repeat("щ", 500)
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeHTTPRequest(meal.ID.String(), hint), userID))
+	if w.Code != http.StatusOK {
+		t.Errorf("expected a 500-character non-ASCII hint to be accepted, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestReanalyze_OversizedBodyReturns413(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
@@ -306,6 +328,55 @@ func (c *gatedRecognizeClient) Clarify(context.Context, []vision.Item, []vision.
 
 func (c *gatedRecognizeClient) Select(context.Context, []vision.ItemCandidates) (*vision.SelectResult, error) {
 	return &vision.SelectResult{}, nil
+}
+
+// Regression: the claim used to be `WHERE status IN (eligible...)`, which
+// matches *any* eligible status, not specifically the one this request
+// actually observed. If a concurrent ConfirmMeal committed pending_review ->
+// confirmed in the gap between Reanalyze's initial read and its claim, the
+// old claim would still match (confirmed is also eligible), succeed, and —
+// on a later failure — revert to the *stale* captured pending_review,
+// discarding the confirm that happened concurrently. Claiming the exact
+// captured status closes this: the claim must fail here, and Reanalyze must
+// not touch the meal at all (not even attempt the vision call).
+func TestReanalyze_ClaimFailsIfStatusChangedConcurrently(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusPendingReview, 0, "")
+
+	registerRaceSimulation(t, st.DB(), func() {
+		sqlDB, err := st.DB().DB()
+		if err != nil {
+			t.Fatalf("get sql.DB: %v", err)
+		}
+		if _, err := sqlDB.Exec(
+			"UPDATE food_meals SET status = ? WHERE id = ?", database.MealStatusConfirmed, meal.ID,
+		); err != nil {
+			t.Fatalf("simulate concurrent confirm: %v", err)
+		}
+	})
+
+	fake := &vision.Fake{RecognizeResult: &vision.RecognizeResult{Items: []vision.Item{{Name: "Rice", WeightGrams: 100}}}}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeHTTPRequest(meal.ID.String(), "a hint"), userID))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when status changed concurrently, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.RecognizeCalls) != 0 {
+		t.Errorf("expected no vision call once the claim failed, got %d", len(fake.RecognizeCalls))
+	}
+
+	var reloaded database.FoodMeal
+	if err := st.DB().Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if reloaded.Status != database.MealStatusConfirmed {
+		t.Errorf("expected the concurrent confirm to stick (not be reverted to the stale pending_review), got status=%s", reloaded.Status)
+	}
 }
 
 func TestReanalyze_ConcurrentCallsOnlyOneProceeds(t *testing.T) {

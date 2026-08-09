@@ -89,8 +89,12 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const items = meal.items ?? [];
   const pendingQuestions = pendingClarifyQuestions(meal);
   const canConfirm = meal.status === 'pending_review' && !busy;
+  // Manual entries are confirmed but have no stored photo — the backend
+  // rejects reanalyzing those with 409, so don't offer a control that would
+  // always fail for them.
   const canReanalyze =
-    meal.status === 'failed' || meal.status === 'pending_review' || meal.status === 'confirmed';
+    Boolean(meal.photo_path) &&
+    (meal.status === 'failed' || meal.status === 'pending_review' || meal.status === 'confirmed');
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">

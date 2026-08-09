@@ -3,6 +3,7 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -95,37 +96,61 @@ func TestListMeals_DeterministicTieBreak(t *testing.T) {
 // distinguish "already returned" from "shares this exact timestamp but
 // wasn't returned yet". ListMeals must defer the whole tied group to the
 // next page instead of splitting it.
-func TestListMeals_TieAtPageBoundaryDeferredWhole(t *testing.T) {
+// Regression: a timestamp-only `before` cursor can split a tied-logged_at
+// group at a page boundary and then silently drop whichever part of it
+// wasn't returned, since the next page's `logged_at < before` filter can't
+// distinguish "already returned" from "shares this exact timestamp but
+// wasn't returned yet". This is true even when the tie group is *larger*
+// than the page limit (a plain "defer the whole group" fallback still loses
+// rows in that case). The exact (logged_at, id) keyset cursor must page
+// through an oversized tie group correctly, with no meal lost or repeated,
+// regardless of how the group's size relates to the page limit.
+func TestListMeals_LargeTieGroupPagesWithoutLoss(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
-	newest := time.Now().UTC()
-	tied := newest.Add(-time.Hour)
-	a := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, newest)
-	b := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, tied)
-	c := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, tied)
+	tied := time.Now().UTC()
+
+	const tieGroupSize = 5
+	const limit = 2 // smaller than the tie group, on purpose
+	want := make(map[uuid.UUID]bool, tieGroupSize)
+	for i := 0; i < tieGroupSize; i++ {
+		m := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, tied)
+		want[m.ID] = true
+	}
 
 	h := server.NewFoodHandlers(st, nil, t.TempDir())
 
-	// limit=2 would naively return [a, one-of-b-or-c], splitting the tied
-	// pair — instead it must defer the whole tied pair, returning only [a].
-	w1 := httptest.NewRecorder()
-	h.ListMeals(w1, withClaims(listMealsRequest("limit=2"), userID))
-	var page1 []server.MealSummary
-	json.NewDecoder(w1.Body).Decode(&page1) //nolint:errcheck
-	if len(page1) != 1 || page1[0].ID != a.ID {
-		t.Fatalf("expected page 1 to defer the tied pair and return only the newest meal, got %+v", page1)
+	got := map[uuid.UUID]bool{}
+	before, beforeID := "", ""
+	for page := 0; page < tieGroupSize+1; page++ { // +1 guards against an infinite loop on a bug
+		q := fmt.Sprintf("limit=%d", limit)
+		if before != "" {
+			q += "&before=" + before + "&before_id=" + beforeID
+		}
+		w := httptest.NewRecorder()
+		h.ListMeals(w, withClaims(listMealsRequest(q), userID))
+		var rows []server.MealSummary
+		json.NewDecoder(w.Body).Decode(&rows) //nolint:errcheck
+		if len(rows) == 0 {
+			break
+		}
+		for _, row := range rows {
+			if got[row.ID] {
+				t.Fatalf("meal %s returned on more than one page — cursor repeated a row", row.ID)
+			}
+			got[row.ID] = true
+		}
+		last := rows[len(rows)-1]
+		before, beforeID = last.LoggedAt.Format(time.RFC3339Nano), last.ID.String()
 	}
 
-	w2 := httptest.NewRecorder()
-	h.ListMeals(w2, withClaims(listMealsRequest("limit=2&before="+page1[0].LoggedAt.Format(time.RFC3339Nano)), userID))
-	var page2 []server.MealSummary
-	json.NewDecoder(w2.Body).Decode(&page2) //nolint:errcheck
-	if len(page2) != 2 {
-		t.Fatalf("expected page 2 to return both tied meals together, got %+v", page2)
+	if len(got) != tieGroupSize {
+		t.Fatalf("expected all %d tied meals reachable via paging, got %d: %+v", tieGroupSize, len(got), got)
 	}
-	gotIDs := map[uuid.UUID]bool{page2[0].ID: true, page2[1].ID: true}
-	if !gotIDs[b.ID] || !gotIDs[c.ID] {
-		t.Errorf("expected page 2 to contain both tied meals %s and %s, got %+v", b.ID, c.ID, page2)
+	for id := range want {
+		if !got[id] {
+			t.Errorf("meal %s in the tie group was never returned by any page", id)
+		}
 	}
 }
 

@@ -120,8 +120,7 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 	if err != nil {
 		return err
 	}
-	h.processRecognition(ctx, meal, recognized)
-	return nil
+	return h.processRecognition(ctx, meal, recognized)
 }
 
 // processRecognition persists the outcome of a Recognize or Clarify call.
@@ -134,22 +133,33 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 //     shortlist and either bound or left unresolved.
 //
 // The meal's own aggregate is left at zero; it is computed only on confirm.
-func (h *foodHandlers) processRecognition(ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult) {
+// Returns any persistence error (from persistAnalysis or
+// appendPendingQuestions) rather than swallowing it: runAnalysis's callers,
+// specifically Reanalyze, need to know a persistence failure happened even
+// though the vision call itself succeeded, so they can revert rather than
+// report success with a mutated meal.
+func (h *foodHandlers) processRecognition(ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult) error {
 	nextRound := meal.ClarifyRound + 1
 	if len(recognized.ClarificationQuestions) > 0 && nextRound <= database.MaxClarifyRounds {
 		items := unresolvedItemsFrom(recognized.Items, meal.ID, meal.UserID, meal.FamilyID)
-		h.persistAnalysis(meal, database.MealStatusPendingClarification, recognized.Raw, items)
-		h.appendPendingQuestions(meal, nextRound, recognized.ClarificationQuestions)
-		return
+		if err := h.persistAnalysis(meal, database.MealStatusPendingClarification, recognized.Raw, items); err != nil {
+			return err
+		}
+		return h.appendPendingQuestions(meal, nextRound, recognized.ClarificationQuestions)
 	}
 
 	items := h.resolveItems(ctx, meal, recognized.Items)
-	h.persistAnalysis(meal, database.MealStatusPendingReview, recognized.Raw, items)
+	return h.persistAnalysis(meal, database.MealStatusPendingReview, recognized.Raw, items)
 }
 
 // appendPendingQuestions appends round's questions (each with an empty
-// Answer, marking them unanswered) to the meal's existing clarify_log.
-func (h *foodHandlers) appendPendingQuestions(meal *database.FoodMeal, round int, questions []string) {
+// Answer, marking them unanswered) to the meal's existing clarify_log. A
+// malformed existing log is tolerated (started fresh) rather than treated as
+// fatal — recovering forward is preferable to blocking on corrupt history —
+// but a failure to persist the new log is returned: silently discarding it
+// would leave the meal in pending_clarification with no recorded questions
+// for the review UI to show.
+func (h *foodHandlers) appendPendingQuestions(meal *database.FoodMeal, round int, questions []string) error {
 	var entries []database.ClarifyEntry
 	if meal.ClarifyLog != "" {
 		json.Unmarshal([]byte(meal.ClarifyLog), &entries) //nolint:errcheck
@@ -159,11 +169,14 @@ func (h *foodHandlers) appendPendingQuestions(meal *database.FoodMeal, round int
 	}
 	b, err := json.Marshal(entries)
 	if err != nil {
-		return
+		return err
 	}
-	h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
-		Update("clarify_log", string(b)) //nolint:errcheck
+	if err := h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+		Update("clarify_log", string(b)).Error; err != nil {
+		return err
+	}
 	meal.ClarifyLog = string(b)
+	return nil
 }
 
 // resolveItems retrieves a candidate shortlist per recognized item, offers
@@ -295,11 +308,17 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 // already zero, since none of those paths can be reached from confirmed),
 // but Reanalyze can run from confirmed, and without this a meal leaving
 // confirmed would carry its old totals forward against a brand-new,
-// unreviewed item set. On a write failure the meal is left failed rather
-// than silently stuck in processing — safe for every current caller of this
-// function; Reanalyze itself does not call persistAnalysis on failure, only
-// on a successful recognition (see runAnalysis).
-func (h *foodHandlers) persistAnalysis(meal *database.FoodMeal, status, rawResponse string, items []database.FoodItem) {
+// unreviewed item set.
+//
+// Returns any transaction error instead of handling it — callers decide what
+// "failed to persist" means for them. analyzeMeal's callers (upload, retry)
+// fall back to failMeal, which is safe for them (nothing valuable to lose).
+// Reanalyze does not: a persistence failure there must revert to the meal's
+// prior state, not fall back to marking it failed and returning 200, which
+// is exactly what happened before this function reported its own errors —
+// it silently called failMeal internally and Reanalyze had no way to see
+// that the "success" it thought it had wasn't one.
+func (h *foodHandlers) persistAnalysis(meal *database.FoodMeal, status, rawResponse string, items []database.FoodItem) error {
 	err := h.storage.DB().Transaction(func(tx *gorm.DB) error {
 		// Unscoped: FoodItem embeds TenantModel, so a plain Delete soft-deletes
 		// (sets deleted_at) rather than removing the row. GORM's own reads
@@ -323,14 +342,14 @@ func (h *foodHandlers) persistAnalysis(meal *database.FoodMeal, status, rawRespo
 			}).Error
 	})
 	if err != nil {
-		h.failMeal(meal)
-		return
+		return err
 	}
 	meal.Status = status
 	meal.RawResponse = rawResponse
 	meal.Items = items
 	meal.Calories, meal.ProteinGrams, meal.CarbsGrams, meal.FatGrams = 0, 0, 0, 0
 	meal.SugarGrams, meal.SodiumGrams, meal.DietaryFiberGrams = 0, 0, 0
+	return nil
 }
 
 func (h *foodHandlers) failMeal(meal *database.FoodMeal) {

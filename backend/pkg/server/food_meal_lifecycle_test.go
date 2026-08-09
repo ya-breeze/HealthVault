@@ -3,8 +3,12 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +18,25 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/server"
 	photostorage "github.com/ya-breeze/healthvault/pkg/storage"
 	"github.com/ya-breeze/healthvault/pkg/vision"
+	"gorm.io/gorm"
 )
+
+// newFileFoodTestStorage is like newFoodTestStorage but file-backed rather
+// than :memory:. Only needed by registerRaceSimulation: a :memory: SQLite
+// database is private to whichever connection created it, so a second
+// connection checked out from the pool (as happens for a nested query issued
+// from inside a GORM callback) gets its own empty database instead of
+// sharing the same one. A temp file has no such isolation — every
+// connection, however many the pool opens, sees the same physical file.
+func newFileFoodTestStorage(t *testing.T) database.Storage {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "race-sim.db")
+	db, err := database.Open(slog.New(slog.NewTextHandler(os.Stderr, nil)), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	return database.NewStorage(db)
+}
 
 func mealDetailRequest(method, id string) *http.Request {
 	r := httptest.NewRequest(method, "/api/food/meals/"+id, nil)
@@ -239,6 +261,67 @@ func TestConfirmMeal_RejectsNonPendingReviewStatuses(t *testing.T) {
 	}
 }
 
+// Regression: ConfirmMeal's final write used to be an unconditional
+// `UPDATE ... WHERE id = ?`, not conditioned on status. If a concurrent
+// Reanalyze claimed the meal (pending_review -> processing) in the window
+// between ConfirmMeal's initial read and that write, the blind write would
+// still land, silently re-confirming a meal that reanalysis was actively
+// replacing the items of. A GORM Before-update hook simulates that race
+// deterministically — it fires synchronously, right before ConfirmMeal's own
+// UPDATE statement runs, without needing real goroutines.
+func TestConfirmMeal_ConcurrentStatusChangeBeforeWriteIsRejected(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID) // status: pending_review
+
+	registerRaceSimulation(t, st.DB(), func() {
+		sqlDB, err := st.DB().DB()
+		if err != nil {
+			t.Fatalf("get sql.DB: %v", err)
+		}
+		if _, err := sqlDB.Exec(
+			"UPDATE food_meals SET status = ? WHERE id = ?", database.MealStatusProcessing, meal.ID,
+		); err != nil {
+			t.Fatalf("simulate concurrent claim: %v", err)
+		}
+	})
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ConfirmMeal(w, withClaims(mealDetailRequest(http.MethodPut, meal.ID.String()), userID))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when status changed concurrently, got %d: %s", w.Code, w.Body.String())
+	}
+	var reloaded database.FoodMeal
+	if err := st.DB().Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if reloaded.Status != database.MealStatusProcessing {
+		t.Errorf("expected the concurrent change to stick (not be overwritten by confirm), got status=%s", reloaded.Status)
+	}
+}
+
+// registerRaceSimulation registers a one-shot GORM Before-update hook that
+// runs fn immediately before the next Model().Updates() call executes its
+// SQL, then unregisters itself — simulating a concurrent write landing in
+// the gap between a handler's read and its own conditional write, without
+// real concurrency. fn typically issues a raw Exec (bypassing GORM's own
+// update callback chain, so it doesn't re-trigger this same hook).
+func registerRaceSimulation(t *testing.T, db *gorm.DB, fn func()) {
+	t.Helper()
+	const name = "test:simulate-race"
+	fired := false
+	db.Callback().Update().Before("gorm:update").Register(name, func(*gorm.DB) {
+		if fired {
+			return
+		}
+		fired = true
+		fn()
+	})
+	t.Cleanup(func() { db.Callback().Update().Remove(name) })
+}
+
 // --- PatchMealItem ---
 
 func itemPatchRequest(mealID, itemID string, body map[string]any) *http.Request {
@@ -400,6 +483,27 @@ func TestPatchMealItem_BlankNameAloneReturns400(t *testing.T) {
 	}
 }
 
+// Regression: supplying both fdc_id and custom_food_id together used to be
+// accepted — resolveReferenceProfile resolves only fdc_id (its precedence
+// order), but the item ends up with both IDs persisted, claiming a binding
+// to a custom food whose profile was never actually used.
+func TestPatchMealItem_BothReferenceIDsReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"fdc_id": 7, "custom_food_id": uuid.New().String(),
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestPatchMealItem_SupplyMacrosDirectly(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
@@ -496,6 +600,55 @@ func TestPatchMealItem_ConfirmedMealPermittedAndRecomputesAggregate(t *testing.T
 	}
 	if reloaded.Calories != 300 {
 		t.Errorf("expected persisted aggregate to be 300, got %v", reloaded.Calories)
+	}
+}
+
+// Regression: applyItemMutation's core guarantee is that the item write and
+// the confirmed-meal aggregate recompute commit or roll back together — a
+// failure in either half must not leave the other applied. This forces the
+// aggregate half specifically to fail (via a GORM Before-update hook that
+// aborts the second Update in the transaction, which is always the
+// aggregate write) and checks the item write it was paired with was rolled
+// back too, not left applied with a stale aggregate.
+func TestPatchMealItem_AggregateWriteFailureRollsBackItemChange(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	originalWeight := meal.Items[0].WeightGrams
+	if err := st.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+		Update("status", database.MealStatusConfirmed).Error; err != nil {
+		t.Fatalf("confirm meal: %v", err)
+	}
+
+	const hookName = "test:fail-aggregate-write"
+	updateCalls := 0
+	st.DB().Callback().Update().Before("gorm:update").Register(hookName, func(tx *gorm.DB) {
+		updateCalls++
+		// Call 1 is the item Save; call 2 is the aggregate recompute — see
+		// applyItemMutation's transaction body.
+		if updateCalls == 2 {
+			tx.Error = errors.New("simulated aggregate write failure")
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Update().Remove(hookName) })
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"weight_grams": originalWeight + 500,
+	})
+	h.PatchMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when the aggregate write fails, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloadedItem database.FoodItem
+	if err := st.DB().Where("id = ?", meal.Items[0].ID).First(&reloadedItem).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if reloadedItem.WeightGrams != originalWeight {
+		t.Errorf("expected item weight to roll back to %v (unchanged), got %v", originalWeight, reloadedItem.WeightGrams)
 	}
 }
 

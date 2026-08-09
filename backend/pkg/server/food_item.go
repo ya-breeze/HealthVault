@@ -179,6 +179,10 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nothing to update: specify manual, fdc_id, custom_food_id, weight_grams, or name", http.StatusBadRequest)
 		return
 	}
+	if req.FdcID != nil && req.CustomFoodID != nil {
+		http.Error(w, "specify at most one of fdc_id or custom_food_id", http.StatusBadRequest)
+		return
+	}
 
 	switch {
 	case req.Manual:
@@ -300,6 +304,22 @@ func (h *foodHandlers) CreateMealItem(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	// Reject ambiguous combinations before building anything: a request must
+	// specify exactly one macro source. Accepting `manual` alongside a
+	// reference would silently prefer manual and discard the reference the
+	// caller also sent; accepting both fdc_id and custom_food_id would
+	// resolve only one of them (resolveReferenceProfile's fdc_id-first
+	// precedence) while persisting both IDs on the item, leaving it claiming
+	// a binding to a profile it was never actually scaled from.
+	hasReference := req.FdcID != nil || req.CustomFoodID != nil
+	if req.FdcID != nil && req.CustomFoodID != nil {
+		http.Error(w, "specify at most one of fdc_id or custom_food_id", http.StatusBadRequest)
+		return
+	}
+	if req.Manual && hasReference {
+		http.Error(w, "specify manual macros or a food reference, not both", http.StatusBadRequest)
 		return
 	}
 
