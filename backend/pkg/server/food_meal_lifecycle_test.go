@@ -619,6 +619,60 @@ func TestPatchMealItem_WeightOnlyChangeRescalesFromExistingBinding(t *testing.T)
 	}
 }
 
+// Regression: round-6 review — binding a reference food (with an explicit
+// weight_grams, or omitting it and relying on the item's existing weight)
+// used to accept zero/negative weight, which ApplyProfile then scales the
+// profile by, persisting negative or zero item macros and, via
+// applyItemMutation's confirmed-meal recompute, a negative meal aggregate.
+// CreateMealItem already rejected this; PatchMealItem's bind branch did not.
+func TestPatchMealItem_BindToReferenceRequiresPositiveWeight(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	for _, weight := range []any{0, -5} {
+		meal := createUnresolvedMeal(t, st, userID, familyID)
+		r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+			"fdc_id": 7, "weight_grams": weight,
+		})
+		w := httptest.NewRecorder()
+		h.PatchMealItem(w, withClaims(r, userID))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("weight_grams=%v: expected 400, got %d: %s", weight, w.Code, w.Body.String())
+		}
+	}
+}
+
+// Regression: same round-6 finding, but for the weight-only rescale branch
+// (PatchMealItem_WeightOnlyChangeRescalesFromExistingBinding's sibling
+// path) — changing only the weight on an already-reference-bound item must
+// reject non-positive values too, since it re-runs ApplyProfile exactly
+// like the initial bind does.
+func TestPatchMealItem_WeightOnlyRescaleRequiresPositiveWeight(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	idx := buildUSDAIndex(t, usdaFood(9, "Rice, cooked", 130))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	bindReq := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"fdc_id": 9, "weight_grams": 100})
+	w1 := httptest.NewRecorder()
+	h.PatchMealItem(w1, withClaims(bindReq, userID))
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 on bind, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	for _, weight := range []any{0, -10} {
+		r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"weight_grams": weight})
+		w := httptest.NewRecorder()
+		h.PatchMealItem(w, withClaims(r, userID))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("weight_grams=%v: expected 400, got %d: %s", weight, w.Code, w.Body.String())
+		}
+	}
+}
+
 // Regression: editing an item on a confirmed meal is now permitted (it used
 // to 409), and the meal's stored aggregate must be recomputed and persisted
 // in the same response, not left stale.
@@ -926,6 +980,51 @@ func TestRetryMeal_RespondsWithCurrentStateWhenSuperseded(t *testing.T) {
 			"expected the response to reflect the current superseding state (pending_review), got %s — a stale response would show processing",
 			got.Status,
 		)
+	}
+}
+
+// Regression: round-6 review — when applied is false, reloadIfSuperseded
+// used to fall back to the known-stale in-memory meal if the reload itself
+// failed, so a caller mid-flight when a *newer* attempt deletes the meal
+// entirely got back 200 with a ghost meal (still showing "processing")
+// instead of a 404 reflecting that it's actually gone. Same gated-vision
+// technique as the test above, but the "concurrent" write is a delete, not a
+// supersession, and the meal is expected to be reported not found rather
+// than returned stale.
+func TestRetryMeal_RespondsWith404WhenSupersedingOperationDeletesTheMeal(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createFailedMealWithPhoto(t, st, dir, userID, familyID)
+
+	client := &gatedRecognizeClient{
+		entered: make(chan struct{}),
+		proceed: make(chan struct{}),
+		result:  &vision.RecognizeResult{Items: []vision.Item{{Name: "Rice", WeightGrams: 100}}},
+	}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(client, 10<<20, time.Minute)
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		h.RetryMeal(w, withClaims(mealDetailRequest(http.MethodPost, meal.ID.String()), userID))
+		done <- w
+	}()
+
+	<-client.entered // RetryMeal's own claim has landed; it's now blocked in Recognize.
+
+	// Simulate a newer attempt deleting the meal entirely while RetryMeal's
+	// own call is still in flight — a plain top-level (soft) delete, not
+	// nested in any transaction.
+	if err := st.DB().Delete(&database.FoodMeal{}, "id = ?", meal.ID).Error; err != nil {
+		t.Fatalf("simulate concurrent delete: %v", err)
+	}
+
+	close(client.proceed)
+	w := <-done
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 once the meal is actually gone, got %d: %s — a stale fallback would return 200", w.Code, w.Body.String())
 	}
 }
 

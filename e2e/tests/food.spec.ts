@@ -489,16 +489,41 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
     await expect(page.getByText('Superseding Item')).toBeVisible();
     await expect(page.getByText('Old Item')).not.toBeVisible();
   });
+
+  // The blank-hint validation itself (ReanalyzeControl rejects an empty
+  // submission before any network call) needs a meal the control actually
+  // renders for — a photo-backed mock, same as the tests above — so it's
+  // deterministic and doesn't depend on reaching this point inside the
+  // provider-dependent smoke test below, which can skip beforehand.
+  test('a blank hint is rejected client-side with no reanalyze request', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+    let reanalyzeCalls = 0;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/reanalyze', route => {
+      reanalyzeCalls++;
+      return route.fulfill({ json: initial });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Reanalyze with a hint' }).click();
+    // Leave the textarea blank and submit directly.
+    await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
+
+    await expect(page.getByText('A hint is required')).toBeVisible();
+    expect(reanalyzeCalls).toBe(0);
+  });
 });
 
 test.describe('Reanalyze with a hint', () => {
   // Manual meals have no stored photo, so the control never even renders for
-  // them (see canReanalyze in ReviewClient.tsx) — this only needs a
-  // confirmed meal to exist to prove that client-side validation runs
-  // without a network call. It doesn't (and can't, from a manual meal)
-  // exercise the backend's accepted-request path — that's the mocked tests
-  // above, and the live-provider smoke test below.
-  test('client-side hint validation rejects a blank submission with no API call', async ({ page, request }) => {
+  // them (see canReanalyze in ReviewClient.tsx). Distinct from the blank-hint
+  // validation test above: this covers the control being hidden entirely,
+  // not what happens once it's open.
+  test('the control is hidden entirely for a photo-less manual meal', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
     const meal = await createConfirmedMeal(request, cookies, 'E2E Reanalyze Validation Meal', 'Item', 100);

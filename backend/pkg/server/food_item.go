@@ -200,6 +200,20 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		item.SodiumGrams = req.SodiumGrams
 		item.DietaryFiberGrams = req.DietaryFiberGrams
 	case req.FdcID != nil || req.CustomFoodID != nil:
+		if req.WeightGrams != nil {
+			item.WeightGrams = *req.WeightGrams
+		}
+		// item.WeightGrams may already be positive from a prior vision
+		// recognition or edit even when this request omits weight_grams — but
+		// it can also be zero (an unresolved vision item) or, per this
+		// request, explicitly non-positive. Either way, binding a reference
+		// food scales its profile by this weight (ApplyProfile below), so a
+		// non-positive value here would persist negative or zero item macros
+		// and, via applyItemMutation's recompute, a negative meal aggregate.
+		if item.WeightGrams <= 0 {
+			http.Error(w, "weight_grams must be positive to bind a reference food", http.StatusBadRequest)
+			return
+		}
 		profile, status, err := h.resolveReferenceProfile(claims.UserID, req.FdcID, req.CustomFoodID)
 		if err != nil {
 			http.Error(w, err.Error(), status)
@@ -207,13 +221,14 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		}
 		item.FdcID = req.FdcID
 		item.CustomFoodID = req.CustomFoodID
-		if req.WeightGrams != nil {
-			item.WeightGrams = *req.WeightGrams
-		}
 		item.ApplyProfile(profile)
 	case req.WeightGrams != nil:
 		item.WeightGrams = *req.WeightGrams
 		if item.MacroSource == database.MacroSourceReference {
+			if item.WeightGrams <= 0 {
+				http.Error(w, "weight_grams must be positive for a reference item", http.StatusBadRequest)
+				return
+			}
 			profile, status, err := h.resolveReferenceProfile(claims.UserID, item.FdcID, item.CustomFoodID)
 			if err != nil {
 				http.Error(w, err.Error(), status)

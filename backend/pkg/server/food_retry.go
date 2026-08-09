@@ -87,5 +87,6 @@ func (h *foodHandlers) RetryMeal(w http.ResponseWriter, r *http.Request) {
 	meal.UpdatedAt = lease
 
 	applied := h.analyzeMeal(r.Context(), &meal, lease)
-	writeJSON(w, h.reloadIfSuperseded(&meal, applied))
+	result, err := h.reloadIfSuperseded(&meal, applied)
+	writeReloadedMeal(w, result, err, http.StatusOK)
 }

@@ -35,6 +35,16 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
 
   const commitWeight = async () => {
     if (weight === item.weight_grams) return;
+    // Mirrors PatchMealItem's server-side check: a non-positive weight on a
+    // reference-bound item would rescale it to negative or zero macros (see
+    // ApplyProfile), and the backend now rejects that. Only applies to
+    // reference items — a manual item's weight is metadata, not a scale
+    // factor, so it's not restricted here.
+    if (item.macro_source === 'reference' && weight <= 0) {
+      setError('Weight must be positive for a matched item');
+      setWeight(item.weight_grams);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -49,6 +59,13 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
   };
 
   const handleBind = async (r: FoodSearchResult) => {
+    // Binding always scales the chosen food's profile by the current weight
+    // field — see the commitWeight comment above for why a non-positive
+    // value can't be sent. Thrown here (not setError) since ItemResolver's
+    // own try/catch around onBind is what surfaces it.
+    if (weight <= 0) {
+      throw new Error('Weight must be positive to match a food');
+    }
     const updated = await api.patchMealItem(mealId, item.id, {
       fdc_id: r.fdc_id,
       custom_food_id: r.custom_food_id,
@@ -93,6 +110,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
           <input
             type="number"
             step="any"
+            min={0}
             value={weight}
             disabled={saving || deleting}
             onChange={e => setWeight(Number(e.target.value))}

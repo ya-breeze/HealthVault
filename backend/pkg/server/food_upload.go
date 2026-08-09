@@ -74,7 +74,8 @@ func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
 	// meal.UpdatedAt, set by GORM's Create above, is this attempt's lease
 	// token from the start — see analyzeMeal's doc comment.
 	applied := h.analyzeMeal(r.Context(), &meal, meal.UpdatedAt)
-	writeJSONStatus(w, http.StatusCreated, h.reloadIfSuperseded(&meal, applied))
+	result, err := h.reloadIfSuperseded(&meal, applied)
+	writeReloadedMeal(w, result, err, http.StatusCreated)
 }
 
 func writeUploadError(w http.ResponseWriter, err error) {
@@ -126,16 +127,35 @@ func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal,
 // reloadIfSuperseded returns meal unchanged if applied is true (this
 // attempt's own write is what's current), or a freshly reloaded copy from
 // the database if not — a newer analysis attempt has since claimed the row,
-// and meal's in-memory fields no longer reflect it. Falls back to the given
-// meal if the reload itself fails, rather than losing the response entirely.
-func (h *foodHandlers) reloadIfSuperseded(meal *database.FoodMeal, applied bool) *database.FoodMeal {
+// and meal's in-memory fields no longer reflect it. Propagates the reload
+// error rather than falling back to the known-stale meal: applied == false
+// means the in-memory meal is known not to match the database, so returning
+// it as a successful response — even if the reload itself fails — would
+// misrepresent the actual state, including presenting a meal that no longer
+// exists (e.g. deleted by whatever operation superseded this one) as if it
+// still did. Callers must use writeReloadedMeal (or equivalent 404/500
+// mapping) rather than assume this always succeeds.
+func (h *foodHandlers) reloadIfSuperseded(meal *database.FoodMeal, applied bool) (*database.FoodMeal, error) {
 	if applied {
-		return meal
+		return meal, nil
 	}
-	if reloaded, err := h.loadOwnedMeal(meal.ID, meal.UserID); err == nil {
-		return reloaded
+	return h.loadOwnedMeal(meal.ID, meal.UserID)
+}
+
+// writeReloadedMeal writes meal as JSON with successStatus, or maps a
+// reloadIfSuperseded error to the appropriate HTTP error: 404 if the meal no
+// longer exists (owner-scoped, so this also covers "someone else's meal now"
+// which can't actually happen here), 500 for any other reload failure.
+func writeReloadedMeal(w http.ResponseWriter, meal *database.FoodMeal, err error, successStatus int) {
+	if errors.Is(err, database.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
 	}
-	return meal
+	if err != nil {
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	writeJSONStatus(w, successStatus, meal)
 }
 
 // runAnalysis reads the stored photo and runs vision recognition with the

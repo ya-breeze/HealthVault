@@ -98,7 +98,7 @@ The claim into `processing` SHALL be a single conditional update matched against
 
 Every analysis run, initial or retry, SHALL replace the meal's existing `FoodItem` rows in the same transaction that writes the resulting status, so that a retry never appends a duplicate set of items.
 
-If this attempt's own lease is lost by the time it would persist its outcome (a newer attempt superseded it — see above), the HTTP response SHALL reflect the meal's actual current state (reloaded from storage), not this attempt's local, now-stale view of it — a caller must never be shown a status this attempt itself set but which the database has since moved past.
+If this attempt's own lease is lost by the time it would persist its outcome (a newer attempt superseded it — see above), the HTTP response SHALL reflect the meal's actual current state (reloaded from storage), not this attempt's local, now-stale view of it — a caller must never be shown a status this attempt itself set but which the database has since moved past. If that reload itself fails — including because the meal no longer exists, e.g. a newer attempt deleted it — the system SHALL return the corresponding error (HTTP 404 if the meal is gone, HTTP 500 for any other reload failure) rather than falling back to this attempt's known-stale local view.
 
 #### Scenario: Retry a failed meal
 - **WHEN** the owner calls retry on a meal with status `failed`
@@ -125,6 +125,11 @@ If this attempt's own lease is lost by the time it would persist its outcome (a 
 - **GIVEN** this attempt claimed a meal and is about to persist its analysis outcome
 - **WHEN** a newer attempt (e.g. a concurrent `Reanalyze`) claims and completes against the same meal first, so this attempt's own write does not apply
 - **THEN** the response reflects the meal's actual current state, not this attempt's own stale local status
+
+#### Scenario: Retry reports not found when a superseding operation deletes the meal
+- **GIVEN** this attempt claimed a meal and is about to persist its analysis outcome
+- **WHEN** a newer attempt deletes the meal entirely before this attempt's own write applies
+- **THEN** the response is HTTP 404, not a 200 response carrying this attempt's stale, no-longer-accurate local view of the meal
 
 #### Scenario: Concurrent retry claims do not both proceed
 - **GIVEN** a meal eligible for retry (`failed`, or stale `processing`)

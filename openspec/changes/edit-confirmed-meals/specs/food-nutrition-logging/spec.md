@@ -5,6 +5,8 @@ The system SHALL expose `PATCH /api/food/meals/{id}/items/{item_id}`, allowing t
 
 Item resolution SHALL be permitted while the owning meal's status is `pending_review` or `confirmed`. It SHALL be rejected with HTTP 409 while the owning meal's status is `processing`, `pending_clarification`, or `failed`, since those states have no stable, reviewable item set yet.
 
+Whenever a request causes the item to be scaled from a reference food's profile — either by supplying an `fdc_id`/`custom_food_id`, or by changing `weight_grams` alone on an item already bound to one — the weight used for that scaling (the supplied `weight_grams`, or the item's existing weight if none is supplied) SHALL be greater than zero. A request that would scale a reference profile by a zero or negative weight SHALL be rejected with HTTP 400 and SHALL NOT modify the item.
+
 The system SHALL apply the item change and, if the owning meal's status is `confirmed`, recompute and persist the meal's macro aggregate from its current items, within a single database transaction (see the "Meal Aggregate Recomputed After Edit While Confirmed" requirement). The response body SHALL be the full updated `FoodMeal`, including its current items and (for a `confirmed` meal) its freshly recomputed aggregate — not the item alone — so a caller can update its full view of the meal from one response.
 
 #### Scenario: Bind an unresolved item to a food
@@ -18,6 +20,10 @@ The system SHALL apply the item change and, if the owning meal's status is `conf
 #### Scenario: Correct an already-matched item
 - **WHEN** the owner patches an item that already has `macro_source = reference` with a different `fdc_id` and a `name`
 - **THEN** the system rebinds it, rescales macros from the new profile, and replaces the displayed name with the one supplied
+
+#### Scenario: Binding or rescaling a reference item requires a positive weight
+- **WHEN** the owner patches an item with an `fdc_id` and a `weight_grams` of 0 or less, or changes only `weight_grams` to 0 or less on an item already bound to a reference food
+- **THEN** the system returns HTTP 400 and does not modify the item
 
 #### Scenario: Renaming an item does not require touching its macros
 - **WHEN** the owner patches an item with only a `name` and no `fdc_id`, `custom_food_id`, `manual`, or `weight_grams`

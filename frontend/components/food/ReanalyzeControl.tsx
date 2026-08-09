@@ -57,12 +57,20 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
       if (isFailed) {
         setError('Reanalysis failed — the meal is unchanged. You can try again.');
       } else if (isSuperseded) {
-        setError('Another operation (e.g. a retry) took over this meal while reanalyzing — showing its current state.');
+        // Only claim "showing its current state" once the refetch actually
+        // succeeds — setting that message unconditionally beforehand would
+        // leave the stale pre-reanalysis meal on screen while telling the
+        // user it's current, which is worse than the plain 502 case: there
+        // the backend guarantees nothing changed, but here it's explicitly
+        // saying something might have.
         try {
-          onReanalyzed(await api.getMeal(mealId));
+          const refreshed = await api.getMeal(mealId);
+          setError('Another operation (e.g. a retry) took over this meal while reanalyzing — showing its current state.');
+          onReanalyzed(refreshed);
         } catch {
-          // Best effort: if the refetch itself fails, the error message
-          // above still correctly warns that the display may be stale.
+          setError(
+            'Another operation took over this meal while reanalyzing, and refreshing its current state failed — this view may be stale. Reload the page to see what changed.'
+          );
         }
       } else {
         setError(err instanceof Error ? err.message : 'Reanalysis failed');
