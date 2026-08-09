@@ -55,19 +55,37 @@ func (h *foodHandlers) RetryMeal(w http.ResponseWriter, r *http.Request) {
 	// A retry restarts analysis from the stored photo, so any clarification
 	// rounds from a prior attempt no longer apply — see analyzeMeal's fresh
 	// Recognize call, which starts back at round 1.
-	updates := map[string]any{
-		"status":        database.MealStatusProcessing,
-		"clarify_round": 0,
-		"clarify_log":   "",
-	}
-	if err := h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).Updates(updates).Error; err != nil {
+	//
+	// Conditioned on (status, updated_at) exactly matching what was just
+	// read — an optimistic-concurrency claim, not a blind write. Without it,
+	// two concurrent requests both observing the same stale-processing meal
+	// (a double-click, or a race with another Retry/Reanalyze) could both
+	// pass the eligibility check above and both restart analysis; this also
+	// gives the attempt a lease token (the fresh updated_at written here)
+	// that later stages (persistAnalysis, failMeal) condition their own
+	// writes on — see analyzeMeal's doc comment.
+	lease := time.Now().UTC()
+	claim := h.storage.DB().Model(&database.FoodMeal{}).
+		Where("id = ? AND status = ? AND updated_at = ?", meal.ID, meal.Status, meal.UpdatedAt).
+		Updates(map[string]any{
+			"status":        database.MealStatusProcessing,
+			"clarify_round": 0,
+			"clarify_log":   "",
+			"updated_at":    lease,
+		})
+	if claim.Error != nil {
 		http.Error(w, "update error", http.StatusInternalServerError)
+		return
+	}
+	if claim.RowsAffected == 0 {
+		http.Error(w, "meal is not eligible for retry", http.StatusConflict)
 		return
 	}
 	meal.Status = database.MealStatusProcessing
 	meal.ClarifyRound = 0
 	meal.ClarifyLog = ""
+	meal.UpdatedAt = lease
 
-	h.analyzeMeal(r.Context(), &meal)
+	h.analyzeMeal(r.Context(), &meal, lease)
 	writeJSON(w, meal)
 }

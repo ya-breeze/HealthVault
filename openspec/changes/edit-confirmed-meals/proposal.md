@@ -18,7 +18,7 @@ Once a meal is confirmed, its items are locked (`PatchMealItem` returns 409, the
 
 ### Modified Capabilities
 - `food-nutrition-logging`: item resolution (`PATCH .../items/{item_id}`) is no longer rejected once a meal is `confirmed`; add `POST .../items` (create) and `DELETE .../items/{item_id}` (remove); add `PATCH /api/food/meals/{id}` for `name`/`logged_at`; the meal's stored macro aggregate is recomputed and persisted on every item change while the meal is `confirmed`, not only at confirm time.
-- `food-photo-recognition`: add `POST /api/food/meals/{id}/reanalyze`, which re-runs vision recognition on the stored photo with a required free-text hint, eligible from `failed`, `pending_review`, or `confirmed`, replacing all items and resetting status — a hint-driven counterpart to the existing no-hint `Retry`.
+- `food-photo-recognition`: add `POST /api/food/meals/{id}/reanalyze`, which re-runs vision recognition on the stored photo with a required free-text hint, eligible from `failed`, `pending_review`, or `confirmed`, replacing all items and resetting status — a hint-driven counterpart to the existing no-hint `Retry`. Because `Retry`'s existing eligibility (accepting `processing` once `updated_at` is older than the vision timeout) now overlaps with a state `Reanalyze` can also put a meal in, `Retry`'s own claim is strengthened from a blind write to the same lease-token pattern `Reanalyze` uses, so the two can't clobber each other's in-flight or completed work.
 
 ## Impact
 

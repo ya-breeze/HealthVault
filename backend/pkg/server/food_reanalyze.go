@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -98,6 +99,7 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 	priorStatus := meal.Status
 	priorClarifyRound := meal.ClarifyRound
 	priorClarifyLog := meal.ClarifyLog
+	priorUpdatedAt := meal.UpdatedAt
 
 	eligible := false
 	for _, s := range reanalyzeEligibleStatuses {
@@ -111,27 +113,39 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Atomic claim on the *exact* status just captured, not "any eligible
-	// status": two concurrent requests racing this endpoint for the same
-	// meal can't both proceed (only the winner's RowsAffected is non-zero),
-	// same as a plain `status IN (...)` claim would give — but an exact
-	// match also closes a second race this handler is otherwise exposed to,
-	// uniquely among the eligible-from set: ConfirmMeal transitions
-	// pending_review -> confirmed, and Reanalyze is eligible from both. If
-	// ConfirmMeal committed that transition in the gap between this
-	// handler's read above and this claim, a `status IN (...)` claim would
-	// still match (confirmed is also eligible) and silently claim the
-	// meal — then, on failure, revert to the *stale* pending_review captured
-	// before ConfirmMeal ran, discarding a legitimate confirm that happened
-	// concurrently. Claiming the exact captured status instead makes that
-	// scenario fail the claim (0 rows affected, 409) rather than revert to
-	// a value that was never actually current.
+	// Atomic claim on the *exact* (status, updated_at) just observed — an
+	// optimistic-concurrency check, not just a status match. Two hazards
+	// this closes:
+	//
+	//  1. Status alone ("status IN eligible") isn't enough: ConfirmMeal
+	//     transitions pending_review -> confirmed, and Reanalyze is
+	//     eligible from both. If ConfirmMeal committed that transition in
+	//     the gap between this handler's read above and this claim, a
+	//     status-only claim would still match (confirmed is also
+	//     eligible), silently claim the meal, and on failure revert to the
+	//     *stale* pending_review captured before ConfirmMeal ran —
+	//     discarding a legitimate concurrent confirm.
+	//  2. RetryMeal treats `processing` as retryable once `updated_at` is
+	//     older than the vision timeout — the same threshold this
+	//     handler's own vision call runs against. If this attempt's call
+	//     is slow enough to cross that threshold right as it fails, a
+	//     concurrent RetryMeal can legitimately claim the same meal as
+	//     "stale processing" before this handler's revert runs.
+	//     `updated_at` doubles as this attempt's lease token: the claim
+	//     below writes a fresh one, and every later write for *this*
+	//     attempt (persistAnalysis, failMeal, revertReanalyze) is
+	//     conditioned on that exact value — so a newer claim (which writes
+	//     its own fresh updated_at) silently invalidates this attempt's
+	//     right to write anything further, rather than one attempt
+	//     clobbering the other's in-flight or completed work.
+	lease := time.Now().UTC()
 	claim := h.storage.DB().Model(&database.FoodMeal{}).
-		Where("id = ? AND status = ?", meal.ID, priorStatus).
+		Where("id = ? AND status = ? AND updated_at = ?", meal.ID, priorStatus, priorUpdatedAt).
 		Updates(map[string]any{
 			"status":        database.MealStatusProcessing,
 			"clarify_round": 0,
 			"clarify_log":   "",
+			"updated_at":    lease,
 		})
 	if claim.Error != nil {
 		http.Error(w, "update error", http.StatusInternalServerError)
@@ -144,24 +158,39 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 	meal.Status = database.MealStatusProcessing
 	meal.ClarifyRound = 0
 	meal.ClarifyLog = ""
+	meal.UpdatedAt = lease
 
 	ctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)
 	defer cancel()
 
-	if err := h.runAnalysis(ctx, &meal, hint); err != nil {
+	if err := h.runAnalysis(ctx, &meal, hint, lease); err != nil {
 		// Non-destructive failure: restore exactly what the claim overwrote.
 		// Items and aggregate were never touched — persistAnalysis's
 		// delete-and-replace only runs on a successful recognition — so the
-		// meal is left exactly as it was found. Responding with 502 (not 200
-		// with a mutated meal) lets the caller distinguish "reanalysis
-		// failed, nothing changed" from a normal state transition.
-		if revertErr := h.revertReanalyze(meal.ID, priorStatus, priorClarifyRound, priorClarifyLog); revertErr != nil {
+		// meal is left exactly as it was found, PROVIDED this attempt's
+		// lease is still current (see revertReanalyze). Responding with 502
+		// (not 200 with a mutated meal) lets the caller distinguish
+		// "reanalysis failed, nothing changed" from a normal state
+		// transition.
+		revert := h.revertReanalyze(meal.ID, lease, priorStatus, priorClarifyRound, priorClarifyLog)
+		if revert.err != nil {
 			// The revert itself failed: the meal is genuinely stuck in
 			// processing, not "unchanged" — say so distinctly rather than
 			// claiming a guarantee that no longer holds. RetryMeal's stale-
 			// processing recovery remains available once the vision timeout
 			// elapses.
 			http.Error(w, "reanalysis failed and the meal could not be restored to its prior state", http.StatusInternalServerError)
+			return
+		}
+		if !revert.applied {
+			// The lease was already gone: a newer attempt (e.g. a
+			// stale-processing RetryMeal, once this call ran long enough to
+			// cross the same vision timeout) has since claimed this meal.
+			// That attempt owns the row now — reverting would stomp on
+			// whatever it's doing. This request's own attempt still
+			// failed, so still report failure, just without touching a row
+			// this attempt no longer holds the lease on.
+			http.Error(w, "reanalysis failed; the meal was claimed by another operation in the meantime", http.StatusBadGateway)
 			return
 		}
 		http.Error(w, "reanalysis failed; the meal is unchanged", http.StatusBadGateway)
@@ -171,16 +200,32 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, &meal)
 }
 
+// revertResult reports whether a revert/persist write conditioned on a lease
+// token actually applied (revertReanalyze, persistAnalysis, failMeal all
+// follow this pattern): applied is false when the lease no longer matches —
+// i.e. a newer analysis attempt has since claimed the row — which is a
+// normal, expected outcome, not an error.
+type revertResult struct {
+	applied bool
+	err     error
+}
+
 // revertReanalyze restores a meal's status/clarify fields to their pre-claim
-// values after a failed reanalysis attempt. Safe to run unconditionally (no
-// WHERE on status): this handler is the only writer while the meal's status
-// is processing, by construction of the atomic claim in Reanalyze, so there
-// is no concurrent write to race against.
-func (h *foodHandlers) revertReanalyze(mealID uuid.UUID, status string, clarifyRound int, clarifyLog string) error {
-	return h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", mealID).
+// values after a failed reanalysis attempt, conditioned on this attempt's
+// lease (the updated_at its own claim wrote) still being current. If a newer
+// attempt (see the claim's doc comment above) has since claimed the row,
+// updated_at no longer matches and this is a no-op — the newer attempt owns
+// the row now, and stomping its in-flight or completed work would be worse
+// than leaving this attempt's revert undone.
+func (h *foodHandlers) revertReanalyze(
+	mealID uuid.UUID, lease time.Time, status string, clarifyRound int, clarifyLog string,
+) revertResult {
+	res := h.storage.DB().Model(&database.FoodMeal{}).
+		Where("id = ? AND updated_at = ?", mealID, lease).
 		Updates(map[string]any{
 			"status":        status,
 			"clarify_round": clarifyRound,
 			"clarify_log":   clarifyLog,
-		}).Error
+		})
+	return revertResult{applied: res.RowsAffected > 0, err: res.Error}
 }

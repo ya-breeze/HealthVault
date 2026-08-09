@@ -1,7 +1,7 @@
 ## 1. Backend: meal history list
 
 - [x] 1.1 Define a `MealSummary` DTO (`id`, `name`, `logged_at`, `status`, `calories`) in `backend/pkg/server/food_meal_detail.go` — no `photo_path`, `raw_response`, `clarify_log`, or tenant metadata
-- [x] 1.2 Add `GET /api/food/meals` handler: owner-scoped (`claims.UserID`), ordered `logged_at DESC, created_at DESC, id DESC`; parse `limit` (absent → 50; positive integer ≤ 200 → that value; anything else → 400) and `before` (absent → no filter; valid RFC 3339 → `logged_at < before`; invalid → 400)
+- [x] 1.2 Add `GET /api/food/meals` handler: owner-scoped (`claims.UserID`), ordered `logged_at DESC, id DESC` (shipped as a two-field keyset — `id` alone is a complete tie-break, no `created_at` needed); parse `limit` (absent → 50; positive integer ≤ 200 → that value; anything else → 400), and `before`+`before_id` together as an exact `(logged_at, id)` keyset cursor (`before` alone → simpler non-cursor timestamp filter; `before_id` without `before` → 400; either malformed → 400)
 - [x] 1.3 Register the route in `backend/pkg/server/server.go`
 - [x] 1.4 Unit tests: own-meals-only scoping (incl. cross-user isolation), deterministic tie-break ordering for meals sharing `logged_at`, default/max/invalid `limit` (`-1`, `0`, `201`, `abc`), `before` paging and invalid `before`, all statuses included, response contains only the five summary fields, 401 unauthenticated
 
@@ -33,7 +33,7 @@
 
 - [x] 5.1 Add `backend/pkg/server/food_reanalyze.go` with `POST /api/food/meals/{id}/reanalyze`: read the body through a 4 KiB-limited reader (413 if exceeded), parse `{"hint": string}`, 400 if blank or over 500 characters
 - [x] 5.2 Capture the meal's current `status`, `clarify_round`, `clarify_log` before claiming it
-- [x] 5.3 Atomically claim the meal: `UPDATE ... SET status='processing', clarify_round=0, clarify_log='' WHERE id=? AND status IN ('failed','pending_review','confirmed')`; 0 rows affected → 409, no vision call. 409 also if no stored photo
+- [x] 5.3 Atomically claim the meal on the *exact* `(status, updated_at)` observed, writing a fresh `updated_at` as this attempt's lease token: `UPDATE ... SET status='processing', clarify_round=0, clarify_log='', updated_at=<lease> WHERE id=? AND status=<observed> AND updated_at=<observed>`; 0 rows affected → 409, no vision call. 409 also if no stored photo. (Shipped as an exact match, not `status IN (...)` — see task 11 for why)
 - [x] 5.4 On success: run the same recognize → `processRecognition` → `persistAnalysis` pipeline `analyzeMeal` uses (which now also zeroes the aggregate per 4.5), passing the hint through
 - [x] 5.5 On vision error/timeout: restore the captured `status`/`clarify_round`/`clarify_log` (not `failMeal`), and respond HTTP 502 with an error body — do not touch items or aggregate
 - [x] 5.6 Register the route in `backend/pkg/server/server.go`
@@ -41,12 +41,12 @@
 
 ## 6. Frontend: API client
 
-- [x] 6.1 Add `api.listMeals({limit?, before?})`, `api.patchMeal(id, {name?, logged_at?})`, `api.createMealItem(id, body)`, `api.deleteMealItem(id, itemId)`, `api.reanalyzeMeal(id, hint)` to `frontend/lib/api.ts`, matching existing method conventions. `patchMealItem`, `createMealItem`, and the delete call all now resolve to a `FoodMeal`, not a `FoodItem` — update their return types accordingly. Handle `reanalyzeMeal`'s HTTP 502 as a distinct "reanalysis failed" outcome, not a generic error
+- [x] 6.1 Add `api.listMeals({limit?, before?, beforeId?})`, `api.patchMeal(id, {name?, logged_at?})`, `api.createMealItem(id, body)`, `api.deleteMealItem(id, itemId)`, `api.reanalyzeMeal(id, hint)` to `frontend/lib/api.ts`, matching existing method conventions. `patchMealItem`, `createMealItem`, and the delete call all now resolve to a `FoodMeal`, not a `FoodItem` — update their return types accordingly. Handle `reanalyzeMeal`'s HTTP 502 as a distinct "reanalysis failed" outcome, not a generic error. `beforeId` must be sent alongside `before` for the lossless keyset cursor — a `before`-only call falls back to a lossy timestamp filter (see 1.2)
 
 ## 7. Frontend: meal history page
 
 - [x] 7.1 Add `frontend/app/food/history/page.tsx` (+ client component if needed, following the `output: 'export'` static-page pattern already used by `frontend/app/food/review/`) listing meals from `api.listMeals()`: name, date, status badge, calories (blank unless confirmed), linking to `/food/review/?meal=<id>`
-- [x] 7.2 Add a "load older" action that re-calls `api.listMeals({before: <oldest shown logged_at>})` and appends results
+- [x] 7.2 Add a "load older" action that re-calls `api.listMeals({before: <oldest shown logged_at>, beforeId: <oldest shown id>})` and appends results — both fields are required together for the lossless cursor. `hasMore` is set from `rows.length === PAGE_SIZE`: the keyset cursor never defers or splits rows, so a short page reliably means nothing more remains
 - [x] 7.3 Add a "History" link from the dashboard (`frontend/app/page.tsx`), alongside the existing Photo/Manual food-logging links
 
 ## 8. Frontend: unlock confirmed-meal editing
@@ -68,4 +68,14 @@
 - [x] 10.1 `make lint` / `go vet` (backend), `tsc --noEmit` (frontend)
 - [x] 10.2 Backend unit tests: `make test` or equivalent, all green
 - [x] 10.3 Deploy to `hcw-wip`, exercise: edit an item on a confirmed meal and see totals update live; add and delete an item on a confirmed meal; rename/re-time a confirmed meal; browse meal history, page to older meals, and open a meal from it; reanalyze a confirmed meal with a hint and confirm it reverts to pending_review with new items and a zeroed total; simulate a reanalyze failure (e.g. bad hint length) and confirm the meal is untouched
-- [x] 10.4 Add/extend Playwright E2E coverage in `e2e/tests/food.spec.ts` for: history list navigation and "load older", editing/adding/deleting an item on a confirmed meal with the visible total updating immediately, reanalyze-with-hint success and failure flows
+- [x] 10.4 Add/extend Playwright E2E coverage in `e2e/tests/food.spec.ts` for: history list navigation and "load older" (seeds 51 real meals to prove a genuine second page is fetched and appended, not just that an empty page hides the button), editing/adding/deleting an item on a confirmed meal with the visible total updating immediately (via a real macro edit, not a weight-only one that leaves calories untouched), and reanalyze-with-hint. Reanalyze's deterministic UI coverage (both success and 502-failure) uses `page.route()` network mocking rather than depending on live vision output; a separate live-provider test remains as supplementary smoke coverage, since it can't guarantee which outcome a synthetic test image produces. Every test that creates data wraps its assertions in `try`/`finally` so a mid-test failure can't leak meals into the shared, reused WIP account
+
+## 11. Backend: lease token for concurrent analysis attempts
+
+Found in review: `Reanalyze`'s exact-status claim (task 5.3) doesn't account for `RetryMeal`'s own stale-processing eligibility overlapping the same `processing` state — see design.md "A lease token... guards every analysis attempt against being superseded".
+
+- [x] 11.1 Thread a `lease time.Time` parameter through `analyzeMeal`/`runAnalysis`/`processRecognition`/`persistAnalysis`/`failMeal` (`backend/pkg/server/food_upload.go`); `persistAnalysis`'s and `failMeal`'s final writes are conditioned on `updated_at = lease`, returning/no-oping (`errLeaseLost`) rather than erroring loudly when the lease no longer matches
+- [x] 11.2 `CreateMeal` captures its lease from `meal.UpdatedAt` right after `Create` (GORM sets it); `RetryMeal`'s claim becomes an optimistic-concurrency check (`WHERE status = ? AND updated_at = ?`, matching what was just read) that also writes a fresh lease; `ClarifyMeal`'s existing claim gains the same `updated_at` condition and fresh-lease write
+- [x] 11.3 `Reanalyze`'s revert (`revertReanalyze`) is conditioned on its own lease; if the lease is gone (a newer attempt claimed the meal), the revert no-ops and the response still reports failure (502) without claiming the meal is "unchanged," since it's no longer this request's to describe
+- [x] 11.4 Unit tests: `RetryMeal` claim rejected when a concurrent claim lands first (0 vision calls); `Reanalyze`'s revert does not stomp a newer concurrent claim's status when its own attempt fails — both via a deterministic GORM `Before(update)` hook simulating the concurrent write, no goroutines needed
+- [x] 11.5 Sync `openspec/specs/food-photo-recognition`'s delta: rewrite the Reanalyze "Atomic claim" requirement to describe the exact-status + lease design (not the original `status IN (...)` text), and add a `MODIFIED Requirements` delta for the archived "Analysis Retry Without Re-Upload" requirement describing `Retry`'s own strengthened claim

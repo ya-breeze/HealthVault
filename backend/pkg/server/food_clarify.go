@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -90,21 +91,29 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	meal.ClarifyRound = pendingRound
 
 	// Claim the round atomically: the WHERE clause repeats the status check
-	// above, but as part of the same conditional UPDATE rather than a prior
-	// read, so two requests racing this endpoint for the same round can't
-	// both pass it. Only the winner proceeds to call vision.Clarify; the
-	// loser's RowsAffected is 0. Without this, two near-simultaneous
-	// submissions (a double-click, two tabs) can both read
-	// pending_clarification, both bill a real vision call, and race each
-	// other's writes with no defined winner. Moving to processing here also
-	// reuses RetryMeal's existing staleness recovery if this call hangs or
-	// the process crashes mid-call.
+	// above plus an updated_at match against what was just loaded, as part
+	// of the same conditional UPDATE rather than a prior read, so two
+	// requests racing this endpoint for the same round can't both pass it.
+	// Only the winner proceeds to call vision.Clarify; the loser's
+	// RowsAffected is 0. Without this, two near-simultaneous submissions (a
+	// double-click, two tabs) can both read pending_clarification, both
+	// bill a real vision call, and race each other's writes with no
+	// defined winner. Moving to processing here also reuses RetryMeal's
+	// existing staleness recovery if this call hangs or the process
+	// crashes mid-call — the fresh updated_at written here doubles as this
+	// attempt's lease token, threaded to processRecognition/failMeal below
+	// so a newer attempt claiming this meal (e.g. that same stale-processing
+	// recovery, racing this one) can't have its work overwritten by this
+	// one arriving late — see analyzeMeal's doc comment in food_upload.go.
+	priorUpdatedAt := meal.UpdatedAt
+	lease := time.Now().UTC()
 	claim := h.storage.DB().Model(&database.FoodMeal{}).
-		Where("id = ? AND status = ?", meal.ID, database.MealStatusPendingClarification).
+		Where("id = ? AND status = ? AND updated_at = ?", meal.ID, database.MealStatusPendingClarification, priorUpdatedAt).
 		Updates(map[string]any{
 			"clarify_round": meal.ClarifyRound,
 			"clarify_log":   meal.ClarifyLog,
 			"status":        database.MealStatusProcessing,
+			"updated_at":    lease,
 		})
 	if claim.Error != nil {
 		http.Error(w, "update error", http.StatusInternalServerError)
@@ -115,6 +124,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	meal.Status = database.MealStatusProcessing
+	meal.UpdatedAt = lease
 
 	history := make([]vision.ClarifyTurn, len(entries))
 	for i, e := range entries {
@@ -133,12 +143,12 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 
 	recognized, err := h.vision.Clarify(ctx, priorItems, history)
 	if err != nil {
-		h.failMeal(meal)
+		h.failMeal(meal, lease)
 		writeJSON(w, meal)
 		return
 	}
-	if err := h.processRecognition(ctx, meal, recognized); err != nil {
-		h.failMeal(meal)
+	if err := h.processRecognition(ctx, meal, recognized, lease); err != nil {
+		h.failMeal(meal, lease)
 	}
 	writeJSON(w, meal)
 }

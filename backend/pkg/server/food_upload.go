@@ -71,7 +71,9 @@ func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.analyzeMeal(r.Context(), &meal)
+	// meal.UpdatedAt, set by GORM's Create above, is this attempt's lease
+	// token from the start — see analyzeMeal's doc comment.
+	h.analyzeMeal(r.Context(), &meal, meal.UpdatedAt)
 	writeJSONStatus(w, http.StatusCreated, meal)
 }
 
@@ -94,11 +96,21 @@ func writeUploadError(w http.ResponseWriter, err error) {
 // nothing valuable to lose by falling back to failed — see runAnalysis's doc
 // comment, and Reanalyze (food_reanalyze.go) for the path that does have
 // something to lose and so does not use this wrapper.
-func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal) {
+//
+// lease is this analysis attempt's token — the meal's updated_at at the
+// moment it was claimed into processing (by Create, RetryMeal's claim, or
+// ClarifyMeal's claim). It's threaded all the way to persistAnalysis and
+// failMeal so a *newer* attempt claiming the same meal (RetryMeal's
+// stale-processing recovery is exactly what makes this possible: a slow
+// call from *this* attempt can cross the same vision-timeout threshold a
+// concurrent Retry uses to decide the meal is stale) invalidates this one's
+// right to write a result — see food_reanalyze.go's claim doc comment for
+// the full scenario this guards against.
+func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal, lease time.Time) {
 	ctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
 	defer cancel()
-	if err := h.runAnalysis(ctx, meal, ""); err != nil {
-		h.failMeal(meal)
+	if err := h.runAnalysis(ctx, meal, "", lease); err != nil {
+		h.failMeal(meal, lease)
 	}
 }
 
@@ -111,7 +123,7 @@ func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal)
 // nothing valuable to lose), while Reanalyze reverts to the meal's prior
 // state instead, since it can be called against a confirmed meal with real
 // content behind it.
-func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal, hint string) error {
+func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal, hint string, lease time.Time) error {
 	photoBytes, err := h.photos.Read(meal.PhotoPath)
 	if err != nil {
 		return err
@@ -120,7 +132,7 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 	if err != nil {
 		return err
 	}
-	return h.processRecognition(ctx, meal, recognized)
+	return h.processRecognition(ctx, meal, recognized, lease)
 }
 
 // processRecognition persists the outcome of a Recognize or Clarify call.
@@ -137,7 +149,9 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 // callers, specifically Reanalyze, need to know a persistence failure
 // happened even though the vision call itself succeeded, so they can revert
 // rather than report success with a mutated meal.
-func (h *foodHandlers) processRecognition(ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult) error {
+func (h *foodHandlers) processRecognition(
+	ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult, lease time.Time,
+) error {
 	nextRound := meal.ClarifyRound + 1
 	if len(recognized.ClarificationQuestions) > 0 && nextRound <= database.MaxClarifyRounds {
 		items := unresolvedItemsFrom(recognized.Items, meal.ID, meal.UserID, meal.FamilyID)
@@ -145,11 +159,11 @@ func (h *foodHandlers) processRecognition(ctx context.Context, meal *database.Fo
 		if err != nil {
 			return err
 		}
-		return h.persistAnalysis(meal, database.MealStatusPendingClarification, recognized.Raw, items, &clarifyLog)
+		return h.persistAnalysis(meal, database.MealStatusPendingClarification, recognized.Raw, items, &clarifyLog, lease)
 	}
 
 	items := h.resolveItems(ctx, meal, recognized.Items)
-	return h.persistAnalysis(meal, database.MealStatusPendingReview, recognized.Raw, items, nil)
+	return h.persistAnalysis(meal, database.MealStatusPendingReview, recognized.Raw, items, nil, lease)
 }
 
 // buildPendingQuestionsLog computes the new clarify_log value: round's
@@ -314,6 +328,12 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 // exactly the inconsistent state revertReanalyze can't fix — status reverted
 // to what it was, but items and aggregate already replaced.
 //
+// errLeaseLost is returned by persistAnalysis when lease no longer matches
+// the meal's current updated_at — a newer analysis attempt (see
+// analyzeMeal's doc comment) has since claimed the row, and this attempt's
+// result must not be written over it.
+var errLeaseLost = errors.New("meal was claimed by a newer analysis attempt")
+
 // Returns any transaction error instead of handling it — callers decide what
 // "failed to persist" means for them. analyzeMeal's callers (upload, retry)
 // fall back to failMeal, which is safe for them (nothing valuable to lose).
@@ -322,8 +342,15 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 // is exactly what happened before this function reported its own errors —
 // it silently called failMeal internally and Reanalyze had no way to see
 // that the "success" it thought it had wasn't one.
+//
+// lease conditions the final meal write on updated_at still matching what
+// this attempt's own claim wrote — see analyzeMeal's doc comment for why
+// that can legitimately not be true by the time this runs. Item
+// delete+create happen inside the same transaction as that conditional
+// write, so a lost lease rolls back the item replacement too, not just
+// skips the meal-row update.
 func (h *foodHandlers) persistAnalysis(
-	meal *database.FoodMeal, status, rawResponse string, items []database.FoodItem, clarifyLog *string,
+	meal *database.FoodMeal, status, rawResponse string, items []database.FoodItem, clarifyLog *string, lease time.Time,
 ) error {
 	updates := map[string]any{
 		"status": status, "raw_response": rawResponse,
@@ -348,7 +375,14 @@ func (h *foodHandlers) persistAnalysis(
 				return err
 			}
 		}
-		return tx.Model(&database.FoodMeal{}).Where("id = ?", meal.ID).Updates(updates).Error
+		res := tx.Model(&database.FoodMeal{}).Where("id = ? AND updated_at = ?", meal.ID, lease).Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errLeaseLost
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -364,10 +398,18 @@ func (h *foodHandlers) persistAnalysis(
 	return nil
 }
 
-func (h *foodHandlers) failMeal(meal *database.FoodMeal) {
-	h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
-		Update("status", database.MealStatusFailed) //nolint:errcheck
-	meal.Status = database.MealStatusFailed
+// failMeal marks meal failed, conditioned on lease still matching — see
+// persistAnalysis. If a newer attempt has since claimed the row, this is a
+// silent no-op: that attempt owns the meal now, and this one reporting
+// failure over it would be wrong regardless of what this attempt itself
+// observed.
+func (h *foodHandlers) failMeal(meal *database.FoodMeal, lease time.Time) {
+	res := h.storage.DB().Model(&database.FoodMeal{}).
+		Where("id = ? AND updated_at = ?", meal.ID, lease).
+		Update("status", database.MealStatusFailed)
+	if res.Error == nil && res.RowsAffected > 0 {
+		meal.Status = database.MealStatusFailed
+	}
 }
 
 // extOf returns the stored file extension from a photostorage relative path

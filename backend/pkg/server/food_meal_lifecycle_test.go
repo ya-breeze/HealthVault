@@ -825,6 +825,45 @@ func TestRetryMeal_StaleProcessingIsAccepted(t *testing.T) {
 	}
 }
 
+// Regression: RetryMeal's claim used to be an unconditional `WHERE id = ?`
+// write once the eligibility check (read, then act) passed — a classic
+// TOCTOU gap. Two concurrent requests (a double-click, or a race with
+// Reanalyze's own stale-processing-adjacent claim) observing the same
+// eligible meal could both pass that check and both restart analysis. The
+// claim is now conditioned on (status, updated_at) exactly matching what was
+// just read, so a concurrent claim landing first invalidates this one's.
+func TestRetryMeal_ConcurrentClaimIsRejected(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createFailedMealWithPhoto(t, st, dir, userID, familyID)
+
+	registerRaceSimulation(t, st.DB(), func() {
+		sqlDB, err := st.DB().DB()
+		if err != nil {
+			t.Fatalf("get sql.DB: %v", err)
+		}
+		if _, err := sqlDB.Exec(
+			"UPDATE food_meals SET status = ?, updated_at = ? WHERE id = ?",
+			database.MealStatusProcessing, time.Now().UTC(), meal.ID,
+		); err != nil {
+			t.Fatalf("simulate concurrent claim: %v", err)
+		}
+	})
+
+	fake := &vision.Fake{RecognizeResult: &vision.RecognizeResult{}}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Second)
+	w := httptest.NewRecorder()
+	h.RetryMeal(w, withClaims(mealDetailRequest(http.MethodPost, meal.ID.String()), userID))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when the meal was concurrently claimed first, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.RecognizeCalls) != 0 {
+		t.Errorf("expected no vision call once the claim failed, got %d", len(fake.RecognizeCalls))
+	}
+}
+
 func TestRetryMeal_ConfirmedMealRejectedWith409(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

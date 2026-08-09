@@ -354,6 +354,63 @@ func TestReanalyze_ClarificationPersistenceFailureLeavesMealFullyUnchanged(t *te
 	}
 }
 
+// Regression: RetryMeal treats `processing` as retryable once updated_at is
+// older than the same vision timeout this handler's own call runs against.
+// If Reanalyze's call is slow enough to cross that threshold right as it
+// fails, a concurrent RetryMeal can legitimately claim the meal (fresh
+// status=processing, fresh updated_at — a "newer attempt") before this
+// handler's revert runs. The old unconditional revert (`WHERE id = ?`)
+// would stomp that claim back to the stale pre-reanalyze status, letting
+// edits resume on a meal a retry may still be actively replacing the items
+// of. The lease (this attempt's own updated_at, captured at its claim) makes
+// the revert conditional: it must no-op once a newer claim has landed.
+func TestReanalyze_FailedAttemptDoesNotStompNewerConcurrentClaim(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusPendingReview, 0, "")
+
+	fake := &vision.Fake{RecognizeErr: context.DeadlineExceeded}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+
+	// Update call #1 is this handler's own claim; #2 would normally be its
+	// revert (no persistAnalysis update happens on a failed vision call) —
+	// inject the "concurrent newer claim" right before that revert fires.
+	updateCalls := 0
+	const hookName = "test:concurrent-reclaim"
+	st.DB().Callback().Update().Before("gorm:update").Register(hookName, func(*gorm.DB) {
+		updateCalls++
+		if updateCalls == 2 {
+			sqlDB, err := st.DB().DB()
+			if err != nil {
+				t.Fatalf("get sql.DB: %v", err)
+			}
+			if _, err := sqlDB.Exec(
+				"UPDATE food_meals SET status = ?, updated_at = ? WHERE id = ?",
+				database.MealStatusProcessing, time.Now().UTC().Add(time.Second), meal.ID,
+			); err != nil {
+				t.Fatalf("simulate concurrent reclaim: %v", err)
+			}
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Update().Remove(hookName) })
+
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeHTTPRequest(meal.ID.String(), "a hint"), userID))
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded database.FoodMeal
+	if err := st.DB().Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if reloaded.Status != database.MealStatusProcessing {
+		t.Errorf("expected the newer concurrent claim's processing status to survive this attempt's revert, got %s", reloaded.Status)
+	}
+}
+
 func TestReanalyze_CrossUserReturns404(t *testing.T) {
 	st := newFoodTestStorage(t)
 	_, familyID := seedFoodUser(t, st)
