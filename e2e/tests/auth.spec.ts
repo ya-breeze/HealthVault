@@ -133,12 +133,28 @@ test.describe('Session refresh on 401', () => {
     try {
       const pageA = await context.newPage();
       await login(pageA);
+      // networkidle, not just the URL, so no request from the initial load
+      // (e.g. Dashboard's second-effect vitals fetches) is still in flight
+      // when we corrupt cookies below — an in-flight request from before
+      // corruption wouldn't itself 401, but it could otherwise obscure
+      // exactly when this tab's state actually settled.
+      await pageA.waitForLoadState('networkidle');
 
       const pageB = await context.newPage();
       await pageB.goto('/');
       await expect(pageB).toHaveURL('/');
+      await pageB.waitForLoadState('networkidle');
 
-      await corruptAuthCookies(context);
+      // This test's whole premise is that the proxied origin is a genuine
+      // secure context so navigator.locks is actually active — assert that
+      // directly, so a future change to the proxy or to Chromium's secure-
+      // context rules fails loudly here instead of silently degrading this
+      // test to (only) exercising the same-tab-only fallback.
+      const capabilities = await pageA.evaluate(() => ({
+        isSecureContext: window.isSecureContext,
+        hasLocks: typeof navigator.locks !== 'undefined',
+      }));
+      expect(capabilities).toEqual({ isSecureContext: true, hasLocks: true });
 
       let refreshCalls = 0;
       await context.route('**/api/auth/refresh', route => {
@@ -146,6 +162,37 @@ test.describe('Session refresh on 401', () => {
         route.continue();
       });
 
+      // Force a genuine race instead of relying on luck: hold each tab's
+      // first GET /api/users/me (what both Header and Dashboard fire on
+      // mount, and what will 401 once cookies are corrupted) until BOTH
+      // tabs' requests have arrived, then release them together. Without
+      // this, "one refresh call" could happen simply because tab B's
+      // request landed after tab A's refresh had already completed and
+      // refreshed the shared cookie — a passing result that proves nothing
+      // about the Web Lock actually coalescing a real race.
+      let pageAArrived = false;
+      let pageBArrived = false;
+      let releaseBarrier: () => void;
+      const barrier = new Promise<void>(resolve => {
+        releaseBarrier = resolve;
+      });
+      const releaseIfBothArrived = () => {
+        if (pageAArrived && pageBArrived) releaseBarrier();
+      };
+      await pageA.route('**/api/users/me', async route => {
+        pageAArrived = true;
+        releaseIfBothArrived();
+        await barrier;
+        await route.continue();
+      });
+      await pageB.route('**/api/users/me', async route => {
+        pageBArrived = true;
+        releaseIfBothArrived();
+        await barrier;
+        await route.continue();
+      });
+
+      await corruptAuthCookies(context);
       await Promise.all([pageA.reload(), pageB.reload()]);
       await Promise.all([
         pageA.waitForLoadState('networkidle'),
