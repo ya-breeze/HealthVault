@@ -434,7 +434,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.locator('input[type="number"]').first().fill('150');
     await page.locator('input[type="number"]').first().blur();
     await page.getByRole('button', { name: 'Change match' }).click();
-    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
     await page.getByRole('button', { name: /New Food/ }).click();
 
     await expect(page.getByText('New Food')).toBeVisible();
@@ -483,7 +483,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await page.getByRole('button', { name: '+ Add item' }).click();
-    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
 
     const result = page.getByRole('button', { name: /New Item/ });
     await result.click();
