@@ -88,7 +88,13 @@ type ClarifyTurn struct {
 // Every implementation sets store:false on outbound requests — see design.md
 // "Third-Party Disclosure and Retention".
 type Client interface {
-	Recognize(ctx context.Context, image []byte, mimeType string) (*RecognizeResult, error)
+	// Recognize sends the photo and asks the model to identify its foods. hint,
+	// when non-empty, is a caller-supplied free-text correction (e.g. "this is
+	// chicken and rice, not berries") included in the prompt for that call —
+	// used by hint-driven reanalysis. An empty hint is the normal path (photo
+	// upload, no-hint retry) and leaves the request unchanged from before hint
+	// support existed.
+	Recognize(ctx context.Context, image []byte, mimeType, hint string) (*RecognizeResult, error)
 	// Clarify is text-only: it does not re-send the photo, only the items
 	// recognized so far and the full question/answer history. It returns the
 	// same RecognizeResult shape — updated items, and further

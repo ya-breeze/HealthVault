@@ -48,7 +48,7 @@ func TestOpenAIClient_Recognize_SetsStoreFalseAndSendsImage(t *testing.T) {
 			`{"items":[{"name":"chicken breast","preparation":"roasted","state":"cooked","weight_grams":180,"confidence":0.9}],"clarification_questions":[]}`)))
 	})
 
-	result, err := c.Recognize(context.Background(), []byte{0xFF, 0xD8, 0xFF}, "image/jpeg")
+	result, err := c.Recognize(context.Background(), []byte{0xFF, 0xD8, 0xFF}, "image/jpeg", "")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestOpenAIClient_Recognize_UnknownMapsToEmptyString(t *testing.T) {
 			`{"items":[{"name":"mystery sauce","preparation":"unknown","state":"unknown","weight_grams":30,"confidence":0.4}],"clarification_questions":[]}`)))
 	})
 
-	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg")
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -109,12 +109,58 @@ func TestOpenAIClient_Recognize_ClarificationQuestions(t *testing.T) {
 			`{"items":[],"clarification_questions":["Is this dish spicy?"]}`)))
 	})
 
-	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg")
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
 	if len(result.ClarificationQuestions) != 1 {
 		t.Fatalf("expected 1 clarification question, got %+v", result.ClarificationQuestions)
+	}
+}
+
+func TestOpenAIClient_Recognize_HintIncludedAlongsideImage(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
+		w.Write([]byte(chatResponse(t,                //nolint:errcheck
+			`{"items":[{"name":"chicken breast","preparation":"roasted","state":"cooked","weight_grams":180,"confidence":0.9}],"clarification_questions":[]}`)))
+	})
+
+	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "this is chicken and rice, not berries")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+
+	b, err := json.Marshal(capturedBody)
+	if err != nil {
+		t.Fatalf("marshal captured body: %v", err)
+	}
+	if !strings.Contains(string(b), "this is chicken and rice, not berries") {
+		t.Errorf("expected the hint text in the request body, got %s", b)
+	}
+	if !strings.Contains(string(b), "image_url") {
+		t.Error("expected the image to still be sent alongside the hint")
+	}
+}
+
+func TestOpenAIClient_Recognize_NoHintUnchangedPrompt(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
+		w.Write([]byte(chatResponse(t, `{"items":[],"clarification_questions":[]}`))) //nolint:errcheck
+	})
+
+	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+
+	messages, _ := capturedBody["messages"].([]any)
+	userMsg := messages[1].(map[string]any)
+	content, _ := userMsg["content"].([]any)
+	textPart := content[0].(map[string]any)
+	if textPart["text"] != "Identify the foods in this photo." {
+		t.Errorf("expected the unchanged prompt text with no hint, got %q", textPart["text"])
 	}
 }
 
@@ -169,7 +215,7 @@ func TestOpenAIClient_APIErrorIsReturned(t *testing.T) {
 		w.Write([]byte(`{"error":{"message":"invalid api key"}}`)) //nolint:errcheck
 	})
 
-	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg")
+	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
 	if err == nil {
 		t.Fatal("expected an error for a 401 response")
 	}
@@ -182,7 +228,7 @@ func TestOpenAIClient_ContextCancellationReturnsError(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := c.Recognize(ctx, []byte{1}, "image/jpeg")
+	_, err := c.Recognize(ctx, []byte{1}, "image/jpeg", "")
 	if err == nil {
 		t.Fatal("expected an error for a cancelled context")
 	}

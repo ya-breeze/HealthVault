@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
 	"github.com/ya-breeze/healthvault/pkg/vision"
@@ -175,6 +177,40 @@ func TestCreateMeal_RecognizeErrorMarksFailedAndRetainsPhoto(t *testing.T) {
 	}
 }
 
+// Regression: round-7 review — failMeal's own status-write UPDATE affecting
+// zero rows is used as the single signal for "a newer attempt superseded
+// this one, reload rather than error" everywhere it's called from. That
+// conflated two different situations: a legitimate supersession (someone
+// else's newer lease owns the row now) and this attempt's own write failing
+// outright (a real database error). The latter used to be treated the same
+// as the former — reloaded and potentially returned as a 200/201 with the
+// meal silently stuck in `processing`, hiding the failure entirely. It must
+// now surface as a 500.
+func TestCreateMeal_FailMealWriteErrorReturns500NotStuckProcessing(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	fake := &vision.Fake{RecognizeErr: errors.New("vision provider unavailable")}
+	dir := t.TempDir()
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Second)
+
+	const hookName = "test:fail-meal-write-error"
+	st.DB().Callback().Update().Before("gorm:update").Register(hookName, func(tx *gorm.DB) {
+		// The only UPDATE in this flow is failMeal's own status write
+		// (analyzeMeal's runAnalysis error path); poisoning it unconditionally
+		// is safe here.
+		tx.Error = errors.New("simulated status-write failure")
+	})
+	t.Cleanup(func() { st.DB().Callback().Update().Remove(hookName) })
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when failMeal's own write errors, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestCreateMeal_UnconfiguredVisionMarksFailed(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)
@@ -197,7 +233,7 @@ func TestCreateMeal_UnconfiguredVisionMarksFailed(t *testing.T) {
 // a vision call that outruns HCW_VISION_TIMEOUT.
 type slowRecognizeClient struct{}
 
-func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string) (*vision.RecognizeResult, error) {
+func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string, _ string) (*vision.RecognizeResult, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }

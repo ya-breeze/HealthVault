@@ -1,9 +1,12 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, FoodMeal, pendingClarifyQuestions } from '@/lib/api';
 import ClarifyModal from '@/components/food/ClarifyModal';
 import MealItemRow from '@/components/food/MealItemRow';
+import AddItemForm from '@/components/food/AddItemForm';
+import ReanalyzeControl from '@/components/food/ReanalyzeControl';
+import MealMetaEditor from '@/components/food/MealMetaEditor';
 import MacroSummary from '@/components/food/MacroSummary';
 import Header from '@/components/Header';
 
@@ -23,6 +26,37 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Every mutation control below (item rows, add-item, meal name/time,
+  // reanalyze, retry, clarify, confirm) needs its resulting FoodMeal
+  // applied to this shared state in the order its request actually
+  // committed on the server — not the order responses happen to arrive in,
+  // which ordinary network delay can reorder. A round-9 version of this
+  // compared a ticket assigned at *issue* time, but issue order isn't
+  // commit order either: the request issued first can be the one left
+  // waiting on a lock while a later-issued request commits and returns
+  // first, so a same-page edit that actually finished last can be the one
+  // holding the true current state — discarding it by issue-order ticket
+  // throws that state away. applyMealUpdate instead serializes *issuing*
+  // each request in the first place: a mutation is queued behind whatever
+  // is still outstanding, so by the time it's actually sent, every
+  // earlier-queued mutation has already committed and been applied to
+  // `meal`. That makes issue order and commit order the same thing by
+  // construction, with nothing left to compare or guess — so every
+  // mutating child takes a thunk (not an already-started request) as its
+  // onUpdated/onAdded/onReanalyzed prop, letting this queue decide exactly
+  // when each request is allowed to start.
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const applyMealUpdate = useCallback((issue: () => Promise<FoodMeal>): Promise<FoodMeal> => {
+    const run = queueRef.current.then(issue).then(result => {
+      setMeal(result);
+      return result;
+    });
+    // Keep the queue moving even if this mutation failed — a rejected
+    // mutation must not wedge every mutation queued behind it.
+    queueRef.current = run.catch(() => undefined);
+    return run;
+  }, []);
+
   const load = () => {
     setLoading(true);
     setLoadError(null);
@@ -38,7 +72,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     setBusy(true);
     setActionError(null);
     try {
-      setMeal(await api.retryMeal(mealId));
+      await applyMealUpdate(() => api.retryMeal(mealId));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Retry failed');
     } finally {
@@ -47,16 +81,14 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   };
 
   const handleClarify = async (answers: string[]) => {
-    const updated = await api.clarifyMeal(mealId, answers);
-    setMeal(updated);
+    await applyMealUpdate(() => api.clarifyMeal(mealId, answers));
   };
 
   const handleConfirm = async () => {
     setBusy(true);
     setActionError(null);
     try {
-      const updated = await api.confirmMeal(mealId);
-      setMeal(updated);
+      await applyMealUpdate(() => api.confirmMeal(mealId));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Confirm failed');
     } finally {
@@ -86,15 +118,26 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const items = meal.items ?? [];
   const pendingQuestions = pendingClarifyQuestions(meal);
   const canConfirm = meal.status === 'pending_review' && !busy;
+  // Manual entries are confirmed but have no stored photo — the backend
+  // rejects reanalyzing those with 409, so don't offer a control that would
+  // always fail for them.
+  const canReanalyze =
+    Boolean(meal.photo_path) &&
+    (meal.status === 'failed' || meal.status === 'pending_review' || meal.status === 'confirmed');
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
 
       <main className="max-w-md mx-auto px-6 py-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
           {meal.name || 'Meal'}
         </h1>
+        {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
+          <div className="mb-3">
+            <MealMetaEditor meal={meal} onUpdated={applyMealUpdate} />
+          </div>
+        )}
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
             {STATUS_LABEL[meal.status] ?? meal.status}
@@ -142,18 +185,12 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
                 <p className="py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No items.</p>
               ) : (
                 items.map(item => (
-                  <MealItemRow
-                    key={item.id}
-                    mealId={mealId}
-                    item={item}
-                    readOnly={meal.status === 'confirmed'}
-                    onUpdated={updated =>
-                      setMeal(m => (m ? { ...m, items: (m.items ?? []).map(it => (it.id === updated.id ? updated : it)) } : m))
-                    }
-                  />
+                  <MealItemRow key={item.id} mealId={mealId} item={item} onUpdated={applyMealUpdate} />
                 ))
               )}
             </div>
+
+            <AddItemForm mealId={mealId} onAdded={applyMealUpdate} />
 
             {meal.status === 'pending_review' && (
               <button
@@ -166,6 +203,8 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
             )}
           </>
         )}
+
+        {canReanalyze && <ReanalyzeControl mealId={mealId} onReanalyzed={applyMealUpdate} />}
 
         {actionError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
       </main>

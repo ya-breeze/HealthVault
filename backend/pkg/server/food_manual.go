@@ -61,7 +61,10 @@ func (h *foodHandlers) CreateManualMeal(w http.ResponseWriter, r *http.Request) 
 
 	loggedAt := time.Now().UTC()
 	if req.LoggedAt != nil {
-		loggedAt = *req.LoggedAt
+		// UTC-normalize before storing — see PatchMeal/ConfirmMeal's
+		// identical treatment for why an un-normalized offset breaks
+		// history ordering and its keyset cursor.
+		loggedAt = req.LoggedAt.UTC()
 	}
 
 	familyID := FamilyIDFromCtx(r)
