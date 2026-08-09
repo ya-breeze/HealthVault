@@ -90,23 +90,38 @@ func writeUploadError(w http.ResponseWriter, err error) {
 
 // analyzeMeal runs the vision recognition call and persists its outcome via
 // processRecognition. Any error, including a timeout, marks the meal failed
-// with the photo retained.
+// with the photo retained. Used by the upload and retry paths, where there is
+// nothing valuable to lose by falling back to failed — see runAnalysis's doc
+// comment, and Reanalyze (food_reanalyze.go) for the path that does have
+// something to lose and so does not use this wrapper.
 func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal) {
 	ctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
 	defer cancel()
+	if err := h.runAnalysis(ctx, meal, ""); err != nil {
+		h.failMeal(meal)
+	}
+}
 
+// runAnalysis reads the stored photo and runs vision recognition with the
+// given hint (empty for the normal upload/retry path), persisting the
+// outcome via processRecognition on success. On failure it returns the error
+// without persisting anything — the meal's status, items, and aggregate are
+// left exactly as the caller found them. Callers decide how to handle that:
+// analyzeMeal falls back to failMeal (safe for upload/retry, which have
+// nothing valuable to lose), while Reanalyze reverts to the meal's prior
+// state instead, since it can be called against a confirmed meal with real
+// content behind it.
+func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal, hint string) error {
 	photoBytes, err := h.photos.Read(meal.PhotoPath)
 	if err != nil {
-		h.failMeal(meal)
-		return
+		return err
 	}
-
-	recognized, err := h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)))
+	recognized, err := h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), hint)
 	if err != nil {
-		h.failMeal(meal)
-		return
+		return err
 	}
 	h.processRecognition(ctx, meal, recognized)
+	return nil
 }
 
 // processRecognition persists the outcome of a Recognize or Clarify call.
@@ -273,10 +288,17 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 }
 
 // persistAnalysis replaces the meal's FoodItem rows and writes its status in
-// one transaction, so a re-analysis (retry, or a clarify round moving to
-// pending_review) can never append a second set alongside the first. On a
-// write failure the meal is left failed rather than silently stuck in
-// processing.
+// one transaction, so a re-analysis (retry, reanalyze, or a clarify round
+// moving to pending_review) can never append a second set alongside the
+// first. It also unconditionally zeros the meal's seven stored aggregate
+// columns: for upload/clarify/retry that is a no-op (the aggregate is
+// already zero, since none of those paths can be reached from confirmed),
+// but Reanalyze can run from confirmed, and without this a meal leaving
+// confirmed would carry its old totals forward against a brand-new,
+// unreviewed item set. On a write failure the meal is left failed rather
+// than silently stuck in processing — safe for every current caller of this
+// function; Reanalyze itself does not call persistAnalysis on failure, only
+// on a successful recognition (see runAnalysis).
 func (h *foodHandlers) persistAnalysis(meal *database.FoodMeal, status, rawResponse string, items []database.FoodItem) {
 	err := h.storage.DB().Transaction(func(tx *gorm.DB) error {
 		// Unscoped: FoodItem embeds TenantModel, so a plain Delete soft-deletes
@@ -294,7 +316,11 @@ func (h *foodHandlers) persistAnalysis(meal *database.FoodMeal, status, rawRespo
 			}
 		}
 		return tx.Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
-			Updates(map[string]any{"status": status, "raw_response": rawResponse}).Error
+			Updates(map[string]any{
+				"status": status, "raw_response": rawResponse,
+				"calories": 0, "protein_grams": 0, "carbs_grams": 0, "fat_grams": 0,
+				"sugar_grams": 0, "sodium_grams": 0, "dietary_fiber_grams": 0,
+			}).Error
 	})
 	if err != nil {
 		h.failMeal(meal)
@@ -303,6 +329,8 @@ func (h *foodHandlers) persistAnalysis(meal *database.FoodMeal, status, rawRespo
 	meal.Status = status
 	meal.RawResponse = rawResponse
 	meal.Items = items
+	meal.Calories, meal.ProteinGrams, meal.CarbsGrams, meal.FatGrams = 0, 0, 0, 0
+	meal.SugarGrams, meal.SodiumGrams, meal.DietaryFiberGrams = 0, 0, 0
 }
 
 func (h *foodHandlers) failMeal(meal *database.FoodMeal) {

@@ -197,7 +197,7 @@ func TestCreateMeal_UnconfiguredVisionMarksFailed(t *testing.T) {
 // a vision call that outruns HCW_VISION_TIMEOUT.
 type slowRecognizeClient struct{}
 
-func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string) (*vision.RecognizeResult, error) {
+func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string, _ string) (*vision.RecognizeResult, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }

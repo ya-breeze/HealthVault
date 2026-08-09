@@ -238,13 +238,18 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration) (*Re
 	}, nil
 }
 
-// Recognize sends the photo and asks the model to identify its foods.
-func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType string) (*RecognizeResult, error) {
+// Recognize sends the photo and asks the model to identify its foods. See
+// Client.Recognize for hint's meaning.
+func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hint string) (*RecognizeResult, error) {
 	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(image)
+	promptText := "Identify the foods in this photo."
+	if hint != "" {
+		promptText += "\n\nThe user has supplied this correction — take it into account: " + hint
+	}
 	messages := []chatMessage{
 		{Role: "system", Content: recognizeSystemPrompt},
 		{Role: "user", Content: []map[string]any{
-			{"type": "text", "text": "Identify the foods in this photo."},
+			{"type": "text", "text": promptText},
 			{"type": "image_url", "image_url": map[string]string{"url": dataURL}},
 		}},
 	}

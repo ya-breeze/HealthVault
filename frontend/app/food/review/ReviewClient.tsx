@@ -4,6 +4,9 @@ import { useRouter } from 'next/navigation';
 import { api, FoodMeal, pendingClarifyQuestions } from '@/lib/api';
 import ClarifyModal from '@/components/food/ClarifyModal';
 import MealItemRow from '@/components/food/MealItemRow';
+import AddItemForm from '@/components/food/AddItemForm';
+import ReanalyzeControl from '@/components/food/ReanalyzeControl';
+import MealMetaEditor from '@/components/food/MealMetaEditor';
 import MacroSummary from '@/components/food/MacroSummary';
 import Header from '@/components/Header';
 
@@ -86,15 +89,22 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const items = meal.items ?? [];
   const pendingQuestions = pendingClarifyQuestions(meal);
   const canConfirm = meal.status === 'pending_review' && !busy;
+  const canReanalyze =
+    meal.status === 'failed' || meal.status === 'pending_review' || meal.status === 'confirmed';
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
 
       <main className="max-w-md mx-auto px-6 py-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
           {meal.name || 'Meal'}
         </h1>
+        {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
+          <div className="mb-3">
+            <MealMetaEditor meal={meal} onUpdated={setMeal} />
+          </div>
+        )}
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
             {STATUS_LABEL[meal.status] ?? meal.status}
@@ -142,18 +152,12 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
                 <p className="py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No items.</p>
               ) : (
                 items.map(item => (
-                  <MealItemRow
-                    key={item.id}
-                    mealId={mealId}
-                    item={item}
-                    readOnly={meal.status === 'confirmed'}
-                    onUpdated={updated =>
-                      setMeal(m => (m ? { ...m, items: (m.items ?? []).map(it => (it.id === updated.id ? updated : it)) } : m))
-                    }
-                  />
+                  <MealItemRow key={item.id} mealId={mealId} item={item} onUpdated={setMeal} />
                 ))
               )}
             </div>
+
+            <AddItemForm mealId={mealId} onAdded={setMeal} />
 
             {meal.status === 'pending_review' && (
               <button
@@ -166,6 +170,8 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
             )}
           </>
         )}
+
+        {canReanalyze && <ReanalyzeControl mealId={mealId} onReanalyzed={setMeal} />}
 
         {actionError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
       </main>

@@ -15,7 +15,7 @@ var ErrNotConfigured = errors.New("OpenAI Vision is not configured (HCW_OPENAI_A
 // whole server down.
 type Unconfigured struct{}
 
-func (Unconfigured) Recognize(context.Context, []byte, string) (*RecognizeResult, error) {
+func (Unconfigured) Recognize(context.Context, []byte, string, string) (*RecognizeResult, error) {
 	return nil, ErrNotConfigured
 }
 

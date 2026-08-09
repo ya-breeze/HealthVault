@@ -6,7 +6,7 @@ import { metricColorVar } from '@/lib/tokens';
 import { PRIMARY_METRICS, extractVital, VitalResult } from '@/lib/vitals';
 import Header from '@/components/Header';
 import VitalCard from '@/components/VitalCard';
-import { CameraIcon, PencilIcon } from '@/components/icons';
+import { CameraIcon, PencilIcon, HistoryIcon } from '@/components/icons';
 
 const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type === t));
 
@@ -73,6 +73,13 @@ export default function Dashboard() {
           >
             <PencilIcon className="w-4 h-4 text-accent" />
             Manual
+          </a>
+          <a
+            href="/food/history/"
+            className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
+          >
+            <HistoryIcon className="w-4 h-4 text-accent" />
+            History
           </a>
         </div>
 

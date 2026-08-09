@@ -1,13 +1,12 @@
 'use client';
 import { useState } from 'react';
-import { api, FoodItem, FoodSearchResult } from '@/lib/api';
+import { api, FoodItem, FoodMeal, FoodSearchResult } from '@/lib/api';
 import ItemResolver from './ItemResolver';
 
 interface Props {
   mealId: string;
   item: FoodItem;
-  readOnly: boolean;
-  onUpdated: (item: FoodItem) => void;
+  onUpdated: (meal: FoodMeal) => void;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -22,9 +21,15 @@ const SOURCE_COLOR: Record<string, string> = {
   none: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
 };
 
-export default function MealItemRow({ mealId, item, readOnly, onUpdated }: Props) {
+// Item editing is reachable whenever this row is rendered — the parent only
+// shows the items list for pending_review and confirmed meals, both of
+// which the backend now accepts item mutations for (see PatchMealItem's
+// editableMealStatus guard), so there is no read-only state to represent
+// here anymore.
+export default function MealItemRow({ mealId, item, onUpdated }: Props) {
   const [weight, setWeight] = useState(item.weight_grams);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(item.macro_source === 'none');
 
@@ -63,6 +68,18 @@ export default function MealItemRow({ mealId, item, readOnly, onUpdated }: Props
     setResolving(false);
   };
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    setError(null);
+    try {
+      const updated = await api.deleteMealItem(mealId, item.id);
+      onUpdated(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete item');
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
       <div className="flex items-start justify-between gap-3">
@@ -77,12 +94,20 @@ export default function MealItemRow({ mealId, item, readOnly, onUpdated }: Props
             type="number"
             step="any"
             value={weight}
-            disabled={readOnly || saving}
+            disabled={saving || deleting}
             onChange={e => setWeight(Number(e.target.value))}
             onBlur={commitWeight}
             className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
           />
           <span className="text-xs text-gray-400">g</span>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            title="Delete item"
+            className="ml-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+          >
+            ×
+          </button>
         </div>
       </div>
 
@@ -91,7 +116,7 @@ export default function MealItemRow({ mealId, item, readOnly, onUpdated }: Props
         {item.fat_grams.toFixed(1)}g
       </div>
 
-      {!readOnly && !resolving && (
+      {!resolving && (
         <button
           onClick={() => setResolving(true)}
           className={
@@ -103,9 +128,7 @@ export default function MealItemRow({ mealId, item, readOnly, onUpdated }: Props
           {item.macro_source === 'none' ? 'Resolve this item' : 'Change match'}
         </button>
       )}
-      {!readOnly && resolving && (
-        <ItemResolver itemName={item.name} onBind={handleBind} onManual={handleManual} />
-      )}
+      {resolving && <ItemResolver itemName={item.name} onBind={handleBind} onManual={handleManual} />}
 
       {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>

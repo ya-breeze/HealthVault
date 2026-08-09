@@ -29,6 +29,7 @@ type Fake struct {
 type RecognizeCall struct {
 	Image    []byte
 	MimeType string
+	Hint     string
 }
 
 // ClarifyCall records one Clarify invocation.
@@ -37,8 +38,8 @@ type ClarifyCall struct {
 	History    []ClarifyTurn
 }
 
-func (f *Fake) Recognize(_ context.Context, image []byte, mimeType string) (*RecognizeResult, error) {
-	f.RecognizeCalls = append(f.RecognizeCalls, RecognizeCall{Image: image, MimeType: mimeType})
+func (f *Fake) Recognize(_ context.Context, image []byte, mimeType, hint string) (*RecognizeResult, error) {
+	f.RecognizeCalls = append(f.RecognizeCalls, RecognizeCall{Image: image, MimeType: mimeType, Hint: hint})
 	if f.RecognizeErr != nil {
 		return nil, f.RecognizeErr
 	}

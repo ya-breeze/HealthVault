@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -123,4 +125,149 @@ func (h *foodHandlers) ConfirmMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, meal)
+}
+
+// MealSummary is the response shape for GET /api/food/meals: enough for a
+// history list. Deliberately narrower than the full FoodMeal returned by
+// GetMeal — it excludes photo_path (a server-internal path), raw_response
+// (the full model JSON blob), clarify_log, and tenant metadata, none of
+// which the list view needs.
+type MealSummary struct {
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	LoggedAt time.Time `json:"logged_at"`
+	Status   string    `json:"status"`
+	Calories float64   `json:"calories"`
+}
+
+const (
+	defaultMealListLimit = 50
+	maxMealListLimit     = 200
+)
+
+// ListMeals handles GET /api/food/meals?limit=&before=: the caller's own
+// meals of any status, ordered most-recent-first. Owner-scoped by
+// claims.UserID — unlike GET /api/data/food_meal, which is family-visible —
+// so every summary returned is guaranteed openable via GetMeal. `before`
+// lets the caller page past `limit`, since a hard cap with no way past it
+// would make older meals permanently unreachable.
+func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
+	claims := ClaimsFromCtx(r)
+	if claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	limit := defaultMealListLimit
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > maxMealListLimit {
+			http.Error(w, "limit must be a positive integer up to 200", http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+
+	query := h.storage.DB().Model(&database.FoodMeal{}).
+		Where("user_id = ?", claims.UserID).
+		Order("logged_at DESC, created_at DESC, id DESC").
+		Limit(limit)
+
+	if v := r.URL.Query().Get("before"); v != "" {
+		before, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			http.Error(w, "before must be an RFC3339 timestamp", http.StatusBadRequest)
+			return
+		}
+		query = query.Where("logged_at < ?", before)
+	}
+
+	var meals []database.FoodMeal
+	if err := query.Find(&meals).Error; err != nil {
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+
+	summaries := make([]MealSummary, len(meals))
+	for i, m := range meals {
+		summaries[i] = MealSummary{ID: m.ID, Name: m.Name, LoggedAt: m.LoggedAt, Status: m.Status, Calories: m.Calories}
+	}
+	writeJSON(w, summaries)
+}
+
+// patchMealRequest is the JSON body for PATCH /api/food/meals/{id}: correct a
+// meal's name and/or logged_at independently of confirming it.
+type patchMealRequest struct {
+	Name     *string    `json:"name,omitempty"`
+	LoggedAt *time.Time `json:"logged_at,omitempty"`
+}
+
+// PatchMeal handles PATCH /api/food/meals/{id}. Permitted while the meal's
+// status is pending_review or confirmed, same as item edits — see
+// editableMealStatus in food_item.go. Rejects a zero-value logged_at to
+// preserve the existing invariant that every meal carries a non-zero one
+// (see the Meal Logged Time requirement).
+func (h *foodHandlers) PatchMeal(w http.ResponseWriter, r *http.Request) {
+	claims := ClaimsFromCtx(r)
+	if claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id, err := uuid.Parse(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	var meal database.FoodMeal
+	err = h.storage.DB().Select("id", "status").
+		Where("id = ? AND user_id = ?", id, claims.UserID).First(&meal).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	if !editableMealStatus(meal.Status) {
+		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
+		return
+	}
+
+	var req patchMealRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if req.LoggedAt != nil && req.LoggedAt.IsZero() {
+		http.Error(w, "logged_at must not be zero", http.StatusBadRequest)
+		return
+	}
+
+	hasName := req.Name != nil && strings.TrimSpace(*req.Name) != ""
+	hasLoggedAt := req.LoggedAt != nil
+	if !hasName && !hasLoggedAt {
+		http.Error(w, "at least one of name or logged_at is required", http.StatusBadRequest)
+		return
+	}
+
+	updates := map[string]any{}
+	if hasName {
+		updates["name"] = strings.TrimSpace(*req.Name)
+	}
+	if hasLoggedAt {
+		updates["logged_at"] = *req.LoggedAt
+	}
+	if err := h.storage.DB().Model(&database.FoodMeal{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		http.Error(w, "update error", http.StatusInternalServerError)
+		return
+	}
+
+	updated, err := h.loadOwnedMeal(id, claims.UserID)
+	if err != nil {
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, updated)
 }

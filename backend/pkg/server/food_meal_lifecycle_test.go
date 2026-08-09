@@ -261,8 +261,9 @@ func TestPatchMealItem_BindToFdcID(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	var got database.FoodItem
-	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&gotMeal) //nolint:errcheck
+	got := gotMeal.Items[0]
 	if got.MacroSource != database.MacroSourceReference {
 		t.Errorf("expected reference, got %s", got.MacroSource)
 	}
@@ -293,10 +294,10 @@ func TestPatchMealItem_BindUpdatesNameWhenProvided(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	var got database.FoodItem
-	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
-	if got.Name != "Chicken breast" {
-		t.Errorf("expected name to update to the bound match, got %q", got.Name)
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&gotMeal) //nolint:errcheck
+	if gotMeal.Items[0].Name != "Chicken breast" {
+		t.Errorf("expected name to update to the bound match, got %q", gotMeal.Items[0].Name)
 	}
 }
 
@@ -330,8 +331,9 @@ func TestPatchMealItem_RebindAlreadyMatchedItemChangesNameAndMacros(t *testing.T
 	if w2.Code != http.StatusOK {
 		t.Fatalf("expected 200 on rebind of an already-matched item, got %d: %s", w2.Code, w2.Body.String())
 	}
-	var got database.FoodItem
-	json.NewDecoder(w2.Body).Decode(&got) //nolint:errcheck
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w2.Body).Decode(&gotMeal) //nolint:errcheck
+	got := gotMeal.Items[0]
 	if got.Name != "Cherries, sweet, raw" {
 		t.Errorf("expected name to reflect the corrected match, got %q", got.Name)
 	}
@@ -364,8 +366,9 @@ func TestPatchMealItem_NameAloneIsAcceptedAndDoesNotTouchMacros(t *testing.T) {
 	if w2.Code != http.StatusOK {
 		t.Fatalf("expected 200 on name-only patch, got %d: %s", w2.Code, w2.Body.String())
 	}
-	var got database.FoodItem
-	json.NewDecoder(w2.Body).Decode(&got) //nolint:errcheck
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w2.Body).Decode(&gotMeal) //nolint:errcheck
+	got := gotMeal.Items[0]
 	if got.Name != "Grilled chicken" {
 		t.Errorf("expected name to update, got %q", got.Name)
 	}
@@ -409,8 +412,9 @@ func TestPatchMealItem_SupplyMacrosDirectly(t *testing.T) {
 	})
 	h.PatchMealItem(w, withClaims(r, userID))
 
-	var got database.FoodItem
-	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&gotMeal) //nolint:errcheck
+	got := gotMeal.Items[0]
 	if got.MacroSource != database.MacroSourceManual {
 		t.Errorf("expected manual, got %s", got.MacroSource)
 	}
@@ -442,8 +446,9 @@ func TestPatchMealItem_WeightOnlyChangeRescalesFromExistingBinding(t *testing.T)
 	if w2.Code != http.StatusOK {
 		t.Fatalf("expected 200 on weight-only change, got %d: %s", w2.Code, w2.Body.String())
 	}
-	var got database.FoodItem
-	json.NewDecoder(w2.Body).Decode(&got) //nolint:errcheck
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w2.Body).Decode(&gotMeal) //nolint:errcheck
+	got := gotMeal.Items[0]
 	if got.MacroSource != database.MacroSourceReference {
 		t.Errorf("expected binding to persist across a weight-only change, got %s", got.MacroSource)
 	}
@@ -453,7 +458,10 @@ func TestPatchMealItem_WeightOnlyChangeRescalesFromExistingBinding(t *testing.T)
 	}
 }
 
-func TestPatchMealItem_ConfirmedMealReturns409(t *testing.T) {
+// Regression: editing an item on a confirmed meal is now permitted (it used
+// to 409), and the meal's stored aggregate must be recomputed and persisted
+// in the same response, not left stale.
+func TestPatchMealItem_ConfirmedMealPermittedAndRecomputesAggregate(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
 	meal := createUnresolvedMeal(t, st, userID, familyID)
@@ -464,11 +472,54 @@ func TestPatchMealItem_ConfirmedMealReturns409(t *testing.T) {
 
 	h := server.NewFoodHandlers(st, nil, t.TempDir())
 	w := httptest.NewRecorder()
-	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"manual": true, "calories": 1})
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"manual": true, "calories": 300, "protein_grams": 25,
+	})
 	h.PatchMealItem(w, withClaims(r, userID))
 
-	if w.Code != http.StatusConflict {
-		t.Errorf("expected 409, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&gotMeal) //nolint:errcheck
+	if gotMeal.Status != database.MealStatusConfirmed {
+		t.Errorf("expected meal to stay confirmed, got %s", gotMeal.Status)
+	}
+	if gotMeal.Calories != 300 || gotMeal.ProteinGrams != 25 {
+		t.Errorf("expected the meal's stored aggregate to reflect the edit, got %+v", gotMeal)
+	}
+
+	// Persisted, not just returned in the response.
+	var reloaded database.FoodMeal
+	if err := st.DB().Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if reloaded.Calories != 300 {
+		t.Errorf("expected persisted aggregate to be 300, got %v", reloaded.Calories)
+	}
+}
+
+func TestPatchMealItem_NonEditableStatusesReturn409(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	for _, status := range []string{
+		database.MealStatusProcessing, database.MealStatusPendingClarification, database.MealStatusFailed,
+	} {
+		meal := createUnresolvedMeal(t, st, userID, familyID)
+		if err := st.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+			Update("status", status).Error; err != nil {
+			t.Fatalf("set status %s: %v", status, err)
+		}
+
+		h := server.NewFoodHandlers(st, nil, t.TempDir())
+		w := httptest.NewRecorder()
+		r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"manual": true, "calories": 1})
+		h.PatchMealItem(w, withClaims(r, userID))
+
+		if w.Code != http.StatusConflict {
+			t.Errorf("status=%s: expected 409, got %d: %s", status, w.Code, w.Body.String())
+		}
 	}
 }
 

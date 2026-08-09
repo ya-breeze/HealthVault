@@ -157,6 +157,31 @@ export interface PatchItemInput {
   dietary_fiber_grams?: number;
 }
 
+// CreateItemInput additionally requires name plus exactly one of
+// (manual + macros) or (fdc_id/custom_food_id + a positive weight_grams) —
+// see the backend's createItemRequest doc comment (food_item.go).
+export type CreateItemInput = PatchItemInput & { name: string };
+
+export interface MealSummary {
+  id: string;
+  name: string;
+  logged_at: string;
+  status: MealStatus;
+  calories: number;
+}
+
+export interface PatchMealInput {
+  name?: string;
+  logged_at?: string;
+}
+
+// ReanalyzeFailedError is thrown for HTTP 502 from POST .../reanalyze: the
+// backend guarantees the meal is left exactly as it was found on this
+// outcome (see design.md "Reanalyze failure reverts to the meal's prior
+// state"), so callers can show "try again, nothing changed" rather than a
+// generic error.
+export class ReanalyzeFailedError extends Error {}
+
 export const api = {
   login: (username: string, password: string) =>
     apiFetch('/auth/login', {
@@ -234,11 +259,45 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(loggedAt ? { logged_at: loggedAt } : {}),
     }),
+  // Returns the full updated meal (items + current aggregate), not just the
+  // changed item — see design.md "Item mutation endpoints return the full
+  // updated FoodMeal".
   patchMealItem: (mealId: string, itemId: string, input: PatchItemInput) =>
-    apiFetch<FoodItem>(`/food/meals/${mealId}/items/${itemId}`, {
+    apiFetch<FoodMeal>(`/food/meals/${mealId}/items/${itemId}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
+  createMealItem: (mealId: string, input: CreateItemInput) =>
+    apiFetch<FoodMeal>(`/food/meals/${mealId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  deleteMealItem: (mealId: string, itemId: string) =>
+    apiFetch<FoodMeal>(`/food/meals/${mealId}/items/${itemId}`, { method: 'DELETE' }),
+
+  listMeals: (opts?: { limit?: number; before?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.before) params.set('before', opts.before);
+    const qs = params.toString();
+    return apiFetch<MealSummary[]>(`/food/meals${qs ? `?${qs}` : ''}`);
+  },
+  patchMeal: (id: string, input: PatchMealInput) =>
+    apiFetch<FoodMeal>(`/food/meals/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+
+  reanalyzeMeal: async (id: string, hint: string): Promise<FoodMeal> => {
+    const res = await fetch(`${BASE}/food/meals/${id}/reanalyze`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hint }),
+    });
+    if (res.status === 502) {
+      throw new ReanalyzeFailedError((await res.text()) || 'Reanalysis failed; the meal is unchanged.');
+    }
+    if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
+    return res.json();
+  },
 };
 
 export const DATA_TYPES = [
