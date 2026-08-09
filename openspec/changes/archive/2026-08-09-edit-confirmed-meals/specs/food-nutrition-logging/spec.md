@@ -35,7 +35,7 @@ The item SHALL be loaded and mutated within the same transaction as the write th
 - **WHEN** the owner patches an item with only an empty or whitespace-only `name` and no other field
 - **THEN** the system returns HTTP 400 rather than accepting a request with nothing meaningful to apply
 
-#### Scenario: Patch an item of a confirmed meal is now permitted
+#### Scenario: Patch an item of a confirmed meal
 - **WHEN** the owner patches an item belonging to a meal whose status is `confirmed`
 - **THEN** the system applies the change exactly as it would for a `pending_review` meal, recomputes and persists the meal's aggregate in the same transaction, and returns the full updated meal — it does not return 409
 
