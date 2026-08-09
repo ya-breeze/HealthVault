@@ -216,16 +216,21 @@ func TestDeleteRecord_SleepCascadesStages(t *testing.T) {
 	}
 }
 
-// Regression (round 10 review): normalizing logged_at to UTC only on the
-// write paths (CreateManualMeal, ConfirmMeal, PatchMeal) does nothing for a
-// row that was already stored with a non-UTC offset before that fix
-// existed — AutoMigrate does not rewrite existing data, and the API itself
-// never restricted callers to UTC. This simulates such a legacy row by
-// writing directly with a fixed-offset time.Time (bypassing every
-// .UTC()-calling handler, the same way a pre-fix row or a direct API
-// caller not using this frontend would have been stored), then reopens the
-// same on-disk database — which is where Open's backfill runs — and checks
-// the stored value is now UTC while still representing the same instant.
+// Regression (round 10 review, updated_at check added round 11): normalizing
+// logged_at to UTC only on the write paths (CreateManualMeal, ConfirmMeal,
+// PatchMeal) does nothing for a row that was already stored with a non-UTC
+// offset before that fix existed — AutoMigrate does not rewrite existing
+// data, and the API itself never restricted callers to UTC. This simulates
+// such a legacy row by writing directly with a fixed-offset time.Time
+// (bypassing every .UTC()-calling handler, the same way a pre-fix row or a
+// direct API caller not using this frontend would have been stored), then
+// reopens the same on-disk database — which is where Open's backfill runs —
+// and checks the stored value is now UTC while still representing the same
+// instant. Also asserts updated_at is untouched: it's the analysis lease
+// token Reanalyze/Retry/ClarifyMeal claim against and RetryMeal's
+// stale-processing clock, so a migration that silently refreshes it would
+// give an ownerless processing meal a fresh-looking lease, blocking Retry
+// for no reason tied to any real attempt.
 func TestOpen_BackfillsExistingNonUTCLoggedAt(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	tmpDir := t.TempDir()
@@ -245,14 +250,17 @@ func TestOpen_BackfillsExistingNonUTCLoggedAt(t *testing.T) {
 	}
 
 	// A fixed -08:00 offset, not UTC — as a pre-fix write or a direct API
-	// caller could have stored.
+	// caller could have stored. Status processing, as an ownerless
+	// crashed-worker meal would be — the case the updated_at check below
+	// specifically protects.
 	nonUTC := time.Date(2024, 1, 1, 10, 0, 0, 0, time.FixedZone("", -8*60*60))
-	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: nonUTC, Name: "Legacy Meal"}
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusProcessing, LoggedAt: nonUTC, Name: "Legacy Meal"}
 	meal.ID = uuid.New()
 	meal.FamilyID = familyID
 	if err := db.Create(&meal).Error; err != nil {
 		t.Fatalf("create legacy meal: %v", err)
 	}
+	originalUpdatedAt := meal.UpdatedAt
 	sqlDB, _ := db.DB()
 	sqlDB.Close() //nolint:errcheck
 
@@ -262,7 +270,7 @@ func TestOpen_BackfillsExistingNonUTCLoggedAt(t *testing.T) {
 		t.Fatalf("Open (reopen): %v", err)
 	}
 	var reloaded database.FoodMeal
-	if err := db2.Select("id", "logged_at").Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+	if err := db2.Select("id", "logged_at", "updated_at").Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
 		t.Fatalf("reload meal: %v", err)
 	}
 	if _, offset := reloaded.LoggedAt.Zone(); offset != 0 {
@@ -270,6 +278,10 @@ func TestOpen_BackfillsExistingNonUTCLoggedAt(t *testing.T) {
 	}
 	if !reloaded.LoggedAt.Equal(nonUTC) {
 		t.Errorf("expected the backfill to preserve the same instant, got %v want %v", reloaded.LoggedAt, nonUTC)
+	}
+	if !reloaded.UpdatedAt.Equal(originalUpdatedAt) {
+		t.Errorf("expected the backfill to leave updated_at untouched (it's the analysis lease token), got %v want %v",
+			reloaded.UpdatedAt, originalUpdatedAt)
 	}
 }
 

@@ -82,6 +82,17 @@ func Open(l *slog.Logger, dbPath string) (*gorm.DB, error) {
 // existing rows. This runs once per Open (idempotent — a row already
 // normalized has a zero UTC offset and is skipped) so the on-disk data
 // actually matches the ordering/filtering guarantee, not just future writes.
+//
+// Uses UpdateColumn, not Update: a plain Update also advances the model's
+// UpdatedAt via GORM's hooks, and UpdatedAt is more than an audit field
+// here — it's the analysis lease token Reanalyze/Retry/ClarifyMeal claim
+// against, and RetryMeal's clock for judging a processing meal stale. A
+// meal legitimately stuck in processing from a crashed worker that happens
+// to also need this backfill would have its lease silently refreshed by a
+// migration that has nothing to do with analysis state, blocking Retry
+// until another full vision timeout elapses for no reason tied to any
+// actual attempt. UpdateColumn writes only the given column and skips
+// hooks entirely, so the backfill can't manufacture a lease.
 func backfillFoodMealLoggedAtToUTC(l *slog.Logger, db *gorm.DB) error {
 	var meals []FoodMeal
 	if err := db.Select("id", "logged_at").Find(&meals).Error; err != nil {
@@ -93,7 +104,7 @@ func backfillFoodMealLoggedAtToUTC(l *slog.Logger, db *gorm.DB) error {
 			continue
 		}
 		if err := db.Model(&FoodMeal{}).Where("id = ?", m.ID).
-			Update("logged_at", m.LoggedAt.UTC()).Error; err != nil {
+			UpdateColumn("logged_at", m.LoggedAt.UTC()).Error; err != nil {
 			return fmt.Errorf("backfill logged_at for meal %s: %w", m.ID, err)
 		}
 		fixed++
