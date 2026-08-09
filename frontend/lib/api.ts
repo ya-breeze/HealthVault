@@ -1,11 +1,19 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+// Shared request setup (credentials, JSON content-type) so every JSON call —
+// including ones that need to branch on a specific status code before the
+// generic !res.ok handling, like reanalyzeMeal's 502 — goes through the same
+// fetch configuration instead of re-declaring it.
+async function apiRawFetch(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(`${BASE}${path}`, {
     credentials: 'include',
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
+}
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await apiRawFetch(path, options);
   if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
   return res.json();
 }
@@ -286,10 +294,8 @@ export const api = {
     apiFetch<FoodMeal>(`/food/meals/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
 
   reanalyzeMeal: async (id: string, hint: string): Promise<FoodMeal> => {
-    const res = await fetch(`${BASE}/food/meals/${id}/reanalyze`, {
+    const res = await apiRawFetch(`/food/meals/${id}/reanalyze`, {
       method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hint }),
     });
     if (res.status === 502) {

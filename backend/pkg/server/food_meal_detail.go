@@ -168,10 +168,18 @@ func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 
+	// Fetch one extra row so a tie at the page boundary can be detected: the
+	// `before` cursor only carries logged_at (not the full created_at/id
+	// tie-break), so if two meals share the exact logged_at that lands right
+	// at the cutoff, naively taking the first `limit` rows would return only
+	// some of that tied group — and the next page's `logged_at < before`
+	// filter would then exclude the rest of them forever, since they're not
+	// strictly before the cursor either. Deferring the whole tied group to
+	// the next page instead keeps every meal reachable exactly once.
 	query := h.storage.DB().Model(&database.FoodMeal{}).
 		Where("user_id = ?", claims.UserID).
 		Order("logged_at DESC, created_at DESC, id DESC").
-		Limit(limit)
+		Limit(limit + 1)
 
 	if v := r.URL.Query().Get("before"); v != "" {
 		before, err := time.Parse(time.RFC3339, v)
@@ -186,6 +194,24 @@ func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 	if err := query.Find(&meals).Error; err != nil {
 		http.Error(w, "query error", http.StatusInternalServerError)
 		return
+	}
+
+	if len(meals) > limit && meals[limit].LoggedAt.Equal(meals[limit-1].LoggedAt) {
+		cut := limit
+		boundary := meals[limit-1].LoggedAt
+		for cut > 0 && meals[cut-1].LoggedAt.Equal(boundary) {
+			cut--
+		}
+		if cut == 0 {
+			// The entire page is one tie group larger than limit. Returning
+			// it whole (rather than an empty page) is the only option that
+			// doesn't regress to "this page returns nothing" — vanishingly
+			// unlikely at real scale (limit meals sharing one logged_at).
+			cut = limit
+		}
+		meals = meals[:cut]
+	} else if len(meals) > limit {
+		meals = meals[:limit]
 	}
 
 	summaries := make([]MealSummary, len(meals))

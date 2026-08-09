@@ -89,6 +89,46 @@ func TestListMeals_DeterministicTieBreak(t *testing.T) {
 	}
 }
 
+// Regression: a naive `before`-cursor page that splits a tied-logged_at
+// group at the cutoff would silently drop whichever half of the group
+// wasn't included, since the next page's `logged_at < before` filter can't
+// distinguish "already returned" from "shares this exact timestamp but
+// wasn't returned yet". ListMeals must defer the whole tied group to the
+// next page instead of splitting it.
+func TestListMeals_TieAtPageBoundaryDeferredWhole(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	newest := time.Now().UTC()
+	tied := newest.Add(-time.Hour)
+	a := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, newest)
+	b := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, tied)
+	c := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, tied)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	// limit=2 would naively return [a, one-of-b-or-c], splitting the tied
+	// pair — instead it must defer the whole tied pair, returning only [a].
+	w1 := httptest.NewRecorder()
+	h.ListMeals(w1, withClaims(listMealsRequest("limit=2"), userID))
+	var page1 []server.MealSummary
+	json.NewDecoder(w1.Body).Decode(&page1) //nolint:errcheck
+	if len(page1) != 1 || page1[0].ID != a.ID {
+		t.Fatalf("expected page 1 to defer the tied pair and return only the newest meal, got %+v", page1)
+	}
+
+	w2 := httptest.NewRecorder()
+	h.ListMeals(w2, withClaims(listMealsRequest("limit=2&before="+page1[0].LoggedAt.Format(time.RFC3339Nano)), userID))
+	var page2 []server.MealSummary
+	json.NewDecoder(w2.Body).Decode(&page2) //nolint:errcheck
+	if len(page2) != 2 {
+		t.Fatalf("expected page 2 to return both tied meals together, got %+v", page2)
+	}
+	gotIDs := map[uuid.UUID]bool{page2[0].ID: true, page2[1].ID: true}
+	if !gotIDs[b.ID] || !gotIDs[c.ID] {
+		t.Errorf("expected page 2 to contain both tied meals %s and %s, got %+v", b.ID, c.ID, page2)
+	}
+}
+
 func TestListMeals_SummaryOmitsInternalFields(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

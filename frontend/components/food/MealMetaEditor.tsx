@@ -25,12 +25,17 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
+    const parsedDate = loggedAt ? new Date(loggedAt) : null;
+    if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+      setError('Please enter a valid date and time');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const updated = await api.patchMeal(meal.id, {
         name: name.trim() || undefined,
-        logged_at: new Date(loggedAt).toISOString(),
+        logged_at: parsedDate.toISOString(),
       });
       onUpdated(updated);
       setEditing(false);

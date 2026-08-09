@@ -48,24 +48,45 @@ func editableMealStatus(status string) bool {
 	return status == database.MealStatusPendingReview || status == database.MealStatusConfirmed
 }
 
+// errMealNoLongerEditable is returned by applyItemMutation when the meal's
+// status has moved out of pending_review/confirmed between the handler's
+// initial status check and the transaction actually running — e.g. a
+// concurrent Reanalyze claimed the meal (and, on success, replaced its items
+// and zeroed its aggregate) in that window. Callers map it to HTTP 409.
+var errMealNoLongerEditable = errors.New("meal is no longer editable")
+
 // applyItemMutation runs fn (an item create/update/delete) inside a
-// transaction, and — if the meal's status is confirmed — reloads its current
-// items and recomputes+persists its macro aggregate within that same
-// transaction before committing. This keeps "the item change" and "the
-// meal's stored total reflects it" atomic: a failure in either half rolls
-// back both, and two concurrent edits to the same meal can't compute their
-// aggregate from different snapshots. Returns the fully updated meal
-// (current items + aggregate) for the response. pending_review meals are
-// left untouched, matching today's behavior (aggregate computed only at
-// confirm).
+// transaction. It re-reads the meal's status *inside* that transaction and
+// aborts with errMealNoLongerEditable if it's no longer pending_review or
+// confirmed, before fn runs — closing the gap between the handler's earlier
+// status check and this write. Without that re-check, a concurrent Reanalyze
+// could replace/delete the meal's items and zero its aggregate in between,
+// and this transaction would then blindly resurrect a since-deleted item
+// (GORM's Save inserts if the primary key no longer exists) and overwrite
+// the freshly-zeroed aggregate using the stale status captured before the
+// race. If the meal is still confirmed, it also reloads its current items
+// and recomputes+persists its macro aggregate within the same transaction
+// before committing, so "the item change" and "the meal's stored total
+// reflects it" commit or roll back together, and two concurrent edits to the
+// same meal can't compute their aggregate from different snapshots. Returns
+// the fully updated meal (current items + aggregate) for the response.
+// pending_review meals are left untouched, matching today's behavior
+// (aggregate computed only at confirm).
 func (h *foodHandlers) applyItemMutation(
-	mealID, userID uuid.UUID, mealStatus string, fn func(tx *gorm.DB) error,
+	mealID, userID uuid.UUID, fn func(tx *gorm.DB) error,
 ) (*database.FoodMeal, error) {
 	err := h.storage.DB().Transaction(func(tx *gorm.DB) error {
+		var meal database.FoodMeal
+		if err := tx.Select("id", "status").Where("id = ?", mealID).First(&meal).Error; err != nil {
+			return err
+		}
+		if !editableMealStatus(meal.Status) {
+			return errMealNoLongerEditable
+		}
 		if err := fn(tx); err != nil {
 			return err
 		}
-		if mealStatus != database.MealStatusConfirmed {
+		if meal.Status != database.MealStatusConfirmed {
 			return nil
 		}
 		var items []database.FoodItem
@@ -204,9 +225,13 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, err := h.applyItemMutation(mealID, claims.UserID, meal.Status, func(tx *gorm.DB) error {
+	updated, err := h.applyItemMutation(mealID, claims.UserID, func(tx *gorm.DB) error {
 		return tx.Save(&item).Error
 	})
+	if errors.Is(err, errMealNoLongerEditable) {
+		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		http.Error(w, "update error", http.StatusInternalServerError)
 		return
@@ -314,9 +339,13 @@ func (h *foodHandlers) CreateMealItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.applyItemMutation(mealID, claims.UserID, meal.Status, func(tx *gorm.DB) error {
+	updated, err := h.applyItemMutation(mealID, claims.UserID, func(tx *gorm.DB) error {
 		return tx.Create(&item).Error
 	})
+	if errors.Is(err, errMealNoLongerEditable) {
+		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		http.Error(w, "create error", http.StatusInternalServerError)
 		return
@@ -374,9 +403,13 @@ func (h *foodHandlers) DeleteMealItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.applyItemMutation(mealID, claims.UserID, meal.Status, func(tx *gorm.DB) error {
+	updated, err := h.applyItemMutation(mealID, claims.UserID, func(tx *gorm.DB) error {
 		return tx.Delete(&item).Error
 	})
+	if errors.Is(err, errMealNoLongerEditable) {
+		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		http.Error(w, "delete error", http.StatusInternalServerError)
 		return

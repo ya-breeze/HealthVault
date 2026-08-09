@@ -27,7 +27,12 @@ export default function FoodHistoryPage() {
     api.listMeals({ limit: PAGE_SIZE })
       .then(rows => {
         setMeals(rows);
-        setHasMore(rows.length === PAGE_SIZE);
+        // A page can return fewer than PAGE_SIZE rows while more still exist:
+        // the backend defers a whole tied-logged_at group to the next page
+        // rather than splitting it at the cutoff (see ListMeals). So "more
+        // data might exist" can only be ruled out by an empty page, not by
+        // rows.length < PAGE_SIZE.
+        setHasMore(rows.length > 0);
       })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load meals'))
       .finally(() => setLoading(false));
@@ -41,7 +46,7 @@ export default function FoodHistoryPage() {
       const oldest = meals[meals.length - 1];
       const rows = await api.listMeals({ limit: PAGE_SIZE, before: oldest.logged_at });
       setMeals(m => [...m, ...rows]);
-      setHasMore(rows.length === PAGE_SIZE);
+      setHasMore(rows.length > 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load more meals');
     } finally {
