@@ -57,6 +57,20 @@ func editableMealStatus(status string) bool {
 // and zeroed its aggregate) in that window. Callers map it to HTTP 409.
 var errMealNoLongerEditable = errors.New("meal is no longer editable")
 
+// errItemMutationConflictExhausted is returned by applyItemMutation when
+// every bounded retry attempt still hit SQLITE_BUSY_SNAPSHOT while the meal
+// itself remained eligible on every re-check — i.e. this was not a one-off
+// race a retry could clear, but sustained conflicting writes (most often to
+// the very row this request is trying to change; see
+// TestPatchMealItem_PersistentBusySnapshotReturns409AfterBoundedRetries).
+// The item-resolution requirement's contract is explicit that this
+// outcome — a write still based on a stale read after every retry attempt
+// is exhausted — is HTTP 409, not a generic server error: distinct from
+// errMealNoLongerEditable, whose 409 is about the *meal's* status rather
+// than a specific write repeatedly losing a race.
+var errItemMutationConflictExhausted = errors.New(
+	"write repeatedly conflicted with concurrent activity and was not applied")
+
 // itemMutationError carries an HTTP status/message pair out of an
 // applyItemMutation closure for a validation failure that can only be
 // determined once the item's current row has been loaded inside the
@@ -183,7 +197,7 @@ func (h *foodHandlers) applyItemMutation(
 		}
 		// Still eligible — retry with a fresh snapshot.
 	}
-	return nil, fmt.Errorf("repeatedly hit a stale read snapshot unrelated to this meal: %w", lastBusyErr)
+	return nil, fmt.Errorf("%w (last: %v)", errItemMutationConflictExhausted, lastBusyErr)
 }
 
 // PatchMealItem handles PATCH /api/food/meals/{id}/items/{item_id}: resolve
@@ -386,6 +400,10 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
 		return
 	}
+	if errors.Is(err, errItemMutationConflictExhausted) {
+		http.Error(w, "item could not be safely written after repeated concurrent conflicts; reload and try again", http.StatusConflict)
+		return
+	}
 	if errors.Is(err, database.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -525,6 +543,10 @@ func (h *foodHandlers) CreateMealItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
 		return
 	}
+	if errors.Is(err, errItemMutationConflictExhausted) {
+		http.Error(w, "item could not be safely written after repeated concurrent conflicts; reload and try again", http.StatusConflict)
+		return
+	}
 	if errors.Is(err, database.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -591,6 +613,10 @@ func (h *foodHandlers) DeleteMealItem(w http.ResponseWriter, r *http.Request) {
 	})
 	if errors.Is(err, errMealNoLongerEditable) {
 		http.Error(w, "meal is not editable in its current status", http.StatusConflict)
+		return
+	}
+	if errors.Is(err, errItemMutationConflictExhausted) {
+		http.Error(w, "item could not be safely written after repeated concurrent conflicts; reload and try again", http.StatusConflict)
 		return
 	}
 	if errors.Is(err, database.ErrNotFound) {

@@ -27,33 +27,34 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const [busy, setBusy] = useState(false);
 
   // Every mutation control below (item rows, add-item, meal name/time,
-  // reanalyze) independently calls its own backend endpoint and hands the
-  // full resulting FoodMeal back here — there's no coordination between
-  // them otherwise. Two edits to different items can both succeed, but
-  // arrive at the browser out of the order they were issued in (ordinary
-  // network delay): if the response for the request issued *first*
-  // happens to arrive *last*, applying it naively would silently move the
-  // UI backward — resurrecting a since-deleted item, or restoring a
-  // superseded aggregate — even though the database has both edits and
-  // never lost anything. applyMealUpdate assigns each mutation an
-  // incrementing ticket when it *starts* (not when its response arrives)
-  // and only applies a response if no later-started mutation's response
-  // has already been applied — so an out-of-order arrival is silently
-  // discarded (the newer one already reflects it) instead of clobbering
-  // newer state. Every mutating child takes the resulting promise-wrapping
-  // function as its onUpdated/onAdded/onReanalyzed prop instead of calling
-  // setMeal directly.
-  const ticketRef = useRef(0);
-  const appliedTicketRef = useRef(0);
-  const applyMealUpdate = useCallback((mutation: Promise<FoodMeal>): Promise<FoodMeal> => {
-    const ticket = ++ticketRef.current;
-    return mutation.then(result => {
-      if (ticket >= appliedTicketRef.current) {
-        appliedTicketRef.current = ticket;
-        setMeal(result);
-      }
+  // reanalyze, retry, clarify, confirm) needs its resulting FoodMeal
+  // applied to this shared state in the order its request actually
+  // committed on the server — not the order responses happen to arrive in,
+  // which ordinary network delay can reorder. A round-9 version of this
+  // compared a ticket assigned at *issue* time, but issue order isn't
+  // commit order either: the request issued first can be the one left
+  // waiting on a lock while a later-issued request commits and returns
+  // first, so a same-page edit that actually finished last can be the one
+  // holding the true current state — discarding it by issue-order ticket
+  // throws that state away. applyMealUpdate instead serializes *issuing*
+  // each request in the first place: a mutation is queued behind whatever
+  // is still outstanding, so by the time it's actually sent, every
+  // earlier-queued mutation has already committed and been applied to
+  // `meal`. That makes issue order and commit order the same thing by
+  // construction, with nothing left to compare or guess — so every
+  // mutating child takes a thunk (not an already-started request) as its
+  // onUpdated/onAdded/onReanalyzed prop, letting this queue decide exactly
+  // when each request is allowed to start.
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const applyMealUpdate = useCallback((issue: () => Promise<FoodMeal>): Promise<FoodMeal> => {
+    const run = queueRef.current.then(issue).then(result => {
+      setMeal(result);
       return result;
     });
+    // Keep the queue moving even if this mutation failed — a rejected
+    // mutation must not wedge every mutation queued behind it.
+    queueRef.current = run.catch(() => undefined);
+    return run;
   }, []);
 
   const load = () => {
@@ -71,7 +72,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     setBusy(true);
     setActionError(null);
     try {
-      await applyMealUpdate(api.retryMeal(mealId));
+      await applyMealUpdate(() => api.retryMeal(mealId));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Retry failed');
     } finally {
@@ -80,14 +81,14 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   };
 
   const handleClarify = async (answers: string[]) => {
-    await applyMealUpdate(api.clarifyMeal(mealId, answers));
+    await applyMealUpdate(() => api.clarifyMeal(mealId, answers));
   };
 
   const handleConfirm = async () => {
     setBusy(true);
     setActionError(null);
     try {
-      await applyMealUpdate(api.confirmMeal(mealId));
+      await applyMealUpdate(() => api.confirmMeal(mealId));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Confirm failed');
     } finally {

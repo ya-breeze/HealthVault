@@ -4,10 +4,10 @@ import { api, FoodMeal, ReanalyzeFailedError, ReanalyzeSupersededError } from '@
 
 interface Props {
   mealId: string;
-  // Takes the mutation's own promise, not the resolved meal — see
-  // ReviewClient's applyMealUpdate doc comment for why (out-of-order
-  // response ordering across sibling mutation controls).
-  onReanalyzed: (mutation: Promise<FoodMeal>) => Promise<FoodMeal>;
+  // Takes a thunk, not an already-started request — see ReviewClient's
+  // applyMealUpdate doc comment for why (issue order must be commit order,
+  // enforced by the parent controlling when each request actually starts).
+  onReanalyzed: (issue: () => Promise<FoodMeal>) => Promise<FoodMeal>;
 }
 
 const MAX_HINT_LENGTH = 500;
@@ -46,7 +46,7 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await onReanalyzed(api.reanalyzeMeal(mealId, trimmed));
+      await onReanalyzed(() => api.reanalyzeMeal(mealId, trimmed));
       setOpen(false);
       setHint('');
     } catch (err) {
@@ -66,7 +66,7 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
         // the backend guarantees nothing changed, but here it's explicitly
         // saying something might have.
         try {
-          await onReanalyzed(api.getMeal(mealId));
+          await onReanalyzed(() => api.getMeal(mealId));
           setError('Another operation (e.g. a retry) took over this meal while reanalyzing — showing its current state.');
         } catch {
           setError(

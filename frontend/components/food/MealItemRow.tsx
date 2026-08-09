@@ -6,10 +6,10 @@ import ItemResolver from './ItemResolver';
 interface Props {
   mealId: string;
   item: FoodItem;
-  // Takes the mutation's own promise, not the resolved meal — see
-  // ReviewClient's applyMealUpdate doc comment for why (out-of-order
-  // response ordering across sibling mutation controls).
-  onUpdated: (mutation: Promise<FoodMeal>) => Promise<FoodMeal>;
+  // Takes a thunk, not an already-started request — see ReviewClient's
+  // applyMealUpdate doc comment for why (issue order must be commit order,
+  // enforced by the parent controlling when each request actually starts).
+  onUpdated: (issue: () => Promise<FoodMeal>) => Promise<FoodMeal>;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -62,7 +62,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     setSaving(true);
     setError(null);
     try {
-      await onUpdated(api.patchMealItem(mealId, item.id, { weight_grams: weight }));
+      await onUpdated(() => api.patchMealItem(mealId, item.id, { weight_grams: weight }));
     } catch (err) {
       // Checks both instanceof and the explicit .name tag — see ApiError's
       // doc comment in lib/api.ts for why instanceof alone isn't trusted.
@@ -81,7 +81,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
         // once that actually lands; a refetch failure gets its own distinct
         // warning rather than a false claim.
         try {
-          await onUpdated(api.getMeal(mealId));
+          await onUpdated(() => api.getMeal(mealId));
           setError('This item was just changed by another edit — showing its current value.');
         } catch {
           setError('This item was just changed by another edit, and refreshing failed — this view may be stale. Reload the page to see what changed.');
@@ -103,7 +103,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     if (weight <= 0) {
       throw new Error('Weight must be positive to match a food');
     }
-    await onUpdated(api.patchMealItem(mealId, item.id, {
+    await onUpdated(() => api.patchMealItem(mealId, item.id, {
       fdc_id: r.fdc_id,
       custom_food_id: r.custom_food_id,
       weight_grams: weight,
@@ -116,7 +116,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     name: string,
     macros: Omit<Parameters<typeof api.patchMealItem>[2], 'manual' | 'name'>
   ) => {
-    await onUpdated(api.patchMealItem(mealId, item.id, { manual: true, name, ...macros }));
+    await onUpdated(() => api.patchMealItem(mealId, item.id, { manual: true, name, ...macros }));
     setResolving(false);
   };
 
@@ -124,7 +124,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     setDeleting(true);
     setError(null);
     try {
-      await onUpdated(api.deleteMealItem(mealId, item.id));
+      await onUpdated(() => api.deleteMealItem(mealId, item.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete item');
       setDeleting(false);

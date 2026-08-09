@@ -62,5 +62,44 @@ func Open(l *slog.Logger, dbPath string) (*gorm.DB, error) {
 	); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	if err := backfillFoodMealLoggedAtToUTC(l, db); err != nil {
+		return nil, fmt.Errorf("backfill logged_at: %w", err)
+	}
 	return db, nil
+}
+
+// backfillFoodMealLoggedAtToUTC normalizes any food_meals.logged_at value
+// still stored with a non-UTC offset. go-sqlite3 stores time.Time as TEXT
+// preserving whatever offset it was given rather than normalizing it, so
+// SQLite orders and filters that column as text, not as an instant — a row
+// written with a non-UTC offset sorts and compares incorrectly against
+// everything else. The write paths (CreateManualMeal, ConfirmMeal,
+// PatchMeal) all normalize to UTC before storing now, but that only
+// prevents *new* non-UTC rows: it was believed at the time that fix landed
+// that no existing row could be affected, since the only shipped client
+// always sends UTC — but the API itself accepted arbitrary RFC3339 offsets
+// from any direct caller before that fix, and AutoMigrate does not rewrite
+// existing rows. This runs once per Open (idempotent — a row already
+// normalized has a zero UTC offset and is skipped) so the on-disk data
+// actually matches the ordering/filtering guarantee, not just future writes.
+func backfillFoodMealLoggedAtToUTC(l *slog.Logger, db *gorm.DB) error {
+	var meals []FoodMeal
+	if err := db.Select("id", "logged_at").Find(&meals).Error; err != nil {
+		return fmt.Errorf("load food_meals for logged_at backfill: %w", err)
+	}
+	var fixed int
+	for _, m := range meals {
+		if _, offset := m.LoggedAt.Zone(); offset == 0 {
+			continue
+		}
+		if err := db.Model(&FoodMeal{}).Where("id = ?", m.ID).
+			Update("logged_at", m.LoggedAt.UTC()).Error; err != nil {
+			return fmt.Errorf("backfill logged_at for meal %s: %w", m.ID, err)
+		}
+		fixed++
+	}
+	if fixed > 0 {
+		l.Info("backfilled non-UTC food_meals.logged_at values", "count", fixed)
+	}
+	return nil
 }

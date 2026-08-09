@@ -542,16 +542,27 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     expect(createCalls).toBe(1);
   });
 
-  // Regression (round 9): every mutation control (item rows, add-item, meal
-  // meta, reanalyze) independently handed its own response straight to
-  // setMeal, with no ordering between them. Two edits to different items can
-  // both succeed, but arrive out of order on ordinary network delay — if the
-  // response for the request issued *first* is delayed enough to arrive
-  // *after* a later-issued request's response, applying it naively moves the
-  // UI backward (here: resurrecting an item the other request just deleted).
-  // ReviewClient's applyMealUpdate tickets each mutation at issue time and
-  // discards a response if a later-issued one already applied.
-  test('a delayed response for an older edit does not resurrect state a newer edit already removed', async ({
+  // Regression (round 9, revised round 10): every mutation control (item
+  // rows, add-item, meal meta, reanalyze) independently handed its own
+  // response straight to setMeal, with no ordering between them — two
+  // edits to different items could both succeed but arrive at the browser
+  // out of the order they were issued in, and applying an older-issued,
+  // later-arriving response naively moved the UI backward (here:
+  // resurrecting an item a second edit already deleted). Round 9's fix
+  // compared a ticket assigned at issue time, but a round-10 review found
+  // that's not actually safe either: issue order isn't guaranteed to be
+  // commit order (a slow first request can still be outstanding when a
+  // fast second one lands), so comparing tickets can just as easily
+  // discard the response that's genuinely newer. ReviewClient's
+  // applyMealUpdate now serializes *issuing* each request instead — the
+  // delete below is only actually sent once the weight edit's (slow)
+  // request has resolved and applied, so this test's "delay" now models
+  // the time a second mutation spends queued rather than a race between
+  // two in-flight responses. The delete's mocked response reflects the
+  // weight edit that, by the time it fires, has already been applied
+  // (weight 175) — the same as what a real backend recomputing from
+  // current state would return.
+  test('a slow mutation is not overtaken by one requested while it is still in flight', async ({
     page,
   }) => {
     await login(page);
@@ -561,30 +572,28 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
         { ...mockFoodMeal().items[0], id: 'item-2', name: 'Delete Me', weight_grams: 50 },
       ],
     });
-    // The weight-edit response: represents the meal as of *before* the
-    // delete below — i.e. an older, individually-consistent snapshot that
-    // just happens to arrive last.
     const afterWeightEditOnly = mockFoodMeal({
       items: [
         { ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 175 },
         { ...mockFoodMeal().items[0], id: 'item-2', name: 'Delete Me', weight_grams: 50 },
       ],
     });
-    const afterDeleteOnly = mockFoodMeal({
-      items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 }],
+    // The delete's response, issued only after the weight edit above has
+    // already been applied — so it reflects both changes, matching what a
+    // real backend recomputing from current state would return.
+    const afterWeightEditAndDelete = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 175 }],
     });
 
     await page.route('**/api/food/meals/mock-meal-id', route =>
       route.request().method() === 'GET' ? route.fulfill({ json: twoItems }) : route.continue()
     );
     await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
-      // Issued first (the user edits weight before clicking delete on the
-      // other row) but resolves last.
       await new Promise(resolve => setTimeout(resolve, 400));
       return route.fulfill({ json: afterWeightEditOnly });
     });
     await page.route('**/api/food/meals/mock-meal-id/items/item-2', route =>
-      route.request().method() === 'DELETE' ? route.fulfill({ json: afterDeleteOnly }) : route.continue()
+      route.request().method() === 'DELETE' ? route.fulfill({ json: afterWeightEditAndDelete }) : route.continue()
     );
 
     await page.goto('/food/review/?meal=mock-meal-id');
@@ -592,15 +601,19 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(page.getByText('Delete Me')).toBeVisible();
 
     const weightInputs = page.locator('input[type="number"]');
-    const delayedResponse = page.waitForResponse('**/api/food/meals/mock-meal-id/items/item-1');
+    const start = Date.now();
     await weightInputs.first().fill('175');
-    await weightInputs.first().blur(); // issues the delayed PATCH first
-    await page.locator('button[title="Delete item"]').last().click(); // issues the DELETE second; resolves first
+    await weightInputs.first().blur(); // queues the slow weight PATCH (in flight for 400ms)
+    await page.locator('button[title="Delete item"]').last().click(); // queued behind it, not sent yet
 
-    await expect(page.getByText('Delete Me')).not.toBeVisible();
-    // Wait for the delayed weight-edit response to actually land, then
-    // confirm it did NOT resurrect the item the delete already removed.
-    await delayedResponse;
+    // The delete's own network request must not go out until the weight
+    // edit ahead of it in the queue has resolved — asserting on elapsed
+    // time (rather than DOM visibility, which could pass either way
+    // depending on render timing) is what actually proves the two
+    // mutations were serialized rather than raced.
+    await page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-2');
+    expect(Date.now() - start).toBeGreaterThanOrEqual(350);
+
     await expect(page.getByText('Delete Me')).not.toBeVisible();
     await expect(page.getByText('Keep Me')).toBeVisible();
     await expect(weightInputs.first()).toHaveValue('175');

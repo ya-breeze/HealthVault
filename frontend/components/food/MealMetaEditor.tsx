@@ -4,11 +4,10 @@ import { api, FoodMeal } from '@/lib/api';
 
 interface Props {
   meal: FoodMeal;
-  // Takes the mutation's own promise, not the resolved meal — the parent
-  // (ReviewClient) needs to see when this call *started* to correctly order
-  // it against sibling mutations that may resolve out of order. See
-  // ReviewClient's applyMealUpdate.
-  onUpdated: (mutation: Promise<FoodMeal>) => Promise<FoodMeal>;
+  // Takes a thunk, not an already-started request — the parent
+  // (ReviewClient) controls exactly when this fires so sibling mutations
+  // never overlap in flight. See ReviewClient's applyMealUpdate.
+  onUpdated: (issue: () => Promise<FoodMeal>) => Promise<FoodMeal>;
 }
 
 // datetime-local inputs work in local time as 'YYYY-MM-DDTHH:mm'.
@@ -75,7 +74,7 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await onUpdated(api.patchMeal(meal.id, {
+      await onUpdated(() => api.patchMeal(meal.id, {
         name: nameChanged ? trimmedName : undefined,
         logged_at: loggedAtIso,
       }));

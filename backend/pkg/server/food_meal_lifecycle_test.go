@@ -658,11 +658,14 @@ func TestPatchMealItem_ConcurrentNonConflictingWriteMergesRatherThanFalseConflic
 
 // Regression: round 9 review — applyItemMutation's retry on
 // SQLITE_BUSY_SNAPSHOT must be bounded, not an infinite loop, if the
-// staleness genuinely persists across every attempt (e.g. sustained,
-// unrelated write activity). This forces every attempt (not just the
-// first) to hit the same condition and confirms the handler terminates
-// with a real error rather than hanging or looping forever.
-func TestPatchMealItem_PersistentBusySnapshotTerminatesAfterBoundedRetries(t *testing.T) {
+// staleness genuinely persists across every attempt (e.g. sustained
+// writes to the very item this request is trying to change). Round 10
+// review: bounded-retry exhaustion is exactly the "a write still based on
+// a stale read after every retry attempt is exhausted" case the
+// item-resolution requirement already specifies HTTP 409 for — the
+// earlier version of this test asserted 500, which contradicted that
+// contract instead of exercising it.
+func TestPatchMealItem_PersistentBusySnapshotReturns409AfterBoundedRetries(t *testing.T) {
 	st := newFileFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
 	meal := createUnresolvedMeal(t, st, userID, familyID)
@@ -696,11 +699,22 @@ func TestPatchMealItem_PersistentBusySnapshotTerminatesAfterBoundedRetries(t *te
 	r := itemPatchRequest(meal.ID.String(), itemID.String(), map[string]any{"weight_grams": 250})
 	h.PatchMealItem(w, withClaims(r, userID))
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 once retries are exhausted, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 once retries are exhausted (matches the item-resolution requirement's "+
+			"stale-after-every-retry contract), got %d: %s", w.Code, w.Body.String())
 	}
 	if calls < 2 {
 		t.Errorf("expected more than one attempt (retry actually happened), got %d", calls)
+	}
+
+	// The exhausted write must not have applied any part of its own change —
+	// only the injected concurrent renames should be visible.
+	var reloadedItem database.FoodItem
+	if err := st.DB().Where("id = ?", itemID).First(&reloadedItem).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if reloadedItem.WeightGrams == 250 {
+		t.Errorf("expected the exhausted request's own weight change not to apply, but it did")
 	}
 }
 

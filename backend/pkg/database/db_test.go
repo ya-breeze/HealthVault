@@ -216,6 +216,63 @@ func TestDeleteRecord_SleepCascadesStages(t *testing.T) {
 	}
 }
 
+// Regression (round 10 review): normalizing logged_at to UTC only on the
+// write paths (CreateManualMeal, ConfirmMeal, PatchMeal) does nothing for a
+// row that was already stored with a non-UTC offset before that fix
+// existed — AutoMigrate does not rewrite existing data, and the API itself
+// never restricted callers to UTC. This simulates such a legacy row by
+// writing directly with a fixed-offset time.Time (bypassing every
+// .UTC()-calling handler, the same way a pre-fix row or a direct API
+// caller not using this frontend would have been stored), then reopens the
+// same on-disk database — which is where Open's backfill runs — and checks
+// the stored value is now UTC while still representing the same instant.
+func TestOpen_BackfillsExistingNonUTCLoggedAt(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	tmpDir := t.TempDir()
+	dbPath := tmpDir + "/test.db"
+
+	db, err := database.Open(logger, dbPath)
+	if err != nil {
+		t.Fatalf("Open (initial): %v", err)
+	}
+	familyID := uuid.New()
+	userID := uuid.New()
+	if err := db.Create(&kinmodels.Family{ID: familyID, Name: "TestFamily"}).Error; err != nil {
+		t.Fatalf("create family: %v", err)
+	}
+	if err := db.Create(&kinmodels.User{ID: userID, Username: "legacyuser", PasswordHash: "x", FamilyID: familyID}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// A fixed -08:00 offset, not UTC — as a pre-fix write or a direct API
+	// caller could have stored.
+	nonUTC := time.Date(2024, 1, 1, 10, 0, 0, 0, time.FixedZone("", -8*60*60))
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: nonUTC, Name: "Legacy Meal"}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := db.Create(&meal).Error; err != nil {
+		t.Fatalf("create legacy meal: %v", err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.Close() //nolint:errcheck
+
+	// Reopening the same file is where the backfill runs.
+	db2, err := database.Open(logger, dbPath)
+	if err != nil {
+		t.Fatalf("Open (reopen): %v", err)
+	}
+	var reloaded database.FoodMeal
+	if err := db2.Select("id", "logged_at").Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if _, offset := reloaded.LoggedAt.Zone(); offset != 0 {
+		t.Errorf("expected logged_at to be backfilled to a zero UTC offset, got offset=%d", offset)
+	}
+	if !reloaded.LoggedAt.Equal(nonUTC) {
+		t.Errorf("expected the backfill to preserve the same instant, got %v want %v", reloaded.LoggedAt, nonUTC)
+	}
+}
+
 func TestAllTablesCreated(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	tmpDir := t.TempDir()
