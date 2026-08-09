@@ -4,7 +4,11 @@ import { api, FoodMeal } from '@/lib/api';
 
 interface Props {
   meal: FoodMeal;
-  onUpdated: (meal: FoodMeal) => void;
+  // Takes the mutation's own promise, not the resolved meal — the parent
+  // (ReviewClient) needs to see when this call *started* to correctly order
+  // it against sibling mutations that may resolve out of order. See
+  // ReviewClient's applyMealUpdate.
+  onUpdated: (mutation: Promise<FoodMeal>) => Promise<FoodMeal>;
 }
 
 // datetime-local inputs work in local time as 'YYYY-MM-DDTHH:mm'.
@@ -71,11 +75,10 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const updated = await api.patchMeal(meal.id, {
+      await onUpdated(api.patchMeal(meal.id, {
         name: nameChanged ? trimmedName : undefined,
         logged_at: loggedAtIso,
-      });
-      onUpdated(updated);
+      }));
       setEditing(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update meal');

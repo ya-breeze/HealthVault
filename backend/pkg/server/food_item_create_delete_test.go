@@ -257,6 +257,52 @@ func TestCreateMealItem_ConcurrentStatusChangeReturns409NotGeneric500(t *testing
 	}
 }
 
+// Regression: round 9 review — SQLITE_BUSY_SNAPSHOT only proves that *some*
+// transaction committed after this one's read snapshot was established, not
+// that this specific meal became ineligible. A write to a completely
+// unrelated meal, landing in the same narrow window, triggers the identical
+// database-wide condition. applyItemMutation must not misreport that as
+// "this meal is no longer editable" — it re-reads this meal's actual status
+// (still eligible) and retries with a fresh snapshot instead, so the
+// mutation succeeds normally.
+func TestCreateMealItem_UnrelatedConcurrentWriteIsNotMisreportedAsIneligible(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	otherMeal := createUnresolvedMeal(t, st, userID, familyID) // a different meal entirely
+
+	const hookName = "test:unrelated-concurrent-write-on-create"
+	fired := false
+	st.DB().Callback().Create().Before("gorm:create").Register(hookName, func(*gorm.DB) {
+		if fired {
+			return
+		}
+		fired = true
+		// Touches a meal this request has nothing to do with — not a
+		// status change on `meal`, just any commit that lands after this
+		// transaction's read snapshot.
+		if err := st.DB().Model(&database.FoodMeal{}).Where("id = ?", otherMeal.ID).
+			Update("name", "Renamed, unrelated to this test's actual request").Error; err != nil {
+			t.Fatalf("simulate unrelated concurrent write: %v", err)
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Create().Remove(hookName) })
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	r := createItemRequest(meal.ID.String(), map[string]any{"name": "Side salad", "manual": true, "calories": 100})
+	h.CreateMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 — the unrelated write must not block this meal's own mutation, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got.Items) != 2 {
+		t.Errorf("expected the new item to be created (2 items total), got %d", len(got.Items))
+	}
+}
+
 // Same scenario as the CreateMealItem case above, but for DeleteMealItem.
 // GORM soft-delete (setting deleted_at) still runs through the Delete
 // callback chain at the GORM level, even though the resulting SQL is an

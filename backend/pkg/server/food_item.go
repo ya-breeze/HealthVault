@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -70,22 +71,25 @@ type itemMutationError struct {
 
 func (e *itemMutationError) Error() string { return e.msg }
 
-// translateBusySnapshot maps SQLite's SQLITE_BUSY_SNAPSHOT — returned when a
-// transaction's read snapshot (here, applyItemMutation's own meal-status
-// read) goes stale because a concurrent transaction (e.g. a Reanalyze
-// claiming the meal) committed a conflicting change before this
-// transaction's first write — to errMealNoLongerEditable. It's the same
-// underlying situation the status re-check above this function exists to
-// catch; SQLite just surfaces it as a write failure on fn's own statement
-// instead of a value that re-check could see directly by re-reading. Passed
-// through unchanged if err isn't this specific SQLite condition.
-func translateBusySnapshot(err error) error {
+// isBusySnapshot reports whether err is specifically SQLITE_BUSY_SNAPSHOT —
+// a transaction's read snapshot going stale because some other transaction
+// committed first. sqlite3.Error.Code is ErrBusy for plain SQLITE_BUSY (a
+// lock-contention retry situation) *and* every one of its extended variants;
+// only ExtendedCode distinguishes the snapshot-staleness case specifically,
+// so checking Code alone would also catch plain lock contention that has
+// nothing to do with a stale read.
+func isBusySnapshot(err error) bool {
 	var sqliteErr sqlite3.Error
-	if errors.As(err, &sqliteErr) && sqliteErr.Code == sqlite3.ErrBusy {
-		return errMealNoLongerEditable
-	}
-	return err
+	return errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrBusySnapshot
 }
+
+// maxBusySnapshotRetries bounds applyItemMutation's retry of a transaction
+// that hit SQLITE_BUSY_SNAPSHOT for a reason unrelated to this meal — see
+// its doc comment. Small and fixed rather than exponential backoff: this is
+// a single-node app under light concurrency, and each retry starts an
+// entirely fresh transaction (a fresh read snapshot), so genuinely
+// unrelated staleness is expected to clear within one or two attempts.
+const maxBusySnapshotRetries = 2
 
 // applyItemMutation runs fn (an item create/update/delete) inside a
 // transaction. It re-reads the meal's status *inside* that transaction and
@@ -107,52 +111,79 @@ func translateBusySnapshot(err error) error {
 func (h *foodHandlers) applyItemMutation(
 	mealID, userID uuid.UUID, fn func(tx *gorm.DB) error,
 ) (*database.FoodMeal, error) {
-	err := h.storage.DB().Transaction(func(tx *gorm.DB) error {
-		var meal database.FoodMeal
-		if err := tx.Select("id", "status").Where("id = ?", mealID).First(&meal).Error; err != nil {
-			// Every caller already verified ownership before opening this
-			// transaction, but that check ran on a separate, earlier read —
-			// if the meal was deleted in between (e.g. via the generic
-			// DELETE /api/data/food_meal endpoint), this re-check is where
-			// that's actually discovered. Translate to the same sentinel
-			// loadOwnedMeal uses so callers can map it to 404 like any other
-			// "this meal doesn't exist" case, instead of falling through to
-			// a generic 500 for a resource that simply isn't there anymore.
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return database.ErrNotFound
+	var lastBusyErr error
+	for attempt := 0; attempt <= maxBusySnapshotRetries; attempt++ {
+		err := h.storage.DB().Transaction(func(tx *gorm.DB) error {
+			var meal database.FoodMeal
+			if err := tx.Select("id", "status").Where("id = ?", mealID).First(&meal).Error; err != nil {
+				// Every caller already verified ownership before opening this
+				// transaction, but that check ran on a separate, earlier read —
+				// if the meal was deleted in between (e.g. via the generic
+				// DELETE /api/data/food_meal endpoint), this re-check is where
+				// that's actually discovered. Translate to the same sentinel
+				// loadOwnedMeal uses so callers can map it to 404 like any other
+				// "this meal doesn't exist" case, instead of falling through to
+				// a generic 500 for a resource that simply isn't there anymore.
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return database.ErrNotFound
+				}
+				return err
 			}
-			return err
+			if !editableMealStatus(meal.Status) {
+				return errMealNoLongerEditable
+			}
+			if err := fn(tx); err != nil {
+				return err
+			}
+			if meal.Status != database.MealStatusConfirmed {
+				return nil
+			}
+			var items []database.FoodItem
+			if err := tx.Where("meal_id = ?", mealID).Find(&items).Error; err != nil {
+				return err
+			}
+			var agg database.FoodMeal
+			agg.Aggregate(items)
+			return tx.Model(&database.FoodMeal{}).Where("id = ?", mealID).Updates(map[string]any{
+				"calories":            agg.Calories,
+				"protein_grams":       agg.ProteinGrams,
+				"carbs_grams":         agg.CarbsGrams,
+				"fat_grams":           agg.FatGrams,
+				"sugar_grams":         agg.SugarGrams,
+				"sodium_grams":        agg.SodiumGrams,
+				"dietary_fiber_grams": agg.DietaryFiberGrams,
+			}).Error
+		})
+		if err == nil {
+			return h.loadOwnedMeal(mealID, userID)
+		}
+		if !isBusySnapshot(err) {
+			return nil, err
+		}
+		// This transaction's read snapshot went stale because *some*
+		// transaction committed before this one's first write — that alone
+		// doesn't prove this meal became ineligible: an edit to a different
+		// meal, or any other unrelated write, triggers the same
+		// database-wide condition. This transaction has already rolled
+		// back, so re-read the meal's actual current status fresh: if it's
+		// genuinely no longer editable (or gone), report that; otherwise
+		// this was unrelated activity, and a retry gets a fresh snapshot
+		// that no longer conflicts with whatever caused this one to.
+		lastBusyErr = err
+		var meal database.FoodMeal
+		reErr := h.storage.DB().Select("id", "status").Where("id = ?", mealID).First(&meal).Error
+		if errors.Is(reErr, gorm.ErrRecordNotFound) {
+			return nil, database.ErrNotFound
+		}
+		if reErr != nil {
+			return nil, reErr
 		}
 		if !editableMealStatus(meal.Status) {
-			return errMealNoLongerEditable
+			return nil, errMealNoLongerEditable
 		}
-		if err := fn(tx); err != nil {
-			return translateBusySnapshot(err)
-		}
-		if meal.Status != database.MealStatusConfirmed {
-			return nil
-		}
-		var items []database.FoodItem
-		if err := tx.Where("meal_id = ?", mealID).Find(&items).Error; err != nil {
-			return translateBusySnapshot(err)
-		}
-		var agg database.FoodMeal
-		agg.Aggregate(items)
-		err := tx.Model(&database.FoodMeal{}).Where("id = ?", mealID).Updates(map[string]any{
-			"calories":            agg.Calories,
-			"protein_grams":       agg.ProteinGrams,
-			"carbs_grams":         agg.CarbsGrams,
-			"fat_grams":           agg.FatGrams,
-			"sugar_grams":         agg.SugarGrams,
-			"sodium_grams":        agg.SodiumGrams,
-			"dietary_fiber_grams": agg.DietaryFiberGrams,
-		}).Error
-		return translateBusySnapshot(err)
-	})
-	if err != nil {
-		return nil, err
+		// Still eligible — retry with a fresh snapshot.
 	}
-	return h.loadOwnedMeal(mealID, userID)
+	return nil, fmt.Errorf("repeatedly hit a stale read snapshot unrelated to this meal: %w", lastBusyErr)
 }
 
 // PatchMealItem handles PATCH /api/food/meals/{id}/items/{item_id}: resolve
@@ -330,17 +361,17 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			// SQLite's WAL-mode snapshot isolation, this transaction's
 			// earlier read established a read snapshot, and a write against
 			// a now-stale snapshot fails outright with SQLITE_BUSY_SNAPSHOT
-			// rather than quietly matching zero rows. That's the same
-			// "something else changed this item first" situation as the
-			// RowsAffected == 0 case below, not a genuine server failure —
-			// report it the same way (409), not as a 500.
-			var sqliteErr sqlite3.Error
-			if errors.As(res.Error, &sqliteErr) && sqliteErr.Code == sqlite3.ErrBusy {
-				return &itemMutationError{
-					status: http.StatusConflict,
-					msg:    "item was modified by another request; reload and try again",
-				}
-			}
+			// rather than quietly matching zero rows. That alone doesn't
+			// prove *this item* conflicted, though — the same
+			// database-wide condition can be triggered by any unrelated
+			// write elsewhere. Returned unclassified: applyItemMutation's
+			// caller retries the whole transaction on this specific SQLite
+			// condition (with a fresh snapshot and, since the item is
+			// reloaded at the top of this closure, a fresh read of this
+			// item too), so unrelated noise resolves silently on retry, and
+			// only a write that's *still* stale after that surfaces as
+			// RowsAffected == 0 below — the actual per-item conflict
+			// signal.
 			return res.Error
 		}
 		if res.RowsAffected == 0 {

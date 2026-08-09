@@ -5,7 +5,10 @@ import ItemResolver from './ItemResolver';
 
 interface Props {
   mealId: string;
-  onAdded: (meal: FoodMeal) => void;
+  // Takes the mutation's own promise, not the resolved meal — see
+  // ReviewClient's applyMealUpdate doc comment for why (out-of-order
+  // response ordering across sibling mutation controls).
+  onAdded: (mutation: Promise<FoodMeal>) => Promise<FoodMeal>;
 }
 
 // Reuses ItemResolver's search/manual flows (see MealItemRow), pointed at
@@ -27,13 +30,12 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
     setError(null);
     setCreating(true);
     try {
-      const updated = await api.createMealItem(mealId, {
+      await onAdded(api.createMealItem(mealId, {
         name: r.name,
         fdc_id: r.fdc_id,
         custom_food_id: r.custom_food_id,
         weight_grams: weight,
-      });
-      onAdded(updated);
+      }));
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add item');
@@ -49,8 +51,7 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
     setError(null);
     setCreating(true);
     try {
-      const updated = await api.createMealItem(mealId, { manual: true, name, weight_grams: weight, ...macros });
-      onAdded(updated);
+      await onAdded(api.createMealItem(mealId, { manual: true, name, weight_grams: weight, ...macros }));
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add item');

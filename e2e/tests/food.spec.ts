@@ -402,9 +402,14 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     const bound = mockFoodMeal({
       items: [{ ...mockFoodMeal().items[0], name: 'New Food', macro_source: 'reference', weight_grams: 200, fdc_id: 99 }],
     });
+    // MealItemRow now explicitly refetches on a 409 (round 9 — see the test
+    // below for why) rather than trusting the item prop already reflects
+    // the winner, so GET must also start returning the bind's result once
+    // it's applied, the same way a real backend would.
+    let bindApplied = false;
 
     await page.route('**/api/food/meals/mock-meal-id', route =>
-      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+      route.request().method() === 'GET' ? route.fulfill({ json: bindApplied ? bound : initial }) : route.continue()
     );
     await page.route('**/api/food/search**', route =>
       route.fulfill({
@@ -415,6 +420,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
       const body = route.request().postDataJSON() as { fdc_id?: number };
       if (body.fdc_id !== undefined) {
         // The bind request: resolves immediately.
+        bindApplied = true;
         return route.fulfill({ json: bound });
       }
       // The weight-only request: deliberately delayed so it resolves after
@@ -443,6 +449,49 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     // doesn't revert the winning value once it does.
     await expect(page.getByText('This item was just changed by another edit')).toBeVisible();
     await expect(page.locator('input[type="number"]').first()).toHaveValue('200');
+  });
+
+  // Regression (round 9): the round-8 fix assumed a 409's winning edit would
+  // always come through this same page (via a sibling control's onUpdated
+  // call), so the item prop-sync effect would already show the current
+  // value by the time the message says so. But the winner might come from
+  // another tab, another device, or a direct API call — none of which touch
+  // this page's state at all. This test's 409 has no sibling bind response
+  // in play; the only way the displayed value can become correct is if the
+  // component actively refetches.
+  test('a 409 with no local sibling response still refetches to show the current value', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+    const changedElsewhere = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], name: 'Changed In Another Tab', weight_grams: 175 }],
+    });
+    let conflictReturned = false;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ json: conflictReturned ? changedElsewhere : initial })
+        : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', route => {
+      conflictReturned = true;
+      return route.fulfill({
+        status: 409,
+        contentType: 'text/plain',
+        body: 'item was modified by another request; reload and try again',
+      });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await expect(page.getByText('Old Item')).toBeVisible();
+
+    await page.locator('input[type="number"]').first().fill('150');
+    await page.locator('input[type="number"]').first().blur();
+
+    await expect(page.getByText('This item was just changed by another edit')).toBeVisible();
+    // The only source for this is an explicit refetch — nothing else in
+    // this test ever supplied the changed-elsewhere state.
+    await expect(page.getByText('Changed In Another Tab')).toBeVisible();
+    await expect(page.locator('input[type="number"]').first()).toHaveValue('175');
   });
 
   // Regression (round 8): ItemResolver had no in-flight guard at all, so
@@ -491,6 +540,70 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await expect(page.getByText('New Item')).toBeVisible();
     expect(createCalls).toBe(1);
+  });
+
+  // Regression (round 9): every mutation control (item rows, add-item, meal
+  // meta, reanalyze) independently handed its own response straight to
+  // setMeal, with no ordering between them. Two edits to different items can
+  // both succeed, but arrive out of order on ordinary network delay — if the
+  // response for the request issued *first* is delayed enough to arrive
+  // *after* a later-issued request's response, applying it naively moves the
+  // UI backward (here: resurrecting an item the other request just deleted).
+  // ReviewClient's applyMealUpdate tickets each mutation at issue time and
+  // discards a response if a later-issued one already applied.
+  test('a delayed response for an older edit does not resurrect state a newer edit already removed', async ({
+    page,
+  }) => {
+    await login(page);
+    const twoItems = mockFoodMeal({
+      items: [
+        { ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 },
+        { ...mockFoodMeal().items[0], id: 'item-2', name: 'Delete Me', weight_grams: 50 },
+      ],
+    });
+    // The weight-edit response: represents the meal as of *before* the
+    // delete below — i.e. an older, individually-consistent snapshot that
+    // just happens to arrive last.
+    const afterWeightEditOnly = mockFoodMeal({
+      items: [
+        { ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 175 },
+        { ...mockFoodMeal().items[0], id: 'item-2', name: 'Delete Me', weight_grams: 50 },
+      ],
+    });
+    const afterDeleteOnly = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 }],
+    });
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: twoItems }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      // Issued first (the user edits weight before clicking delete on the
+      // other row) but resolves last.
+      await new Promise(resolve => setTimeout(resolve, 400));
+      return route.fulfill({ json: afterWeightEditOnly });
+    });
+    await page.route('**/api/food/meals/mock-meal-id/items/item-2', route =>
+      route.request().method() === 'DELETE' ? route.fulfill({ json: afterDeleteOnly }) : route.continue()
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await expect(page.getByText('Keep Me')).toBeVisible();
+    await expect(page.getByText('Delete Me')).toBeVisible();
+
+    const weightInputs = page.locator('input[type="number"]');
+    const delayedResponse = page.waitForResponse('**/api/food/meals/mock-meal-id/items/item-1');
+    await weightInputs.first().fill('175');
+    await weightInputs.first().blur(); // issues the delayed PATCH first
+    await page.locator('button[title="Delete item"]').last().click(); // issues the DELETE second; resolves first
+
+    await expect(page.getByText('Delete Me')).not.toBeVisible();
+    // Wait for the delayed weight-edit response to actually land, then
+    // confirm it did NOT resurrect the item the delete already removed.
+    await delayedResponse;
+    await expect(page.getByText('Delete Me')).not.toBeVisible();
+    await expect(page.getByText('Keep Me')).toBeVisible();
+    await expect(weightInputs.first()).toHaveValue('175');
   });
 });
 

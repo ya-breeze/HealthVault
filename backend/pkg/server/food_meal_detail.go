@@ -142,7 +142,14 @@ func (h *foodHandlers) ConfirmMeal(w http.ResponseWriter, r *http.Request) {
 		meal.Aggregate(items)
 		meal.Status = database.MealStatusConfirmed
 		if req.LoggedAt != nil {
-			meal.LoggedAt = *req.LoggedAt
+			// Normalize to UTC before storing: go-sqlite3 persists time.Time
+			// with its original offset preserved, so SQLite orders and
+			// filters this column as text — an un-normalized offset sorts
+			// lexically, not chronologically (e.g. 10:00-08:00, 18:00 UTC,
+			// would sort before 12:00+00:00 even though it's later). History
+			// ordering and its keyset cursor both depend on this column
+			// being comparable as an actual instant.
+			meal.LoggedAt = req.LoggedAt.UTC()
 		}
 
 		return tx.Model(&database.FoodMeal{}).Where("id = ?", id).Updates(map[string]any{
@@ -240,6 +247,13 @@ func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "before_id must be a UUID", http.StatusBadRequest)
 			return
 		}
+		// UTC-normalize the parsed cursor before comparing: stored logged_at
+		// values are UTC-normalized on write (see PatchMeal/ConfirmMeal), and
+		// go-sqlite3 compares this column as text with its original offset
+		// preserved — a cursor value bound with a different offset than what
+		// was stored wouldn't compare equal/ordered correctly even for the
+		// exact same instant.
+		before = before.UTC()
 		// Exact keyset continuation: strictly after (in DESC order) the row
 		// identified by (before, before_id), regardless of any ties at that
 		// logged_at.
@@ -254,7 +268,7 @@ func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "before must be an RFC3339 timestamp", http.StatusBadRequest)
 			return
 		}
-		query = query.Where("logged_at < ?", before)
+		query = query.Where("logged_at < ?", before.UTC())
 	case beforeIDStr != "":
 		http.Error(w, "before_id requires before", http.StatusBadRequest)
 		return
@@ -335,7 +349,9 @@ func (h *foodHandlers) PatchMeal(w http.ResponseWriter, r *http.Request) {
 		updates["name"] = strings.TrimSpace(*req.Name)
 	}
 	if hasLoggedAt {
-		updates["logged_at"] = *req.LoggedAt
+		// UTC-normalize before storing — see ConfirmMeal's identical
+		// treatment for why an un-normalized offset breaks ordering.
+		updates["logged_at"] = req.LoggedAt.UTC()
 	}
 	// Conditional on status still being editable, not a blind write — same
 	// reasoning as ConfirmMeal: the status could have moved between the

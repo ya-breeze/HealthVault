@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -597,11 +598,22 @@ func TestPatchMealItem_ManualPlusReferenceReturns400(t *testing.T) {
 // search result click) for the same item close together; a stale
 // outside-the-transaction snapshot let whichever request's write committed
 // second silently overwrite the other's already-committed change with its
-// own stale copy of every other column. The item is now loaded inside the
-// transaction and the final write is conditioned on its observed
-// updated_at, so a concurrent write landing in between is detected and
-// rejected as a 409 conflict instead of silently clobbered.
-func TestPatchMealItem_ConcurrentModificationReturns409NotSilentOverwrite(t *testing.T) {
+// own stale copy of every other column.
+//
+// Round 9 review: the round-7 fix's first attempt at closing this reported
+// *any* SQLITE_BUSY_SNAPSHOT (this transaction's read snapshot going stale
+// because some other transaction committed first) as a 409 conflict — but
+// that alone doesn't prove this specific item conflicted; an unrelated
+// write anywhere in the database triggers the same condition, and a
+// concurrent change to a *different* field (like this test's rename) isn't
+// actually incompatible with this request's own change. The item is now
+// loaded inside the transaction (this test's own regression) *and* the
+// whole transaction retries with a fresh snapshot on SQLITE_BUSY_SNAPSHOT
+// (see applyItemMutation) — since the item is reloaded fresh on every
+// attempt, a retry naturally re-reads the concurrent rename and merges this
+// request's weight change on top of it, rather than rejecting a change that
+// was never actually in conflict.
+func TestPatchMealItem_ConcurrentNonConflictingWriteMergesRatherThanFalseConflict(t *testing.T) {
 	// File-backed, not :memory: — the hook below issues a genuinely separate
 	// connection-pool write, and an in-memory SQLite database is private per
 	// connection, so a separate connection would see an empty, schema-less
@@ -616,6 +628,7 @@ func TestPatchMealItem_ConcurrentModificationReturns409NotSilentOverwrite(t *tes
 		// Simulates a second request's PATCH committing in the window
 		// between this request's own item load and its conditional write —
 		// a plain top-level write, not nested in this request's transaction.
+		// Only fires once, so this doesn't affect the retry attempt below.
 		if err := st.DB().Model(&database.FoodItem{}).Where("id = ?", itemID).
 			Update("name", "Renamed by a concurrent request").Error; err != nil {
 			t.Fatalf("simulate concurrent write: %v", err)
@@ -627,8 +640,8 @@ func TestPatchMealItem_ConcurrentModificationReturns409NotSilentOverwrite(t *tes
 	r := itemPatchRequest(meal.ID.String(), itemID.String(), map[string]any{"weight_grams": 250})
 	h.PatchMealItem(w, withClaims(r, userID))
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("expected 409 when the item was concurrently modified, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (a retry merges the non-conflicting concurrent change), got %d: %s", w.Code, w.Body.String())
 	}
 
 	var got database.FoodItem
@@ -636,10 +649,58 @@ func TestPatchMealItem_ConcurrentModificationReturns409NotSilentOverwrite(t *tes
 		t.Fatalf("reload item: %v", err)
 	}
 	if got.Name != "Renamed by a concurrent request" {
-		t.Errorf("expected the concurrent request's write to survive, got name=%q", got.Name)
+		t.Errorf("expected the concurrent rename to survive the merge, got name=%q", got.Name)
 	}
-	if got.WeightGrams == 250 {
-		t.Error("expected this request's own conflicting write to not have applied")
+	if got.WeightGrams != 250 {
+		t.Errorf("expected this request's own weight change to also apply, got %v", got.WeightGrams)
+	}
+}
+
+// Regression: round 9 review — applyItemMutation's retry on
+// SQLITE_BUSY_SNAPSHOT must be bounded, not an infinite loop, if the
+// staleness genuinely persists across every attempt (e.g. sustained,
+// unrelated write activity). This forces every attempt (not just the
+// first) to hit the same condition and confirms the handler terminates
+// with a real error rather than hanging or looping forever.
+func TestPatchMealItem_PersistentBusySnapshotTerminatesAfterBoundedRetries(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	itemID := meal.Items[0].ID
+
+	const hookName = "test:persistent-busy-snapshot"
+	calls := 0
+	injecting := false
+	st.DB().Callback().Update().Before("gorm:update").Register(hookName, func(*gorm.DB) {
+		if injecting {
+			// The injected write below is itself an UPDATE, so it would
+			// otherwise re-trigger this same hook — guard against that
+			// instead of recursing.
+			return
+		}
+		calls++
+		injecting = true
+		defer func() { injecting = false }()
+		// Unlike registerRaceSimulation, this fires on every attempt (no
+		// "only once" guard), so every retry's own write also lands after a
+		// fresh conflicting commit — the staleness never actually clears.
+		if err := st.DB().Model(&database.FoodItem{}).Where("id = ?", itemID).
+			Update("name", fmt.Sprintf("Renamed concurrently, attempt %d", calls)).Error; err != nil {
+			t.Fatalf("simulate persistent concurrent write: %v", err)
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Update().Remove(hookName) })
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	r := itemPatchRequest(meal.ID.String(), itemID.String(), map[string]any{"weight_grams": 250})
+	h.PatchMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 once retries are exhausted, got %d: %s", w.Code, w.Body.String())
+	}
+	if calls < 2 {
+		t.Errorf("expected more than one attempt (retry actually happened), got %d", calls)
 	}
 }
 

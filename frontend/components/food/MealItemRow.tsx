@@ -6,7 +6,10 @@ import ItemResolver from './ItemResolver';
 interface Props {
   mealId: string;
   item: FoodItem;
-  onUpdated: (meal: FoodMeal) => void;
+  // Takes the mutation's own promise, not the resolved meal — see
+  // ReviewClient's applyMealUpdate doc comment for why (out-of-order
+  // response ordering across sibling mutation controls).
+  onUpdated: (mutation: Promise<FoodMeal>) => Promise<FoodMeal>;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -59,8 +62,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const updated = await api.patchMealItem(mealId, item.id, { weight_grams: weight });
-      onUpdated(updated);
+      await onUpdated(api.patchMealItem(mealId, item.id, { weight_grams: weight }));
     } catch (err) {
       // Checks both instanceof and the explicit .name tag — see ApiError's
       // doc comment in lib/api.ts for why instanceof alone isn't trusted.
@@ -69,14 +71,21 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
         (err as ApiError).status === 409;
       if (isConflict) {
         // This request's own view of the item was stale by the time it
-        // landed — a concurrent edit (e.g. a bind) won instead. That
-        // winner's item prop has already propagated (or is about to) via
-        // onUpdated further up the tree, and the effect above resyncs this
-        // row's weight draft from it — resetting to *this* request's
-        // now-stale starting point (item.weight_grams, captured in this
-        // closure before the winning edit) would fight that resync and can
-        // leave the field showing neither the old nor the new value.
-        setError('This item was just changed by another edit — showing its current value.');
+        // landed — something else changed it first. That doesn't mean the
+        // item prop this component already has is current: the winning
+        // edit might have come from another browser tab, another device, or
+        // a direct API call, none of which trigger a sibling onUpdated call
+        // in this page — so the prop-sync effect above may never run.
+        // Refetch explicitly (through onUpdated, so it's ordered against
+        // any other sibling mutation too) and only claim "current value"
+        // once that actually lands; a refetch failure gets its own distinct
+        // warning rather than a false claim.
+        try {
+          await onUpdated(api.getMeal(mealId));
+          setError('This item was just changed by another edit — showing its current value.');
+        } catch {
+          setError('This item was just changed by another edit, and refreshing failed — this view may be stale. Reload the page to see what changed.');
+        }
       } else {
         setError(err instanceof Error ? err.message : 'Failed to update weight');
         setWeight(item.weight_grams);
@@ -94,13 +103,12 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     if (weight <= 0) {
       throw new Error('Weight must be positive to match a food');
     }
-    const updated = await api.patchMealItem(mealId, item.id, {
+    await onUpdated(api.patchMealItem(mealId, item.id, {
       fdc_id: r.fdc_id,
       custom_food_id: r.custom_food_id,
       weight_grams: weight,
       name: r.name,
-    });
-    onUpdated(updated);
+    }));
     setResolving(false);
   };
 
@@ -108,8 +116,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     name: string,
     macros: Omit<Parameters<typeof api.patchMealItem>[2], 'manual' | 'name'>
   ) => {
-    const updated = await api.patchMealItem(mealId, item.id, { manual: true, name, ...macros });
-    onUpdated(updated);
+    await onUpdated(api.patchMealItem(mealId, item.id, { manual: true, name, ...macros }));
     setResolving(false);
   };
 
@@ -117,8 +124,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     setDeleting(true);
     setError(null);
     try {
-      const updated = await api.deleteMealItem(mealId, item.id);
-      onUpdated(updated);
+      await onUpdated(api.deleteMealItem(mealId, item.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete item');
       setDeleting(false);

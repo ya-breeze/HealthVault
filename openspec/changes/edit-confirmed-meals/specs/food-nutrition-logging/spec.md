@@ -9,7 +9,7 @@ Whenever a request causes the item to be scaled from a reference food's profile 
 
 The system SHALL apply the item change and, if the owning meal's status is `confirmed`, recompute and persist the meal's macro aggregate from its current items, within a single database transaction (see the "Meal Aggregate Recomputed After Edit While Confirmed" requirement). The response body SHALL be the full updated `FoodMeal`, including its current items and (for a `confirmed` meal) its freshly recomputed aggregate — not the item alone — so a caller can update its full view of the meal from one response.
 
-The item SHALL be loaded and mutated within the same transaction as the write that persists it, not loaded beforehand and mutated in memory — and that write SHALL be conditioned on the item's `updated_at` still matching what was observed when it was loaded within this transaction. If a concurrent request has modified the same item in between (detected either by the conditional write affecting zero rows, or by the database rejecting the write outright because the read it was based on is no longer current), the system SHALL reject this request with HTTP 409 and SHALL NOT apply any part of its change, rather than silently overwriting the concurrent request's already-applied change with a stale copy of every other column.
+The item SHALL be loaded and mutated within the same transaction as the write that persists it, not loaded beforehand and mutated in memory — and that write SHALL be conditioned on the item's `updated_at` still matching what was observed when it was loaded within this transaction, so a stale write can never silently overwrite a concurrent request's already-applied change with a stale copy of every other column. A write based on a since-invalidated read is detected either by the conditional write affecting zero rows, or by the database rejecting the write outright because the transaction's own read snapshot is no longer current; either SHALL cause the whole transaction to retry, re-reading the item fresh, up to a small bounded number of attempts — not an immediate rejection. Because the item is reloaded fresh on every attempt, this allows non-conflicting concurrent changes (e.g. a weight edit and an unrelated name correction) to both apply, merged, without either being falsely rejected. Only a write that is still based on a stale read after every retry attempt has been exhausted SHALL be rejected, with HTTP 409, and SHALL NOT apply any part of its change.
 
 #### Scenario: Bind an unresolved item to a food
 - **WHEN** the owner patches an item with a chosen `fdc_id`
@@ -51,10 +51,15 @@ The item SHALL be loaded and mutated within the same transaction as the write th
 - **WHEN** the owner patches an item with `manual: true` together with an `fdc_id` or `custom_food_id`
 - **THEN** the system returns HTTP 400 rather than silently preferring one and discarding the other
 
-#### Scenario: Two concurrent patches to the same item do not silently clobber each other
+#### Scenario: Two concurrent, non-conflicting patches to the same item both apply
 - **GIVEN** an item with an existing binding
-- **WHEN** two PATCH requests for the same item (e.g. a weight change and a rebind) are submitted close enough together that the second request's write is based on a read taken before the first request committed
-- **THEN** exactly one of them applies; the other returns HTTP 409 and does not modify the item — neither request's write silently overwrites the other's already-committed columns
+- **WHEN** a weight-change PATCH and an unrelated name-correction PATCH for the same item are submitted close enough together that the second request's write is based on a read taken before the first request committed
+- **THEN** both changes end up applied — the losing request's retry re-reads the item fresh (now reflecting the winner) and merges its own change on top, rather than being rejected for a conflict that was never real
+
+#### Scenario: A persistently conflicting patch to the same item is eventually rejected
+- **GIVEN** an item with an existing binding
+- **WHEN** a PATCH request's write is based on a stale read on every one of its retry attempts (e.g. sustained concurrent writes to the same item)
+- **THEN** the system rejects it — neither request's write silently overwrites the other's already-committed columns, and the meal is left as whichever attempt actually committed
 
 ## ADDED Requirements
 
@@ -117,7 +122,7 @@ The system SHALL apply the same transactional aggregate-recompute-on-confirmed b
 ### Requirement: Meal Aggregate Recomputed After Edit While Confirmed
 Whenever an item is added, edited, or deleted on a meal whose status is `confirmed`, the system SHALL, within the same database transaction as the item write, reload the meal's current items, recompute its macro aggregate (the same computation used at confirm time), and persist it on the `FoodMeal` record — so the stored totals always equal the sum over the meal's current items, and a failure partway through leaves neither the item change nor a stale aggregate committed. A meal whose status is `pending_review` SHALL NOT have its aggregate recomputed by item writes — it remains as before, computed only once, at confirm.
 
-This same transaction SHALL re-verify the meal's existence and editable status immediately before the item write, not rely solely on the check made when the request was first received — closing the gap between that earlier check and this write. If the meal no longer exists (e.g. deleted through the generic meal-delete endpoint in that gap), the system SHALL return HTTP 404. If a concurrent operation has changed the meal's status in that same gap (e.g. a Reanalyze claiming it), the system SHALL return HTTP 409, regardless of whether that's detected by the re-verification finding a different status or by the underlying write itself failing because it was based on a since-invalidated read. Neither case SHALL be reported as a generic server error.
+This same transaction SHALL re-verify the meal's existence and editable status immediately before the item write, not rely solely on the check made when the request was first received — closing the gap between that earlier check and this write. If the meal no longer exists (e.g. deleted through the generic meal-delete endpoint in that gap), the system SHALL return HTTP 404. The underlying write can also fail outright because the transaction's own read snapshot is no longer current — this does not by itself prove the meal became ineligible, since any unrelated write elsewhere in the database can trigger the identical condition. The system SHALL distinguish the two by re-reading the meal's actual current status once such a failure has rolled back: still eligible SHALL retry the whole transaction (bounded, with a fresh read snapshot) rather than report a false conflict; genuinely no longer eligible, or gone, SHALL return HTTP 409 or 404 respectively. Neither case SHALL be reported as a generic server error, and an unrelated write SHALL NOT be reported as this meal being ineligible.
 
 #### Scenario: Editing an item's weight on a confirmed meal updates the meal total
 - **GIVEN** a confirmed meal with a stored total of 500 kcal
@@ -149,10 +154,15 @@ This same transaction SHALL re-verify the meal's existence and editable status i
 - **WHEN** the meal is deleted (e.g. via the generic meal-delete endpoint) before this transaction's own re-verification runs
 - **THEN** the system returns HTTP 404, not a generic server error
 
-#### Scenario: An item write reports a conflict if the meal's status changes mid-flight
+#### Scenario: An item write reports a conflict if the meal's status genuinely changes mid-flight
 - **GIVEN** an owner's request to add, edit, or delete an item passed the initial editable-status check
 - **WHEN** a concurrent operation (e.g. Reanalyze) changes the meal's status before this transaction's own write completes
 - **THEN** the system returns HTTP 409, not a generic server error, regardless of whether the change is observed directly or only as the underlying write failing against a since-invalidated read
+
+#### Scenario: An unrelated concurrent write does not falsely block an item write
+- **GIVEN** an owner's request to add, edit, or delete an item on a meal that remains eligible throughout
+- **WHEN** a write to a *different* meal (or any other unrelated database activity) happens to land in the narrow window between this transaction's read and its own write, causing the same stale-snapshot condition a genuine status change would
+- **THEN** this request succeeds normally — the system re-reads this meal's actual status, finds it still eligible, and retries rather than reporting a false conflict
 
 ### Requirement: Meal Name and Logged Time Correction
 The system SHALL expose `PATCH /api/food/meals/{id}`, allowing the owner to correct a meal's `name` and/or `logged_at` independently of confirming it, while the meal's status is `pending_review` or `confirmed`. At least one of `name` or `logged_at` SHALL be supplied. A supplied `logged_at` SHALL be a non-zero timestamp, preserving the existing invariant that every meal carries a non-zero `logged_at`; a zero-value timestamp SHALL be rejected with HTTP 400 rather than silently accepted. The endpoint SHALL be rejected with HTTP 409 for a meal whose status is `processing`, `pending_clarification`, or `failed`.
