@@ -131,11 +131,14 @@ to `fetch` a second time is safe and re-sends the same payload.
 - **[Risk]** A stale in-flight `refreshPromise` could theoretically survive across unrelated 401s if not
   cleared correctly. **Mitigation**: clear it in a `finally` block immediately after the refresh call settles,
   before any retries run, so a bug here fails toward "too many refresh calls" rather than "stuck forever."
-- **[Risk]** Cross-tab dedup depends on `navigator.locks` availability. On the small set of legacy browsers
-  without it, the original cross-tab rotation race (a losing tab's request hits `ErrTokenCompromised` and logs
-  out all of that user's sessions) is still possible. **Mitigation**: explicitly accepted as a residual risk
-  for that legacy fallback, not silently ignored — see Decisions. All browsers this user is expected to use
-  (recent mobile and desktop) support Web Locks.
+- **[Risk]** Cross-tab dedup depends on `navigator.locks` availability, which requires a secure context
+  (HTTPS, or `localhost`). On the small set of legacy browsers without Web Locks support, *and* on any origin
+  that isn't a secure context, the original cross-tab rotation race (a losing tab's request hits
+  `ErrTokenCompromised` and logs out all of that user's sessions) is still possible. **Mitigation**: explicitly
+  accepted as a residual risk for that fallback, not silently ignored. `hcw-prod` is reached via a public HTTPS
+  URL, so Web Locks are active there for real usage. `hcw-wip` is local-HTTP-only and therefore always takes the
+  same-tab-only fallback — accepted, since it's a throwaway test stack with no real user data or true
+  concurrent-tab risk to protect (see CLAUDE.md's Stack Classes).
 - **[Risk]** The `localStorage.getItem('hcw:lastAuthRefreshAt')` timestamp check could theoretically read a
   stale value (e.g. a bug in the write-then-release ordering leaving a losing tab reading before the winner
   writes). **Mitigation**: the write happens inside the same Web Lock callback, before release, so ordering is
