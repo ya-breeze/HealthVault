@@ -190,6 +190,15 @@ export interface PatchMealInput {
 // generic error.
 export class ReanalyzeFailedError extends Error {}
 
+// ReanalyzeSupersededError is thrown for HTTP 409 from POST .../reanalyze —
+// a materially different outcome from ReanalyzeFailedError's 502. It means
+// this reanalysis attempt failed AND a newer operation (e.g. a concurrent
+// Retry) claimed the meal in the meantime, so the "meal is unchanged"
+// guarantee does not hold: the newer operation may already have changed it.
+// Callers should refetch rather than assume the previously displayed meal
+// is still current.
+export class ReanalyzeSupersededError extends Error {}
+
 export const api = {
   login: (username: string, password: string) =>
     apiFetch('/auth/login', {
@@ -306,6 +315,11 @@ export const api = {
     });
     if (res.status === 502) {
       throw new ReanalyzeFailedError((await res.text()) || 'Reanalysis failed; the meal is unchanged.');
+    }
+    if (res.status === 412) {
+      throw new ReanalyzeSupersededError(
+        (await res.text()) || 'Reanalysis failed; the meal was claimed by another operation.'
+      );
     }
     if (!res.ok) throw new Error((await res.text()) || `${res.status} ${res.statusText}`);
     return res.json();

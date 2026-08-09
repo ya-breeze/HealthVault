@@ -16,9 +16,33 @@ async function login(page: Page) {
 // This is a dogfood deployment (the account's only instance, real data) —
 // every test cleans up whatever it creates via the same DELETE endpoints the
 // app itself uses, so a test run leaves no residue in the real account.
-async function deleteMeal(request: APIRequestContext, cookies: string, id: string) {
-  await request.delete(`${BASE_URL}/api/data/food_meal/${id}`, { headers: { Cookie: cookies } });
+// deleteMeal verifies the delete actually succeeded (2xx, or 404 treated as
+// already-clean) rather than firing the request and trusting it worked —
+// Playwright's request.delete() only throws on a transport-level failure,
+// not an HTTP error status, so a silently-swallowed 500 or an expired
+// session would otherwise leave the meal behind with the test still
+// reporting green.
+async function deleteMeal(request: APIRequestContext, cookies: string, id: string): Promise<void> {
+  const res = await request.delete(`${BASE_URL}/api/data/food_meal/${id}`, { headers: { Cookie: cookies } });
+  if (!res.ok() && res.status() !== 404) {
+    throw new Error(`failed to delete meal ${id}: ${res.status()} ${await res.text()}`);
+  }
 }
+
+// deleteMeals attempts every ID via Promise.allSettled — one failure can't
+// prevent delete attempts for the rest, unlike a sequential for-loop, where
+// a thrown error would stop the loop and abandon every ID after it. Reports
+// (throws) with the full list of failed IDs if any remain undeleted, so a
+// cleanup gap surfaces loudly in test output instead of silently leaking
+// into the shared account.
+async function deleteMeals(request: APIRequestContext, cookies: string, ids: string[]): Promise<void> {
+  const results = await Promise.allSettled(ids.map(id => deleteMeal(request, cookies, id)));
+  const failedIds = results.flatMap((r, i) => (r.status === 'rejected' ? [ids[i]] : []));
+  if (failedIds.length > 0) {
+    throw new Error(`failed to clean up ${failedIds.length}/${ids.length} meals: ${failedIds.join(', ')}`);
+  }
+}
+
 async function deleteCustomFood(request: APIRequestContext, cookies: string, id: string) {
   await request.delete(`${BASE_URL}/api/food/custom/${id}`, { headers: { Cookie: cookies } });
 }
@@ -195,10 +219,7 @@ test.describe('Meal history', () => {
     }
   });
 
-  test('"Load older" fetches and appends a real second page, then hides itself once exhausted', async ({
-    page,
-    request,
-  }) => {
+  test('"Load older" fetches and appends a real second page', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
 
@@ -209,10 +230,21 @@ test.describe('Meal history', () => {
     // logged_at (server time at insert), so ordering is deterministic:
     // newest-created meal is 'E2E LoadOlder 50', oldest is 'E2E LoadOlder 0'.
     //
+    // This deliberately does NOT assert that "Load older" hides itself
+    // after this — this account is shared and reused, and if it already
+    // holds ~49+ older meals of its own, page 2 (this test's remaining
+    // meal plus however many of the account's own older meals fit) would
+    // legitimately still be a full page, keeping the button visible. The
+    // short-page-hides-the-button behavior itself is covered deterministically,
+    // with a fully isolated mocked dataset, by the next test.
+    //
     // Every meal ID goes on this list the instant its creation succeeds, and
     // cleanup runs in `finally` regardless of what happens afterward — a
     // failed assertion, a failed navigation, or a failed creation partway
     // through must not leak meals into this shared, reused account.
+    // deleteMeals verifies every delete actually succeeded and attempts all
+    // of them even if some fail (Promise.allSettled), rather than a
+    // sequential loop that could abandon the rest after one throws.
     const createdIds: string[] = [];
     try {
       for (let i = 0; i < 51; i++) {
@@ -230,21 +262,34 @@ test.describe('Meal history', () => {
       await expect(loadOlder).toBeVisible();
       await loadOlder.click();
 
-      // The real second page (just the 51st meal, 1 row — a genuine short
-      // page) arrives and is appended, not swapped in.
+      // The real second page (containing at least the 51st meal) arrives
+      // and is appended, not swapped in.
       await expect(page.getByText('E2E LoadOlder 0')).toBeVisible({ timeout: 10_000 });
       await expect(page.getByText('E2E LoadOlder 50')).toBeVisible();
-
-      // The keyset cursor never defers rows — a page shorter than
-      // PAGE_SIZE reliably means nothing more remains, so the button hides
-      // immediately after this one short page, no extra empty request
-      // needed (see ListMeals / the history page's hasMore logic).
-      await expect(loadOlder).not.toBeVisible();
     } finally {
-      for (const id of createdIds) {
-        await deleteMeal(request, cookies, id);
-      }
+      await deleteMeals(request, cookies, createdIds);
     }
+  });
+
+  test('a short page hides "Load older" immediately (mocked, deterministic)', async ({ page }) => {
+    await login(page);
+    // Isolated from any real account state: a first page far shorter than
+    // PAGE_SIZE (50) proves the keyset cursor's own guarantee — it never
+    // defers rows, so a short page reliably means nothing more remains —
+    // without depending on how much real history this shared account holds.
+    const shortPage = Array.from({ length: 3 }, (_, i) => ({
+      id: `mock-history-${i}`,
+      name: `Mock History Meal ${i}`,
+      logged_at: new Date(Date.now() - i * 1000).toISOString(),
+      status: 'confirmed',
+      calories: 100,
+    }));
+
+    await page.route('**/api/food/meals?*', route => route.fulfill({ json: shortPage }));
+
+    await page.goto('/food/history/');
+    await expect(page.getByText('Mock History Meal 0')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Load older' })).not.toBeVisible();
   });
 });
 
@@ -394,6 +439,46 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
     // Unchanged: still the original item, still confirmed.
     await expect(page.getByText('Old Item')).toBeVisible();
     await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
+  });
+
+  test('a 412 response refetches and shows the current (superseded) state', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+    const superseded = mockFoodMeal({
+      status: 'pending_review',
+      items: [{ ...mockFoodMeal().items[0], id: 'item-3', name: 'Superseding Item' }],
+    });
+
+    // The first GET (on load) returns the original meal; a second GET (the
+    // refetch ReanalyzeControl issues on 412) returns what a newer
+    // operation — e.g. a concurrent Retry — left behind. Distinct from the
+    // 502 case above: there, no refetch happens at all, since the backend
+    // guarantees nothing changed.
+    let getCount = 0;
+    await page.route('**/api/food/meals/mock-meal-id', route => {
+      if (route.request().method() !== 'GET') return route.continue();
+      getCount++;
+      return route.fulfill({ json: getCount === 1 ? initial : superseded });
+    });
+    await page.route('**/api/food/meals/mock-meal-id/reanalyze', route =>
+      route.fulfill({
+        status: 412,
+        contentType: 'text/plain',
+        body: 'reanalysis failed; the meal was claimed by another operation',
+      })
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await expect(page.getByText('Old Item')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Reanalyze with a hint' }).click();
+    await page.locator('textarea').fill('a hint that will be superseded by the mocked backend');
+    await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
+
+    await expect(page.getByText('Another operation')).toBeVisible();
+    // Refetched: now shows the current (superseded) state, not the stale one.
+    await expect(page.getByText('Superseding Item')).toBeVisible();
+    await expect(page.getByText('Old Item')).not.toBeVisible();
   });
 });
 

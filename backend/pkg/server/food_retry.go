@@ -86,6 +86,6 @@ func (h *foodHandlers) RetryMeal(w http.ResponseWriter, r *http.Request) {
 	meal.ClarifyLog = ""
 	meal.UpdatedAt = lease
 
-	h.analyzeMeal(r.Context(), &meal, lease)
-	writeJSON(w, meal)
+	applied := h.analyzeMeal(r.Context(), &meal, lease)
+	writeJSON(w, h.reloadIfSuperseded(&meal, applied))
 }

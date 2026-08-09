@@ -73,8 +73,8 @@ func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
 
 	// meal.UpdatedAt, set by GORM's Create above, is this attempt's lease
 	// token from the start — see analyzeMeal's doc comment.
-	h.analyzeMeal(r.Context(), &meal, meal.UpdatedAt)
-	writeJSONStatus(w, http.StatusCreated, meal)
+	applied := h.analyzeMeal(r.Context(), &meal, meal.UpdatedAt)
+	writeJSONStatus(w, http.StatusCreated, h.reloadIfSuperseded(&meal, applied))
 }
 
 func writeUploadError(w http.ResponseWriter, err error) {
@@ -106,12 +106,36 @@ func writeUploadError(w http.ResponseWriter, err error) {
 // concurrent Retry uses to decide the meal is stale) invalidates this one's
 // right to write a result — see food_reanalyze.go's claim doc comment for
 // the full scenario this guards against.
-func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal, lease time.Time) {
+//
+// Returns whether this attempt's own outcome (success or the failMeal
+// fallback) is what actually got persisted. false means a newer attempt's
+// lease pre-empted this one — meal's in-memory fields (still whatever the
+// claim set, since neither persistAnalysis nor failMeal touched it) no
+// longer reflect the database. Callers that respond to an HTTP caller with
+// meal must check this and reload the real current state rather than
+// returning a stale snapshot — see reloadIfSuperseded.
+func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal, lease time.Time) bool {
 	ctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
 	defer cancel()
 	if err := h.runAnalysis(ctx, meal, "", lease); err != nil {
-		h.failMeal(meal, lease)
+		return h.failMeal(meal, lease)
 	}
+	return true
+}
+
+// reloadIfSuperseded returns meal unchanged if applied is true (this
+// attempt's own write is what's current), or a freshly reloaded copy from
+// the database if not — a newer analysis attempt has since claimed the row,
+// and meal's in-memory fields no longer reflect it. Falls back to the given
+// meal if the reload itself fails, rather than losing the response entirely.
+func (h *foodHandlers) reloadIfSuperseded(meal *database.FoodMeal, applied bool) *database.FoodMeal {
+	if applied {
+		return meal
+	}
+	if reloaded, err := h.loadOwnedMeal(meal.ID, meal.UserID); err == nil {
+		return reloaded
+	}
+	return meal
 }
 
 // runAnalysis reads the stored photo and runs vision recognition with the
@@ -400,16 +424,18 @@ func (h *foodHandlers) persistAnalysis(
 
 // failMeal marks meal failed, conditioned on lease still matching — see
 // persistAnalysis. If a newer attempt has since claimed the row, this is a
-// silent no-op: that attempt owns the meal now, and this one reporting
-// failure over it would be wrong regardless of what this attempt itself
-// observed.
-func (h *foodHandlers) failMeal(meal *database.FoodMeal, lease time.Time) {
+// silent no-op (returns false): that attempt owns the meal now, and this one
+// reporting failure over it would be wrong regardless of what this attempt
+// itself observed. Returns true if the write actually applied.
+func (h *foodHandlers) failMeal(meal *database.FoodMeal, lease time.Time) bool {
 	res := h.storage.DB().Model(&database.FoodMeal{}).
 		Where("id = ? AND updated_at = ?", meal.ID, lease).
 		Update("status", database.MealStatusFailed)
 	if res.Error == nil && res.RowsAffected > 0 {
 		meal.Status = database.MealStatusFailed
+		return true
 	}
+	return false
 }
 
 // extOf returns the stored file extension from a photostorage relative path

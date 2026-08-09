@@ -188,9 +188,16 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 			// cross the same vision timeout) has since claimed this meal.
 			// That attempt owns the row now — reverting would stomp on
 			// whatever it's doing. This request's own attempt still
-			// failed, so still report failure, just without touching a row
-			// this attempt no longer holds the lease on.
-			http.Error(w, "reanalysis failed; the meal was claimed by another operation in the meantime", http.StatusBadGateway)
+			// failed, but the meal is NOT guaranteed unchanged — the newer
+			// attempt may already have altered it, and this handler has no
+			// way to know its outcome. HTTP 412 (Precondition Failed) — the
+			// standard code for "your conditional update's precondition, the
+			// lease, no longer holds" — signals that distinctly from both
+			// the plain "not eligible" 409 (nothing was ever attempted) and
+			// the "vision failed, revert succeeded" 502 (genuinely
+			// unchanged): the caller should refetch rather than assume
+			// nothing changed.
+			http.Error(w, "reanalysis failed; the meal was claimed by another operation in the meantime", http.StatusPreconditionFailed)
 			return
 		}
 		http.Error(w, "reanalysis failed; the meal is unchanged", http.StatusBadGateway)

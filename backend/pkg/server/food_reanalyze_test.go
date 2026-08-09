@@ -398,8 +398,12 @@ func TestReanalyze_FailedAttemptDoesNotStompNewerConcurrentClaim(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.Reanalyze(w, withClaims(reanalyzeHTTPRequest(meal.ID.String(), "a hint"), userID))
 
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	// 412 (Precondition Failed), not 502: this attempt's own revert didn't
+	// apply (the lease was already gone), so it can't claim the "meal is
+	// unchanged" guarantee — see the distinct status code in Reanalyze's
+	// failure handling.
+	if w.Code != http.StatusPreconditionFailed {
+		t.Fatalf("expected 412, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var reloaded database.FoodMeal

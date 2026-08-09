@@ -864,6 +864,71 @@ func TestRetryMeal_ConcurrentClaimIsRejected(t *testing.T) {
 	}
 }
 
+// Regression: if a newer attempt (e.g. a concurrent Reanalyze) claims and
+// completes against this meal in the window between RetryMeal's own claim
+// and persistAnalysis's write, that write's lease check correctly rolls
+// back — but RetryMeal used to respond with its own local `meal` struct
+// regardless, which still shows status=processing (whatever its own claim
+// wrote, never updated since its write never actually landed). The caller
+// would see a stale, misleading response instead of what's actually stored.
+//
+// Uses the same gated-vision-client technique as
+// TestReanalyze_ConcurrentCallsOnlyOneProceeds (real goroutine + channel,
+// not a GORM hook): the "concurrent" write happens as a plain top-level
+// UPDATE while RetryMeal's own goroutine is parked inside Recognize, i.e.
+// strictly *before* persistAnalysis's transaction begins — a GORM
+// Before-update hook won't work here, since injecting a nested write from
+// inside persistAnalysis's own active transaction deadlocks against
+// SQLite's single-writer lock instead of racing it.
+func TestRetryMeal_RespondsWithCurrentStateWhenSuperseded(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createFailedMealWithPhoto(t, st, dir, userID, familyID)
+
+	client := &gatedRecognizeClient{
+		entered: make(chan struct{}),
+		proceed: make(chan struct{}),
+		result:  &vision.RecognizeResult{Items: []vision.Item{{Name: "Rice", WeightGrams: 100}}},
+	}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(client, 10<<20, time.Minute)
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		h.RetryMeal(w, withClaims(mealDetailRequest(http.MethodPost, meal.ID.String()), userID))
+		done <- w
+	}()
+
+	<-client.entered // RetryMeal's own claim has landed; it's now blocked in Recognize.
+
+	// Simulate a newer attempt (e.g. a concurrent Reanalyze) claiming and
+	// completing against this same meal while RetryMeal's own call is still
+	// in flight. A plain top-level UPDATE, not nested in any transaction.
+	if err := st.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+		Updates(map[string]any{
+			"status":     database.MealStatusPendingReview,
+			"updated_at": time.Now().UTC().Add(time.Second),
+		}).Error; err != nil {
+		t.Fatalf("simulate concurrent supersession: %v", err)
+	}
+
+	close(client.proceed)
+	w := <-done
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Status != database.MealStatusPendingReview {
+		t.Errorf(
+			"expected the response to reflect the current superseding state (pending_review), got %s — a stale response would show processing",
+			got.Status,
+		)
+	}
+}
+
 func TestRetryMeal_ConfirmedMealRejectedWith409(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

@@ -11,7 +11,7 @@ Every later write this attempt makes — persisting a successful analysis, or re
 
 **Success.** On a successful recognition, Reanalyze SHALL replace the meal's existing `FoodItem` rows in the same transaction that writes the resulting status, exactly as `Retry` already does, and SHALL set the meal's status to `pending_clarification` or `pending_review` according to the model's response — including when the meal's status was `confirmed` beforehand, so a reanalyzed confirmed meal returns to the normal review flow rather than remaining confirmed with stale items. The same write SHALL zero the meal's seven stored macro aggregate columns, so a meal leaving `confirmed` never displays its old totals against its new, unreviewed items, and SHALL be conditioned on the lease token described above, so a persistence failure or a lease loss cannot leave the item replacement partially applied.
 
-**Failure.** On a vision error or timeout, if this attempt's lease is still current, Reanalyze SHALL NOT mark the meal `failed` and SHALL NOT modify its items or aggregate. Instead it SHALL restore the meal's `status`, `clarify_round`, and `clarify_log` to the values captured before the atomic claim, leaving the meal exactly as it was before the call, and SHALL respond with HTTP 502 and an error body rather than HTTP 200, so the caller can distinguish "reanalysis failed, nothing changed" from a normal state transition. If the lease is no longer current (a newer attempt has since claimed the meal), the revert SHALL be a no-op — the newer attempt owns the row — and the response SHALL still be HTTP 502, since this attempt's own reanalysis did fail, without claiming the specific "the meal is unchanged" guarantee that no longer applies once another attempt owns the row.
+**Failure.** On a vision error or timeout, if this attempt's lease is still current, Reanalyze SHALL NOT mark the meal `failed` and SHALL NOT modify its items or aggregate. Instead it SHALL restore the meal's `status`, `clarify_round`, and `clarify_log` to the values captured before the atomic claim, leaving the meal exactly as it was before the call, and SHALL respond with HTTP 502 and an error body rather than HTTP 200, so the caller can distinguish "reanalysis failed, nothing changed" from a normal state transition. If the lease is no longer current (a newer attempt has since claimed the meal), the revert SHALL be a no-op — the newer attempt owns the row — and the response SHALL be HTTP 412 (Precondition Failed), not 502: this attempt's own reanalysis did fail, but the specific "the meal is unchanged" guarantee no longer holds once another attempt owns the row, and the caller SHALL treat HTTP 412 as a signal to refetch the meal rather than trust its previous view of it.
 
 #### Scenario: Reanalyze a meal the model got wrong
 - **WHEN** the owner calls reanalyze on a `pending_review` meal with hint "this is chicken and rice, not berries"
@@ -45,7 +45,7 @@ Every later write this attempt makes — persisting a successful analysis, or re
 #### Scenario: A failed attempt does not revert a newer attempt's claim
 - **GIVEN** a `pending_review` meal, and this request's reanalysis attempt claimed it and is now failing
 - **WHEN** a concurrent `Retry` claims the same meal (e.g. because this attempt's own call ran long enough to look stale) before this attempt's revert runs
-- **THEN** this attempt's revert is a no-op — the meal's status stays whatever the concurrent `Retry` claim set it to, not reverted to this attempt's stale prior value — and this request still returns HTTP 502
+- **THEN** this attempt's revert is a no-op — the meal's status stays whatever the concurrent `Retry` claim set it to, not reverted to this attempt's stale prior value — and this request returns HTTP 412, not 502
 
 #### Scenario: Stale clarification state does not leak into a fresh reanalysis
 - **GIVEN** a meal that previously completed clarification rounds, now `confirmed`
@@ -98,6 +98,8 @@ The claim into `processing` SHALL be a single conditional update matched against
 
 Every analysis run, initial or retry, SHALL replace the meal's existing `FoodItem` rows in the same transaction that writes the resulting status, so that a retry never appends a duplicate set of items.
 
+If this attempt's own lease is lost by the time it would persist its outcome (a newer attempt superseded it — see above), the HTTP response SHALL reflect the meal's actual current state (reloaded from storage), not this attempt's local, now-stale view of it — a caller must never be shown a status this attempt itself set but which the database has since moved past.
+
 #### Scenario: Retry a failed meal
 - **WHEN** the owner calls retry on a meal with status `failed`
 - **THEN** the system re-runs analysis on the stored photo without requiring a new upload and updates the meal status according to the result
@@ -118,6 +120,11 @@ Every analysis run, initial or retry, SHALL replace the meal's existing `FoodIte
 #### Scenario: Retry a meal that is already complete
 - **WHEN** the owner calls retry on a meal with status `confirmed`
 - **THEN** the system returns HTTP 409 and does not call the vision model
+
+#### Scenario: Retry responds with the current state when superseded
+- **GIVEN** this attempt claimed a meal and is about to persist its analysis outcome
+- **WHEN** a newer attempt (e.g. a concurrent `Reanalyze`) claims and completes against the same meal first, so this attempt's own write does not apply
+- **THEN** the response reflects the meal's actual current state, not this attempt's own stale local status
 
 #### Scenario: Concurrent retry claims do not both proceed
 - **GIVEN** a meal eligible for retry (`failed`, or stale `processing`)

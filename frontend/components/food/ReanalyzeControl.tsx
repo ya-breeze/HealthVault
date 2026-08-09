@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { api, FoodMeal, ReanalyzeFailedError } from '@/lib/api';
+import { api, FoodMeal, ReanalyzeFailedError, ReanalyzeSupersededError } from '@/lib/api';
 
 interface Props {
   mealId: string;
@@ -13,9 +13,11 @@ const MAX_HINT_LENGTH = 500;
 // confirmed — see the Hint-Driven Reanalysis requirement). A successful
 // reanalysis replaces all items and, for a confirmed meal, reverts its
 // status back to pending_review/pending_clarification — so this warns
-// before submitting. A failed attempt (HTTP 502, surfaced as
-// ReanalyzeFailedError) leaves the meal exactly as it was; no refetch is
-// needed on that path.
+// before submitting. A failed attempt has two distinct outcomes: HTTP 502
+// (ReanalyzeFailedError) guarantees the meal is unchanged, no refetch
+// needed; HTTP 412 (ReanalyzeSupersededError) means a newer operation
+// claimed the meal while this attempt was in flight and may already have
+// changed it — that case refetches rather than trusting the stale display.
 export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState('');
@@ -48,6 +50,14 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
     } catch (err) {
       if (err instanceof ReanalyzeFailedError) {
         setError('Reanalysis failed — the meal is unchanged. You can try again.');
+      } else if (err instanceof ReanalyzeSupersededError) {
+        setError('Another operation (e.g. a retry) took over this meal while reanalyzing — showing its current state.');
+        try {
+          onReanalyzed(await api.getMeal(mealId));
+        } catch {
+          // Best effort: if the refetch itself fails, the error message
+          // above still correctly warns that the display may be stale.
+        }
       } else {
         setError(err instanceof Error ? err.message : 'Reanalysis failed');
       }
