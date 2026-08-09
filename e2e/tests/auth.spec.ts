@@ -1,5 +1,7 @@
 import { test, expect, chromium } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
@@ -25,6 +27,46 @@ async function corruptAuthCookies(context: BrowserContext, opts: { refreshToo?: 
     .filter(c => targets.includes(c.name))
     .map(c => ({ ...c, value: 'corrupted-invalid-token' }));
   await context.addCookies(patched);
+}
+
+// navigator.locks (the cross-tab refresh coordination mechanism) requires a
+// secure context, which a plain-HTTP LAN origin like hcw-wip never is —
+// Chromium's --unsafely-treat-insecure-origin-as-secure flag does not
+// reliably grant one for an IP-based origin in this Playwright/Chromium
+// build (verified empirically: it left window.isSecureContext false). A
+// genuine `localhost`/`127.0.0.1` origin, by contrast, is unconditionally a
+// secure context per spec with no flag needed — confirmed the same way. So
+// this proxies hcw-wip through a local `127.0.0.1` listener, giving the test
+// a real secure-context origin that exercises the exact Web Locks code path
+// production's HTTPS deployment actually uses.
+function startLocalProxy(targetOrigin: string): Promise<{ url: string; close: () => Promise<void> }> {
+  const target = new URL(targetOrigin);
+  return new Promise(resolve => {
+    const server = http.createServer((req, res) => {
+      const proxyReq = http.request(
+        {
+          host: target.hostname,
+          port: target.port,
+          path: req.url,
+          method: req.method,
+          headers: { ...req.headers, host: target.host },
+        },
+        proxyRes => {
+          res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+          proxyRes.pipe(res);
+        }
+      );
+      req.pipe(proxyReq);
+      proxyReq.on('error', () => res.destroy());
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as AddressInfo;
+      resolve({
+        url: `http://127.0.0.1:${port}`,
+        close: () => new Promise(r => server.close(() => r())),
+      });
+    });
+  });
 }
 
 test.describe('Auth', () => {
@@ -85,16 +127,9 @@ test.describe('Session refresh on 401', () => {
   });
 
   test('two tabs of the same browser dedupe the refresh call', async () => {
-    // navigator.locks (the cross-tab coordination mechanism) requires a
-    // secure context. hcw-wip is served over plain HTTP, which production
-    // (reached via a public HTTPS URL) is not — so this test launches its
-    // own browser with Chromium's origin-allowlist flag to exercise the same
-    // code path production actually uses, rather than silently testing only
-    // the same-tab-only fallback that active WIP traffic would hit.
-    const browser = await chromium.launch({
-      args: [`--unsafely-treat-insecure-origin-as-secure=${BASE_URL}`],
-    });
-    const context = await browser.newContext({ baseURL: BASE_URL });
+    const proxy = await startLocalProxy(BASE_URL);
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ baseURL: proxy.url });
     try {
       const pageA = await context.newPage();
       await login(pageA);
@@ -126,6 +161,7 @@ test.describe('Session refresh on 401', () => {
       expect(refreshCalls).toBe(1);
     } finally {
       await browser.close();
+      await proxy.close();
     }
   });
 });
