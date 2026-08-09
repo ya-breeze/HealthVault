@@ -68,25 +68,42 @@ GeekBudgetBE, Diary, and GeekBudgetBE-external-importer, several of which run ag
 Changing security-sensitive token-rotation semantics there has a blast radius far beyond this fix and would
 need its own review and version bump across every consumer — out of scope here.
 
-Instead, coordinate refreshes across tabs entirely on the frontend:
+Instead, coordinate refreshes across tabs entirely on the frontend. The critical detail (see the timing bug
+below) is *when* the coordination marker is captured — it must be the moment the original request was sent,
+not the moment its 401 came back:
 
-1. On a 401 (past the login/refresh exclusions below), before calling `/api/auth/refresh`, capture
-   `lockRequestedAt = Date.now()` and acquire an exclusive lock via `navigator.locks.request('hcw-auth-refresh', ...)`.
-   Web Locks are scoped per browser profile/origin and shared across tabs, so only one tab's callback runs at
-   a time; others queue automatically and the lock is released even if a tab crashes or is closed.
-2. Inside the lock callback, read `localStorage.getItem('hcw:lastAuthRefreshAt')`. If that timestamp is
-   `>= lockRequestedAt`, some other tab already completed a refresh at or after the moment this tab decided it
-   needed one — skip calling `/api/auth/refresh` again (it would reuse a token that tab already rotated) and
-   go straight to retrying the original request with the now-fresh `kin_access` cookie.
-3. Otherwise, call `/api/auth/refresh`. On success, write `localStorage.setItem('hcw:lastAuthRefreshAt', String(Date.now()))`
+1. `fetchWithAuthRetry` captures `dispatchedAt = Date.now()` immediately before firing the request's *first*
+   `fetch` call — before it knows whether that request will 401. This timestamp answers "could this request
+   have gone out carrying a stale cookie?", which only the send time can answer; the receive time cannot, since
+   a slow request can be dispatched before a refresh and still not 401 until after it.
+2. On a 401 (past the login/refresh exclusions below), acquire an exclusive lock via
+   `navigator.locks.request('hcw-auth-refresh', ...)`, carrying `dispatchedAt` into the callback. Web Locks are
+   scoped per browser profile/origin and shared across tabs, so only one tab's callback runs at a time; others
+   queue automatically and the lock is released even if a tab crashes or is closed.
+3. Inside the lock callback, read `localStorage.getItem('hcw:lastAuthRefreshAt')`. If that timestamp is
+   `>= dispatchedAt`, some other tab's refresh completed at or after this request was sent — the current
+   `kin_access` cookie is guaranteed fresh, so skip calling `/api/auth/refresh` (it would reuse a token that tab
+   already rotated) and go straight to retrying the original request.
+4. Otherwise, call `/api/auth/refresh`. On success, write `localStorage.setItem('hcw:lastAuthRefreshAt', String(Date.now()))`
    before releasing the lock.
-4. If the retry after a *skipped* refresh (step 2) still 401s — e.g. the stored timestamp was stale for some
-   reason — fall back to performing one real refresh call before giving up, rather than treating a timestamp
-   fluke as a dead session.
-5. **Feature detection fallback**: `navigator.locks` is unsupported only on very old browsers (pre–Safari
+5. Retry the original request exactly once, whether the refresh was skipped (step 3) or actually performed
+   (step 4). If that retry still fails, surface the failure to the caller — no further fallback. Because the
+   skip decision in step 3 is provably correct (see below), there is no failure mode left for a second, lock-
+   bypassing refresh attempt to paper over; adding one would only reintroduce the exact race this design
+   prevents, so it is deliberately not there.
+6. **Feature detection fallback**: `navigator.locks` is unsupported only on very old browsers (pre–Safari
    15.4/2022, pre–Firefox 96/2022; all real 2026 mobile/desktop browsers support it). If absent, fall back to
    the same-tab-only `refreshPromise` dedup — accepting the cross-tab race as a residual risk on that small,
    legacy set of browsers rather than blocking the fix on it.
+
+**Why `dispatchedAt` (send time) rather than 401-receive time makes the skip decision provably correct:** if a
+refresh completes at or after the moment a request was sent, that refresh's `Set-Cookie` response is guaranteed
+to have already landed in the browser's cookie store by the time this code retries (retries only happen after
+the original response — and thus after the refresh — resolves). So `lastAuthRefreshAt >= dispatchedAt` is a
+sound proof that the retry will carry a fresh cookie, with no gap for a stale-timestamp read to slip through.
+Capturing the marker at 401-receive time instead (the original version of this design) does not have this
+property: a request dispatched before a refresh can still receive its 401 *after* that refresh completes,
+making its receive-time marker look newer than the refresh and wrongly concluding no refresh happened.
 
 Alternative considered: a hand-rolled `localStorage`-based mutex (write a lock-holder id + timestamp, poll for
 release, expire stale locks). Rejected in favor of Web Locks — it already handles queuing, release-on-crash,
@@ -120,11 +137,14 @@ to `fetch` a second time is safe and re-sends the same payload.
   for that legacy fallback, not silently ignored — see Decisions. All browsers this user is expected to use
   (recent mobile and desktop) support Web Locks.
 - **[Risk]** The `localStorage.getItem('hcw:lastAuthRefreshAt')` timestamp check could theoretically read a
-  stale value (e.g. clock skew across processes is not a concern since it's all read via `Date.now()` in the
-  same browser, but a bug in the write-then-release ordering could leave a losing tab reading before the
-  winner writes). **Mitigation**: the write happens inside the same Web Lock callback, before release, so
-  ordering is guaranteed; and step 4's fallback (perform a real refresh if the skip-path retry still 401s)
-  bounds the damage to one extra round trip rather than a false logout.
+  stale value (e.g. a bug in the write-then-release ordering leaving a losing tab reading before the winner
+  writes). **Mitigation**: the write happens inside the same Web Lock callback, before release, so ordering is
+  guaranteed — combined with using send-time (`dispatchedAt`) rather than receive-time as the comparison marker
+  (see Decisions), the skip decision has no known gap left. There is deliberately no bypass-the-lock fallback
+  for "the skip guessed wrong" (an earlier draft of this design had one, and a reviewer correctly pointed out
+  it could itself cause the same rotation race by calling `/api/auth/refresh` outside both dedup layers) — if
+  the skip decision is ever wrong, the retry fails and the caller redirects to `/login`, which is a correct,
+  safe (if suboptimal) outcome, not a logic error to route around with a second unguarded refresh.
 - **[Trade-off]** This only fixes the reactive path (401 already happened). A user's very first request after
   15+ minutes idle now costs two round-trips (refresh + retry) instead of one. Acceptable — that's still much
   better than a full relogin, and matches the Non-Goal of not adding proactive/background refresh complexity.
