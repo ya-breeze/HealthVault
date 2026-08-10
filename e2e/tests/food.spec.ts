@@ -151,6 +151,11 @@ test.describe('Photo upload', () => {
       });
       Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, get: () => 1 });
       Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, get: () => 1 });
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get: () => null,
+        set: () => {},
+      });
       HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: () => {} })) as typeof HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.toBlob = function (callback) {
         callback(new Blob(['camera'], { type: 'image/jpeg' }));
