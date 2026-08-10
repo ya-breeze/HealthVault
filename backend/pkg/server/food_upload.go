@@ -28,7 +28,8 @@ import (
 const multipartOverheadBytes = 64 * 1024
 
 // CreateMeal handles POST /api/food/meals: a multipart upload with the photo
-// in the "photo" field. Photo-first: the file is saved and the FoodMeal row
+// in the "photo" field and optional guidance in "hint". Photo-first: after
+// request validation, the file is saved and the FoodMeal row
 // committed as processing before the vision call runs, so no outcome of that
 // call — success, failure, or timeout — can lose the photo.
 func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +46,11 @@ func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close() //nolint:errcheck
+	hint, err := normalizeHint(r.FormValue("hint"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	familyID := FamilyIDFromCtx(r)
 	mealID := uuid.New()
@@ -73,7 +79,7 @@ func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
 
 	// meal.UpdatedAt, set by GORM's Create above, is this attempt's lease
 	// token from the start — see analyzeMeal's doc comment.
-	applied, failErr := h.analyzeMeal(r.Context(), &meal, meal.UpdatedAt)
+	applied, failErr := h.analyzeMeal(r.Context(), &meal, meal.UpdatedAt, hint)
 	if failErr != nil {
 		http.Error(w, "update error", http.StatusInternalServerError)
 		return
@@ -95,7 +101,8 @@ func writeUploadError(w http.ResponseWriter, err error) {
 	}
 }
 
-// analyzeMeal runs the vision recognition call and persists its outcome via
+// analyzeMeal runs the vision recognition call, including an optional upload
+// hint (Retry passes an empty value), and persists its outcome via
 // processRecognition. Any error, including a timeout, marks the meal failed
 // with the photo retained. Used by the upload and retry paths, where there is
 // nothing valuable to lose by falling back to failed — see runAnalysis's doc
@@ -123,10 +130,10 @@ func writeUploadError(w http.ResponseWriter, err error) {
 // reflect the database. Callers that respond to an HTTP caller with meal
 // must check applied and reload the real current state rather than
 // returning a stale snapshot — see reloadIfSuperseded.
-func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal, lease time.Time) (applied bool, err error) {
+func (h *foodHandlers) analyzeMeal(ctx context.Context, meal *database.FoodMeal, lease time.Time, hint string) (applied bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
 	defer cancel()
-	if err := h.runAnalysis(ctx, meal, "", lease, false); err != nil {
+	if err := h.runAnalysis(ctx, meal, hint, lease, false); err != nil {
 		return h.failMeal(meal, lease)
 	}
 	return true, nil
@@ -167,7 +174,7 @@ func writeReloadedMeal(w http.ResponseWriter, meal *database.FoodMeal, err error
 }
 
 // runAnalysis reads the stored photo and runs vision recognition with the
-// given hint (empty for the normal upload/retry path), persisting the
+// given hint (empty for an unguided upload or retry), persisting the
 // outcome via processRecognition on success. On failure it returns the error
 // without persisting anything — the meal's status, items, and aggregate are
 // left exactly as the caller found them. Callers decide how to handle that:

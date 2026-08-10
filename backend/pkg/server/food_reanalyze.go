@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -15,15 +17,16 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
+	"github.com/ya-breeze/healthvault/pkg/vision"
 )
 
 const (
 	// maxReanalyzeBodyBytes bounds the request body read before decoding, so
 	// an oversized payload is rejected before any JSON parsing work.
-	maxReanalyzeBodyBytes = 4 * 1024
-	// maxHintLength bounds the caller-controlled text forwarded into the
-	// vision prompt for that call.
-	maxHintLength = 500
+	maxReanalyzeBodyBytes          = 4 * 1024
+	maxExpertComponents            = 20
+	maxComponentNameLength         = 100
+	maxCombinedComponentNameLength = 500
 )
 
 // reanalyzeEligibleStatuses are the meal statuses Reanalyze can be called
@@ -34,13 +37,76 @@ var reanalyzeEligibleStatuses = []string{
 	database.MealStatusFailed, database.MealStatusPendingReview, database.MealStatusConfirmed,
 }
 
-type reanalyzeRequest struct {
-	Hint string `json:"hint"`
+type expertComponentRequest struct {
+	Name        string   `json:"name"`
+	WeightGrams *float64 `json:"weight_grams,omitempty"`
 }
 
-// Reanalyze handles POST /api/food/meals/{id}/reanalyze: re-runs vision
-// recognition on the stored photo with a required free-text hint, replacing
-// the meal's items. Eligible from failed, pending_review, or confirmed —
+type reanalyzeInput struct {
+	hint       *string
+	components []expertComponentRequest
+}
+
+func parseReanalyzeInput(body []byte) (reanalyzeInput, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil || object == nil {
+		return reanalyzeInput{}, errors.New("bad request")
+	}
+	hintRaw, hasHint := object["hint"]
+	componentsRaw, hasComponents := object["components"]
+	if hasHint == hasComponents {
+		return reanalyzeInput{}, errors.New("provide exactly one of hint or components")
+	}
+	if hasHint {
+		var rawHint string
+		if string(hintRaw) == "null" || json.Unmarshal(hintRaw, &rawHint) != nil {
+			return reanalyzeInput{}, errors.New("hint must be a string")
+		}
+		hint, err := normalizeHint(rawHint)
+		if err != nil {
+			return reanalyzeInput{}, err
+		}
+		if hint == "" {
+			return reanalyzeInput{}, errors.New("hint is required")
+		}
+		return reanalyzeInput{hint: &hint}, nil
+	}
+
+	var components []expertComponentRequest
+	if string(componentsRaw) == "null" || json.Unmarshal(componentsRaw, &components) != nil {
+		return reanalyzeInput{}, errors.New("components must be an array")
+	}
+	if len(components) < 1 || len(components) > maxExpertComponents {
+		return reanalyzeInput{}, fmt.Errorf("components must contain between 1 and %d items", maxExpertComponents)
+	}
+	combinedLength := 0
+	for i := range components {
+		components[i].Name = strings.TrimSpace(components[i].Name)
+		nameLength := utf8.RuneCountInString(components[i].Name)
+		if nameLength == 0 {
+			return reanalyzeInput{}, fmt.Errorf("component %d name is required", i+1)
+		}
+		if nameLength > maxComponentNameLength {
+			return reanalyzeInput{}, fmt.Errorf("component names must be at most %d characters", maxComponentNameLength)
+		}
+		combinedLength += nameLength
+		if components[i].WeightGrams != nil && (!isPositiveFinite(*components[i].WeightGrams)) {
+			return reanalyzeInput{}, fmt.Errorf("component %d weight_grams must be a positive finite number", i+1)
+		}
+	}
+	if combinedLength > maxCombinedComponentNameLength {
+		return reanalyzeInput{}, fmt.Errorf("combined component names must be at most %d characters", maxCombinedComponentNameLength)
+	}
+	return reanalyzeInput{components: components}, nil
+}
+
+func isPositiveFinite(value float64) bool {
+	return value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+// Reanalyze handles POST /api/food/meals/{id}/reanalyze: either re-runs
+// recognition with a required hint or rebuilds the meal from expert-supplied
+// components, replacing its items. Eligible from failed, pending_review, or confirmed —
 // unlike Retry, which only recovers from failed/stale-processing and takes
 // no hint. See design.md "Reanalyze claims the meal atomically" and
 // "Reanalyze failure reverts to the meal's prior state" for the rationale.
@@ -86,21 +152,9 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	var req reanalyzeRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	hint := strings.TrimSpace(req.Hint)
-	if hint == "" {
-		http.Error(w, "hint is required", http.StatusBadRequest)
-		return
-	}
-	// Count runes, not bytes: the API promises a character limit, and
-	// len(string) counts UTF-8 bytes — a non-ASCII hint (e.g. Cyrillic) can
-	// be well within 500 characters but well over 500 bytes.
-	if utf8.RuneCountInString(hint) > maxHintLength {
-		http.Error(w, "hint must be at most 500 characters", http.StatusBadRequest)
+	input, err := parseReanalyzeInput(body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if meal.PhotoPath == "" {
@@ -182,7 +236,13 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 	// replace a confirmed meal's real, reviewed items, and the whole point
 	// of Reanalyze's contract is that a failure leaves the meal untouched.
 	// See resolveItems's doc comment.
-	if err := h.runAnalysis(ctx, &meal, hint, lease, true); err != nil {
+	var analysisErr error
+	if input.hint != nil {
+		analysisErr = h.runAnalysis(ctx, &meal, *input.hint, lease, true)
+	} else {
+		analysisErr = h.runExpertAnalysis(ctx, &meal, input.components, lease)
+	}
+	if analysisErr != nil {
 		// Non-destructive failure: restore exactly what the claim overwrote.
 		// Items and aggregate were never touched — persistAnalysis's
 		// delete-and-replace only runs on a successful recognition — so the
@@ -224,6 +284,68 @@ func (h *foodHandlers) Reanalyze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, &meal)
+}
+
+// runExpertAnalysis trusts names and supplied weights as user input. It asks
+// the model only for omitted weights, keyed by the original component index,
+// then uses the same candidate-resolution path as ordinary recognition.
+// Expert mode deliberately cannot enter clarification.
+func (h *foodHandlers) runExpertAnalysis(
+	ctx context.Context, meal *database.FoodMeal, components []expertComponentRequest, lease time.Time,
+) error {
+	items := make([]vision.Item, len(components))
+	missing := make([]vision.WeightEstimateInput, 0, len(components))
+	for i, component := range components {
+		items[i] = vision.Item{Name: component.Name, Confidence: 1}
+		if component.WeightGrams == nil {
+			missing = append(missing, vision.WeightEstimateInput{ComponentIndex: i, Name: component.Name})
+		} else {
+			items[i].WeightGrams = *component.WeightGrams
+		}
+	}
+
+	raw := ""
+	if len(missing) > 0 {
+		photoBytes, err := h.photos.Read(meal.PhotoPath)
+		if err != nil {
+			return err
+		}
+		result, err := h.vision.EstimateWeights(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), missing)
+		if err != nil {
+			return err
+		}
+		if result == nil {
+			return errors.New("weight estimator returned no result")
+		}
+		expected := make(map[int]struct{}, len(missing))
+		for _, component := range missing {
+			expected[component.ComponentIndex] = struct{}{}
+		}
+		seen := make(map[int]struct{}, len(result.Estimates))
+		for _, estimate := range result.Estimates {
+			if _, ok := expected[estimate.ComponentIndex]; !ok {
+				return fmt.Errorf("weight estimator returned unexpected component_index %d", estimate.ComponentIndex)
+			}
+			if _, duplicate := seen[estimate.ComponentIndex]; duplicate {
+				return fmt.Errorf("weight estimator returned duplicate component_index %d", estimate.ComponentIndex)
+			}
+			if !isPositiveFinite(estimate.WeightGrams) {
+				return fmt.Errorf("weight estimator returned invalid weight for component_index %d", estimate.ComponentIndex)
+			}
+			seen[estimate.ComponentIndex] = struct{}{}
+			items[estimate.ComponentIndex].WeightGrams = estimate.WeightGrams
+		}
+		if len(seen) != len(expected) {
+			return errors.New("weight estimator omitted a component")
+		}
+		raw = result.Raw
+	}
+
+	resolved, err := h.resolveItems(ctx, meal, items, true)
+	if err != nil {
+		return err
+	}
+	return h.persistAnalysis(meal, database.MealStatusPendingReview, raw, resolved, nil, lease)
 }
 
 // revertResult reports whether a revert/persist write conditioned on a lease

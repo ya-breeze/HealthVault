@@ -19,6 +19,10 @@ func (Unconfigured) Recognize(context.Context, []byte, string, string) (*Recogni
 	return nil, ErrNotConfigured
 }
 
+func (Unconfigured) EstimateWeights(context.Context, []byte, string, []WeightEstimateInput) (*WeightEstimateResult, error) {
+	return nil, ErrNotConfigured
+}
+
 func (Unconfigured) Clarify(context.Context, []Item, []ClarifyTurn) (*RecognizeResult, error) {
 	return nil, ErrNotConfigured
 }

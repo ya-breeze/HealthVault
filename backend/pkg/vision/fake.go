@@ -8,21 +8,30 @@ import "context"
 // multi-round clarification test can script each round's response; once
 // exhausted, ClarifyResult (singular) or a zero-value result is used.
 type Fake struct {
-	RecognizeResult *RecognizeResult
-	RecognizeErr    error
-	ClarifyResult   *RecognizeResult
-	ClarifyResults  []*RecognizeResult
-	ClarifyErr      error
-	SelectResult    *SelectResult
-	SelectErr       error
+	RecognizeResult       *RecognizeResult
+	RecognizeErr          error
+	EstimateWeightsResult *WeightEstimateResult
+	EstimateWeightsErr    error
+	ClarifyResult         *RecognizeResult
+	ClarifyResults        []*RecognizeResult
+	ClarifyErr            error
+	SelectResult          *SelectResult
+	SelectErr             error
 
-	// RecognizeCalls, ClarifyCalls, and SelectCalls record each call's
+	// The *Calls fields record each operation's arguments
 	// arguments, in order, so a test can assert on what was actually sent
 	// (e.g. that a re-analysis used the same photo, that a clarify round
 	// carried no image content, or which candidates were offered).
-	RecognizeCalls []RecognizeCall
-	ClarifyCalls   []ClarifyCall
-	SelectCalls    [][]ItemCandidates
+	RecognizeCalls       []RecognizeCall
+	EstimateWeightsCalls []EstimateWeightsCall
+	ClarifyCalls         []ClarifyCall
+	SelectCalls          [][]ItemCandidates
+}
+
+type EstimateWeightsCall struct {
+	Image      []byte
+	MimeType   string
+	Components []WeightEstimateInput
 }
 
 // RecognizeCall records one Recognize invocation.
@@ -30,6 +39,17 @@ type RecognizeCall struct {
 	Image    []byte
 	MimeType string
 	Hint     string
+}
+
+func (f *Fake) EstimateWeights(_ context.Context, image []byte, mimeType string, components []WeightEstimateInput) (*WeightEstimateResult, error) {
+	f.EstimateWeightsCalls = append(f.EstimateWeightsCalls, EstimateWeightsCall{Image: image, MimeType: mimeType, Components: components})
+	if f.EstimateWeightsErr != nil {
+		return nil, f.EstimateWeightsErr
+	}
+	if f.EstimateWeightsResult != nil {
+		return f.EstimateWeightsResult, nil
+	}
+	return &WeightEstimateResult{}, nil
 }
 
 // ClarifyCall records one Clarify invocation.

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import CameraCapture from '@/components/food/CameraCapture';
 import Header from '@/components/Header';
+import { MAX_HINT_LENGTH, unicodeLength } from '@/lib/foodGuidance';
 
 export default function FoodUploadPage() {
   const router = useRouter();
@@ -12,12 +13,19 @@ export default function FoodUploadPage() {
   const [showCamera, setShowCamera] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHint, setShowHint] = useState(false);
+  const [hint, setHint] = useState('');
 
   const upload = async (file: File) => {
+    const trimmedHint = hint.trim();
+    if (unicodeLength(trimmedHint) > MAX_HINT_LENGTH) {
+      setError(`Hint must be at most ${MAX_HINT_LENGTH} characters`);
+      return;
+    }
     setUploading(true);
     setError(null);
     try {
-      const meal = await api.uploadMeal(file);
+      const meal = await api.uploadMeal(file, trimmedHint);
       router.push(`/food/review/?meal=${meal.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
@@ -48,15 +56,44 @@ export default function FoodUploadPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            {showHint ? (
+              <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+                <label htmlFor="meal-hint" className="block text-sm font-medium text-gray-900 dark:text-white">
+                  Photo hint <span className="font-normal text-gray-500 dark:text-gray-400">(optional)</span>
+                </label>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Mention anything the photo may not make clear, such as “grilled chicken with red beans.”
+                </p>
+                <textarea
+                  id="meal-hint"
+                  value={hint}
+                  onChange={event => setHint(event.target.value)}
+                  rows={3}
+                  placeholder="What should the model know?"
+                  className="mt-3 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                />
+                <p className="mt-1 text-right text-xs text-gray-400">
+                  {unicodeLength(hint)}/{MAX_HINT_LENGTH}
+                </p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowHint(true)}
+                className="min-h-12 rounded-lg border border-dashed border-gray-300 px-4 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
+              >
+                Add a hint (optional)
+              </button>
+            )}
             <button
               onClick={() => setShowCamera(true)}
-              className="py-3 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+              className="min-h-12 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
             >
               Take Photo
             </button>
             <button
               onClick={() => fileRef.current?.click()}
-              className="py-3 rounded-lg text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="min-h-12 rounded-lg text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               Choose Photo
             </button>

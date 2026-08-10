@@ -28,6 +28,7 @@ None.
 
 - Backend: `backend/pkg/server/food_upload.go` reads and validates the multipart hint and passes it into the existing hint-aware analysis pipeline; upload handler tests cover forwarding and rejection.
 - Backend: `backend/pkg/server/food_reanalyze.go` accepts mutually exclusive free-text or structured expert guidance and applies authoritative component names/weights before the existing nutrition-resolution and persistence steps.
+- Vision: `backend/pkg/vision/vision.go`, `openai.go`, `fake.go`, and `unconfigured.go` gain the dedicated index-keyed weight-estimation operation used by mixed expert input and its test doubles.
 - Frontend: `frontend/app/food/upload/page.tsx` offers secondary optional hint entry, `frontend/components/food/ReanalyzeControl.tsx` gains hint/expert correction modes with optional gram fields, and `frontend/lib/api.ts` supports both additive request forms.
 - E2E: `e2e/tests/food.spec.ts` verifies automatic upload remains the default, initial hints are sent and bounded, and expert component names and optional weights reach reanalysis exactly.
 - API compatibility: additive only; existing clients that send only `photo` or the existing reanalysis `hint` continue to work unchanged. No database migration or new dependency is required.

@@ -108,6 +108,71 @@ test.describe('Custom foods', () => {
 });
 
 test.describe('Photo upload', () => {
+  test('includes an optional initial hint in the multipart upload', async ({ page }) => {
+    await login(page);
+    let uploadBody = '';
+    await page.route('**/api/food/meals', async route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      uploadBody = route.request().postData() ?? '';
+      return route.fulfill({
+        status: 201,
+        json: mockFoodMeal({ id: 'hinted-upload', status: 'pending_review' }),
+      });
+    });
+    await page.goto('/food/upload/');
+    await page.getByRole('button', { name: 'Add a hint (optional)' }).click();
+    await page.getByLabel('Photo hint (optional)').fill('grilled chicken with red beans');
+    await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    await page.waitForURL(/meal=hinted-upload/);
+    expect(uploadBody).toContain('name="hint"');
+    expect(uploadBody).toContain('grilled chicken with red beans');
+  });
+
+  test('rejects an over-limit initial hint before upload', async ({ page }) => {
+    await login(page);
+    let uploadCalls = 0;
+    await page.route('**/api/food/meals', route => {
+      if (route.request().method() === 'POST') uploadCalls++;
+      return route.continue();
+    });
+    await page.goto('/food/upload/');
+    await page.getByRole('button', { name: 'Add a hint (optional)' }).click();
+    await page.getByLabel('Photo hint (optional)').fill('🙂'.repeat(501));
+    await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    await expect(page.getByText('Hint must be at most 500 characters')).toBeVisible();
+    expect(uploadCalls).toBe(0);
+  });
+
+  test('camera capture uses the same hinted upload path', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => {} }] }) },
+      });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, get: () => 1 });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, get: () => 1 });
+      HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: () => {} })) as typeof HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.toBlob = function (callback) {
+        callback(new Blob(['camera'], { type: 'image/jpeg' }));
+      };
+    });
+    await login(page);
+    let uploadBody = '';
+    await page.route('**/api/food/meals', route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      uploadBody = route.request().postData() ?? '';
+      return route.fulfill({ status: 201, json: mockFoodMeal({ id: 'camera-upload' }) });
+    });
+    await page.goto('/food/upload/');
+    await page.getByRole('button', { name: 'Add a hint (optional)' }).click();
+    await page.getByLabel('Photo hint (optional)').fill('red beans');
+    await page.getByRole('button', { name: 'Take Photo' }).click();
+    await page.getByRole('button', { name: 'Capture' }).click();
+    await page.waitForURL(/meal=camera-upload/);
+    expect(uploadBody).toContain('name="photo"');
+    expect(uploadBody).toContain('red beans');
+  });
+
   test('uploads a photo and reaches a terminal or actionable review state', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
@@ -693,8 +758,8 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
     await page.goto('/food/review/?meal=mock-meal-id');
     await expect(page.getByText('Old Item')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Reanalyze with a hint' }).click();
-    await page.locator('textarea').fill('this is a different dish entirely');
+    await page.getByRole('button', { name: 'Improve analysis' }).click();
+    await page.getByLabel('What did the model miss?').fill('this is a different dish entirely');
     await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
 
     await expect(page.getByText('New Item')).toBeVisible();
@@ -714,8 +779,8 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
     );
 
     await page.goto('/food/review/?meal=mock-meal-id');
-    await page.getByRole('button', { name: 'Reanalyze with a hint' }).click();
-    await page.locator('textarea').fill('a hint that will be rejected by the mocked backend');
+    await page.getByRole('button', { name: 'Improve analysis' }).click();
+    await page.getByLabel('What did the model miss?').fill('a hint that will be rejected by the mocked backend');
     await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
 
     // Asserts on text unique to ReanalyzeControl's custom 502 copy ("You can
@@ -763,8 +828,8 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
     await page.goto('/food/review/?meal=mock-meal-id');
     await expect(page.getByText('Old Item')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Reanalyze with a hint' }).click();
-    await page.locator('textarea').fill('a hint that will be superseded by the mocked backend');
+    await page.getByRole('button', { name: 'Improve analysis' }).click();
+    await page.getByLabel('What did the model miss?').fill('a hint that will be superseded by the mocked backend');
     await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
 
     await expect(page.getByText('Another operation')).toBeVisible();
@@ -792,16 +857,79 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
     });
 
     await page.goto('/food/review/?meal=mock-meal-id');
-    await page.getByRole('button', { name: 'Reanalyze with a hint' }).click();
+    await page.getByRole('button', { name: 'Improve analysis' }).click();
     // Leave the textarea blank and submit directly.
     await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
 
     await expect(page.getByText('A hint is required')).toBeVisible();
     expect(reanalyzeCalls).toBe(0);
   });
+
+  test('expert mode submits names and optional weights separately', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+    const expertResult = mockFoodMeal({
+      status: 'pending_review',
+      items: [
+        { ...mockFoodMeal().items[0], id: 'expert-1', name: 'Grilled chicken', weight_grams: 180 },
+        { ...mockFoodMeal().items[0], id: 'expert-2', name: 'Red beans', weight_grams: 73 },
+      ],
+    });
+    let submitted: unknown;
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/reanalyze', async route => {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ json: expertResult });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Improve analysis' }).click();
+    await page.getByRole('tab', { name: 'Expert' }).click();
+    await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
+    await expect(page.getByText('Ingredient 1 needs a name')).toBeVisible();
+    expect(submitted).toBeUndefined();
+
+    await page.getByLabel('Ingredient 1').fill('Grilled chicken');
+    await page.getByLabel('Grams').fill('0');
+    await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
+    await expect(page.getByText('Ingredient 1 weight must be greater than zero')).toBeVisible();
+    expect(submitted).toBeUndefined();
+
+    await page.getByLabel('Grams').fill('180');
+    await page.getByRole('button', { name: 'Add ingredient' }).click();
+    await page.getByRole('button', { name: 'Remove ingredient' }).last().click();
+    await page.getByRole('button', { name: 'Add ingredient' }).click();
+    await page.getByLabel('Ingredient 2').fill('Red beans');
+    await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
+
+    expect(submitted).toEqual({
+      components: [{ name: 'Grilled chicken', weight_grams: 180 }, { name: 'Red beans' }],
+    });
+    await expect(page.getByText('Grilled chicken')).toBeVisible();
+    await expect(page.getByText('Red beans')).toBeVisible();
+    await expect(page.locator('input[type="number"]').first()).toHaveValue('180');
+  });
 });
 
 test.describe('Reanalyze with a hint', () => {
+  test('API rejects both correction modes before checking for a photo', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const meal = await createConfirmedMeal(request, cookies, 'E2E Guidance Validation', 'Item', 100);
+    try {
+      const response = await request.post(`${BASE_URL}/api/food/meals/${meal.id}/reanalyze`, {
+        headers: { Cookie: cookies },
+        data: { hint: 'rice', components: null },
+      });
+      expect(response.status()).toBe(400);
+      expect(await response.text()).toContain('exactly one');
+    } finally {
+      await deleteMeal(request, cookies, meal.id);
+    }
+  });
+
   // Manual meals have no stored photo, so the control never even renders for
   // them (see canReanalyze in ReviewClient.tsx). Distinct from the blank-hint
   // validation test above: this covers the control being hidden entirely,
@@ -813,7 +941,7 @@ test.describe('Reanalyze with a hint', () => {
     try {
       await page.goto(`/food/review/?meal=${meal.id}`);
       // No photo on a manual meal, so the control isn't offered at all.
-      await expect(page.getByRole('button', { name: 'Reanalyze with a hint' })).not.toBeVisible();
+      await expect(page.getByRole('button', { name: 'Improve analysis' })).not.toBeVisible();
     } finally {
       await deleteMeal(request, cookies, meal.id);
     }
@@ -868,7 +996,7 @@ test.describe('Reanalyze with a hint', () => {
       const before = meal;
 
       await page.goto(`/food/review/?meal=${before.id}`);
-      await page.getByRole('button', { name: 'Reanalyze with a hint' }).click();
+      await page.getByRole('button', { name: 'Improve analysis' }).click();
 
       // Blank-hint validation, through the real UI this time (a manual
       // photo-less meal can't reach this control at all — see the earlier
@@ -877,7 +1005,7 @@ test.describe('Reanalyze with a hint', () => {
       await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
       await expect(page.getByText('A hint is required')).toBeVisible();
 
-      await page.locator('textarea').fill('this is a bowl of rice with grilled chicken');
+      await page.getByLabel('What did the model miss?').fill('this is a bowl of rice with grilled chicken');
       await page.getByRole('button', { name: 'Reanalyze', exact: true }).click();
 
       const outcome = page.getByText(/Review needed|Needs clarification|Reanalysis failed/);
