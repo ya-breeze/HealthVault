@@ -4,7 +4,7 @@ The vision boundary already accepts an optional `hint` and includes it beside th
 
 The current recognition contract already asks the model for recognized food items and estimated gram weights; no user-authored ingredient list is required. The existing reanalysis hint establishes the relevant safety limits: trim surrounding whitespace, count Unicode code points rather than UTF-8 bytes or JavaScript UTF-16 code units, and reject text longer than 500 characters. Initial upload hints are optional, unlike reanalysis hints, because automatic analysis without extra context remains the primary path.
 
-The current correction UI exposes only one free-text reanalysis hint. Expert correction needs more structure for cases where the model has misunderstood the plate composition itself, but it should not turn into manual nutrition entry: the user identifies high-level visible components such as `grilled chicken` and `red beans`, and the model still estimates their weights from the photo.
+The current correction UI exposes only one free-text reanalysis hint. Expert correction needs more structure for cases where the model has misunderstood the plate composition itself: the user identifies high-level visible components such as `grilled chicken` and `red beans`, and may enter exact gram weights just as meal items can be weight-corrected today. A blank expert weight remains model-estimated.
 
 ## Goals / Non-Goals
 
@@ -14,7 +14,7 @@ The current correction UI exposes only one free-text reanalysis hint. Expert cor
 - Keep photo-only, model-identified components and model-estimated weights as the default flow.
 - Forward that context through the existing multipart upload and hint-aware vision pipeline.
 - Offer free-text and structured expert alternatives for correcting a poor automatic result.
-- Let expert users name components separately without asking them to enter weights or macros.
+- Let expert users name components separately and optionally define exact gram weights, while the model estimates any omitted weight.
 - Keep backend and frontend validation aligned with the existing 500-character reanalysis limit.
 - Reject an invalid hint before the application stores a photo, creates a meal, or calls the vision provider.
 - Preserve identical behavior for existing clients and users that omit the hint.
@@ -23,10 +23,10 @@ The current correction UI exposes only one free-text reanalysis hint. Expert cor
 
 - Persisting or displaying the initial hint after the request completes.
 - Automatically reusing the initial hint during Retry or later reanalysis.
-- User-entered gram weights, calories, or macros in expert guidance; the existing manual logging and item-editing features remain separate.
+- User-entered calories or macros in expert guidance; the existing manual logging and item-editing features remain the path for direct nutrition values.
 - Recipe-level decomposition into every hidden ingredient; expert entries describe the high-level meal components visible or known to the user.
-- A new expert-analysis endpoint or database representation.
-- Changing recognition prompts, clarification behavior, upload size limits, or meal state transitions beyond supplying the optional context.
+- A new expert-analysis endpoint or database representation; expert input extends the existing reanalysis endpoint and produces ordinary `FoodItem` rows.
+- Changing the default recognition prompt, upload size limits, or meal state transitions outside the explicitly guided initial-upload and expert-reanalysis paths.
 
 ## Decisions
 
@@ -38,21 +38,23 @@ The current correction UI exposes only one free-text reanalysis hint. Expert cor
 
 **Keep guidance secondary on initial upload.** The upload page's primary actions remain Take Photo and Choose Photo. An `Add a hint (optional)` affordance reveals a textarea and Unicode-aware `current/500` counter; the user is not presented with ingredient or weight fields in the normal path. Both the file-selection callback and camera-capture callback read the same state and send the same normalized value. Client-side validation prevents starting an upload over the limit, while the backend remains authoritative for non-browser clients.
 
-**Offer expert mode as an alternative reanalysis authoring UI, not a new analysis protocol.** When correcting an existing result, the user chooses either free-text Hint mode or Expert mode. Expert mode presents repeatable component-name rows with add/remove controls. It requires at least one non-blank component, trims entries, discards blank rows, and formats the ordered names into a deterministic instruction such as `Treat these as separate meal components and estimate each weight from the photo:` followed by a numbered list. That generated instruction is submitted through the existing `POST /api/food/meals/{id}/reanalyze` `hint` field, so it inherits the same ownership, state, concurrency, failure, and non-persistence behavior. A new endpoint or request type would duplicate an already-correct lifecycle for what is ultimately model guidance.
+**Extend the existing reanalysis endpoint with structured expert input.** When correcting an existing result, the user chooses either free-text Hint mode or Expert mode. Expert mode presents repeatable rows containing a required component name and an optional positive gram weight. `POST /api/food/meals/{id}/reanalyze` accepts exactly one of the existing `hint` or a new `components` array shaped as `{name, weight_grams?}`. This retains the endpoint's ownership, eligibility, atomic claim, failure/revert, and response behavior while giving the backend machine-readable weights it can enforce. Encoding expert rows into prose alone was rejected: a model may round, reinterpret, or ignore an exact weight, so it cannot make a user-defined value authoritative.
 
-**The model, not the expert user, owns weight estimation.** Expert mode has no gram or macro fields. Its generated instruction explicitly asks the model to analyze every listed high-level component separately and estimate its weight from the image. This avoids confusing expert guidance with the existing fully manual meal-entry flow, which is the appropriate path when a user wants to supply nutrition values directly.
+**Component names and supplied weights are authoritative; omitted weights remain model-estimated.** The expert request is normalized in order: trim names, reject blank names, preserve row order, and reject a supplied weight unless it is finite and greater than zero. The vision call is instructed to analyze exactly those components in the same order and estimate weights only where the request omitted them. Before nutrition resolution or persistence, the backend replaces every returned name with the corresponding normalized expert name and overwrites every supplied weight with the exact user value. If the provider does not return a one-to-one result, or fails to supply a valid positive estimate for an omitted weight, the attempt fails and the existing non-destructive reanalysis revert applies. This ensures a successful expert run contains exactly the requested components with exact user-defined weights where present.
 
-**Reuse frontend hint-length semantics.** The upload UI and `ReanalyzeControl` will use a shared 500-character constant and Unicode code-point counter. Native `maxLength` is not sufficient because browsers count UTF-16 code units, causing emoji and other non-BMP characters to disagree with Go's rune count.
+**Expert input goes directly to review rather than clarification.** The component list is itself the user's disambiguation of plate composition. A successful one-to-one expert result therefore proceeds through candidate resolution to `pending_review`; model-generated clarification questions are ignored for this mode. This avoids losing authoritative structured input across a later text-only clarification round, which currently has no persisted expert-guidance record to reapply.
 
-The 500-character limit applies to the final generated expert instruction, not just the raw component names, ensuring the existing backend contract remains authoritative. The UI shows an actionable error and does not start reanalysis if the generated instruction is over the limit.
+**Bound structured expert input independently from free-text hints.** The existing 4 KiB reanalysis body cap still applies. Expert mode accepts 1–20 components, each normalized name is at most 100 Unicode characters, and the sum of normalized names is at most 500 Unicode characters. These limits keep prompt size comparable to the existing hint contract. A supplied `weight_grams` follows the current item-weight rule: it must be finite and greater than zero, with no new arbitrary upper bound.
+
+**Reuse frontend Unicode-length semantics.** The upload UI and `ReanalyzeControl` will use shared constants and a Unicode code-point counter. Native `maxLength` is not sufficient because browsers count UTF-16 code units, causing emoji and other non-BMP characters to disagree with Go's rune count. Expert mode validates row count, per-name length, combined-name length, and optional weights client-side while the backend remains authoritative.
 
 ## Risks / Trade-offs
 
 - **[Risk] Multipart overhead now includes a small text field and its headers.** → The existing 64 KiB allowance above the configured photo limit is far larger than the bounded 500-character value; backend validation keeps the addition bounded.
 - **[Risk] A user may expect a failed upload's Retry to remember the hint.** → The hint is explicitly described as context for the initial analysis only; later correction remains available through the existing reanalysis-with-hint action.
 - **[Risk] Frontend and backend character counts could diverge for Unicode.** → Both count Unicode code points via shared helpers in their respective codebases, with boundary tests using non-ASCII/non-BMP input.
-- **[Risk] “Expert” could imply manual weights or recipe ingredients.** → The UI calls the rows meal components, explains that AI still estimates weights, and provides no weight or macro inputs.
-- **[Risk] Generated expert guidance consumes part of the existing 500-character budget.** → Count the deterministic prefix and separators in the displayed validation result, reject before issuing a request, and keep the component instruction concise.
+- **[Risk] “Expert” could imply recipe-level ingredients or direct macro entry.** → The UI calls the rows meal components, offers only names and optional grams, and keeps calories/macros in the existing manual/editing flows.
+- **[Risk] The model may not return a result corresponding to every expert row.** → Require a one-to-one ordered result before applying authoritative names/weights; otherwise use the established non-destructive reanalysis failure path.
 
 ## Migration Plan
 

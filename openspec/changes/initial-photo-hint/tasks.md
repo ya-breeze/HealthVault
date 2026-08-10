@@ -12,14 +12,16 @@
 
 ## 3. Expert-guided correction
 
-- [ ] 3.1 Add deterministic expert-guidance formatting that trims component names, drops blank rows, preserves order, asks the model to analyze each component separately and estimate its photo-derived weight, and enforces the 500-character limit on the final generated hint
-- [ ] 3.2 Expand `ReanalyzeControl` with mutually exclusive Hint and Expert modes; Expert mode provides repeatable component-name rows with add/remove controls, requires at least one non-blank component, explains that AI estimates weights, and exposes no weight or macro inputs
-- [ ] 3.3 Submit Expert mode through the existing `api.reanalyzeMeal` call and preserve all current success, 502 unchanged, and 412 superseded UI behavior
+- [ ] 3.1 Extend the existing reanalysis request with mutually exclusive `hint` or structured `components: {name, weight_grams?}[]`; validate the 4 KiB body cap, 1–20 rows, non-blank names, 100-character per-name and 500-character combined-name limits, and finite positive optional weights before claiming the meal
+- [ ] 3.2 Add expert vision handling that requests one ordered result per component, uses normalized user names, overwrites supplied weights exactly, accepts model-estimated finite positive weights only where omitted, skips clarification, and treats an unreconcilable provider result as a non-destructive reanalysis failure
+- [ ] 3.3 Add backend tests for hint/components exclusivity, every expert validation boundary, all-supplied/all-estimated/mixed weights, exact weight preservation, ordered one-to-one items, skipped clarification, provider mismatch rollback, ownership, eligible states, and existing lease/error behavior
+- [ ] 3.4 Expand `ReanalyzeControl` with mutually exclusive Hint and Expert modes; Expert mode provides repeatable component rows with name and optional grams, add/remove controls, and clear copy that supplied weights are exact while blank weights are AI-estimated
+- [ ] 3.5 Extend `api.reanalyzeMeal` for the additive structured request and preserve all current success, 502 unchanged, and 412 superseded UI behavior in either mode
 
 ## 4. End-to-end and static validation
 
 - [ ] 4.1 Add deterministic Playwright coverage that proves initial upload requires no text entry, intercepts a hinted file upload and verifies the multipart photo plus normalized hint, rejects an over-limit hint without a request, and retains coverage showing camera capture uses the shared upload path
-- [ ] 4.2 Add deterministic Playwright coverage for switching between Hint and Expert correction, component add/remove and blank-list validation, exact ordered expert guidance submitted through reanalysis, no weight inputs, generated-hint length rejection, and unchanged 502/412 handling from either mode
+- [ ] 4.2 Add deterministic Playwright coverage for switching between Hint and Expert correction, component add/remove, name/weight validation, exact ordered structured input with supplied and omitted weights, authoritative supplied weights in the response, and unchanged 502/412 handling from either mode
 - [ ] 4.3 Run `make test` and `make lint`, plus the frontend TypeScript/lint/build checks exposed by `frontend/package.json`, and fix all failures
 - [ ] 4.4 Validate the OpenSpec change strictly, deploy the feature branch to the `hcw-wip` stack, and run the relevant Playwright tests against that deployed stack
-- [ ] 4.5 Self-review every modified file for validation order, automatic-default compatibility, Unicode-count consistency, expert-guidance determinism, correct reanalysis error handling, and accidental guidance persistence
+- [ ] 4.5 Self-review every modified file for validation order, automatic-default compatibility, Unicode-count consistency, exact expert-weight preservation, one-to-one provider reconciliation, correct reanalysis error handling, and accidental guidance persistence
