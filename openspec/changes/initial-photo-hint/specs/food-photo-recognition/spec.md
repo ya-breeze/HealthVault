@@ -40,11 +40,15 @@ When an automatic result is substantially wrong, the reanalysis correction inter
 
 Expert mode SHALL require 1–20 components. Before submission, the frontend SHALL trim every component name and preserve row order. Every normalized name SHALL be non-blank and no longer than 100 Unicode characters, and their combined normalized length SHALL NOT exceed 500 Unicode characters. A supplied `weight_grams` SHALL be finite and greater than zero. The frontend SHALL reject invalid expert input without issuing a request, and the backend SHALL enforce the same validation authoritatively before claiming the meal or calling the vision provider.
 
-`POST /api/food/meals/{id}/reanalyze` SHALL accept exactly one of the existing non-empty `hint` or a structured `components` array of `{name, weight_grams?}`. Supplying neither or both SHALL return HTTP 400 without claiming the meal or calling the vision provider. Expert reanalysis SHALL use the same stored photo and inherit Hint-Driven Reanalysis requirements for ownership, eligible states, atomic claiming, success, failure, and non-persistence.
+`POST /api/food/meals/{id}/reanalyze` SHALL accept exactly one top-level guidance key by JSON field presence: the existing `hint`, or a structured `components` array of `{name, weight_grams?}`. If both keys are present, the system SHALL return HTTP 400 even when either value is `null`, empty, or whitespace-only. If neither key is present, the system SHALL return HTTP 400. When it is the sole guidance key, `hint` SHALL be a non-null, non-empty valid hint and `components` SHALL be a non-null, non-empty valid expert array. Every guidance-shape or value error SHALL be rejected before claiming the meal or calling a vision operation. Expert reanalysis SHALL inherit Hint-Driven Reanalysis requirements for ownership, eligible states, atomic claiming, success, failure, and non-persistence.
 
-For expert reanalysis, the system SHALL ask the model to analyze exactly the supplied components in the supplied order and estimate a weight only where `weight_grams` was omitted. Before nutrition resolution and persistence, the system SHALL use each normalized user-supplied name as the resulting item's name and SHALL overwrite each supplied weight with the exact user value. A successful expert result SHALL contain exactly one item per supplied component in the same order. If the model does not return a one-to-one result or does not provide a finite positive estimate for an omitted weight, the attempt SHALL fail through the existing non-destructive reanalysis failure behavior.
+For expert reanalysis, the backend SHALL assign each normalized component a zero-based `component_index` equal to its request-array position. User-supplied names and weights SHALL be authoritative. If every component supplies `weight_grams`, the backend SHALL skip photo recognition and weight estimation, construct one item per component directly from those names and exact weights, and proceed to the existing nutrition candidate-resolution step.
 
-Because the expert list resolves the plate composition explicitly, a successful expert recognition SHALL proceed to candidate resolution and `pending_review` without entering model-generated clarification rounds. Expert mode SHALL NOT ask for or submit user-entered calories or macros.
+If any weights are omitted, the system SHALL send the stored photo and only the missing components as `{component_index, name}` to a dedicated weight-estimation vision operation. Its response SHALL contain `{component_index, weight_grams}` for every requested missing index exactly once. The backend SHALL map estimates by `component_index`, not response order, and SHALL reject a response containing a missing, duplicate, unknown, or already-supplied index, or a non-finite/non-positive estimate. Such a rejection SHALL use the existing non-destructive reanalysis failure behavior.
+
+Before nutrition resolution and persistence, the backend SHALL construct final items in original request order using each normalized user-supplied name, every exact supplied weight, and valid index-mapped estimates only for omitted weights. A successful expert result SHALL therefore contain exactly one item per supplied component in request order. The subsequent existing candidate-resolution step MAY still use model-assisted selection; skipping recognition when all weights are supplied does not skip nutrition matching.
+
+Because the expert list resolves the plate composition explicitly, a successful expert analysis SHALL proceed to candidate resolution and `pending_review` without entering model-generated clarification rounds. Expert mode SHALL NOT ask for or submit user-entered calories or macros.
 
 #### Scenario: Correct with a free-text hint
 - **WHEN** a user selects Hint mode, enters a valid correction, and requests reanalysis
@@ -54,9 +58,9 @@ Because the expert list resolves the plate composition explicitly, a successful 
 - **WHEN** a user selects Expert mode, enters `grilled chicken` at 180 grams and `red beans` with no weight, and requests reanalysis
 - **THEN** the successful result contains those two components in that order, uses exactly 180 grams for grilled chicken, and uses the model's photo-derived estimate for red beans
 
-#### Scenario: All expert weights may be supplied
+#### Scenario: Fully specified expert input bypasses recognition
 - **WHEN** a user enters a valid positive gram weight for every Expert-mode component
-- **THEN** every successful resulting item uses the corresponding user-defined weight exactly rather than a model estimate
+- **THEN** the backend performs no photo-recognition or weight-estimation call, constructs the component items directly with the exact user-defined weights, and proceeds to nutrition candidate resolution
 
 #### Scenario: All expert weights may be omitted
 - **WHEN** a user leaves the gram weight blank for every Expert-mode component
@@ -70,12 +74,20 @@ Because the expert list resolves the plate composition explicitly, a successful 
 - **WHEN** an Expert-mode component supplies a zero, negative, non-finite, or otherwise invalid `weight_grams`
 - **THEN** the request is rejected with HTTP 400 and does not claim the meal or call the vision provider
 
-#### Scenario: Hint and expert components are mutually exclusive
-- **WHEN** a reanalysis request supplies both `hint` and `components`, or supplies neither
+#### Scenario: Guidance keys are mutually exclusive by presence
+- **WHEN** a reanalysis request contains both top-level `hint` and `components` keys, including when either value is empty, whitespace-only, or `null`, or contains neither key
 - **THEN** the system returns HTTP 400 without claiming the meal or calling the vision provider
 
-#### Scenario: Provider result cannot be reconciled to expert input
-- **WHEN** the provider omits, adds, or cannot estimate a required component so its response is not a valid one-to-one result
+#### Scenario: Sole guidance key still requires a valid value
+- **WHEN** a request contains only `hint` but its value is null or blank, or only `components` but its value is null or an empty/invalid array
+- **THEN** the system returns HTTP 400 without claiming the meal or calling the vision provider
+
+#### Scenario: Missing-weight estimates are mapped by stable index
+- **WHEN** the weight estimator returns valid entries for all requested missing `component_index` values in a different order than requested
+- **THEN** the backend maps each estimate to its indexed component and persists final items in the original expert request order
+
+#### Scenario: Provider result cannot be reconciled to missing weights
+- **WHEN** the estimator omits an index, repeats an index, returns an unknown or already-supplied index, or returns an invalid estimate
 - **THEN** the system applies the existing non-destructive reanalysis failure behavior and leaves the meal unchanged
 
 #### Scenario: Expert mode uses the established reanalysis lifecycle
@@ -89,7 +101,7 @@ Because the expert list resolves the plate composition explicitly, a successful 
 ## MODIFIED Requirements
 
 ### Requirement: Hint-Driven Reanalysis
-The system SHALL expose `POST /api/food/meals/{id}/reanalyze`, which re-runs vision analysis against the already-stored photo for a meal owned by the caller, together with exactly one caller-supplied guidance form: a non-empty free-text `hint`, or structured expert `components` as defined by the Expert Component Guidance for Reanalysis requirement. The request body SHALL be read through a size-limited reader (4 KiB) before decoding, and rejected with HTTP 413 if it exceeds that limit. A decoded `hint`, measured in Unicode characters (not bytes), SHALL be rejected with HTTP 400 if it is empty or whitespace-only, or if it exceeds 500 characters. Supplying both guidance forms or neither SHALL be rejected with HTTP 400.
+The system SHALL expose `POST /api/food/meals/{id}/reanalyze`, which either re-runs analysis against the already-stored photo or applies structured expert components to that photo's meal, for a meal owned by the caller. The request SHALL contain exactly one caller-supplied guidance form selected by top-level JSON field presence: a free-text `hint`, or structured expert `components` as defined by the Expert Component Guidance for Reanalysis requirement. The request body SHALL be read through a size-limited reader (4 KiB) before decoding, and rejected with HTTP 413 if it exceeds that limit. If both guidance keys are present — even with empty, whitespace-only, or `null` values — or neither is present, the request SHALL be rejected with HTTP 400. A sole decoded `hint`, measured in Unicode characters (not bytes), SHALL be rejected with HTTP 400 if it is null, empty or whitespace-only, or if it exceeds 500 characters. A sole `components` value SHALL be rejected with HTTP 400 unless it is a non-null valid expert array.
 
 Reanalyze SHALL be accepted when the meal's status is `failed`, `pending_review`, or `confirmed`, and SHALL be rejected with HTTP 409 for `processing` or `pending_clarification`. It SHALL be rejected with HTTP 409 if the meal has no stored photo, matching `Retry`'s existing guard.
 
@@ -97,9 +109,9 @@ Reanalyze SHALL be accepted when the meal's status is `failed`, `pending_review`
 
 Every later write this attempt makes — persisting a successful analysis, or reverting on failure — SHALL be conditioned on `updated_at` still matching the lease this claim wrote. `Retry`'s own eligibility (accepting `processing` once `updated_at` is older than the configured vision timeout) can overlap with a meal this handler has itself put into `processing`: if this attempt's own vision call runs long enough to cross that same threshold, a concurrent `Retry` can legitimately claim the meal as stale before this attempt's failure handling runs. The lease ensures that when a *newer* attempt has claimed the meal, this attempt's later writes become no-ops rather than overwriting or reverting over that newer attempt's in-flight or completed work.
 
-**Success.** On a successful recognition, Reanalyze SHALL replace the meal's existing `FoodItem` rows in the same transaction that writes the resulting status, exactly as `Retry` already does, and SHALL set the meal's status to `pending_clarification` or `pending_review` according to the model's response — including when the meal's status was `confirmed` beforehand, so a reanalyzed confirmed meal returns to the normal review flow rather than remaining confirmed with stale items. Expert reanalysis is the exception specified by Expert Component Guidance for Reanalysis: its explicit component list proceeds directly to `pending_review`. The same write SHALL zero the meal's seven stored macro aggregate columns, so a meal leaving `confirmed` never displays its old totals against its new, unreviewed items, and SHALL be conditioned on the lease token described above, so a persistence failure or a lease loss cannot leave the item replacement partially applied.
+**Success.** On a successful analysis, Reanalyze SHALL replace the meal's existing `FoodItem` rows in the same transaction that writes the resulting status, exactly as `Retry` already does, and SHALL set the meal's status to `pending_clarification` or `pending_review` according to the model's response — including when the meal's status was `confirmed` beforehand, so a reanalyzed confirmed meal returns to the normal review flow rather than remaining confirmed with stale items. Expert reanalysis is the exception specified by Expert Component Guidance for Reanalysis: its explicit component list proceeds directly to `pending_review`, and a fully weighted list does not require photo recognition or weight estimation. The same write SHALL zero the meal's seven stored macro aggregate columns, so a meal leaving `confirmed` never displays its old totals against its new, unreviewed items, and SHALL be conditioned on the lease token described above, so a persistence failure or a lease loss cannot leave the item replacement partially applied.
 
-**Failure.** A candidate-selection error (the model call that matches recognized items against retrieved candidates) SHALL be treated as a reanalysis failure, the same as a recognition error, an unreconcilable expert result, or a timeout — it SHALL NOT be silently absorbed into an unresolved item set the way it may be for upload/retry/clarify. Selection shares this call's overall timeout with recognition, so a slow recognition call can leave selection to fail with a deadline; absorbing that failure here would let the destructive item-replacement path below run on what is actually a vision-provider failure, silently discarding a confirmed meal's reviewed items for a degraded, entirely unresolved set. On such an analysis failure, if this attempt's lease is still current, Reanalyze SHALL NOT mark the meal `failed` and SHALL NOT modify its items or aggregate. Instead it SHALL restore the meal's `status`, `clarify_round`, and `clarify_log` to the values captured before the atomic claim, leaving the meal exactly as it was before the call, and SHALL respond with HTTP 502 and an error body rather than HTTP 200, so the caller can distinguish "reanalysis failed, nothing changed" from a normal state transition. If the lease is no longer current (a newer attempt has since claimed the meal), the revert SHALL be a no-op — the newer attempt owns the row — and the response SHALL be HTTP 412 (Precondition Failed), not 502: this attempt's own reanalysis did fail, but the specific "the meal is unchanged" guarantee no longer holds once another attempt owns the row, and the caller SHALL treat HTTP 412 as a signal to refetch the meal rather than trust its previous view of it.
+**Failure.** A candidate-selection error (the model call that matches recognized items against retrieved candidates) SHALL be treated as a reanalysis failure, the same as a recognition error, an invalid/missing weight-estimation result, or a timeout — it SHALL NOT be silently absorbed into an unresolved item set the way it may be for upload/retry/clarify. Selection shares this call's overall timeout with any recognition or estimation work, so a slow earlier call can leave selection to fail with a deadline; absorbing that failure here would let the destructive item-replacement path below run on what is actually a vision-provider failure, silently discarding a confirmed meal's reviewed items for a degraded, entirely unresolved set. On such an analysis failure, if this attempt's lease is still current, Reanalyze SHALL NOT mark the meal `failed` and SHALL NOT modify its items or aggregate. Instead it SHALL restore the meal's `status`, `clarify_round`, and `clarify_log` to the values captured before the atomic claim, leaving the meal exactly as it was before the call, and SHALL respond with HTTP 502 and an error body rather than HTTP 200, so the caller can distinguish "reanalysis failed, nothing changed" from a normal state transition. If the lease is no longer current (a newer attempt has since claimed the meal), the revert SHALL be a no-op — the newer attempt owns the row — and the response SHALL be HTTP 412 (Precondition Failed), not 502: this attempt's own reanalysis did fail, but the specific "the meal is unchanged" guarantee no longer holds once another attempt owns the row, and the caller SHALL treat HTTP 412 as a signal to refetch the meal rather than trust its previous view of it.
 
 #### Scenario: Reanalyze a meal the model got wrong
 - **WHEN** the owner calls reanalyze on a `pending_review` meal with hint "this is chicken and rice, not berries"
@@ -117,7 +129,7 @@ Every later write this attempt makes — persisting a successful analysis, or re
 
 #### Scenario: A candidate-selection failure is treated as a reanalysis failure
 - **GIVEN** a `confirmed` meal with existing, reviewed items and a nonzero stored aggregate
-- **WHEN** the owner calls reanalyze with valid guidance, recognition succeeds, but the subsequent candidate-selection call fails (e.g. a context deadline from a slow recognition call consuming the shared timeout)
+- **WHEN** the owner calls reanalyze with valid guidance, the analysis reaches candidate selection, and that call fails (e.g. a context deadline consumed by earlier recognition or weight estimation)
 - **THEN** the system returns HTTP 502, and the meal's status, items, and aggregate are unchanged — it does not replace the reviewed items with an unresolved set
 
 #### Scenario: A failed reanalysis of a pending_review meal changes nothing
@@ -128,7 +140,7 @@ Every later write this attempt makes — persisting a successful analysis, or re
 #### Scenario: Concurrent reanalyze calls do not both proceed
 - **GIVEN** a `pending_review` meal
 - **WHEN** two reanalyze requests for the same meal are submitted concurrently
-- **THEN** only one calls the vision model and replaces the meal's items; the other receives HTTP 409 and has no effect
+- **THEN** only one claims the meal and performs reanalysis; the other receives HTTP 409 and has no effect
 
 #### Scenario: A concurrent confirm invalidates a stale claim attempt
 - **GIVEN** a `pending_review` meal
@@ -146,7 +158,7 @@ Every later write this attempt makes — persisting a successful analysis, or re
 - **THEN** the new analysis run starts from `clarify_round = 0` with no prior clarification history, and is not affected by the old round count or log
 
 #### Scenario: Reanalyze without guidance is rejected
-- **WHEN** the owner calls reanalyze with neither a non-empty `hint` nor valid expert `components`
+- **WHEN** the owner calls reanalyze with neither a `hint` key nor a `components` key
 - **THEN** the system returns HTTP 400 and does not call the vision model
 
 #### Scenario: Oversized hint is rejected

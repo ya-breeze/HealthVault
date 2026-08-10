@@ -12,6 +12,7 @@ Photo logging should stay effortless: by default, the model should identify the 
 - Expand the existing reanalysis correction UI to offer two alternatives when the automatic result is substantially wrong: a free-text hint, or an expert mode where the user lists high-level meal components separately (for example, grilled chicken and red beans).
 - In expert mode, let each component carry an optional exact gram weight. User-supplied weights are authoritative; the model estimates only weights left blank.
 - Send expert components as structured input through the existing reanalysis endpoint so exact weights are enforced by the application rather than left to the model to interpret from prose.
+- When every expert weight is supplied, bypass photo recognition and weight estimation; when weights are missing, request only those estimates and reconcile them by stable component index rather than model response order.
 
 ## Capabilities
 
