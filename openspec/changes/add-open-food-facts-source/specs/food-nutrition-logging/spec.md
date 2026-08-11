@@ -74,6 +74,11 @@ The item SHALL be loaded and mutated within the same transaction as the write th
 - **WHEN** the owner patches an item with more than one of `fdc_id`, `off_code`, and `custom_food_id` set
 - **THEN** the system returns HTTP 400 and does not modify the item
 
+#### Scenario: Binding to off_code when no Open Food Facts database has been imported
+
+- **WHEN** the owner patches an item with an `off_code` while no Open Food Facts database has ever been imported
+- **THEN** the system returns HTTP 400 reporting the Open Food Facts reference source as unavailable, distinct from the response for an `off_code` that is simply not present in an available index, and does not modify the item
+
 #### Scenario: Two concurrent, non-conflicting patches to the same item both apply
 
 - **GIVEN** an item with an existing binding
@@ -138,3 +143,32 @@ The system SHALL apply the same transactional aggregate-recompute-on-confirmed b
 
 - **WHEN** a user posts a new item to a meal owned by a different user
 - **THEN** the system returns HTTP 404 and does not create an item
+
+### Requirement: Manual Food Logging
+
+The system SHALL expose `POST /api/food/meals/manual`, allowing a user to create a meal with no photo by supplying item names with either a food reference (USDA, Open Food Facts, or custom) plus a weight, or direct macro values. At most one of `fdc_id`, `off_code`, and `custom_food_id` SHALL be supplied per item; supplying more than one SHALL be rejected with HTTP 400 and SHALL NOT create the meal.
+
+#### Scenario: Manual meal entry from food references
+
+- **WHEN** a user manually creates a meal with item names, food references, and gram weights
+- **THEN** the system creates the `FoodMeal` with an empty photo path, scales each item's nutrients from its referenced profile, and stores the aggregate
+
+#### Scenario: Manual meal entry from an Open Food Facts reference
+
+- **WHEN** a user manually creates a meal item with an `off_code` and a gram weight
+- **THEN** the system scales that item's nutrients from the Open Food Facts product's profile, the same way it does for an `fdc_id` or `custom_food_id` reference
+
+#### Scenario: Manual meal entry from direct macro values
+
+- **WHEN** a user manually creates a meal supplying macro values directly, such as from a package label
+- **THEN** the system stores those values as given without requiring a USDA, Open Food Facts, or custom food match
+
+#### Scenario: More than one reference source in a manual item is rejected
+
+- **WHEN** a user manually creates a meal item with more than one of `fdc_id`, `off_code`, and `custom_food_id` set
+- **THEN** the system returns HTTP 400 and does not create the meal, rather than silently resolving via one field while persisting all of them
+
+#### Scenario: Manual meal never enters analysis states
+
+- **WHEN** a manual meal is created
+- **THEN** its status is `pending_review` or `confirmed`, never `processing`, and no vision model request is made
