@@ -6,6 +6,8 @@ The system SHALL resolve a recognized food name to a reference food by offering 
 
 When a custom food does not match, the system SHALL query the Open Food Facts index, using the item's name and extracted brand as the retrieval term, only when the recognized item carries a non-empty `brand`. The USDA index SHALL be queried directly, without ever querying Open Food Facts, when the recognized item carries no brand. When a brand is present, the USDA index SHALL be queried only when the Open Food Facts query returns zero candidates; when the Open Food Facts query returns one or more candidates, those SHALL be the shortlist offered for selection and the USDA index SHALL NOT be queried for that item. Candidate selection remains a text-only model call with no photo access, which is why Open Food Facts is never queried without a brand: a generic name alone gives the model no way to distinguish among differently-branded products with materially different macros, unlike the bounded variance between USDA's cooking-method variants of the same generic food.
 
+The candidate shortlist offered for selection SHALL be accompanied by the recognized item's own name and (when extracted) brand, not offered as anonymous candidates keyed only by item index — the model comparing candidates needs to know what it is comparing them against, which matters most when several Open Food Facts candidates share the same brand and differ only in which specific product was actually photographed.
+
 #### Scenario: Custom food takes precedence
 
 - **WHEN** a user has a custom food whose name exactly matches a recognized item name, ignoring case
@@ -25,6 +27,11 @@ When a custom food does not match, the system SHALL query the Open Food Facts in
 
 - **WHEN** no custom food matches and the recognized item's `brand` is empty
 - **THEN** the system queries the USDA index directly and does not query the Open Food Facts index for that item, since there is no signal available to safely select among differently-branded Open Food Facts products
+
+#### Scenario: Selection is offered the recognized item's own identity alongside its candidates
+
+- **WHEN** the system offers a candidate shortlist for a recognized item to the selection call
+- **THEN** the payload includes that item's recognized name and brand (when extracted), not only its candidates, so the model can compare each candidate against what was actually recognized rather than judging the shortlist in isolation
 
 #### Scenario: Candidate selected from shortlist
 

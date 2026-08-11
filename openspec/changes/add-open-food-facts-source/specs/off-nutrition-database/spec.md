@@ -14,6 +14,11 @@ The system SHALL maintain a local SQLite database, separate from the application
 - **WHEN** searching with name "jogurt" and brand "Olma", and the index contains yogurt products from other brands but none from Olma
 - **THEN** the system returns an empty candidate list rather than returning the other brands' yogurt products, even though their product names match
 
+#### Scenario: A multi-word brand requires every one of its own tokens, not just one
+
+- **WHEN** searching with a multi-word brand such as "Dr. Oetker", and the index contains an unrelated product whose brand text is "Dr Pepper" (sharing only the token "dr")
+- **THEN** the system does not return the unrelated product, because matching requires all of the extracted brand's tokens together, not any single token in common
+
 #### Scenario: Search with no results
 
 - **WHEN** a search's brand and name terms together match no indexed product
