@@ -172,7 +172,10 @@ func TestListMeals_SummaryOmitsInternalFields(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(rows))
 	}
-	wantKeys := map[string]bool{"id": true, "name": true, "logged_at": true, "status": true, "calories": true}
+	wantKeys := map[string]bool{
+		"id": true, "name": true, "logged_at": true, "status": true,
+		"calories": true, "protein_grams": true, "carbs_grams": true, "fat_grams": true,
+	}
 	for k := range rows[0] {
 		if !wantKeys[k] {
 			t.Errorf("unexpected field %q in list response — internal/detail-only fields must not leak", k)
@@ -182,6 +185,30 @@ func TestListMeals_SummaryOmitsInternalFields(t *testing.T) {
 		if _, ok := rows[0][k]; !ok {
 			t.Errorf("expected field %q in summary, missing", k)
 		}
+	}
+}
+
+func TestListMeals_SummaryIncludesMacros(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, time.Now())
+	if err := st.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+		Updates(map[string]any{"calories": 650.0, "protein_grams": 40.5, "carbs_grams": 55.25, "fat_grams": 20.0}).Error; err != nil {
+		t.Fatalf("seed macro fields: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ListMeals(w, withClaims(listMealsRequest(""), userID))
+
+	var got []server.MealSummary
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(got))
+	}
+	row := got[0]
+	if row.Calories != 650.0 || row.ProteinGrams != 40.5 || row.CarbsGrams != 55.25 || row.FatGrams != 20.0 {
+		t.Errorf("expected macro fields to reflect the meal's own aggregate values, got %+v", row)
 	}
 }
 

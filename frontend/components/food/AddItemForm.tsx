@@ -8,7 +8,7 @@ interface Props {
   // Takes a thunk, not an already-started request — see ReviewClient's
   // applyMealUpdate doc comment for why (issue order must be commit order,
   // enforced by the parent controlling when each request actually starts).
-  onAdded: (issue: () => Promise<FoodMeal>) => Promise<FoodMeal>;
+  onAdded: (issue: () => Promise<FoodMeal>, label?: string) => Promise<FoodMeal>;
 }
 
 // Reuses ItemResolver's search/manual flows (see MealItemRow), pointed at
@@ -35,7 +35,7 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
         fdc_id: r.fdc_id,
         custom_food_id: r.custom_food_id,
         weight_grams: weight,
-      }));
+      }), 'Item added');
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add item');
@@ -51,7 +51,7 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
     setError(null);
     setCreating(true);
     try {
-      await onAdded(() => api.createMealItem(mealId, { manual: true, name, weight_grams: weight, ...macros }));
+      await onAdded(() => api.createMealItem(mealId, { manual: true, name, weight_grams: weight, ...macros }), 'Item added');
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add item');
