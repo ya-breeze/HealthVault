@@ -43,7 +43,7 @@ USDA data is US-centric and doesn't reflect real European/Czech branded products
 
 **Why**: The full OFF export is 3.5M+ globally-sourced branded products of uneven quality. Importing all of it would make the local index huge and mostly irrelevant to a Czech user, and would slow every search. This mirrors how `usda`'s importer only takes Foundation + SR Legacy (~8k curated rows) rather than the full FDC Branded Foods dataset. `off.Builder.Promote` reuses the same `MinExpectedRows`-style guard as `usda.Builder` so a truncated/bad filtered import never replaces a working database.
 
-**Open sub-decision left to implementation**: exact `countries_tags` list and whether to widen to all EU country tags versus CZ+SK only — start narrow (CZ+SK), widen later if useful, since narrowing the corpus is strictly the safer failure mode (fewer, higher-confidence matches) versus widening it.
+**Scope for v1**: `countries_tags` limited to Czech Republic and Slovakia only, not EU-wide. Narrowing the corpus is strictly the safer failure mode (fewer, higher-confidence matches) than widening it, so starting narrow and widening later — if broader EU coverage turns out to be useful — costs nothing but a re-import.
 
 ### `off` package structure mirrors `usda` package structure
 
@@ -54,7 +54,7 @@ USDA data is US-centric and doesn't reflect real European/Czech branded products
 ## Risks / Trade-offs
 
 - **[Risk]** A mediocre OFF match on a generic-food query blocks the USDA fallback (see "accepted limitation" above). → **Mitigation**: none built now; flagged as a known trade-off to revisit if it shows up in real usage. The review UI still shows which source a match came from, so a bad OFF match is visible and correctable by hand even when the fallback doesn't trigger.
-- **[Risk]** OFF's ODbL 1.0 license requires attribution, and share-alike terms apply if the *built* filtered database were itself redistributed publicly. → **Mitigation**: the built SQLite index is operator-local data (like the USDA one), not committed to the repository or served to third parties, so share-alike doesn't bite; add attribution text wherever OFF-sourced values are shown, matching what a "data source" label already implies once source is visible per Decision 2.
+- **[Risk]** OFF's ODbL 1.0 license requires attribution, and share-alike terms apply if the *built* filtered database were itself redistributed publicly. → **Mitigation**: the built SQLite index is operator-local data (like the USDA one), not committed to the repository or served to third parties, so share-alike doesn't bite; add attribution text wherever OFF-sourced values are shown, alongside the source badge already needed for the "OFF queried first, USDA only as a zero-result fallback" decision above.
 - **[Risk]** OFF full-export download size/format may change over time (JSONL vs CSV), unlike USDA's stable frozen SR Legacy zip. → **Mitigation**: `off.Fetch`/import mirrors `usda.Fetch`'s "accept a URL or a local path" flexibility, so a broken auto-download can be worked around by fetching the dump manually and importing from a local path.
 
 ## Migration Plan

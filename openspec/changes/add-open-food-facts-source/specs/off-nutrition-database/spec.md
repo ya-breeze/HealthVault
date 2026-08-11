@@ -35,7 +35,7 @@ The system SHALL support looking up a single product by its Open Food Facts `cod
 
 ### Requirement: Operator-Run Open Food Facts Import
 
-The system SHALL provide an operator-run CLI command that downloads (or reads a local copy of) the Open Food Facts full data export, filters it to products tagged with a Czech Republic and/or Slovakia country and complete calories/protein/carbs/fat nutriments, and builds the local SQLite FTS5 index. The command SHALL build to a temporary location and only replace the existing database after the build passes a minimum row-count check, so a failed or partial import leaves the previous database in service. This mirrors the existing USDA import command rather than running as a background job, consistent with the project having no scheduled-job infrastructure.
+The system SHALL provide an `hcw import-off` command that downloads (or reads a local copy of) the Open Food Facts full data export, filters it to products tagged with a Czech Republic and/or Slovakia country and complete calories/protein/carbs/fat nutriments, and builds the local SQLite FTS5 index. The import SHALL write to a temporary file, validate a minimum expected row count, and only then atomically replace the existing database, so a failed or partial import leaves the previous database in service. The system SHALL NOT run any scheduled or background dataset updater for this data, consistent with the project having no background-job infrastructure.
 
 #### Scenario: Successful import replaces the database
 
