@@ -161,6 +161,10 @@ Every later write this attempt makes — persisting a successful analysis, or re
 - **WHEN** the owner calls reanalyze with neither a `hint` key nor a `components` key
 - **THEN** the system returns HTTP 400 and does not call the vision model
 
+#### Scenario: Reanalyze without a hint is rejected
+- **WHEN** the owner calls reanalyze with a sole `hint` that is null, empty, or whitespace-only
+- **THEN** the system returns HTTP 400 and does not call the vision model
+
 #### Scenario: Oversized hint is rejected
 - **WHEN** the owner calls reanalyze with a `hint` longer than 500 characters
 - **THEN** the system returns HTTP 400 and does not call the vision model
