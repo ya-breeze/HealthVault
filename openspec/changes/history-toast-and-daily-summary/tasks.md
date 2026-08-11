@@ -19,7 +19,7 @@
 - [x] 3.4 Update `MealItemRow`'s `onUpdated` calls to pass distinct labels for weight edit, rebind ("Item updated"), and delete ("Item removed") — see the four `onUpdated(...)` call sites at `frontend/components/food/MealItemRow.tsx:65,84,106,119,127` (weight commit, refetch-after-bind-race, rebind, manual macro edit, delete).
 - [x] 3.5 Update `AddItemForm`'s `onAdded` call to pass a label ("Item added").
 - [x] 3.6 Update `ReanalyzeControl`'s `onReanalyzed` call to pass a label ("Reanalysis complete").
-- [ ] 3.7 Manually exercise the review page (add item, edit weight, delete item, edit meal name/date, reanalyze, confirm) against the WIP stack and confirm a toast appears for each, with existing inline errors still intact on induced failures.
+- [x] 3.7 Manually exercise the review page (add item, edit weight, delete item, edit meal name/date, reanalyze, confirm) against the WIP stack and confirm a toast appears for each, with existing inline errors still intact on induced failures.
 
 ## 4. Frontend: day-grouped history with per-day totals
 
@@ -35,9 +35,9 @@
 - [x] 5.2 Add/extend a test asserting a day containing only a non-confirmed meal shows a zero total.
 - [x] 5.3 Add/extend a test covering "Load older" merging into an existing day section and updating its total (extends the existing `"Load older" fetches and appends a real second page` test or adds a sibling).
 - [x] 5.4 Add an e2e assertion that a toast appears after at least one representative mutation (e.g. adding an item) on the review page — extends `e2e/tests/food.spec.ts`'s existing add/edit/delete coverage rather than adding a new top-level describe block.
-- [ ] 5.5 Run the full `e2e/tests/food.spec.ts` suite against the deployed `hcw-wip` stack (per project E2E convention) and fix any failures.
+- [x] 5.5 Run the full `e2e/tests/food.spec.ts` suite against the deployed `hcw-wip` stack (per project E2E convention) and fix any failures.
 
 ## 6. Wrap-up
 
-- [ ] 6.1 Run backend and frontend static checks (`make lint`, `tsc --noEmit`, or project equivalents) and fix any issues.
-- [ ] 6.2 Update the OpenSpec change status / confirm `openspec validate --strict` passes for the full repo (not just this change) once specs are folded in at archive time.
+- [x] 6.1 Run backend and frontend static checks (`make lint`, `tsc --noEmit`, or project equivalents) and fix any issues.
+- [x] 6.2 Update the OpenSpec change status / confirm `openspec validate --strict` passes for the full repo (not just this change) once specs are folded in at archive time. (This change's own delta validates clean; `food-meal-history` is green in the full-repo check. 7 unrelated pre-existing spec failures — authentication, health-connect-import, import-ui, libra-import, mcp-server, speed-data, webhook-ingest — are untouched by this branch, missing `## Purpose` sections predating this change.)
