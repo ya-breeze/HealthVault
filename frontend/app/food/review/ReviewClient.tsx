@@ -9,6 +9,7 @@ import ReanalyzeControl from '@/components/food/ReanalyzeControl';
 import MealMetaEditor from '@/components/food/MealMetaEditor';
 import MacroSummary from '@/components/food/MacroSummary';
 import Header from '@/components/Header';
+import { useToast } from '@/components/Toast';
 
 const STATUS_LABEL: Record<string, string> = {
   processing: 'Analyzing…',
@@ -20,6 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function ReviewClient({ mealId }: { mealId: string }) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [meal, setMeal] = useState<FoodMeal | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -45,17 +47,30 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   // mutating child takes a thunk (not an already-started request) as its
   // onUpdated/onAdded/onReanalyzed prop, letting this queue decide exactly
   // when each request is allowed to start.
+  //
+  // `label` names the toast shown on success ("Item added", "Meal
+  // confirmed", ...); omitted call sites fall back to a generic "Saved".
+  // A rejection shows a generic error toast and is then rethrown unchanged,
+  // so each call site's own inline error handling (unaffected by this) still
+  // runs — the toast is additive, never a replacement for it.
   const queueRef = useRef<Promise<unknown>>(Promise.resolve());
-  const applyMealUpdate = useCallback((issue: () => Promise<FoodMeal>): Promise<FoodMeal> => {
-    const run = queueRef.current.then(issue).then(result => {
-      setMeal(result);
-      return result;
-    });
+  const applyMealUpdate = useCallback((issue: () => Promise<FoodMeal>, label?: string): Promise<FoodMeal> => {
+    const run = queueRef.current
+      .then(issue)
+      .then(result => {
+        setMeal(result);
+        showToast(label ?? 'Saved', 'success');
+        return result;
+      })
+      .catch(err => {
+        showToast('Update failed', 'error');
+        throw err;
+      });
     // Keep the queue moving even if this mutation failed — a rejected
     // mutation must not wedge every mutation queued behind it.
     queueRef.current = run.catch(() => undefined);
     return run;
-  }, []);
+  }, [showToast]);
 
   const load = () => {
     setLoading(true);
@@ -72,7 +87,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     setBusy(true);
     setActionError(null);
     try {
-      await applyMealUpdate(() => api.retryMeal(mealId));
+      await applyMealUpdate(() => api.retryMeal(mealId), 'Analysis retried');
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Retry failed');
     } finally {
@@ -81,14 +96,14 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   };
 
   const handleClarify = async (answers: string[]) => {
-    await applyMealUpdate(() => api.clarifyMeal(mealId, answers));
+    await applyMealUpdate(() => api.clarifyMeal(mealId, answers), 'Clarification submitted');
   };
 
   const handleConfirm = async () => {
     setBusy(true);
     setActionError(null);
     try {
-      await applyMealUpdate(() => api.confirmMeal(mealId));
+      await applyMealUpdate(() => api.confirmMeal(mealId), 'Meal confirmed');
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Confirm failed');
     } finally {

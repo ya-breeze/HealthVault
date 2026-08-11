@@ -1,8 +1,5 @@
-# food-meal-history Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change edit-confirmed-meals. Update Purpose after archive.
-## Requirements
 ### Requirement: Owner-Scoped Meal List
 The system SHALL expose `GET /api/food/meals`, returning a summary of the authenticated caller's own `FoodMeal` records — of any status — ordered by `logged_at` descending, then `id` descending as a deterministic tie-breaker (`id` alone is a complete, collision-free tie-break, being the primary key — no third field is needed). Unlike `GET /api/data/food_meal`, this endpoint SHALL scope strictly to the caller's own meals (`user_id`), never other family members', so every meal returned is guaranteed openable via `GET /api/food/meals/{id}`.
 
@@ -107,4 +104,3 @@ The frontend SHALL provide a meal history page reachable from the dashboard, lis
 - **GIVEN** the currently loaded meals end mid-way through a calendar day
 - **WHEN** the user activates "load older" and the next page includes more meals from that same day plus meals from an earlier day
 - **THEN** the earlier-loaded day's section gains the newly loaded meals (and its total updates to include them), and a new day section appears for the earlier day
-

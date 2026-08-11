@@ -19,7 +19,10 @@ import {
 
 interface Props {
   mealId: string;
-  onReanalyzed: (issue: () => Promise<FoodMeal>) => Promise<FoodMeal>;
+  // Takes a thunk, not an already-started request — see ReviewClient's
+  // applyMealUpdate doc comment for why (issue order must be commit order,
+  // enforced by the parent controlling when each request actually starts).
+  onReanalyzed: (issue: () => Promise<FoodMeal>, label?: string) => Promise<FoodMeal>;
 }
 
 type Mode = 'hint' | 'expert';
@@ -94,7 +97,7 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await onReanalyzed(() => api.reanalyzeMeal(mealId, input));
+      await onReanalyzed(() => api.reanalyzeMeal(mealId, input), 'Reanalysis complete');
       close();
     } catch (err) {
       const isFailed = err instanceof ReanalyzeFailedError || (err as { name?: string })?.name === 'ReanalyzeFailedError';
@@ -104,7 +107,7 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
         setError('Reanalysis failed — the meal is unchanged. You can try again.');
       } else if (isSuperseded) {
         try {
-          await onReanalyzed(() => api.getMeal(mealId));
+          await onReanalyzed(() => api.getMeal(mealId), 'Refreshed with latest change');
           setError('Another operation took over this meal while reanalyzing — showing its current state.');
         } catch {
           setError('Another operation took over this meal, and refreshing failed. Reload to see its current state.');

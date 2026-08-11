@@ -7,7 +7,7 @@ interface Props {
   // Takes a thunk, not an already-started request — the parent
   // (ReviewClient) controls exactly when this fires so sibling mutations
   // never overlap in flight. See ReviewClient's applyMealUpdate.
-  onUpdated: (issue: () => Promise<FoodMeal>) => Promise<FoodMeal>;
+  onUpdated: (issue: () => Promise<FoodMeal>, label?: string) => Promise<FoodMeal>;
 }
 
 // datetime-local inputs work in local time as 'YYYY-MM-DDTHH:mm'.
@@ -77,7 +77,7 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
       await onUpdated(() => api.patchMeal(meal.id, {
         name: nameChanged ? trimmedName : undefined,
         logged_at: loggedAtIso,
-      }));
+      }), 'Meal updated');
       setEditing(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update meal');

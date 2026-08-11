@@ -180,11 +180,14 @@ func (h *foodHandlers) ConfirmMeal(w http.ResponseWriter, r *http.Request) {
 // (the full model JSON blob), clarify_log, and tenant metadata, none of
 // which the list view needs.
 type MealSummary struct {
-	ID       uuid.UUID `json:"id"`
-	Name     string    `json:"name"`
-	LoggedAt time.Time `json:"logged_at"`
-	Status   string    `json:"status"`
-	Calories float64   `json:"calories"`
+	ID           uuid.UUID `json:"id"`
+	Name         string    `json:"name"`
+	LoggedAt     time.Time `json:"logged_at"`
+	Status       string    `json:"status"`
+	Calories     float64   `json:"calories"`
+	ProteinGrams float64   `json:"protein_grams"`
+	CarbsGrams   float64   `json:"carbs_grams"`
+	FatGrams     float64   `json:"fat_grams"`
 }
 
 const (
@@ -282,7 +285,16 @@ func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 
 	summaries := make([]MealSummary, len(meals))
 	for i, m := range meals {
-		summaries[i] = MealSummary{ID: m.ID, Name: m.Name, LoggedAt: m.LoggedAt, Status: m.Status, Calories: m.Calories}
+		summaries[i] = MealSummary{
+			ID:           m.ID,
+			Name:         m.Name,
+			LoggedAt:     m.LoggedAt,
+			Status:       m.Status,
+			Calories:     m.Calories,
+			ProteinGrams: m.ProteinGrams,
+			CarbsGrams:   m.CarbsGrams,
+			FatGrams:     m.FatGrams,
+		}
 	}
 	writeJSON(w, summaries)
 }

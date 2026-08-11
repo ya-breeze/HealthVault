@@ -198,6 +198,9 @@ export interface MealSummary {
   logged_at: string;
   status: MealStatus;
   calories: number;
+  protein_grams: number;
+  carbs_grams: number;
+  fat_grams: number;
 }
 
 export interface PatchMealInput {

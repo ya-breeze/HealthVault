@@ -13,6 +13,61 @@ const STATUS_LABEL: Record<string, string> = {
 
 const PAGE_SIZE = 50;
 
+interface DayTotals {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+interface DayGroup {
+  dateKey: string;
+  label: string;
+  meals: MealSummary[];
+  totals: DayTotals;
+}
+
+// Groups an already logged_at-DESC-sorted meal list into per-local-calendar-
+// day sections. Because the input is sorted, a given day's meals are always
+// contiguous, so a single linear pass (grouping by first-seen order) is
+// enough — no separate sort step, and re-running this over a longer list
+// after "load older" naturally merges new meals into the right existing
+// section or appends new sections in the correct place. Totals sum only
+// `confirmed` meals — others have no final nutrition numbers yet (see
+// food-meal-history's "Daily total sums only confirmed meals" scenario).
+function groupByDay(meals: MealSummary[]): DayGroup[] {
+  const groups: DayGroup[] = [];
+  const indexByKey = new Map<string, number>();
+
+  for (const meal of meals) {
+    const d = new Date(meal.logged_at);
+    const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+    let idx = indexByKey.get(dateKey);
+    if (idx === undefined) {
+      idx = groups.length;
+      indexByKey.set(dateKey, idx);
+      groups.push({
+        dateKey,
+        label: d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }),
+        meals: [],
+        totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      });
+    }
+
+    const group = groups[idx];
+    group.meals.push(meal);
+    if (meal.status === 'confirmed') {
+      group.totals.calories += meal.calories;
+      group.totals.protein += meal.protein_grams;
+      group.totals.carbs += meal.carbs_grams;
+      group.totals.fat += meal.fat_grams;
+    }
+  }
+
+  return groups;
+}
+
 // Meal history: browse past meals of any status and open one for review or
 // editing. Previously there was no entry point into a meal beyond the
 // direct upload flow or a hand-typed /food/review/?meal=<uuid> URL.
@@ -52,6 +107,8 @@ export default function FoodHistoryPage() {
     }
   };
 
+  const dayGroups = groupByDay(meals);
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
@@ -65,31 +122,40 @@ export default function FoodHistoryPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">No meals logged yet.</p>
         )}
 
-        {meals.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
-            {meals.map(meal => (
-              <a
-                key={meal.id}
-                href={`/food/review/?meal=${meal.id}`}
-                className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    {meal.name || 'Meal'}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {new Date(meal.logged_at).toLocaleString()} · {STATUS_LABEL[meal.status] ?? meal.status}
-                  </p>
-                </div>
-                {meal.status === 'confirmed' && (
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white flex-shrink-0">
-                    {Math.round(meal.calories)} kcal
-                  </span>
-                )}
-              </a>
-            ))}
+        {dayGroups.map(day => (
+          <div key={day.dateKey} className="mb-5">
+            <div className="flex items-baseline justify-between mb-2 px-1">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {Math.round(day.totals.calories)} kcal · P {Math.round(day.totals.protein)}g · C{' '}
+                {Math.round(day.totals.carbs)}g · F {Math.round(day.totals.fat)}g
+              </span>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
+              {day.meals.map(meal => (
+                <a
+                  key={meal.id}
+                  href={`/food/review/?meal=${meal.id}`}
+                  className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                      {meal.name || 'Meal'}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {new Date(meal.logged_at).toLocaleString()} · {STATUS_LABEL[meal.status] ?? meal.status}
+                    </p>
+                  </div>
+                  {meal.status === 'confirmed' && (
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white flex-shrink-0">
+                      {Math.round(meal.calories)} kcal
+                    </span>
+                  )}
+                </a>
+              ))}
+            </div>
           </div>
-        )}
+        ))}
 
         {hasMore && meals.length > 0 && (
           <button

@@ -355,6 +355,9 @@ test.describe('Meal history', () => {
       logged_at: new Date(Date.now() - i * 1000).toISOString(),
       status: 'confirmed',
       calories: 100,
+      protein_grams: 10,
+      carbs_grams: 10,
+      fat_grams: 5,
     }));
 
     await page.route('**/api/food/meals?*', route => route.fulfill({ json: shortPage }));
@@ -362,6 +365,113 @@ test.describe('Meal history', () => {
     await page.goto('/food/history/');
     await expect(page.getByText('Mock History Meal 0')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Load older' })).not.toBeVisible();
+  });
+
+  test('meals from two different days render under separate day headers with correct per-day totals', async ({ page }) => {
+    await login(page);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    // Two confirmed meals "today" (300 + 150 kcal, 20+10g protein) and one
+    // confirmed meal "yesterday" (80 kcal, 5g protein) — chosen so each
+    // day's total is distinct from any single meal's own calorie badge,
+    // so a test failure that mixed up per-meal vs per-day totals would
+    // show up as a wrong number rather than an accidental match.
+    const mocked = [
+      {
+        id: 'mock-day-today-1', name: 'Today Meal 1', logged_at: today.toISOString(), status: 'confirmed',
+        calories: 300, protein_grams: 20, carbs_grams: 30, fat_grams: 10,
+      },
+      {
+        id: 'mock-day-today-2', name: 'Today Meal 2', logged_at: today.toISOString(), status: 'confirmed',
+        calories: 150, protein_grams: 10, carbs_grams: 15, fat_grams: 5,
+      },
+      {
+        id: 'mock-day-yesterday-1', name: 'Yesterday Meal 1', logged_at: yesterday.toISOString(), status: 'confirmed',
+        calories: 80, protein_grams: 5, carbs_grams: 8, fat_grams: 2,
+      },
+    ];
+
+    await page.route('**/api/food/meals?*', route => route.fulfill({ json: mocked }));
+
+    await page.goto('/food/history/');
+    await expect(page.getByText('Today Meal 1')).toBeVisible();
+    await expect(page.getByText('Yesterday Meal 1')).toBeVisible();
+
+    // Today's total: 300+150=450 kcal, 20+10=30g protein.
+    await expect(page.getByText('450 kcal · P 30g · C 45g · F 15g')).toBeVisible();
+    // Yesterday's total: just the one meal.
+    await expect(page.getByText('80 kcal · P 5g · C 8g · F 2g')).toBeVisible();
+  });
+
+  test('a day with only a non-confirmed meal shows a zero total', async ({ page }) => {
+    await login(page);
+    const mocked = [
+      {
+        id: 'mock-pending-1', name: 'Pending Meal', logged_at: new Date().toISOString(), status: 'pending_review',
+        calories: 999, protein_grams: 99, carbs_grams: 99, fat_grams: 99,
+      },
+    ];
+
+    await page.route('**/api/food/meals?*', route => route.fulfill({ json: mocked }));
+
+    await page.goto('/food/history/');
+    await expect(page.getByText('Pending Meal')).toBeVisible();
+    // The day total must exclude the pending meal's numbers entirely (it
+    // has no final nutrition yet), showing zero rather than omitting the
+    // total line or leaking the pending meal's provisional values into it.
+    await expect(page.getByText('0 kcal · P 0g · C 0g · F 0g')).toBeVisible();
+  });
+
+  test('"Load older" merges into an existing day section and adds a new one', async ({ page }) => {
+    await login(page);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    // Page 1: 50 confirmed meals, all "today", 10 kcal each (500 kcal total)
+    // — a full PAGE_SIZE page so "Load older" is offered. Page 2 (fetched
+    // via before/before_id): one more "today" meal (continuing that day's
+    // section) plus one "yesterday" meal (a new section).
+    const page1 = Array.from({ length: 50 }, (_, i) => ({
+      id: `mock-merge-today-${i}`,
+      name: `Merge Today ${i}`,
+      logged_at: new Date(today.getTime() - i * 1000).toISOString(),
+      status: 'confirmed',
+      calories: 10, protein_grams: 1, carbs_grams: 1, fat_grams: 1,
+    }));
+    const page2 = [
+      {
+        id: 'mock-merge-today-extra', name: 'Merge Today Extra',
+        logged_at: new Date(today.getTime() - 51_000).toISOString(), status: 'confirmed',
+        calories: 10, protein_grams: 1, carbs_grams: 1, fat_grams: 1,
+      },
+      {
+        id: 'mock-merge-yesterday', name: 'Merge Yesterday',
+        logged_at: yesterday.toISOString(), status: 'confirmed',
+        calories: 20, protein_grams: 2, carbs_grams: 2, fat_grams: 2,
+      },
+    ];
+
+    await page.route('**/api/food/meals?*', route => {
+      const url = new URL(route.request().url());
+      route.fulfill({ json: url.searchParams.has('before') ? page2 : page1 });
+    });
+
+    await page.goto('/food/history/');
+    await expect(page.getByText('Merge Today 0')).toBeVisible();
+    // 50 meals * 10 kcal = 500 kcal for today's section before loading more.
+    await expect(page.getByText('500 kcal · P 50g · C 50g · F 50g')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Load older' }).click();
+
+    await expect(page.getByText('Merge Today Extra')).toBeVisible();
+    await expect(page.getByText('Merge Yesterday')).toBeVisible();
+    // Today's total grows by the extra meal: 500+10=510 kcal.
+    await expect(page.getByText('510 kcal · P 51g · C 51g · F 51g')).toBeVisible();
+    // A new, separate section for yesterday.
+    await expect(page.getByText('20 kcal · P 2g · C 2g · F 2g')).toBeVisible();
   });
 });
 
@@ -389,7 +499,9 @@ test.describe('Editing a confirmed meal', () => {
       await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
       await expect(page.getByText('250', { exact: true })).toBeVisible();
 
-      // Add a new item — the total must include it immediately, no reload.
+      // Add a new item — the total must include it immediately, no reload,
+      // and a success toast must confirm the write (ui-notifications spec:
+      // "Food Review Mutation Feedback").
       await page.getByRole('button', { name: '+ Add item' }).click();
       await page.getByRole('button', { name: 'Enter macros' }).click();
       await page.locator('label:has-text("Name") input').fill('Extra snack');
@@ -398,11 +510,14 @@ test.describe('Editing a confirmed meal', () => {
 
       await expect(page.getByText('Extra snack')).toBeVisible();
       await expect(page.getByText('300', { exact: true })).toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: 'Item added' })).toBeVisible();
 
-      // Delete it again — the total must drop back immediately.
+      // Delete it again — the total must drop back immediately, with its
+      // own distinct toast.
       await page.locator('button[title="Delete item"]').last().click();
       await expect(page.getByText('Extra snack')).not.toBeVisible();
       await expect(page.getByText('250', { exact: true })).toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: 'Item removed' })).toBeVisible();
     } finally {
       await deleteMeal(request, cookies, meal.id);
     }
