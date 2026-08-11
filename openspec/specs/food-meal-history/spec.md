@@ -6,7 +6,7 @@ TBD - created by archiving change edit-confirmed-meals. Update Purpose after arc
 ### Requirement: Owner-Scoped Meal List
 The system SHALL expose `GET /api/food/meals`, returning a summary of the authenticated caller's own `FoodMeal` records — of any status — ordered by `logged_at` descending, then `id` descending as a deterministic tie-breaker (`id` alone is a complete, collision-free tie-break, being the primary key — no third field is needed). Unlike `GET /api/data/food_meal`, this endpoint SHALL scope strictly to the caller's own meals (`user_id`), never other family members', so every meal returned is guaranteed openable via `GET /api/food/meals/{id}`.
 
-Each returned summary SHALL contain only `id`, `name`, `logged_at`, `status`, and `calories` — it SHALL NOT include `photo_path`, `raw_response`, `clarify_log`, or any tenant/ownership metadata, none of which the list view needs.
+Each returned summary SHALL contain `id`, `name`, `logged_at`, `status`, `calories`, `protein_grams`, `carbs_grams`, and `fat_grams` — it SHALL NOT include `photo_path`, `raw_response`, `clarify_log`, or any tenant/ownership metadata, none of which the list view needs.
 
 The endpoint SHALL accept an optional `limit` query parameter (a positive integer, capped at 200; default 50 when absent). It SHALL accept an optional `before` query parameter (an RFC 3339 timestamp) and an optional `before_id` query parameter (a UUID). When both are supplied together, they form an exact keyset cursor: results SHALL be those ordered strictly after the row identified by `(before, before_id)` in the list's own `(logged_at, id)` ordering — `(logged_at, id) < (before, before_id)` — which resumes at exactly the next row regardless of how many meals share that `logged_at`, so a tied group can never be split across pages and silently lose part of itself. `before_id` SHALL require `before` to also be present (400 otherwise). `before` supplied without `before_id` SHALL be accepted as a simpler, non-cursor "meals logged before this instant" filter — a plain `logged_at < before` — which is not guaranteed lossless across ties and exists for a caller that just wants a date cutoff rather than exact pagination continuation. A `limit` that is present but not a positive integer ≤ 200, a `before` that is present but not a valid RFC 3339 timestamp, or a `before_id` that is present but not a valid UUID, SHALL be rejected with HTTP 400.
 
@@ -31,7 +31,7 @@ The endpoint SHALL accept an optional `limit` query parameter (a positive intege
 
 #### Scenario: Summary excludes internal and detail-only fields
 - **WHEN** the caller lists their meals
-- **THEN** each entry contains only `id`, `name`, `logged_at`, `status`, and `calories`, and no entry contains `photo_path`, `raw_response`, `clarify_log`, or tenant metadata
+- **THEN** each entry contains only `id`, `name`, `logged_at`, `status`, `calories`, `protein_grams`, `carbs_grams`, and `fat_grams`, and no entry contains `photo_path`, `raw_response`, `clarify_log`, or tenant metadata
 
 #### Scenario: Default and maximum limit
 - **WHEN** the caller requests the list with no `limit` parameter
@@ -65,8 +65,12 @@ The endpoint SHALL accept an optional `limit` query parameter (a positive intege
 - **WHEN** a request without a valid JWT calls `GET /api/food/meals`
 - **THEN** the system returns HTTP 401
 
+#### Scenario: Macro fields are present alongside calories
+- **WHEN** the caller lists their meals
+- **THEN** each entry's `protein_grams`, `carbs_grams`, and `fat_grams` reflect that meal's own aggregate values (zero for a meal that has none computed yet, same as `calories` today)
+
 ### Requirement: Meal History Page
-The frontend SHALL provide a meal history page reachable from the dashboard, listing the caller's meals from `GET /api/food/meals` with name, logged date/time, status, and calories (blank for a meal whose status is not `confirmed`), each linking to that meal's existing review page (`/food/review/?meal=<id>`). The page SHALL offer a "load older" action that re-queries with both `before` and `before_id` set from the oldest meal currently shown, so meals beyond the first page remain reachable via the lossless keyset cursor rather than the plain timestamp filter.
+The frontend SHALL provide a meal history page reachable from the dashboard, listing the caller's meals from `GET /api/food/meals` grouped into sections by calendar day (the meal's `logged_at` interpreted in the browser's local time zone), most-recent day first. Each day section SHALL show a header identifying that calendar day, followed by that day's meals in the existing per-meal format (name, logged date/time, status, and calories, blank for a meal whose status is not `confirmed`), each linking to that meal's existing review page (`/food/review/?meal=<id>`). Each day section SHALL also show a daily total — summed calories, protein, carbs, and fat — computed only over that day's `confirmed` meals; a day with no confirmed meals SHALL show a total of zero rather than omitting the total line. The page SHALL offer a "load older" action that re-queries with both `before` and `before_id` set from the oldest meal currently shown, so meals beyond the first page remain reachable via the lossless keyset cursor rather than the plain timestamp filter; meals returned by "load older" SHALL be merged into the correct existing day section or form new day sections as needed, keeping every day's total accurate as more meals load.
 
 #### Scenario: History page is reachable from the dashboard
 - **WHEN** an authenticated user is on the dashboard
@@ -83,4 +87,24 @@ The frontend SHALL provide a meal history page reachable from the dashboard, lis
 #### Scenario: Loading older meals
 - **WHEN** the user activates "load older" at the bottom of the list
 - **THEN** the system fetches the next page using both `before` and `before_id` and appends it, without losing the meals already shown
+
+#### Scenario: Meals are grouped by local calendar day
+- **GIVEN** the caller has meals logged on two different calendar days (in the browser's local time zone)
+- **WHEN** they view the history page
+- **THEN** the meals appear under two separate day headers, most recent day first, each containing only that day's meals
+
+#### Scenario: Daily total sums only confirmed meals
+- **GIVEN** a day has one `confirmed` meal and one `pending_review` meal
+- **WHEN** the user views that day's section
+- **THEN** the displayed daily total (calories, protein, carbs, fat) reflects only the confirmed meal, and the pending meal still appears in the list below it with no calorie total on its own row
+
+#### Scenario: Day with no confirmed meals shows a zero total
+- **GIVEN** a day has only meals with status other than `confirmed`
+- **WHEN** the user views that day's section
+- **THEN** the daily total line is shown with all values at zero, not omitted
+
+#### Scenario: Loading older meals updates day groupings correctly
+- **GIVEN** the currently loaded meals end mid-way through a calendar day
+- **WHEN** the user activates "load older" and the next page includes more meals from that same day plus meals from an earlier day
+- **THEN** the earlier-loaded day's section gains the newly loaded meals (and its total updates to include them), and a new day section appears for the earlier day
 

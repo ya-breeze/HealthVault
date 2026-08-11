@@ -77,7 +77,7 @@ The frontend SHALL provide a meal history page reachable from the dashboard, lis
 - **WHEN** a user clicks a meal row in the history list
 - **THEN** the system navigates to `/food/review/?meal=<that meal's id>`
 
-#### Scenario: Unconfirmed meal shows no calorie total on its own row
+#### Scenario: Unconfirmed meal shows no calorie total
 - **WHEN** the history list includes a meal whose status is `pending_review`, `pending_clarification`, `processing`, or `failed`
 - **THEN** that row shows no calorie total, since the meal has none computed yet
 
