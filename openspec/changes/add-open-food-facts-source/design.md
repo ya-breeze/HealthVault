@@ -13,6 +13,7 @@ USDA data is US-centric and doesn't reflect real European/Czech branded products
 
 **Non-Goals:**
 - Merging/ranking USDA and OFF candidates together in one bm25-scored list. Different FTS5 indexes have different corpora, so their bm25 scores aren't comparable; a fallback rule is used instead (see Decisions).
+- Sending the photo into the candidate-*selection* call. Considered as a fix for brand ambiguity (see Decisions) and rejected in favor of extracting brand once during *recognition*, which already sees the photo — touching `Select`'s signature would affect USDA and custom-food selection too, for no benefit to those paths.
 - Barcode-scan-driven food entry. `Index.ByCode` is built because binding a chosen candidate needs it, but no scan UI is added here.
 - NutriDatabaze.cz (Czech generic-food database) — needs account registration and a license read a human has to do; stays a `todo.md` backlog note.
 - Any change to how `CustomFood` precedence works (case-insensitive exact name match still wins over both USDA and OFF, unchanged).
@@ -27,15 +28,25 @@ USDA data is US-centric and doesn't reflect real European/Czech branded products
 
 **Alternative considered**: `Source + ExternalID string` pair (what `todo.md`'s original research assumed would be needed). Rejected as disproportionate to a two-source (soon possibly three-source) system where "which column is non-nil" already answers "which source."
 
-### OFF queried first, USDA only as a zero-result fallback
+### Brand extracted at recognition time gates whether OFF is queried at all
 
-**Decision**: Candidate resolution in `food_upload.go` calls `off.Search` first. If it returns zero candidates, it then calls `usda.Search`. If OFF returns one or more candidates, USDA is not queried at all.
+**Decision**: `vision.Item` gains `Brand string` (empty when no label/brand is legible in the photo), extracted by the same `Recognize` call that already extracts `Preparation`/`State` — not by giving the later `Select` call access to the photo.
 
-**Why**: bm25 scores are corpus-relative — merging OFF and USDA hits into one ranked-by-score list would compare numbers that don't mean the same thing across two different FTS5 indexes. A clean fallback rule is simple to reason about and to implement, and gives OFF's real Czech-market data precedence, which is the actual point of this change (the yogurt-protein example: a real CZ product's label beats a generic USDA estimate).
+**Why**: `Select` is a text-only model call (`Select(ctx, itemCandidates []ItemCandidates)` — no image parameter) shared across USDA, custom-food, and now OFF candidates. For USDA, a generic name like "chicken breast" resolving to *some* SR Legacy chicken-breast entry is fine — different preparations of the same generic food have bounded macro variance. For OFF, a generic name like "yogurt" can match a dozen genuinely different branded products whose real macros vary far more than USDA's cooking-method variants, and the model has no way to tell which one was actually photographed. Auto-binding to an arbitrary branded product is not obviously better than USDA's generic estimate — it can be worse, while looking more precise. Extracting brand during `Recognize`, which already has the photo, gives a real disambiguating signal without touching `Select`'s signature (and therefore without adding photo cost to USDA/custom-food selection, which don't need it).
 
-**Accepted limitation**: OFF is a branded/packaged-product database and is weak on generic staple foods ("rice", "chicken breast", homemade dishes) — the same caveat raised in `todo.md`'s original research. A low-relevance OFF match on a generic query still counts as "OFF returned candidates," blocking the USDA fallback and potentially hiding a better USDA match. This is accepted for now; revisit (e.g. a minimum-candidate-quality threshold instead of a strict zero-result trigger) only if it proves to matter once dogfooded.
+**Rejected alternative**: pass the photo into `Select` too. Would give the model the same information more directly, but widens `Select`'s contract for all three sources and adds a vision-call cost to every selection, not just OFF ones, for no benefit to USDA/custom-food matching.
 
-**Alternative considered**: always query both and interleave top-N from each with a visible source badge (considered during design review, not chosen — the user picked the simpler EU-first/US-fallback rule over interleaving both source's results on every search).
+**Rejected alternative**: a text heuristic on the recognized name ("specific enough" wording) to decide whether to query OFF at all. Rejected as unreliable — a heuristic over free-text model output has no real signal to key on, whereas brand extraction reuses a capability (structured extraction from the photo) the recognition call already has.
+
+### OFF queried only when a brand was extracted, USDA as the fallback
+
+**Decision**: Candidate resolution in `food_upload.go`, for an item with a non-empty `Brand`, builds the retrieval term from name+brand and calls `off.Search`; if that returns zero candidates, it falls back to `usda.Search`. For an item with no `Brand` extracted, USDA is queried directly and OFF is not queried at all.
+
+**Why**: bm25 scores are corpus-relative — merging OFF and USDA hits into one ranked-by-score list would compare numbers that don't mean the same thing across two different FTS5 indexes, so a fallback rule is used instead of a merge. Gating on brand presence (rather than querying OFF unconditionally) is what makes that fallback rule safe: OFF only gets to supply the shortlist when there's an actual signal — the recognized brand — pointing at a real product, which is also the case that matters (the yogurt-protein example: a real CZ product's label beats a generic USDA estimate specifically because the model saw and reported the brand on the carton).
+
+**Residual limitation**: brand extraction can still be wrong (misread label, OCR-adjacent error) or the extracted brand text may not match how OFF's `brands` field is written for that product, in which case OFF returns zero candidates and USDA is used — degrading safely rather than binding to a wrong product. What no longer happens is auto-binding to an arbitrary OFF product for a *brandless* generic query, which was the actual risk (raised in review) with the earlier zero-result-only trigger.
+
+**Alternative considered**: always query both and interleave top-N from each with a visible source badge (considered during design review, not chosen — the user picked the simpler EU-first/US-fallback rule over interleaving both sources' results on every search).
 
 ### Country/completeness filter on OFF import, mirroring the USDA import's own scope limit
 
@@ -45,6 +56,14 @@ USDA data is US-centric and doesn't reflect real European/Czech branded products
 
 **Scope for v1**: `countries_tags` limited to Czech Republic and Slovakia only, not EU-wide. Narrowing the corpus is strictly the safer failure mode (fewer, higher-confidence matches) than widening it, so starting narrow and widening later — if broader EU coverage turns out to be useful — costs nothing but a re-import.
 
+### Explicit per-field mapping and unit handling for OFF nutriments, not a generic pass-through
+
+**Decision**: The import mapping reads `nutriments.energy-kcal_100g` for calories (never `energy_100g` or `energy-kj_100g` directly), and reads `nutriments.sodium_100g` for sodium when present, falling back to `nutriments.salt_100g / 2.5` when only salt is present. A product missing calories or missing both sodium and salt is treated as incomplete and excluded by the existing completeness filter, the same as missing protein/carbs/fat.
+
+**Why**: OFF's schema carries multiple representations of the same nutrient for historical/regional-labeling reasons — `energy-kcal_100g` and `energy-kj_100g` both exist, and EU labels moved from sodium to salt in 2013 (salt = 2.5 × sodium), so many EU products only populate `salt_100g`. A pass-through mapping that reads whichever field happens to be present without normalizing units would silently import wrong values (e.g. a kJ figure read into a kcal field is off by roughly 4×) rather than failing loudly — worse than rejecting the row, since a wrong-but-plausible-looking number doesn't trip the row-count sanity check the way a filtered-out row does.
+
+**Alternative considered**: import whatever `energy_100g`/`sodium_100g` fields are present unconditionally. Rejected — `energy_100g`'s unit is inconsistent across older vs. newer OFF entries, which is exactly the kind of silent-corruption risk the explicit-field mapping avoids.
+
 ### `off` package structure mirrors `usda` package structure
 
 **Decision**: `backend/pkg/off` reimplements `Index.Search(term, limit)`, `Index.ByCode(code string)`, `Builder`/`Add`/`Promote`/`Discard`, and the same `sanitizeFTSQuery` OR-join approach, as a parallel package rather than a shared generic abstraction over both.
@@ -53,10 +72,13 @@ USDA data is US-centric and doesn't reflect real European/Czech branded products
 
 ## Risks / Trade-offs
 
-- **[Risk]** A mediocre OFF match on a generic-food query blocks the USDA fallback (see "accepted limitation" above). → **Mitigation**: none built now; flagged as a known trade-off to revisit if it shows up in real usage. The review UI still shows which source a match came from, so a bad OFF match is visible and correctable by hand even when the fallback doesn't trigger.
-- **[Risk]** OFF's ODbL 1.0 license requires attribution, and share-alike terms apply if the *built* filtered database were itself redistributed publicly. → **Mitigation**: the built SQLite index is operator-local data (like the USDA one), not committed to the repository or served to third parties, so share-alike doesn't bite; add attribution text wherever OFF-sourced values are shown, alongside the source badge already needed for the "OFF queried first, USDA only as a zero-result fallback" decision above.
+- **[Risk]** Brand extraction can misread a label or use wording that doesn't match how OFF's `brands` field is written, so a query that should have matched returns zero and falls back to USDA — a missed opportunity, not a wrong answer, since the brand-gate means OFF never auto-binds without a real signal in the first place. → **Mitigation**: none needed beyond the brand-gating decision itself; this degrades to today's USDA-only behavior rather than to a wrong bind.
+- **[Risk]** `food_manual.go`'s `CreateManualMeal` currently has no exclusivity check between `FdcID` and `CustomFoodID` at all — it resolves via `FdcID` first if both are set, but persists both fields regardless. Adding `OffCode` without fixing this compounds a pre-existing gap rather than just adding to one already enforced. → **Mitigation**: task 4.3 adds this check as new, not "extends" existing coverage — see tasks.md.
+- **[Risk]** OFF's ODbL 1.0 license requires attribution, and share-alike terms apply if the *built* filtered database were itself redistributed publicly. → **Mitigation**: the built SQLite index is operator-local data (like the USDA one), not committed to the repository or served to third parties, so share-alike doesn't bite; add attribution text wherever OFF-sourced values are shown, alongside the source badge already needed for the brand-gated fallback decision above.
 - **[Risk]** OFF full-export download size/format may change over time (JSONL vs CSV), unlike USDA's stable frozen SR Legacy zip. → **Mitigation**: `off.Fetch`/import mirrors `usda.Fetch`'s "accept a URL or a local path" flexibility, so a broken auto-download can be worked around by fetching the dump manually and importing from a local path.
 
 ## Migration Plan
 
-No database migration: `off_code` is a new nullable column with no default data to backfill, and GORM's auto-migration (already used for the other food-logging tables) adds it on next startup. Deploy order: land the code (new column present but unused until an OFF database file exists), then run `import-off` once as an operator to populate `HCW_OFF_DB_PATH`. Until that import runs, `off.Open` returns `ErrNoDatabase` the same way `usda.Open` does for a missing file, and candidate resolution degrades to USDA-only — the existing behavior, unchanged. No rollback beyond reverting the code; the new column simply goes unused again.
+No database migration: `off_code` and `brand` are new nullable columns with no default data to backfill, and GORM's auto-migration (already used for the other food-logging tables) adds them on next startup. Deploy order: land the code (new columns present but unused until an OFF database file exists), then run `import-off` once as an operator to populate `HCW_OFF_DB_PATH`.
+
+**Requires a backend restart to take effect.** `off.Open` is called once during server construction, exactly like `usda.Open` (`server.go:52`) — the resulting handle is held for the life of the process. Running `import-off` while the server is already up does not make the running process pick up the new database: the first import needs a restart to activate it at all, and any later reimport needs a restart too, since the server's existing SQLite connection(s) may keep reading through the pre-rename file rather than the atomically-renamed replacement. This is not new: `usda.Open`/`import-usda` already have the identical characteristic today, undocumented until now. Until the first restart-after-import, `off.Open` returns `ErrNoDatabase` the same way `usda.Open` does for a missing file, and candidate resolution degrades to USDA-only — the existing behavior, unchanged. No rollback beyond reverting the code; the new columns simply go unused again.

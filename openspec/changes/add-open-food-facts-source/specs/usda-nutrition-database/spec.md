@@ -4,22 +4,27 @@
 
 The system SHALL resolve a recognized food name to a reference food by offering a retrieved candidate shortlist for selection, and SHALL record an explicit non-match rather than binding to a low-ranked candidate. Custom foods owned by the user SHALL take precedence over both other sources: a case-insensitive exact name match against the user's custom foods SHALL be selected without consulting either the Open Food Facts or USDA index.
 
-When a custom food does not match, the system SHALL query the Open Food Facts index before the USDA index. The USDA index SHALL be queried only when the Open Food Facts query returns zero candidates. When the Open Food Facts query returns one or more candidates, those SHALL be the shortlist offered for selection and the USDA index SHALL NOT be queried for that item.
+When a custom food does not match, the system SHALL query the Open Food Facts index, using the item's name and extracted brand as the retrieval term, only when the recognized item carries a non-empty `brand`. The USDA index SHALL be queried directly, without ever querying Open Food Facts, when the recognized item carries no brand. When a brand is present, the USDA index SHALL be queried only when the Open Food Facts query returns zero candidates; when the Open Food Facts query returns one or more candidates, those SHALL be the shortlist offered for selection and the USDA index SHALL NOT be queried for that item. Candidate selection remains a text-only model call with no photo access, which is why Open Food Facts is never queried without a brand: a generic name alone gives the model no way to distinguish among differently-branded products with materially different macros, unlike the bounded variance between USDA's cooking-method variants of the same generic food.
 
 #### Scenario: Custom food takes precedence
 
 - **WHEN** a user has a custom food whose name exactly matches a recognized item name, ignoring case
 - **THEN** the system selects that custom food and does not substitute a USDA or Open Food Facts entry, and the selection is unambiguous because custom food names are unique per user
 
-#### Scenario: Open Food Facts candidates take precedence over USDA
+#### Scenario: A recognized brand routes matching to Open Food Facts first
 
-- **WHEN** no custom food matches and the Open Food Facts index returns one or more candidates for a recognized item
+- **WHEN** no custom food matches and the recognized item carries a non-empty `brand`, and the Open Food Facts index returns one or more candidates for the name+brand query
 - **THEN** the system offers only the Open Food Facts candidates for selection and does not query the USDA index for that item
 
-#### Scenario: USDA is queried only as a fallback
+#### Scenario: A recognized brand with no Open Food Facts match falls back to USDA
 
-- **WHEN** no custom food matches and the Open Food Facts index returns zero candidates for a recognized item
+- **WHEN** no custom food matches, the recognized item carries a non-empty `brand`, and the Open Food Facts query returns zero candidates
 - **THEN** the system queries the USDA index and offers its candidates for selection
+
+#### Scenario: No recognized brand goes straight to USDA
+
+- **WHEN** no custom food matches and the recognized item's `brand` is empty
+- **THEN** the system queries the USDA index directly and does not query the Open Food Facts index for that item, since there is no signal available to safely select among differently-branded Open Food Facts products
 
 #### Scenario: Candidate selected from shortlist
 

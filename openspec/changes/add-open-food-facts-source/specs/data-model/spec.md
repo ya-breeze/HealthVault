@@ -23,7 +23,7 @@ The system SHALL persist user-authored food logging data in four family-scoped t
 
 `fdc_id`, `off_code`, and `custom_food_id` SHALL all be nullable, and at most one of the three SHALL be set on a given `FoodItem`. `macro_source` replaces a plain matched/unmatched boolean because "bound to a reference food" and "has usable macros" are different questions, and a manually entered item is the case where they diverge.
 
-`FoodItem` SHALL also carry `preparation` and `state`, each permitted to be empty for unknown. They are persisted rather than merely used in-flight so that a later clarification answer can re-run food lookup without re-analyzing the photo.
+`FoodItem` SHALL also carry `preparation`, `state`, and `brand`, each permitted to be empty for unknown. They are persisted rather than merely used in-flight so that a later clarification answer can re-run food lookup without re-analyzing the photo. `brand` additionally determines whether the Open Food Facts index is queried during matching (see `usda-nutrition-database` "Match Selection and Explicit Non-Match").
 
 `CustomFood` SHALL be uniquely indexed on `(user_id, name)`, so that name-based precedence over USDA and Open Food Facts entries has exactly one winner.
 
