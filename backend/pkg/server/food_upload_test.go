@@ -8,6 +8,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +21,7 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/vision"
 )
 
-func newMealUploadRequest(t *testing.T, filename string, data []byte) *http.Request {
+func newMealUploadRequest(t *testing.T, filename string, data []byte, hint ...string) *http.Request {
 	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -30,12 +32,82 @@ func newMealUploadRequest(t *testing.T, filename string, data []byte) *http.Requ
 	if _, err := part.Write(data); err != nil {
 		t.Fatalf("write photo bytes: %v", err)
 	}
+	if len(hint) > 0 {
+		if err := mw.WriteField("hint", hint[0]); err != nil {
+			t.Fatalf("write hint: %v", err)
+		}
+	}
 	if err := mw.Close(); err != nil {
 		t.Fatalf("close multipart writer: %v", err)
 	}
 	r := httptest.NewRequest(http.MethodPost, "/api/food/meals", &buf)
 	r.Header.Set("Content-Type", mw.FormDataContentType())
 	return r
+}
+
+func TestCreateMeal_OptionalHintIsTrimmedAndForwarded(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	fake := &vision.Fake{}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes, "  grilled chicken with red beans  "), userID))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.RecognizeCalls) != 1 || fake.RecognizeCalls[0].Hint != "grilled chicken with red beans" {
+		t.Fatalf("expected trimmed upload hint, got %+v", fake.RecognizeCalls)
+	}
+}
+
+func TestCreateMeal_HintUnicodeBoundaryAndWhitespaceOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "500 Unicode characters", raw: strings.Repeat("🙂", 500), want: strings.Repeat("🙂", 500)},
+		{name: "whitespace only", raw: " \n\t ", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, _ := seedFoodUser(t, st)
+			fake := &vision.Fake{}
+			h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+			w := httptest.NewRecorder()
+			h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes, tc.raw), userID))
+			if w.Code != http.StatusCreated {
+				t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+			}
+			if len(fake.RecognizeCalls) != 1 || fake.RecognizeCalls[0].Hint != tc.want {
+				t.Fatalf("expected hint %q, got %+v", tc.want, fake.RecognizeCalls)
+			}
+		})
+	}
+}
+
+func TestCreateMeal_OverlongHintHasNoSideEffects(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	dir := t.TempDir()
+	fake := &vision.Fake{}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Second)
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes, strings.Repeat("🙂", 501)), userID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	var count int64
+	if err := st.DB().Model(&database.FoodMeal{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("expected no meal row, count=%d err=%v", count, err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read photo dir: %v", err)
+	}
+	if len(entries) != 0 || len(fake.RecognizeCalls) != 0 {
+		t.Fatalf("expected no photo or vision side effects, entries=%d calls=%d", len(entries), len(fake.RecognizeCalls))
+	}
 }
 
 func TestCreateMeal_NoMatchLeavesItemUnresolved(t *testing.T) {
@@ -236,6 +308,10 @@ type slowRecognizeClient struct{}
 func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string, _ string) (*vision.RecognizeResult, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
+}
+
+func (slowRecognizeClient) EstimateWeights(context.Context, []byte, string, []vision.WeightEstimateInput) (*vision.WeightEstimateResult, error) {
+	return &vision.WeightEstimateResult{}, nil
 }
 
 func (slowRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn) (*vision.RecognizeResult, error) {

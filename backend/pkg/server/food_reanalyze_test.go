@@ -27,6 +27,245 @@ func reanalyzeHTTPRequest(mealID, hint string) *http.Request {
 	return mux.SetURLVars(r, map[string]string{"id": mealID})
 }
 
+func reanalyzeJSONRequest(mealID, body string) *http.Request {
+	r := httptest.NewRequest(http.MethodPost, "/api/food/meals/"+mealID+"/reanalyze", strings.NewReader(body))
+	return mux.SetURLVars(r, map[string]string{"id": mealID})
+}
+
+func TestReanalyze_ExpertSuppliedWeightsSkipRecognitionAndEstimation(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 0, "")
+	fake := &vision.Fake{}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeJSONRequest(meal.ID.String(), `{"components":[{"name":"Grilled chicken","weight_grams":180},{"name":"Red beans","weight_grams":95}]}`), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Status != database.MealStatusPendingReview || len(got.Items) != 2 {
+		t.Fatalf("expected two review items, got %+v", got)
+	}
+	if got.Items[0].Name != "Grilled chicken" || got.Items[0].WeightGrams != 180 || got.Items[1].WeightGrams != 95 {
+		t.Fatalf("expected exact expert names and weights, got %+v", got.Items)
+	}
+	if len(fake.RecognizeCalls) != 0 || len(fake.EstimateWeightsCalls) != 0 || len(fake.ClarifyCalls) != 0 {
+		t.Fatalf("fully weighted expert mode must skip recognition, estimation, and clarification: %+v", fake)
+	}
+}
+
+func TestReanalyze_ExpertEstimatedWeightsUseStableIndexes(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusPendingReview, 0, "")
+	fake := &vision.Fake{EstimateWeightsResult: &vision.WeightEstimateResult{
+		Estimates: []vision.WeightEstimate{{ComponentIndex: 2, WeightGrams: 40}, {ComponentIndex: 0, WeightGrams: 150}},
+		Raw:       `{"estimates":[]}`,
+	}}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeJSONRequest(meal.ID.String(), `{"components":[{"name":"Chicken"},{"name":"Beans","weight_grams":90},{"name":"Salsa"}]}`), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Items[0].WeightGrams != 150 || got.Items[1].WeightGrams != 90 || got.Items[2].WeightGrams != 40 {
+		t.Fatalf("expected index-keyed weights [150 90 40], got %+v", got.Items)
+	}
+	if len(fake.EstimateWeightsCalls) != 1 {
+		t.Fatalf("expected one estimation call, got %+v", fake.EstimateWeightsCalls)
+	}
+	inputs := fake.EstimateWeightsCalls[0].Components
+	if len(inputs) != 2 || inputs[0].ComponentIndex != 0 || inputs[1].ComponentIndex != 2 {
+		t.Fatalf("expected only missing weights with stable indexes, got %+v", inputs)
+	}
+}
+
+func TestReanalyze_ExpertCanEstimateEveryWeight(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusFailed, 0, "")
+	fake := &vision.Fake{EstimateWeightsResult: &vision.WeightEstimateResult{Estimates: []vision.WeightEstimate{
+		{ComponentIndex: 0, WeightGrams: 120}, {ComponentIndex: 1, WeightGrams: 80},
+	}}}
+	w := httptest.NewRecorder()
+	server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute).
+		Reanalyze(w, withClaims(reanalyzeJSONRequest(meal.ID.String(), `{"components":[{"name":"Chicken"},{"name":"Beans"}]}`), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got.Items) != 2 || got.Items[0].WeightGrams != 120 || got.Items[1].WeightGrams != 80 {
+		t.Fatalf("expected every weight to be estimated, got %+v", got.Items)
+	}
+}
+
+func TestReanalyze_RequiresExactlyOneModeBeforeClaim(t *testing.T) {
+	cases := []string{
+		`{}`,
+		`{"hint":"rice","components":null}`,
+		`{"hint":null}`,
+		`{"components":[]}`,
+		`{"components":[{"name":"Rice","weight_grams":null}]}`,
+		`{"components":[{"name":"Rice","weight_grams":0}]}`,
+	}
+	for _, body := range cases {
+		t.Run(body, func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, familyID := seedFoodUser(t, st)
+			dir := t.TempDir()
+			meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 0, "")
+			fake := &vision.Fake{}
+			h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+			w := httptest.NewRecorder()
+			h.Reanalyze(w, withClaims(reanalyzeJSONRequest(meal.ID.String(), body), userID))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+			var current database.FoodMeal
+			if err := st.DB().First(&current, "id = ?", meal.ID).Error; err != nil {
+				t.Fatalf("reload: %v", err)
+			}
+			if current.Status != database.MealStatusConfirmed || len(fake.RecognizeCalls)+len(fake.EstimateWeightsCalls) != 0 {
+				t.Fatalf("invalid input changed or analyzed meal: status=%s fake=%+v", current.Status, fake)
+			}
+		})
+	}
+}
+
+func TestReanalyze_InvalidEstimatorIndexLeavesMealUnchanged(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 2, `[{"round":1}]`)
+	fake := &vision.Fake{EstimateWeightsResult: &vision.WeightEstimateResult{
+		Estimates: []vision.WeightEstimate{{ComponentIndex: 7, WeightGrams: 100}},
+	}}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeJSONRequest(meal.ID.String(), `{"components":[{"name":"Chicken"}]}`), userID))
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	if err := st.DB().Preload("Items").First(&got, "id = ?", meal.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.Status != database.MealStatusConfirmed || got.ClarifyRound != 2 || got.ClarifyLog != meal.ClarifyLog || got.Calories != 400 {
+		t.Fatalf("expected prior meal fields restored, got %+v", got)
+	}
+	if len(got.Items) != 1 || got.Items[0].Name != "Original item" {
+		t.Fatalf("expected original items unchanged, got %+v", got.Items)
+	}
+}
+
+func TestReanalyze_ExpertValidationBoundaries(t *testing.T) {
+	component := func(name string, weight float64) map[string]any {
+		return map[string]any{"name": name, "weight_grams": weight}
+	}
+	twenty := make([]map[string]any, 20)
+	for i := range twenty {
+		twenty[i] = component("x", 1)
+	}
+	combined500 := make([]map[string]any, 5)
+	for i := range combined500 {
+		combined500[i] = component(strings.Repeat("x", 100), 1)
+	}
+	valid := []struct {
+		name       string
+		components []map[string]any
+	}{
+		{name: "20 components", components: twenty},
+		{name: "100 character name", components: []map[string]any{component(strings.Repeat("🙂", 100), 1)}},
+		{name: "500 combined characters", components: combined500},
+	}
+	for _, tc := range valid {
+		t.Run("accepts "+tc.name, func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, familyID := seedFoodUser(t, st)
+			dir := t.TempDir()
+			meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusPendingReview, 0, "")
+			body, _ := json.Marshal(map[string]any{"components": tc.components})
+			w := httptest.NewRecorder()
+			server.NewFoodHandlers(st, nil, dir).WithVision(&vision.Fake{}, 10<<20, time.Minute).
+				Reanalyze(w, withClaims(reanalyzeJSONRequest(meal.ID.String(), string(body)), userID))
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+
+	twentyOne := append(append([]map[string]any{}, twenty...), component("x", 1))
+	combined501 := append(append([]map[string]any{}, combined500...), component("x", 1))
+	invalid := []struct {
+		name       string
+		components []map[string]any
+	}{
+		{name: "21 components", components: twentyOne},
+		{name: "101 character name", components: []map[string]any{component(strings.Repeat("x", 101), 1)}},
+		{name: "501 combined characters", components: combined501},
+		{name: "blank name", components: []map[string]any{component("  ", 1)}},
+		{name: "negative weight", components: []map[string]any{component("Rice", -1)}},
+	}
+	for _, tc := range invalid {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, familyID := seedFoodUser(t, st)
+			dir := t.TempDir()
+			meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 0, "")
+			body, _ := json.Marshal(map[string]any{"components": tc.components})
+			w := httptest.NewRecorder()
+			server.NewFoodHandlers(st, nil, dir).WithVision(&vision.Fake{}, 10<<20, time.Minute).
+				Reanalyze(w, withClaims(reanalyzeJSONRequest(meal.ID.String(), string(body)), userID))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestReanalyze_ExpertRejectsMalformedEstimatorResults(t *testing.T) {
+	cases := []struct {
+		name       string
+		components string
+		estimates  []vision.WeightEstimate
+	}{
+		{name: "missing index", components: `[{"name":"A"},{"name":"B"}]`, estimates: []vision.WeightEstimate{{ComponentIndex: 0, WeightGrams: 1}}},
+		{name: "duplicate index", components: `[{"name":"A"}]`, estimates: []vision.WeightEstimate{{ComponentIndex: 0, WeightGrams: 1}, {ComponentIndex: 0, WeightGrams: 2}}},
+		{name: "already supplied index", components: `[{"name":"A","weight_grams":5},{"name":"B"}]`, estimates: []vision.WeightEstimate{{ComponentIndex: 0, WeightGrams: 1}}},
+		{name: "invalid weight", components: `[{"name":"A"}]`, estimates: []vision.WeightEstimate{{ComponentIndex: 0, WeightGrams: 0}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, familyID := seedFoodUser(t, st)
+			dir := t.TempDir()
+			meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 0, "")
+			fake := &vision.Fake{EstimateWeightsResult: &vision.WeightEstimateResult{Estimates: tc.estimates}}
+			w := httptest.NewRecorder()
+			server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute).
+				Reanalyze(w, withClaims(reanalyzeJSONRequest(meal.ID.String(), `{"components":`+tc.components+`}`), userID))
+			if w.Code != http.StatusBadGateway {
+				t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+			}
+			var got database.FoodMeal
+			if err := st.DB().Preload("Items").First(&got, "id = ?", meal.ID).Error; err != nil {
+				t.Fatalf("reload: %v", err)
+			}
+			if got.Status != database.MealStatusConfirmed || len(got.Items) != 1 || got.Items[0].Name != "Original item" {
+				t.Fatalf("malformed estimator result changed meal: %+v", got)
+			}
+		})
+	}
+}
+
 // createReanalyzeMeal creates a meal with a stored photo, one existing item,
 // and the given status/clarify state — everything Reanalyze needs to be
 // eligible, and enough pre-existing content to assert it's left untouched on
@@ -521,6 +760,10 @@ func (c *gatedRecognizeClient) Recognize(context.Context, []byte, string, string
 	close(c.entered)
 	<-c.proceed
 	return c.result, nil
+}
+
+func (c *gatedRecognizeClient) EstimateWeights(context.Context, []byte, string, []vision.WeightEstimateInput) (*vision.WeightEstimateResult, error) {
+	return &vision.WeightEstimateResult{}, nil
 }
 
 func (c *gatedRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn) (*vision.RecognizeResult, error) {

@@ -1,77 +1,113 @@
 'use client';
 import { useState } from 'react';
-import { api, FoodMeal, ReanalyzeFailedError, ReanalyzeSupersededError } from '@/lib/api';
+import {
+  api,
+  ExpertComponentInput,
+  FoodMeal,
+  ReanalyzeFailedError,
+  ReanalyzeInput,
+  ReanalyzeSupersededError,
+} from '@/lib/api';
+import {
+  MAX_COMBINED_COMPONENT_NAME_LENGTH,
+  MAX_EXPERT_COMPONENTS,
+  MAX_HINT_LENGTH,
+  MAX_COMPONENT_NAME_LENGTH,
+  normalizedUnicodeLength,
+  unicodeLength,
+} from '@/lib/foodGuidance';
 
 interface Props {
   mealId: string;
-  // Takes a thunk, not an already-started request — see ReviewClient's
-  // applyMealUpdate doc comment for why (issue order must be commit order,
-  // enforced by the parent controlling when each request actually starts).
   onReanalyzed: (issue: () => Promise<FoodMeal>) => Promise<FoodMeal>;
 }
 
-const MAX_HINT_LENGTH = 500;
+type Mode = 'hint' | 'expert';
+type ExpertRow = { name: string; weight: string };
 
-// Available whenever the backend accepts it (failed, pending_review,
-// confirmed — see the Hint-Driven Reanalysis requirement). A successful
-// reanalysis replaces all items and, for a confirmed meal, reverts its
-// status back to pending_review/pending_clarification — so this warns
-// before submitting. A failed attempt has two distinct outcomes: HTTP 502
-// (ReanalyzeFailedError) guarantees the meal is unchanged, no refetch
-// needed; HTTP 412 (ReanalyzeSupersededError) means a newer operation
-// claimed the meal while this attempt was in flight and may already have
-// changed it — that case refetches rather than trusting the stale display.
+const blankRow = (): ExpertRow => ({ name: '', weight: '' });
+
 export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<Mode>('hint');
   const [hint, setHint] = useState('');
+  const [components, setComponents] = useState<ExpertRow[]>([blankRow()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Count Unicode code points, not UTF-16 code units: JS string.length (and
-  // the native maxLength attribute) count code units, so a character outside
-  // the Basic Multilingual Plane (e.g. most emoji) counts as 2 there but 1
-  // on the backend, which counts runes. Array.from splits on code points.
-  const hintLength = (s: string) => Array.from(s).length;
+  const close = () => {
+    setOpen(false);
+    setMode('hint');
+    setHint('');
+    setComponents([blankRow()]);
+    setError(null);
+  };
+
+  const buildInput = (): ReanalyzeInput | null => {
+    if (mode === 'hint') {
+      const trimmed = hint.trim();
+      if (!trimmed) {
+        setError('A hint is required');
+        return null;
+      }
+      if (unicodeLength(trimmed) > MAX_HINT_LENGTH) {
+        setError(`Hint must be at most ${MAX_HINT_LENGTH} characters`);
+        return null;
+      }
+      return { hint: trimmed };
+    }
+
+    const normalized: ExpertComponentInput[] = [];
+    let combinedLength = 0;
+    for (const [index, row] of components.entries()) {
+      const name = row.name.trim();
+      if (!name) {
+        setError(`Ingredient ${index + 1} needs a name`);
+        return null;
+      }
+      if (unicodeLength(name) > MAX_COMPONENT_NAME_LENGTH) {
+        setError(`Ingredient names must be at most ${MAX_COMPONENT_NAME_LENGTH} characters`);
+        return null;
+      }
+      combinedLength += unicodeLength(name);
+      const component: ExpertComponentInput = { name };
+      if (row.weight.trim()) {
+        const weight = Number(row.weight);
+        if (!Number.isFinite(weight) || weight <= 0) {
+          setError(`Ingredient ${index + 1} weight must be greater than zero`);
+          return null;
+        }
+        component.weight_grams = weight;
+      }
+      normalized.push(component);
+    }
+    if (combinedLength > MAX_COMBINED_COMPONENT_NAME_LENGTH) {
+      setError(`Combined ingredient names must be at most ${MAX_COMBINED_COMPONENT_NAME_LENGTH} characters`);
+      return null;
+    }
+    return { components: normalized };
+  };
 
   const submit = async () => {
-    const trimmed = hint.trim();
-    if (!trimmed) {
-      setError('A hint is required');
-      return;
-    }
-    if (hintLength(trimmed) > MAX_HINT_LENGTH) {
-      setError(`Hint must be at most ${MAX_HINT_LENGTH} characters`);
-      return;
-    }
+    const input = buildInput();
+    if (!input) return;
     setBusy(true);
     setError(null);
     try {
-      await onReanalyzed(() => api.reanalyzeMeal(mealId, trimmed));
-      setOpen(false);
-      setHint('');
+      await onReanalyzed(() => api.reanalyzeMeal(mealId, input));
+      close();
     } catch (err) {
-      // Checks both instanceof and the explicit .name tag — see the
-      // comment on these classes in lib/api.ts for why instanceof alone
-      // isn't trusted here.
       const isFailed = err instanceof ReanalyzeFailedError || (err as { name?: string })?.name === 'ReanalyzeFailedError';
       const isSuperseded =
         err instanceof ReanalyzeSupersededError || (err as { name?: string })?.name === 'ReanalyzeSupersededError';
       if (isFailed) {
         setError('Reanalysis failed — the meal is unchanged. You can try again.');
       } else if (isSuperseded) {
-        // Only claim "showing its current state" once the refetch actually
-        // succeeds — setting that message unconditionally beforehand would
-        // leave the stale pre-reanalysis meal on screen while telling the
-        // user it's current, which is worse than the plain 502 case: there
-        // the backend guarantees nothing changed, but here it's explicitly
-        // saying something might have.
         try {
           await onReanalyzed(() => api.getMeal(mealId));
-          setError('Another operation (e.g. a retry) took over this meal while reanalyzing — showing its current state.');
+          setError('Another operation took over this meal while reanalyzing — showing its current state.');
         } catch {
-          setError(
-            'Another operation took over this meal while reanalyzing, and refreshing its current state failed — this view may be stale. Reload the page to see what changed.'
-          );
+          setError('Another operation took over this meal, and refreshing failed. Reload to see its current state.');
         }
       } else {
         setError(err instanceof Error ? err.message : 'Reanalysis failed');
@@ -85,46 +121,78 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mt-3 w-full py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400"
+        className="mt-3 min-h-12 w-full rounded-lg border border-gray-300 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
       >
-        Reanalyze with a hint
+        Improve analysis
       </button>
     );
   }
 
   return (
-    <div className="mt-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
-      <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">Reanalyze with a hint</p>
-      <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">
-        This replaces all current items with a fresh analysis. If this meal is confirmed, it will
-        revert to needing review and confirmation again.
+    <div className="mt-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <p className="text-sm font-medium text-gray-900 dark:text-white">Improve analysis</p>
+      <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+        This replaces all current items and requires review again.
       </p>
-      <textarea
-        value={hint}
-        onChange={e => setHint(e.target.value)}
-        placeholder="e.g. this is chicken and rice, not berries"
-        rows={2}
-        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-      />
-      <p className="mt-1 text-[11px] text-gray-400 text-right">
-        {hintLength(hint)}/{MAX_HINT_LENGTH}
-      </p>
-      <div className="flex justify-end gap-2 mt-2">
-        <button
-          onClick={() => { setOpen(false); setHint(''); setError(null); }}
-          className="text-xs text-gray-500 dark:text-gray-400 hover:underline"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={submit}
-          disabled={busy}
-          className="px-3 py-1.5 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
-        >
-          {busy ? 'Reanalyzing…' : 'Reanalyze'}
-        </button>
+      <div className="mt-3 grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-gray-700" role="tablist" aria-label="Analysis mode">
+        {(['hint', 'expert'] as const).map(value => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={mode === value}
+            onClick={() => { setMode(value); setError(null); }}
+            className={`min-h-11 rounded-md text-sm font-medium ${mode === value ? 'bg-white text-blue-700 shadow-sm dark:bg-gray-800 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300'}`}
+          >
+            {value === 'hint' ? 'Hint' : 'Expert'}
+          </button>
+        ))}
       </div>
-      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+
+      {mode === 'hint' ? (
+        <div className="mt-3">
+          <label htmlFor="reanalyze-hint" className="text-sm font-medium text-gray-900 dark:text-white">What did the model miss?</label>
+          <textarea
+            id="reanalyze-hint"
+            value={hint}
+            onChange={event => setHint(event.target.value)}
+            placeholder="e.g. grilled chicken with red beans"
+            rows={3}
+            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+          />
+          <p className="mt-1 text-right text-xs text-gray-400">{normalizedUnicodeLength(hint)}/{MAX_HINT_LENGTH}</p>
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-gray-500 dark:text-gray-400">Name each ingredient. Supplied weights are used exactly; blank weights are estimated from the photo.</p>
+          {components.map((row, index) => (
+            <div key={index} className="rounded-lg border border-gray-200 p-3 dark:border-gray-600">
+              <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-2">
+                <div>
+                  <label htmlFor={`component-name-${index}`} className="text-xs font-medium text-gray-600 dark:text-gray-300">Ingredient {index + 1}</label>
+                  <input id={`component-name-${index}`} value={row.name} onChange={event => setComponents(current => current.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} placeholder="Red beans" className="mt-1 min-h-11 w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" />
+                </div>
+                <div>
+                  <label htmlFor={`component-weight-${index}`} className="text-xs font-medium text-gray-600 dark:text-gray-300">Grams</label>
+                  <input id={`component-weight-${index}`} type="number" inputMode="decimal" min="0.01" step="any" value={row.weight} onChange={event => setComponents(current => current.map((item, i) => i === index ? { ...item, weight: event.target.value } : item))} placeholder="Auto" className="mt-1 min-h-11 w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" />
+                </div>
+              </div>
+              {components.length > 1 && (
+                <button type="button" onClick={() => setComponents(current => current.filter((_, i) => i !== index))} className="mt-2 min-h-11 text-xs font-medium text-red-600 dark:text-red-400">Remove ingredient</button>
+              )}
+            </div>
+          ))}
+          {components.length < MAX_EXPERT_COMPONENTS && (
+            <button type="button" onClick={() => setComponents(current => [...current, blankRow()])} className="min-h-11 w-full rounded-lg border border-dashed border-gray-300 text-sm font-medium text-gray-600 dark:border-gray-600 dark:text-gray-300">Add ingredient</button>
+          )}
+        </div>
+      )}
+
+      {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button type="button" onClick={close} disabled={busy} className="min-h-12 rounded-lg border border-gray-300 text-sm font-medium text-gray-600 dark:border-gray-600 dark:text-gray-300">Cancel</button>
+        <button type="button" onClick={submit} disabled={busy} className="min-h-12 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">{busy ? 'Reanalyzing…' : 'Reanalyze'}</button>
+      </div>
     </div>
   );
 }

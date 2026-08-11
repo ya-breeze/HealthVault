@@ -146,7 +146,7 @@ func TestOpenAIClient_Recognize_HintIncludedAlongsideImage(t *testing.T) {
 func TestOpenAIClient_Recognize_NoHintUnchangedPrompt(t *testing.T) {
 	var capturedBody map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
+		json.NewDecoder(r.Body).Decode(&capturedBody)                                 //nolint:errcheck
 		w.Write([]byte(chatResponse(t, `{"items":[],"clarification_questions":[]}`))) //nolint:errcheck
 	})
 
@@ -182,6 +182,30 @@ func TestOpenAIClient_Clarify_SendsNoImageContent(t *testing.T) {
 	b, _ := json.Marshal(capturedBody)
 	if strings.Contains(string(b), "image_url") {
 		t.Error("expected no image_url content in a Clarify request")
+	}
+}
+
+func TestOpenAIClient_EstimateWeightsPreservesIndexesAndSendsImage(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody)                                                                                        //nolint:errcheck
+		w.Write([]byte(chatResponse(t, `{"estimates":[{"component_index":2,"weight_grams":40},{"component_index":0,"weight_grams":150}]}`))) //nolint:errcheck
+	})
+	result, err := c.EstimateWeights(context.Background(), []byte{1, 2, 3}, "image/jpeg", []vision.WeightEstimateInput{
+		{ComponentIndex: 0, Name: "Chicken"}, {ComponentIndex: 2, Name: "Salsa"},
+	})
+	if err != nil {
+		t.Fatalf("EstimateWeights: %v", err)
+	}
+	if len(result.Estimates) != 2 || result.Estimates[0].ComponentIndex != 2 || result.Estimates[1].WeightGrams != 150 {
+		t.Fatalf("unexpected estimates: %+v", result.Estimates)
+	}
+	body, _ := json.Marshal(capturedBody)
+	if !strings.Contains(string(body), "image_url") || !strings.Contains(string(body), "component_index") {
+		t.Fatalf("expected image and indexed components, got %s", body)
+	}
+	if store, _ := capturedBody["store"].(bool); store {
+		t.Error("expected store=false")
 	}
 }
 

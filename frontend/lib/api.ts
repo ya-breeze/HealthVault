@@ -180,6 +180,13 @@ export interface PatchItemInput {
   dietary_fiber_grams?: number;
 }
 
+export interface ExpertComponentInput {
+  name: string;
+  weight_grams?: number;
+}
+
+export type ReanalyzeInput = { hint: string } | { components: ExpertComponentInput[] };
+
 // CreateItemInput additionally requires name plus exactly one of
 // (manual + macros) or (fdc_id/custom_food_id + a positive weight_grams) —
 // see the backend's createItemRequest doc comment (food_item.go).
@@ -295,9 +302,11 @@ export const api = {
   deleteCustomFood: (id: string): Promise<void> =>
     apiFetchNoBody(`/food/custom/${id}`, { method: 'DELETE' }),
 
-  uploadMeal: (file: File): Promise<FoodMeal> => {
+  uploadMeal: (file: File, hint = ''): Promise<FoodMeal> => {
     const form = new FormData();
     form.append('photo', file);
+    const normalizedHint = hint.trim();
+    if (normalizedHint) form.append('hint', normalizedHint);
     return apiFetchForm('/food/meals', form);
   },
   createManualMeal: (input: { name?: string; logged_at?: string; items: ManualMealItemInput[] }) =>
@@ -344,10 +353,10 @@ export const api = {
   patchMeal: (id: string, input: PatchMealInput) =>
     apiFetch<FoodMeal>(`/food/meals/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
 
-  reanalyzeMeal: async (id: string, hint: string): Promise<FoodMeal> => {
+  reanalyzeMeal: async (id: string, input: ReanalyzeInput): Promise<FoodMeal> => {
     const res = await apiRawFetch(`/food/meals/${id}/reanalyze`, {
       method: 'POST',
-      body: JSON.stringify({ hint }),
+      body: JSON.stringify(input),
     });
     if (res.status === 502) {
       throw new ReanalyzeFailedError((await res.text()) || 'Reanalysis failed; the meal is unchanged.');

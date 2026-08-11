@@ -260,6 +260,65 @@ func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hi
 	return toRecognizeResult(resp, latency)
 }
 
+var weightEstimateJSONSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"estimates": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"component_index": map[string]any{"type": "integer"},
+					"weight_grams":    map[string]any{"type": "number"},
+				},
+				"required":             []string{"component_index", "weight_grams"},
+				"additionalProperties": false,
+			},
+		},
+	},
+	"required":             []string{"estimates"},
+	"additionalProperties": false,
+}
+
+type weightEstimateSchemaResponse struct {
+	Estimates []WeightEstimate `json:"estimates"`
+}
+
+const weightEstimateSystemPrompt = `You estimate the visible weights of user-identified meal components.
+
+Estimate only the supplied components, using the meal photo for portion size.
+Return every supplied component_index exactly once, preserve each index, and
+do not add components. Weights must be positive numbers in grams.`
+
+func (c *OpenAIClient) EstimateWeights(ctx context.Context, image []byte, mimeType string, components []WeightEstimateInput) (*WeightEstimateResult, error) {
+	payload, err := json.Marshal(components)
+	if err != nil {
+		return nil, fmt.Errorf("marshal weight-estimation components: %w", err)
+	}
+	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(image)
+	messages := []chatMessage{
+		{Role: "system", Content: weightEstimateSystemPrompt},
+		{Role: "user", Content: []map[string]any{
+			{"type": "text", "text": "Components needing weight estimates:\n" + string(payload)},
+			{"type": "image_url", "image_url": map[string]string{"url": dataURL}},
+		}},
+	}
+	resp, latency, err := c.call(ctx, messages, "food_weight_estimation", weightEstimateJSONSchema)
+	if err != nil {
+		return nil, err
+	}
+	var schemaResp weightEstimateSchemaResponse
+	content := resp.Choices[0].Message.Content
+	if err := json.Unmarshal([]byte(content), &schemaResp); err != nil {
+		return nil, fmt.Errorf("unmarshal structured content: %w", err)
+	}
+	return &WeightEstimateResult{
+		Estimates: schemaResp.Estimates, Model: resp.Model,
+		PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens,
+		Latency: latency, Raw: content,
+	}, nil
+}
+
 // Clarify is text-only: it replays the items recognized so far and the full
 // question/answer history, without re-sending the photo.
 func (c *OpenAIClient) Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn) (*RecognizeResult, error) {
