@@ -13,6 +13,7 @@ import {
   MAX_EXPERT_COMPONENTS,
   MAX_HINT_LENGTH,
   MAX_COMPONENT_NAME_LENGTH,
+  normalizedUnicodeLength,
   unicodeLength,
 } from '@/lib/foodGuidance';
 
@@ -159,7 +160,7 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
             rows={3}
             className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
           />
-          <p className="mt-1 text-right text-xs text-gray-400">{unicodeLength(hint)}/{MAX_HINT_LENGTH}</p>
+          <p className="mt-1 text-right text-xs text-gray-400">{normalizedUnicodeLength(hint)}/{MAX_HINT_LENGTH}</p>
         </div>
       ) : (
         <div className="mt-3 space-y-3">

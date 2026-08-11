@@ -113,6 +113,7 @@ func TestReanalyze_RequiresExactlyOneModeBeforeClaim(t *testing.T) {
 		`{"hint":"rice","components":null}`,
 		`{"hint":null}`,
 		`{"components":[]}`,
+		`{"components":[{"name":"Rice","weight_grams":null}]}`,
 		`{"components":[{"name":"Rice","weight_grams":0}]}`,
 	}
 	for _, body := range cases {

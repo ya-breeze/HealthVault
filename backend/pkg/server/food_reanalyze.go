@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,6 +41,33 @@ var reanalyzeEligibleStatuses = []string{
 type expertComponentRequest struct {
 	Name        string   `json:"name"`
 	WeightGrams *float64 `json:"weight_grams,omitempty"`
+}
+
+// UnmarshalJSON keeps an omitted optional weight distinct from an explicit
+// null. Omitted means "estimate this weight"; null is not a positive finite
+// number and must be rejected before the meal is claimed or vision is called.
+func (c *expertComponentRequest) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Name        string          `json:"name"`
+		WeightGrams json.RawMessage `json:"weight_grams"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	c.Name = wire.Name
+	c.WeightGrams = nil
+	if len(wire.WeightGrams) == 0 {
+		return nil
+	}
+	if bytes.Equal(bytes.TrimSpace(wire.WeightGrams), []byte("null")) {
+		return errors.New("weight_grams must be a number when present")
+	}
+	var weight float64
+	if err := json.Unmarshal(wire.WeightGrams, &weight); err != nil {
+		return err
+	}
+	c.WeightGrams = &weight
+	return nil
 }
 
 type reanalyzeInput struct {

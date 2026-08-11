@@ -137,6 +137,8 @@ test.describe('Photo upload', () => {
     });
     await page.goto('/food/upload/');
     await page.getByRole('button', { name: 'Add a hint (optional)' }).click();
+    await page.getByLabel('Photo hint (optional)').fill(` ${'🙂'.repeat(500)} `);
+    await expect(page.getByText('500/500')).toBeVisible();
     await page.getByLabel('Photo hint (optional)').fill('🙂'.repeat(501));
     await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
     await expect(page.getByText('Hint must be at most 500 characters')).toBeVisible();
