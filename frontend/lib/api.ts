@@ -1,11 +1,88 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
+// Coordination keys for transparent-refresh-on-401 (see openspec authentication
+// capability, "Frontend transparent refresh on 401"). AUTH_REFRESH_LOCK names a
+// Web Lock shared across tabs of the same browser; LAST_REFRESH_KEY is a
+// localStorage timestamp read/written inside that lock so a tab that loses the
+// lock race can tell a fresh refresh already happened instead of resubmitting
+// an already-rotated refresh token.
+const AUTH_REFRESH_LOCK = 'hcw-auth-refresh';
+const LAST_REFRESH_KEY = 'hcw:lastAuthRefreshAt';
+
+function isAuthExemptPath(path: string): boolean {
+  return path === '/auth/login' || path === '/auth/refresh';
+}
+
+// POSTs /auth/refresh directly (no retry wrapping — this IS the refresh call).
+// Records the completion time so other tabs waiting on the Web Lock can see a
+// refresh already happened at/after their request was dispatched.
+async function refreshAccessToken(): Promise<boolean> {
+  const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
+  if (!res.ok) return false;
+  try {
+    localStorage.setItem(LAST_REFRESH_KEY, String(Date.now()));
+  } catch {
+    // localStorage may be unavailable (e.g. private browsing); same-tab dedup
+    // via refreshPromise still applies, cross-tab dedup just degrades.
+  }
+  return true;
+}
+
+// Same-tab dedup: concurrent 401s in one tab share this in-flight refresh.
+let refreshPromise: Promise<boolean> | null = null;
+
+// Coordinates a refresh across same-tab callers and, where the browser exposes
+// a secure context, across tabs of the same browser too — see design.md's
+// "Why dispatchedAt" note for why this must be the request's send time, not
+// the time its 401 was received.
+function coordinatedRefresh(dispatchedAt: number): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+
+  const run = async (): Promise<boolean> => {
+    if (typeof navigator !== 'undefined' && 'locks' in navigator && navigator.locks) {
+      return navigator.locks.request(AUTH_REFRESH_LOCK, async () => {
+        let lastRefreshAt = 0;
+        try {
+          lastRefreshAt = Number(localStorage.getItem(LAST_REFRESH_KEY)) || 0;
+        } catch {
+          // ignore; falls through to performing our own refresh
+        }
+        if (lastRefreshAt >= dispatchedAt) return true;
+        return refreshAccessToken();
+      });
+    }
+    // No Web Locks (older browser, or not a secure context — e.g. the local
+    // http hcw-wip stack). Same-tab dedup above still applies; cross-tab
+    // coordination is a documented residual risk in that fallback case.
+    return refreshAccessToken();
+  };
+
+  refreshPromise = run().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+// The one place that calls fetch() and reacts to a 401 by transparently
+// refreshing and retrying — apiRawFetch, apiFetchNoBody, and apiFetchForm all
+// delegate here so the retry logic exists exactly once.
+async function fetchWithAuthRetry(path: string, options: RequestInit): Promise<Response> {
+  const dispatchedAt = Date.now();
+  const res = await fetch(`${BASE}${path}`, options);
+  if (res.status !== 401 || isAuthExemptPath(path)) return res;
+
+  const refreshed = await coordinatedRefresh(dispatchedAt);
+  if (!refreshed) return res;
+
+  return fetch(`${BASE}${path}`, options);
+}
+
 // Shared request setup (credentials, JSON content-type) so every JSON call —
 // including ones that need to branch on a specific status code before the
 // generic !res.ok handling, like reanalyzeMeal's 502 — goes through the same
 // fetch configuration instead of re-declaring it.
 async function apiRawFetch(path: string, options?: RequestInit): Promise<Response> {
-  return fetch(`${BASE}${path}`, {
+  return fetchWithAuthRetry(path, {
     credentials: 'include',
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -34,7 +111,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 async function apiFetchNoBody(path: string, options?: RequestInit): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetchWithAuthRetry(path, {
     credentials: 'include',
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -43,7 +120,7 @@ async function apiFetchNoBody(path: string, options?: RequestInit): Promise<void
 }
 
 async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetchWithAuthRetry(path, {
     method: 'POST',
     credentials: 'include',
     body: form,
