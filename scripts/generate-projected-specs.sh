@@ -140,6 +140,11 @@ for cap in "${CAPABILITIES[@]}"; do
 	before="openspec/specs/$cap/spec.md"
 	after="$WORKTREE_DIR/openspec/specs/$cap/spec.md"
 
+	if [[ ! -f "$after" ]]; then
+		echo "ERROR: expected 'openspec archive' to write $after for touched capability '$cap', but it does not exist; openspec/specs.projected/ may be incomplete" >&2
+		exit 1
+	fi
+
 	# Read the "before" side from committed HEAD, not the primary working
 	# tree: an uncommitted local edit to openspec/specs/$cap/spec.md must
 	# not change spec.diff, since "after" is already computed purely from
