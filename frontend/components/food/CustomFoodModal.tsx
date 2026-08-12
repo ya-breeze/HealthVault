@@ -69,7 +69,7 @@ export default function CustomFoodModal({ initial, onSave, onClose }: Props) {
             type="text"
             value={name}
             onChange={e => setName(e.target.value)}
-            className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
           />
         </label>
 
@@ -83,7 +83,7 @@ export default function CustomFoodModal({ initial, onSave, onClose }: Props) {
                 step="any"
                 value={values[key]}
                 onChange={e => setValues({ ...values, [key]: Number(e.target.value) })}
-                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
             </label>
           ))}

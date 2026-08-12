@@ -70,7 +70,7 @@ export default function FoodUploadPage() {
                   onChange={event => setHint(event.target.value)}
                   rows={3}
                   placeholder="What should the model know?"
-                  className="mt-3 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="mt-3 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 />
                 <p className="mt-1 text-right text-xs text-gray-400">
                   {normalizedUnicodeLength(hint)}/{MAX_HINT_LENGTH}

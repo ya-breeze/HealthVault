@@ -133,6 +133,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const items = meal.items ?? [];
   const pendingQuestions = pendingClarifyQuestions(meal);
   const canConfirm = meal.status === 'pending_review' && !busy;
+  const showConfirmBar = meal.status === 'pending_review';
   // Manual entries are confirmed but have no stored photo — the backend
   // rejects reanalyzing those with 409, so don't offer a control that would
   // always fail for them.
@@ -141,7 +142,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     (meal.status === 'failed' || meal.status === 'pending_review' || meal.status === 'confirmed');
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 ${showConfirmBar ? 'pb-24' : ''}`}>
       <Header />
 
       <main className="max-w-md mx-auto px-6 py-6">
@@ -230,16 +231,6 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
             )}
 
             <AddItemForm mealId={mealId} onAdded={applyMealUpdate} />
-
-            {meal.status === 'pending_review' && (
-              <button
-                onClick={handleConfirm}
-                disabled={!canConfirm}
-                className="mt-4 w-full py-2.5 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-              >
-                {busy ? 'Confirming…' : 'Confirm Meal'}
-              </button>
-            )}
           </>
         )}
 
@@ -247,6 +238,20 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
         {actionError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
       </main>
+
+      {showConfirmBar && (
+        <div className="fixed bottom-0 left-0 right-0 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <div className="max-w-md mx-auto">
+            <button
+              onClick={handleConfirm}
+              disabled={!canConfirm}
+              className="w-full py-2.5 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+            >
+              {busy ? 'Confirming…' : 'Confirm Meal'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {meal.status === 'pending_clarification' && pendingQuestions.length > 0 && (
         <ClarifyModal questions={pendingQuestions} onSubmit={handleClarify} />

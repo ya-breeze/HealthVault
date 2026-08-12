@@ -46,6 +46,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
   const [weight, setWeight] = useState(item.weight_grams);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(item.macro_source === 'none');
 
@@ -141,6 +142,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete item');
       setDeleting(false);
+      setConfirmingDelete(false);
     }
   };
 
@@ -167,17 +169,35 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
             disabled={saving || deleting}
             onChange={e => setWeight(Number(e.target.value))}
             onBlur={commitWeight}
-            className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+            className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
           />
           <span className="text-xs text-gray-400">g</span>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            title="Delete item"
-            className="ml-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
-          >
-            ×
-          </button>
+          {confirmingDelete ? (
+            <div className="ml-1 flex items-center gap-1">
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="min-h-11 px-2 rounded text-xs font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              >
+                {deleting ? '…' : 'Confirm'}
+              </button>
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                disabled={deleting}
+                className="min-h-11 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmingDelete(true)}
+              title="Delete item"
+              className="ml-1 min-w-11 min-h-11 flex items-center justify-center rounded text-lg leading-none text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 
