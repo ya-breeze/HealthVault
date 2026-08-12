@@ -21,7 +21,7 @@ OpenSpec delta specs under `openspec/changes/<id>/specs/<capability>/spec.md` us
 
 ## Impact
 
-- New files: `scripts/generate-projected-specs.sh`, `.github/workflows/openspec-projected-specs.yml`, a short doc under `openspec/specs.projected/README.md`, `.gitattributes` additions, a new `projected-specs` Makefile target.
+- New files: `scripts/generate-projected-specs.sh`, `.github/workflows/openspec-projected-specs.yml`, a short doc at `openspec/specs.projected.README.md` (kept outside `openspec/specs.projected/` itself, since the generator `rm -rf`s that directory on every run), `.gitattributes` additions, a new `projected-specs` Makefile target.
 - No changes to `openspec/specs/` or `openspec/changes/` other than this change's own artifacts.
 - No changes to application code (Go backend, Next.js frontend) or its runtime behavior.
 - Adds a new CI dependency: `@fission-ai/openspec@1.6.0` installed via npm in the GitHub Actions runner (pinned to match the version this environment already uses elsewhere).
