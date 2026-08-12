@@ -14,6 +14,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
+  const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
 
   useEffect(() => {
     api.me()
@@ -42,6 +43,13 @@ export default function Dashboard() {
     });
   }, [ready]);
 
+  useEffect(() => {
+    if (!ready) return;
+    api.needsAttentionCount()
+      .then(res => setNeedsAttentionCount(res.count))
+      .catch(() => setNeedsAttentionCount(0));
+  }, [ready]);
+
   return (
     <div className="min-h-screen bg-bg">
       <Header />
@@ -55,6 +63,16 @@ export default function Dashboard() {
             <VitalCard key={m.type} type={m.type} label={m.label} result={ready ? vitals[m.type] ?? null : null} />
           ))}
         </div>
+
+        {needsAttentionCount > 0 && (
+          <a
+            href="/food/history/"
+            className="mb-8 flex items-center gap-2 bg-bg-elevated border border-border rounded-[10px] px-4 py-3 hover:border-accent transition-colors text-sm font-semibold text-text"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
+            {needsAttentionCount} meal{needsAttentionCount === 1 ? '' : 's'} need{needsAttentionCount === 1 ? 's' : ''} attention
+          </a>
+        )}
 
         <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
           Log food
