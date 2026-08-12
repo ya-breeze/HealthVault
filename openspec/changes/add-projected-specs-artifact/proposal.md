@@ -4,8 +4,8 @@ OpenSpec delta specs under `openspec/changes/<id>/specs/<capability>/spec.md` us
 
 ## What Changes
 
-- Add a generator script (`scripts/generate-projected-specs.sh`) that materializes what `openspec/specs/` will read after the current branch's touched changes are archived, writing it to `openspec/specs.projected/`.
-- Add a GitHub Actions workflow that regenerates the projection on every PR touching `openspec/**` and fails if the committed copy is stale. This is the first GitHub Actions workflow in this repository.
+- Add a generator script (`scripts/generate-projected-specs.sh`) that materializes what each *touched capability's* `openspec/specs/<capability>/spec.md` will read after the current branch's touched changes are archived, writing both the full post-archive text and an explicit unified diff against the current spec to `openspec/specs.projected/<capability>/`. Scoped to touched capabilities only — not a full copy of `openspec/specs/` — so the PR diff stays focused instead of showing every capability in the repo as newly added.
+- Add a GitHub Actions workflow that regenerates the projection on every PR touching `openspec/**` and fails if the committed copy is stale or entirely missing (comparing against the staged index, not a plain working-tree diff, so an omitted/untracked projection is caught too). This is the first GitHub Actions workflow in this repository.
 - Add a `projected-specs` Makefile target wiring the script into the existing task runner.
 - Add `.gitattributes` entries marking `openspec/specs.projected/**` as generated, so it collapses in PR review and is excluded from language stats.
 - Document the new artifact: what it is, that it's never hand-edited, how to regenerate it, and that `openspec/specs.projected/` is reviewed for final wording while the delta under `openspec/changes/<id>/specs/` is reviewed for intent.
