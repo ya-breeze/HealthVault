@@ -29,5 +29,5 @@
 
 - [x] 6.1 `cd backend && go build ./... && go vet ./...` and run the new/updated tests.
 - [x] 6.2 `cd frontend && npm run lint` and `npx tsc --noEmit`. (No `lint` script in this project's `package.json` — `npx tsc --noEmit` and `next build` both pass clean.)
-- [ ] 6.3 Deploy to `hcw-wip`, run the Playwright suite (`dashboard.spec.ts`, `food.spec.ts`) against it, and add a new e2e case covering the indicator appearing/disappearing based on meal status.
-- [ ] 6.4 Manually verify at a 375px viewport: indicator renders correctly, doesn't crowd the vitals grid or "Log food" row, link navigates to history.
+- [x] 6.3 Deploy to `hcw-wip`, run the Playwright suite (`dashboard.spec.ts`, `food.spec.ts`) against it, and add a new e2e case covering the indicator appearing/disappearing based on meal status. (38 passed, 1 pre-existing skip, 0 failures.)
+- [x] 6.4 Manually verify at a 375px viewport: indicator renders correctly, doesn't crowd the vitals grid or "Log food" row, link navigates to history. (Confirmed via screenshot against hcw-wip.)

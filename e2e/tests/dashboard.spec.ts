@@ -40,6 +40,40 @@ test.describe('Dashboard', () => {
   });
 });
 
+test.describe('Needs-attention indicator', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('shown and links to history when meals need attention', async ({ page }) => {
+    await page.route('**/api/food/meals/needs-attention-count', route =>
+      route.fulfill({ json: { count: 3 } })
+    );
+    await page.goto('/');
+
+    const indicator = page.getByText('3 meals need attention');
+    await expect(indicator).toBeVisible();
+    await indicator.click();
+    await expect(page).toHaveURL(/\/food\/history/);
+  });
+
+  test('uses singular wording for a count of one', async ({ page }) => {
+    await page.route('**/api/food/meals/needs-attention-count', route =>
+      route.fulfill({ json: { count: 1 } })
+    );
+    await page.goto('/');
+    await expect(page.getByText('1 meal needs attention')).toBeVisible();
+  });
+
+  test('hidden when no meals need attention', async ({ page }) => {
+    await page.route('**/api/food/meals/needs-attention-count', route =>
+      route.fulfill({ json: { count: 0 } })
+    );
+    await page.goto('/');
+    await expect(page.getByText(/needs? attention/)).not.toBeVisible();
+  });
+});
+
 test.describe('Webhook ingest + dashboard', () => {
   test('webhook POST is reflected in the steps vital card and its bucketed API response', async ({ page, request }) => {
     const ts = new Date().toISOString();
