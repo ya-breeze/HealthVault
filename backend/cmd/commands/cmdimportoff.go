@@ -68,6 +68,8 @@ func CmdImportOFF(logger *slog.Logger) *cobra.Command {
 			logger.Info("Open Food Facts import complete", "foods", n, "path", cfg.OFFDBPath)
 			cmd.Printf("Imported %d foods into %s (filtered %d, malformed %d)\n",
 				n, cfg.OFFDBPath, stats.Filtered, stats.Malformed)
+			cmd.Println("Restart the backend for this import to take effect — " +
+				"the reference index is opened once at startup and is not reloaded while running.")
 			return nil
 		},
 	}

@@ -52,6 +52,13 @@ The system SHALL support looking up a single product by its Open Food Facts `cod
 
 The system SHALL provide an `hcw import-off` command that downloads (or reads a local copy of) the Open Food Facts full data export, filters it to products tagged with a Czech Republic and/or Slovakia country and complete calories/protein/carbs/fat nutriments, and builds the local SQLite FTS5 index. The import SHALL write to a temporary file, validate a minimum expected row count, and only then atomically replace the existing database, so a failed or partial import leaves the previous database in service. The system SHALL NOT run any scheduled or background dataset updater for this data, consistent with the project having no background-job infrastructure.
 
+The reference index is opened once when the server process starts and is not reloaded while running (the same characteristic `import-usda` already has). A successful `import-off` run therefore does not take effect until the backend is restarted; the command's success output SHALL state this explicitly so an operator does not mistake a completed import for an active one.
+
+#### Scenario: A completed import does not activate until restart
+
+- **WHEN** an operator runs `import-off` while the backend is already running, and the import succeeds and is promoted
+- **THEN** the running backend process continues serving from the reference index it opened at startup (USDA-only, or the previous Open Food Facts database) until it is restarted, and the command's printed output says so
+
 #### Scenario: Successful import replaces the database
 
 - **WHEN** an operator runs the import command against a valid Open Food Facts export

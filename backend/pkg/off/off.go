@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3" // sqlite3 driver
 
@@ -81,10 +83,22 @@ func (i *Index) Close() error {
 	return nil
 }
 
+// searchFetchLimit is how many brand-matched rows Search pulls from SQLite
+// before re-ranking by name overlap in Go and truncating to the caller's
+// limit. Brand-matched sets are already narrow by construction (see
+// buildBrandQuery), so this only bounds how much work a very common brand
+// with many SKUs can force onto the in-process ranking step.
+const searchFetchLimit = 200
+
 // Search returns up to limit ranked candidates for a free-text product name,
 // requiring brand to match. An empty brand, or a brand with no usable
 // tokens, returns no results rather than matching on name alone — see
-// buildQuery. An empty result is a normal outcome, not an error.
+// buildBrandQuery. Only the brand predicate is used to filter in SQL; name
+// terms rank the brand-matched set afterward in Go (rankByNameOverlap) and
+// can never exclude a correctly-branded product, even one that shares no
+// token with name — e.g. a Czech "Bílý jogurt" product still ranks (just
+// lower) against a recognized English "yogurt". An empty result is a normal
+// outcome, not an error.
 func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 	if i == nil || i.db == nil {
 		return nil, ErrNoDatabase
@@ -92,7 +106,7 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 	if limit <= 0 {
 		limit = DefaultCandidates
 	}
-	q := buildQuery(name, brand)
+	q := buildBrandQuery(brand)
 	if q == "" {
 		return nil, nil
 	}
@@ -103,7 +117,7 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 		JOIN off_foods f ON f.rowid = fts.rowid
 		WHERE off_foods_fts MATCH ?
 		ORDER BY bm25(off_foods_fts)
-		LIMIT ?`, q, limit)
+		LIMIT ?`, q, searchFetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("off search: %w", err)
 	}
@@ -124,7 +138,45 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate off rows: %w", err)
 	}
+
+	rankByNameOverlap(out, name)
+	if len(out) > limit {
+		out = out[:limit]
+	}
 	return out, nil
+}
+
+// rankByNameOverlap stable-sorts foods (already brand-matched by SQL) by how
+// many of name's terms appear in each product's name, descending. Stability
+// preserves the original bm25 (brand-match strength) order as the tie-break,
+// including when name has no usable terms at all — every row keeps its
+// brand-match rank rather than being reordered arbitrarily.
+func rankByNameOverlap(foods []Food, name string) {
+	terms := nameRankTerms(name)
+	if len(terms) == 0 {
+		return
+	}
+	type scored struct {
+		food  Food
+		score int
+	}
+	list := make([]scored, len(foods))
+	for idx, f := range foods {
+		lower := strings.ToLower(f.ProductName)
+		score := 0
+		for _, t := range terms {
+			if strings.Contains(lower, t) {
+				score++
+			}
+		}
+		list[idx] = scored{food: f, score: score}
+	}
+	sort.SliceStable(list, func(a, b int) bool {
+		return list[a].score > list[b].score
+	})
+	for idx, s := range list {
+		foods[idx] = s.food
+	}
 }
 
 // ByCode looks up a single product by its Open Food Facts barcode, used when

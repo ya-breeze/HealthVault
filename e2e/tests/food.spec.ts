@@ -874,10 +874,15 @@ test.describe('Open Food Facts source badge — mocked UI behavior (deterministi
 
     await page.goto('/food/review/?meal=mock-meal-id');
 
-    await expect(page.getByText('Open Food Facts', { exact: true })).toBeVisible();
+    // "Open Food Facts" now appears twice: the item's source badge (a
+    // <span>) and the attribution note's link to openfoodfacts.org. Scope to
+    // the badge specifically so this doesn't hit a strict-mode violation.
+    await expect(page.locator('span', { hasText: 'Open Food Facts' })).toBeVisible();
     await expect(page.getByText('USDA', { exact: true })).not.toBeVisible();
     // The ODbL attribution note only appears when a meal actually has an
-    // OFF-sourced item.
+    // OFF-sourced item, and per Open Food Facts' reuse terms it must link to
+    // Open Food Facts itself, not only to the ODbL license text.
+    await expect(page.getByRole('link', { name: 'Open Food Facts' })).toBeVisible();
     await expect(page.getByText('Open Database License (ODbL)')).toBeVisible();
   });
 
@@ -893,7 +898,8 @@ test.describe('Open Food Facts source badge — mocked UI behavior (deterministi
     await page.goto('/food/review/?meal=mock-meal-id');
 
     await expect(page.getByText('USDA', { exact: true })).toBeVisible();
-    await expect(page.getByText('Open Food Facts', { exact: true })).not.toBeVisible();
+    await expect(page.locator('span', { hasText: 'Open Food Facts' })).not.toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open Food Facts' })).not.toBeVisible();
     await expect(page.getByText('Open Database License (ODbL)')).not.toBeVisible();
   });
 });

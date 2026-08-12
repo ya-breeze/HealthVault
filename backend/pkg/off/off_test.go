@@ -105,13 +105,15 @@ func TestSearch_MultiWordBrandRequiresAllTokens(t *testing.T) {
 	}
 
 	// A query whose name term happens to match the unrelated "Dr Pepper" row
-	// must not let it through just because it shares the brand token "dr".
+	// must not let it through just because it shares the brand token "dr" —
+	// brand is the only filter, so this returns the Dr. Oetker product
+	// (ranked by whatever little name overlap it has), never Dr Pepper.
 	got, err = idx.Search("cola", "Dr. Oetker", 5)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if len(got) != 0 {
-		t.Errorf("got %d candidates, want 0 (Dr Pepper must not match a Dr. Oetker brand search): %+v", len(got), got)
+	if len(got) != 1 || got[0].Code != "1" {
+		t.Fatalf("got %+v, want only the Dr. Oetker product (Dr Pepper must never match a Dr. Oetker brand search)", got)
 	}
 }
 
@@ -132,6 +134,52 @@ func TestSearch_RanksByNameWithinBrandMatchedSet(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("got %d candidates, want both Olma products: %+v", len(got), got)
+	}
+}
+
+// The core regression test for the group-level AND-vs-filter fix: a
+// brand-matched product whose name shares no token with the query must still
+// be returned (just ranked lower), never excluded.
+func TestSearch_NameMismatchWithinBrandStillReturnsResult(t *testing.T) {
+	path := buildIndex(t, product("1", "Bílý jogurt", "Olma", 65))
+	idx, err := off.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer idx.Close() //nolint:errcheck
+
+	// "yogurt" shares no token with the indexed "Bílý jogurt" (Czech, no
+	// shared substring), but the brand matches — the product must still come
+	// back, just possibly ranked behind a better name match.
+	got, err := idx.Search("yogurt", "Olma", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != 1 || got[0].Code != "1" {
+		t.Fatalf("got %+v, want the brand-matched product despite zero name-token overlap", got)
+	}
+}
+
+func TestSearch_RanksNameMatchAboveNameMismatchWithinSameBrand(t *testing.T) {
+	path := buildIndex(t,
+		product("1", "Cottage cheese", "Olma", 98),
+		product("2", "Bílý jogurt", "Olma", 65),
+	)
+	idx, err := off.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer idx.Close() //nolint:errcheck
+
+	got, err := idx.Search("jogurt", "Olma", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d candidates, want both Olma products: %+v", len(got), got)
+	}
+	if got[0].Code != "2" {
+		t.Fatalf("got[0] = %+v, want the name-matching yogurt ranked first", got[0])
 	}
 }
 

@@ -57,5 +57,5 @@
 
 ## 7. Docs
 
-- [x] 7.1 Add an Open Food Facts attribution note (ODbL 1.0, required for OFF-derived data shown to users) wherever meal/food data sourced from OFF is displayed or documented
-- [x] 7.2 Document the `import-off` command and `OFF_DB_PATH` config in the project README/ops notes, alongside the existing USDA import documentation — explicitly note that both `import-usda` and `import-off` require a backend restart to take effect, since the reference index is opened once at server startup and does not reload
+- [x] 7.1 Add an Open Food Facts attribution note (ODbL 1.0 plus a link to Open Food Facts itself, per its reuse terms — not the license alone) wherever meal/food data sourced from OFF is displayed
+- [x] 7.2 Document the `import-off` command, `OFF_DB_PATH` config, and the restart-required behavior. The project has no README/ops-notes file (the USDA import has no such doc either — its only documentation is `openspec/specs/usda-nutrition-database/spec.md`'s "Operator-Run USDA Import" requirement), so this change follows the same precedent: the restart requirement is now an explicit requirement scenario in `off-nutrition-database/spec.md`, and `import-off`'s own `--help` text and success output both state it directly, so an operator sees it without needing to find the spec
