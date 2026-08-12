@@ -87,6 +87,8 @@ The endpoint SHALL accept an optional, repeatable `status` query parameter (e.g.
 - **WHEN** the caller requests `?status=bogus`
 - **THEN** the system returns HTTP 400 and does not return a partial or reinterpreted result
 
+## ADDED Requirements
+
 ### Requirement: Needs-Attention Count
 The system SHALL expose `GET /api/food/meals/needs-attention-count`, returning a count of the authenticated caller's own meals whose status is `processing`, `pending_clarification`, `pending_review`, or `failed` — the set of meals with no finished, confirmed nutrition totals yet. The response SHALL be a JSON object `{"count": <integer>}`. The endpoint SHALL take no query parameters; the status set counted is fixed. As with the meal list, this endpoint SHALL scope strictly to the caller's own meals (`user_id`).
 
