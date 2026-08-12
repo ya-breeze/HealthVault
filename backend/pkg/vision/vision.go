@@ -22,6 +22,7 @@ type Item struct {
 	Name        string  `json:"name"`
 	Preparation string  `json:"preparation,omitempty"`
 	State       string  `json:"state,omitempty"`
+	Brand       string  `json:"brand,omitempty"`
 	WeightGrams float64 `json:"weight_grams"`
 	Confidence  float64 `json:"confidence"`
 }
@@ -69,14 +70,27 @@ type WeightEstimateResult struct {
 type Candidate struct {
 	FdcID        *int64     `json:"fdc_id,omitempty"`
 	CustomFoodID *uuid.UUID `json:"custom_food_id,omitempty"`
-	Description  string     `json:"description"`
+	OffCode      *string    `json:"off_code,omitempty"`
+	// Brands is populated for Open Food Facts candidates (empty for USDA and
+	// custom-food ones) so the shortlist itself shows which brand each
+	// candidate actually is — useful for the selection model and the review
+	// UI even though the retrieval query already guarantees a brand match.
+	Brands      string `json:"brands,omitempty"`
+	Description string `json:"description"`
 }
 
 // ItemCandidates pairs a recognized item (by its index in the
 // RecognizeResult.Items slice that produced it) with its retrieved
-// shortlist.
+// shortlist, plus the recognized item's own name and brand — Select is a
+// genuinely stateless, text-only call that never replays anything from the
+// Recognize call, so without these fields the model comparing candidates has
+// no idea what it is actually comparing them against. See
+// openspec/changes/add-open-food-facts-source/design.md "Selection is
+// offered the recognized item's own name and brand".
 type ItemCandidates struct {
 	ItemIndex  int         `json:"item_index"`
+	ItemName   string      `json:"item_name"`
+	ItemBrand  string      `json:"item_brand,omitempty"`
 	Candidates []Candidate `json:"candidates"`
 }
 

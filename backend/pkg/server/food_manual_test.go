@@ -56,6 +56,91 @@ func TestCreateManualMeal_FromUSDAReference(t *testing.T) {
 	}
 }
 
+func TestCreateManualMeal_FromOFFReference(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	offIdx := buildOFFIndex(t, offFood("8594001222227", "Bílý jogurt", "Olma", 65))
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithOFF(offIdx)
+
+	r := withClaims(manualMealRequest(t, map[string]any{
+		"name": "Snack",
+		"items": []map[string]any{
+			{"name": "Bílý jogurt", "source": "reference", "off_code": "8594001222227", "weight_grams": 150},
+		},
+	}), userID)
+	w := httptest.NewRecorder()
+	h.CreateManualMeal(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	if err := json.NewDecoder(w.Body).Decode(&meal); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// 65 kcal/100g * 1.5 = 97.5
+	if meal.Calories < 97.4 || meal.Calories > 97.6 {
+		t.Errorf("expected calories ~97.5, got %v", meal.Calories)
+	}
+	if len(meal.Items) != 1 || meal.Items[0].MacroSource != database.MacroSourceReference {
+		t.Fatalf("expected one reference item, got %+v", meal.Items)
+	}
+	if meal.Items[0].OffCode == nil || *meal.Items[0].OffCode != "8594001222227" {
+		t.Errorf("expected off_code bound on the item, got %+v", meal.Items[0].OffCode)
+	}
+}
+
+func TestCreateManualMeal_UnknownOffCodeReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	offIdx := buildOFFIndex(t, offFood("1", "Filler", "Brand", 1))
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithOFF(offIdx)
+
+	r := withClaims(manualMealRequest(t, map[string]any{
+		"items": []map[string]any{
+			{"name": "Ghost product", "source": "reference", "off_code": "0000000000000", "weight_grams": 100},
+		},
+	}), userID)
+	w := httptest.NewRecorder()
+	h.CreateManualMeal(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// Regression: CreateManualMeal previously had no exclusivity validation
+// between fdc_id/custom_food_id at all — resolveReferenceProfile silently
+// preferred fdc_id while both IDs got persisted. Fixed as part of adding
+// off_code as a third reference field (see design.md's Risks); this SHALL
+// now reject every pairing, not just the ones added by this change.
+func TestCreateManualMeal_AmbiguousReferenceReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	offIdx := buildOFFIndex(t, offFood("111", "Jogurt", "Olma", 65))
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithOFF(offIdx)
+	customFoodID := uuid.New()
+
+	cases := []struct {
+		name string
+		item map[string]any
+	}{
+		{"fdc_id plus custom_food_id", map[string]any{"name": "x", "source": "reference", "fdc_id": 7, "custom_food_id": customFoodID.String(), "weight_grams": 100}},
+		{"fdc_id plus off_code", map[string]any{"name": "x", "source": "reference", "fdc_id": 7, "off_code": "111", "weight_grams": 100}},
+		{"off_code plus custom_food_id", map[string]any{"name": "x", "source": "reference", "off_code": "111", "custom_food_id": customFoodID.String(), "weight_grams": 100}},
+		{"all three reference ids", map[string]any{"name": "x", "source": "reference", "fdc_id": 7, "off_code": "111", "custom_food_id": customFoodID.String(), "weight_grams": 100}},
+	}
+	for _, c := range cases {
+		r := withClaims(manualMealRequest(t, map[string]any{"items": []map[string]any{c.item}}), userID)
+		w := httptest.NewRecorder()
+		h.CreateManualMeal(w, r)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d: %s", c.name, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestCreateManualMeal_FromCustomFood(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

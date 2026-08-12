@@ -414,6 +414,35 @@ func TestPatchMealItem_BindToFdcID(t *testing.T) {
 	}
 }
 
+func TestPatchMealItem_BindToOffCode(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+	offIdx := buildOFFIndex(t, offFood("8594001222227", "Bílý jogurt", "Olma", 65))
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithOFF(offIdx)
+	w := httptest.NewRecorder()
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"off_code": "8594001222227"})
+	h.PatchMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&gotMeal) //nolint:errcheck
+	got := gotMeal.Items[0]
+	if got.MacroSource != database.MacroSourceReference {
+		t.Errorf("expected reference, got %s", got.MacroSource)
+	}
+	if got.OffCode == nil || *got.OffCode != "8594001222227" {
+		t.Errorf("expected off_code bound on the item, got %+v", got.OffCode)
+	}
+	// 65 kcal/100g * 1.0 (100g) = 65
+	if got.Calories < 64.9 || got.Calories > 65.1 {
+		t.Errorf("expected calories ~65, got %v", got.Calories)
+	}
+}
+
 // Regression: binding an item to a food match previously left item.Name as
 // whatever the vision model guessed, forever, even when that guess was
 // wrong (e.g. "dark berries" bound to a "Cherries, sweet, raw" search
@@ -548,17 +577,30 @@ func TestPatchMealItem_BlankNameAloneReturns400(t *testing.T) {
 func TestPatchMealItem_BothReferenceIDsReturns400(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
-	meal := createUnresolvedMeal(t, st, userID, familyID)
 	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
-	h := server.NewFoodHandlers(st, idx, t.TempDir())
+	offIdx := buildOFFIndex(t, offFood("111", "Jogurt", "Olma", 65))
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithOFF(offIdx)
+	customFoodID := uuid.New()
 
-	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
-		"fdc_id": 7, "custom_food_id": uuid.New().String(),
-	})
-	w := httptest.NewRecorder()
-	h.PatchMealItem(w, withClaims(r, userID))
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	// Extended for off_code (task 6.3): every pairing among
+	// fdc_id/off_code/custom_food_id must be rejected, plus all three set.
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"fdc_id plus custom_food_id", map[string]any{"fdc_id": 7, "custom_food_id": customFoodID.String()}},
+		{"fdc_id plus off_code", map[string]any{"fdc_id": 7, "off_code": "111"}},
+		{"off_code plus custom_food_id", map[string]any{"off_code": "111", "custom_food_id": customFoodID.String()}},
+		{"all three reference ids", map[string]any{"fdc_id": 7, "off_code": "111", "custom_food_id": customFoodID.String()}},
+	}
+	for _, c := range cases {
+		meal := createUnresolvedMeal(t, st, userID, familyID)
+		r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), c.body)
+		w := httptest.NewRecorder()
+		h.PatchMealItem(w, withClaims(r, userID))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d: %s", c.name, w.Code, w.Body.String())
+		}
 	}
 }
 
@@ -571,7 +613,8 @@ func TestPatchMealItem_ManualPlusReferenceReturns400(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
 	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
-	h := server.NewFoodHandlers(st, idx, t.TempDir())
+	offIdx := buildOFFIndex(t, offFood("111", "Jogurt", "Olma", 65))
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithOFF(offIdx)
 
 	cases := []struct {
 		name string
@@ -579,6 +622,7 @@ func TestPatchMealItem_ManualPlusReferenceReturns400(t *testing.T) {
 	}{
 		{"manual plus fdc_id", map[string]any{"manual": true, "calories": 100, "fdc_id": 7}},
 		{"manual plus custom_food_id", map[string]any{"manual": true, "calories": 100, "custom_food_id": uuid.New().String()}},
+		{"manual plus off_code", map[string]any{"manual": true, "calories": 100, "off_code": "111"}},
 	}
 	for _, c := range cases {
 		meal := createUnresolvedMeal(t, st, userID, familyID)

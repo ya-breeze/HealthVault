@@ -233,6 +233,45 @@ func TestOpenAIClient_Select_ChoosesCandidateOrNone(t *testing.T) {
 	}
 }
 
+// Regression (design.md "Selection is offered the recognized item's own
+// name and brand" / tasks.md 6.7): Select's payload previously carried only
+// item_index and anonymous candidate descriptions — the recognized item's
+// own name/brand was never sent, so the model had no idea what it was
+// actually comparing candidates against. Confirms the marshaled request
+// body carries item_name/item_brand, not just that the Go struct has the
+// fields — a future refactor could still drop them from the JSON tags.
+func TestOpenAIClient_Select_PayloadCarriesItemNameAndBrand(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
+		w.Write([]byte(chatResponse(t,                //nolint:errcheck
+			`{"selections":[{"item_index":0,"candidate_index":0}]}`)))
+	})
+
+	_, err := c.Select(context.Background(), []vision.ItemCandidates{
+		{
+			ItemIndex: 0, ItemName: "Bílý jogurt", ItemBrand: "Olma",
+			Candidates: []vision.Candidate{{Description: "Bílý jogurt", Brands: "Olma"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+
+	messages, _ := capturedBody["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %+v", messages)
+	}
+	userMsg, _ := messages[1].(map[string]any)
+	content, _ := userMsg["content"].(string)
+	if !strings.Contains(content, `"item_name":"Bílý jogurt"`) {
+		t.Errorf("expected item_name in the Select payload, got %s", content)
+	}
+	if !strings.Contains(content, `"item_brand":"Olma"`) {
+		t.Errorf("expected item_brand in the Select payload, got %s", content)
+	}
+}
+
 func TestOpenAIClient_APIErrorIsReturned(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

@@ -133,7 +133,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	priorItems := make([]vision.Item, len(meal.Items))
 	for i, it := range meal.Items {
 		priorItems[i] = vision.Item{
-			Name: it.Name, Preparation: it.Preparation, State: it.State,
+			Name: it.Name, Preparation: it.Preparation, State: it.State, Brand: it.Brand,
 			WeightGrams: it.WeightGrams, Confidence: it.Confidence,
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -18,13 +19,18 @@ const openAIChatCompletionsURL = "https://api.openai.com/v1/chat/completions"
 // schema, so they share a prompt.
 const recognizeSystemPrompt = `You are a nutrition assistant identifying foods in a photo of a meal.
 
-For each distinct food item, estimate its name, preparation, state, weight in
-grams, and your confidence (0-1).
+For each distinct food item, estimate its name, preparation, state, brand,
+weight in grams, and your confidence (0-1).
 
 preparation must be one of: raw, boiled, steamed, roasted, baked, grilled,
 fried, breaded_fried, braised, unknown.
 state must be one of: raw, cooked, unknown.
 Use "unknown" rather than guessing when the photo does not make it clear.
+
+brand is the manufacturer or product brand name, only when it is legibly
+printed on packaging visible in the photo (e.g. a yogurt cup or cereal box
+label) — leave it empty for unpackaged or home-cooked food, or when no brand
+text is actually readable. Do not guess a brand from appearance alone.
 
 If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
@@ -109,10 +115,11 @@ var recognizeJSONSchema = map[string]any{
 					"name":         map[string]any{"type": "string"},
 					"preparation":  map[string]any{"type": "string", "enum": preparationEnum},
 					"state":        map[string]any{"type": "string", "enum": stateEnum},
+					"brand":        map[string]any{"type": "string"},
 					"weight_grams": map[string]any{"type": "number"},
 					"confidence":   map[string]any{"type": "number"},
 				},
-				"required":             []string{"name", "preparation", "state", "weight_grams", "confidence"},
+				"required":             []string{"name", "preparation", "state", "brand", "weight_grams", "confidence"},
 				"additionalProperties": false,
 			},
 		},
@@ -135,6 +142,7 @@ type recognizeSchemaItem struct {
 	Name        string  `json:"name"`
 	Preparation string  `json:"preparation"`
 	State       string  `json:"state"`
+	Brand       string  `json:"brand"`
 	WeightGrams float64 `json:"weight_grams"`
 	Confidence  float64 `json:"confidence"`
 }
@@ -222,6 +230,7 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration) (*Re
 			Name:        it.Name,
 			Preparation: unknownToEmpty(it.Preparation),
 			State:       unknownToEmpty(it.State),
+			Brand:       strings.TrimSpace(it.Brand),
 			WeightGrams: it.WeightGrams,
 			Confidence:  it.Confidence,
 		}
@@ -374,6 +383,13 @@ type selectSchemaResponse struct {
 }
 
 const selectSystemPrompt = `You are matching recognized food items to candidate reference foods.
+
+Each item includes item_name and, when known, item_brand — what was actually
+recognized in the photo. Compare each candidate against that recognized
+identity, not just against the other candidates: a shortlist can contain
+several different products from the same brand (e.g. different yogurt
+flavors or sizes), and only item_name/item_brand tell you which one was
+actually photographed.
 
 For each item, choose the candidate_index of the single best-matching entry
 from its own candidates list, or -1 if none of them are a good match. Do not

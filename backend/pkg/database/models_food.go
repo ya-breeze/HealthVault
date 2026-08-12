@@ -82,9 +82,15 @@ type FoodItem struct {
 	// retrieval. Persisted so a clarification answer can re-run retrieval.
 	Preparation string `gorm:"type:varchar(24)" json:"preparation,omitempty"`
 	State       string `gorm:"type:varchar(16)" json:"state,omitempty"`
+	// Brand is extracted at recognition time, when legible on the photo. It
+	// gates whether candidate retrieval queries Open Food Facts at all — see
+	// openspec/changes/add-open-food-facts-source/design.md. Empty means no
+	// brand was legible, not that the food is unbranded.
+	Brand string `gorm:"type:varchar(128)" json:"brand,omitempty"`
 
 	FdcID        *int64     `gorm:"index" json:"fdc_id,omitempty"`
 	CustomFoodID *uuid.UUID `gorm:"type:uuid;index" json:"custom_food_id,omitempty"`
+	OffCode      *string    `gorm:"index" json:"off_code,omitempty"`
 	MacroSource  string     `gorm:"type:varchar(16);not null;default:'none'" json:"macro_source"`
 	WeightGrams  float64    `gorm:"not null" json:"weight_grams"`
 	Confidence   float64    `gorm:"not null" json:"confidence"`
@@ -136,6 +142,7 @@ type GroundTruthItem struct {
 	Aliases       []string `json:"aliases,omitempty"`
 	FdcID         *int64   `json:"fdc_id,omitempty"`
 	CustomFoodID  *string  `json:"custom_food_id,omitempty"`
+	OffCode       *string  `json:"off_code,omitempty"`
 	WeightGrams   float64  `json:"weight_grams"`
 }
 

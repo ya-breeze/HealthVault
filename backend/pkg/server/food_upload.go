@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
+	"github.com/ya-breeze/healthvault/pkg/off"
 	photostorage "github.com/ya-breeze/healthvault/pkg/storage"
 	"github.com/ya-breeze/healthvault/pkg/usda"
 	"github.com/ya-breeze/healthvault/pkg/vision"
@@ -283,7 +284,7 @@ func (h *foodHandlers) resolveItems(
 	for i, ri := range recognizedItems {
 		item := database.FoodItem{
 			UserID: meal.UserID, MealID: meal.ID, Name: ri.Name,
-			Preparation: ri.Preparation, State: ri.State,
+			Preparation: ri.Preparation, State: ri.State, Brand: ri.Brand,
 			WeightGrams: ri.WeightGrams, Confidence: ri.Confidence,
 			MacroSource: database.MacroSourceNone,
 		}
@@ -291,10 +292,12 @@ func (h *foodHandlers) resolveItems(
 		item.FamilyID = meal.FamilyID
 		items[i] = item
 
-		candidates := h.retrieveCandidates(meal.UserID, ri.Name, ri.Preparation, ri.State)
+		candidates := h.retrieveCandidates(meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
 		candidateSets[i] = candidates
 		if len(candidates) > 0 {
-			itemCandidates = append(itemCandidates, vision.ItemCandidates{ItemIndex: i, Candidates: candidates})
+			itemCandidates = append(itemCandidates, vision.ItemCandidates{
+				ItemIndex: i, ItemName: ri.Name, ItemBrand: ri.Brand, Candidates: candidates,
+			})
 		}
 	}
 
@@ -325,15 +328,21 @@ func (h *foodHandlers) resolveItems(
 		}
 		items[s.ItemIndex].FdcID = chosen.FdcID
 		items[s.ItemIndex].CustomFoodID = chosen.CustomFoodID
+		items[s.ItemIndex].OffCode = chosen.OffCode
 		items[s.ItemIndex].ApplyProfile(profile)
 	}
 	return items, nil
 }
 
 // retrieveCandidates mirrors Search's precedence rule: an exact (case-
-// insensitive) custom food name match wins outright; otherwise the USDA
-// shortlist.
-func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, state string) []vision.Candidate {
+// insensitive) custom food name match wins outright. Otherwise, a non-empty
+// brand routes to Open Food Facts first — its candidates are used if it
+// returns any, falling back to USDA only when OFF returns none (including
+// when no OFF database is open at all). An empty brand skips OFF entirely
+// and queries USDA directly: there is no signal to safely select among
+// differently-branded OFF products for a brandless query. See design.md "OFF
+// queried only when a brand was extracted, USDA as the fallback".
+func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, state, brand string) []vision.Candidate {
 	var custom database.CustomFood
 	err := h.storage.DB().
 		Where("user_id = ? AND LOWER(name) = LOWER(?)", userID, name).
@@ -342,6 +351,19 @@ func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, s
 		id := custom.ID
 		return []vision.Candidate{{CustomFoodID: &id, Description: custom.Name}}
 	}
+
+	if brand != "" && h.off != nil {
+		foods, offErr := h.off.Search(name, brand, off.DefaultCandidates)
+		if offErr == nil && len(foods) > 0 {
+			out := make([]vision.Candidate, len(foods))
+			for i, f := range foods {
+				code := f.Code
+				out[i] = vision.Candidate{OffCode: &code, Brands: f.Brands, Description: f.ProductName}
+			}
+			return out
+		}
+	}
+
 	if h.usda == nil {
 		return nil
 	}
@@ -373,6 +395,13 @@ func (h *foodHandlers) profileForCandidate(userID uuid.UUID, c vision.Candidate)
 		}
 		return food.Profile, true
 	}
+	if c.OffCode != nil && h.off != nil {
+		food, err := h.off.ByCode(*c.OffCode)
+		if err != nil || food == nil {
+			return database.NutrientProfile{}, false
+		}
+		return food.Profile, true
+	}
 	return database.NutrientProfile{}, false
 }
 
@@ -381,7 +410,7 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 	for i, ri := range recognizedItems {
 		item := database.FoodItem{
 			UserID: userID, MealID: mealID, Name: ri.Name,
-			Preparation: ri.Preparation, State: ri.State,
+			Preparation: ri.Preparation, State: ri.State, Brand: ri.Brand,
 			WeightGrams: ri.WeightGrams, Confidence: ri.Confidence,
 			MacroSource: database.MacroSourceNone,
 		}

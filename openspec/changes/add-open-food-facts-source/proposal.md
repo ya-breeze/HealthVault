@@ -21,6 +21,7 @@ USDA FoodData Central is a US reference set, and its per-100g values are frequen
 - `usda-nutrition-database`: the existing candidate-resolution requirement ("Match Selection and Explicit Non-Match") is amended so OFF is queried, brand-gated, before USDA, falling back to USDA when OFF returns no candidates or no brand was extracted.
 - `food-nutrition-logging`: the item PATCH ("Item Resolution"), item POST ("Item Addition"), and manual-meal-creation ("Manual Food Logging") endpoints all accept `off_code` as a third bindable reference alongside `fdc_id`/`custom_food_id` — including the manual-meal endpoint's exclusivity rule, which is new there, not an extension (see Impact).
 - `food-model-calibration`: detection-scoring's reference-ID matching includes Open Food Facts codes alongside USDA/custom-food IDs.
+- `deployment-config`: the compose stack's env-driven path list gains `HCW_OFF_DB_PATH`, alongside the existing `HCW_USDA_DB_PATH`.
 
 ## Impact
 

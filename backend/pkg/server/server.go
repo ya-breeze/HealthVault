@@ -11,6 +11,7 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/config"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/mcpserver"
+	"github.com/ya-breeze/healthvault/pkg/off"
 	"github.com/ya-breeze/healthvault/pkg/usda"
 	"github.com/ya-breeze/healthvault/pkg/vision"
 	"github.com/ya-breeze/kin-core/cookies"
@@ -55,6 +56,13 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	}
 	defer usdaIndex.Close() //nolint:errcheck
 
+	// Open Food Facts index is optional too, same reasoning as USDA above.
+	offIndex, err := off.Open(cfg.OFFDBPath)
+	if err != nil && !errors.Is(err, off.ErrNoDatabase) {
+		return fmt.Errorf("open off index: %w", err)
+	}
+	defer offIndex.Close() //nolint:errcheck
+
 	// Without an API key, every photo upload fails with vision.ErrNotConfigured;
 	// manual entry, custom foods, and search need no vision access at all.
 	var visionClient vision.Client = vision.Unconfigured{}
@@ -62,7 +70,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 		visionClient = vision.NewOpenAIClient(cfg.OpenAIAPIKey, cfg.OpenAIModel)
 	}
 	fh := NewFoodHandlers(storage, usdaIndex, cfg.UploadsDir).
-		WithVision(visionClient, cfg.MaxUploadBytes, cfg.VisionTimeout)
+		WithVision(visionClient, cfg.MaxUploadBytes, cfg.VisionTimeout).
+		WithOFF(offIndex)
 
 	r := mux.NewRouter()
 

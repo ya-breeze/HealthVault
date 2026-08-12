@@ -24,6 +24,19 @@ const SOURCE_COLOR: Record<string, string> = {
   none: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
 };
 
+// Which reference field a "reference"-sourced item is actually bound to —
+// distinct from macro_source, which only says "reference" vs "manual" vs
+// "none" and doesn't say which of USDA/Open Food Facts/a custom food it
+// came from. Shown alongside the existing macro_source badge so a Czech
+// product match (real label data) is visibly different from a generic USDA
+// estimate when confirming a meal.
+function referenceSourceLabel(item: FoodItem): string | null {
+  if (item.off_code) return 'Open Food Facts';
+  if (item.fdc_id) return 'USDA';
+  if (item.custom_food_id) return 'Your custom food';
+  return null;
+}
+
 // Item editing is reachable whenever this row is rendered — the parent only
 // shows the items list for pending_review and confirmed meals, both of
 // which the backend now accepts item mutations for (see PatchMealItem's
@@ -139,6 +152,11 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
           <span className={`inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded ${SOURCE_COLOR[item.macro_source]}`}>
             {SOURCE_LABEL[item.macro_source]}
           </span>
+          {referenceSourceLabel(item) && (
+            <span className="inline-block mt-1 ml-1 text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+              {referenceSourceLabel(item)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           <input

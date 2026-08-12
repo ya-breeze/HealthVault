@@ -31,6 +31,7 @@ type patchItemRequest struct {
 	Manual       bool       `json:"manual,omitempty"`
 	FdcID        *int64     `json:"fdc_id,omitempty"`
 	CustomFoodID *uuid.UUID `json:"custom_food_id,omitempty"`
+	OffCode      *string    `json:"off_code,omitempty"`
 	WeightGrams  *float64   `json:"weight_grams,omitempty"`
 	Name         *string    `json:"name,omitempty"`
 
@@ -251,15 +252,15 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 	// then silently no-op past the guard below.
 	hasName := req.Name != nil && strings.TrimSpace(*req.Name) != ""
 
-	if !req.Manual && req.FdcID == nil && req.CustomFoodID == nil && req.WeightGrams == nil && !hasName {
-		http.Error(w, "nothing to update: specify manual, fdc_id, custom_food_id, weight_grams, or name", http.StatusBadRequest)
+	if !req.Manual && req.FdcID == nil && req.CustomFoodID == nil && req.OffCode == nil && req.WeightGrams == nil && !hasName {
+		http.Error(w, "nothing to update: specify manual, fdc_id, off_code, custom_food_id, weight_grams, or name", http.StatusBadRequest)
 		return
 	}
-	if req.FdcID != nil && req.CustomFoodID != nil {
-		http.Error(w, "specify at most one of fdc_id or custom_food_id", http.StatusBadRequest)
+	if refSourcesSet(req.FdcID, req.OffCode, req.CustomFoodID) > 1 {
+		http.Error(w, "specify at most one of fdc_id, off_code, or custom_food_id", http.StatusBadRequest)
 		return
 	}
-	if req.Manual && (req.FdcID != nil || req.CustomFoodID != nil) {
+	if req.Manual && (req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil) {
 		http.Error(w, "specify manual macros or a food reference, not both", http.StatusBadRequest)
 		return
 	}
@@ -300,6 +301,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		case req.Manual:
 			item.FdcID = nil
 			item.CustomFoodID = nil
+			item.OffCode = nil
 			item.MacroSource = database.MacroSourceManual
 			if req.WeightGrams != nil {
 				item.WeightGrams = *req.WeightGrams
@@ -311,7 +313,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.SugarGrams = req.SugarGrams
 			item.SodiumGrams = req.SodiumGrams
 			item.DietaryFiberGrams = req.DietaryFiberGrams
-		case req.FdcID != nil || req.CustomFoodID != nil:
+		case req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil:
 			if req.WeightGrams != nil {
 				item.WeightGrams = *req.WeightGrams
 			}
@@ -326,12 +328,13 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			if item.WeightGrams <= 0 {
 				return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive to bind a reference food"}
 			}
-			profile, status, err := h.resolveReferenceProfile(claims.UserID, req.FdcID, req.CustomFoodID)
+			profile, status, err := h.resolveReferenceProfile(claims.UserID, req.FdcID, req.OffCode, req.CustomFoodID)
 			if err != nil {
 				return &itemMutationError{status: status, msg: err.Error()}
 			}
 			item.FdcID = req.FdcID
 			item.CustomFoodID = req.CustomFoodID
+			item.OffCode = req.OffCode
 			item.ApplyProfile(profile)
 		case req.WeightGrams != nil:
 			item.WeightGrams = *req.WeightGrams
@@ -339,7 +342,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				if item.WeightGrams <= 0 {
 					return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive for a reference item"}
 				}
-				profile, status, err := h.resolveReferenceProfile(claims.UserID, item.FdcID, item.CustomFoodID)
+				profile, status, err := h.resolveReferenceProfile(claims.UserID, item.FdcID, item.OffCode, item.CustomFoodID)
 				if err != nil {
 					return &itemMutationError{status: status, msg: err.Error()}
 				}
@@ -358,6 +361,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			Updates(map[string]any{
 				"fdc_id":              item.FdcID,
 				"custom_food_id":      item.CustomFoodID,
+				"off_code":            item.OffCode,
 				"macro_source":        item.MacroSource,
 				"weight_grams":        item.WeightGrams,
 				"name":                item.Name,
@@ -431,6 +435,7 @@ type createItemRequest struct {
 	Manual       bool       `json:"manual,omitempty"`
 	FdcID        *int64     `json:"fdc_id,omitempty"`
 	CustomFoodID *uuid.UUID `json:"custom_food_id,omitempty"`
+	OffCode      *string    `json:"off_code,omitempty"`
 	WeightGrams  *float64   `json:"weight_grams,omitempty"`
 
 	Calories          float64 `json:"calories,omitempty"`
@@ -486,13 +491,14 @@ func (h *foodHandlers) CreateMealItem(w http.ResponseWriter, r *http.Request) {
 	// Reject ambiguous combinations before building anything: a request must
 	// specify exactly one macro source. Accepting `manual` alongside a
 	// reference would silently prefer manual and discard the reference the
-	// caller also sent; accepting both fdc_id and custom_food_id would
-	// resolve only one of them (resolveReferenceProfile's fdc_id-first
-	// precedence) while persisting both IDs on the item, leaving it claiming
-	// a binding to a profile it was never actually scaled from.
-	hasReference := req.FdcID != nil || req.CustomFoodID != nil
-	if req.FdcID != nil && req.CustomFoodID != nil {
-		http.Error(w, "specify at most one of fdc_id or custom_food_id", http.StatusBadRequest)
+	// caller also sent; accepting more than one of fdc_id/off_code/
+	// custom_food_id would resolve only one of them
+	// (resolveReferenceProfile's precedence) while persisting more than one
+	// ID on the item, leaving it claiming a binding to a profile it was
+	// never actually scaled from.
+	hasReference := req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil
+	if refSourcesSet(req.FdcID, req.OffCode, req.CustomFoodID) > 1 {
+		http.Error(w, "specify at most one of fdc_id, off_code, or custom_food_id", http.StatusBadRequest)
 		return
 	}
 	if req.Manual && hasReference {
@@ -517,22 +523,23 @@ func (h *foodHandlers) CreateMealItem(w http.ResponseWriter, r *http.Request) {
 		item.SugarGrams = req.SugarGrams
 		item.SodiumGrams = req.SodiumGrams
 		item.DietaryFiberGrams = req.DietaryFiberGrams
-	case req.FdcID != nil || req.CustomFoodID != nil:
+	case hasReference:
 		if req.WeightGrams == nil || *req.WeightGrams <= 0 {
 			http.Error(w, "weight_grams must be positive for a reference item", http.StatusBadRequest)
 			return
 		}
-		profile, status, err := h.resolveReferenceProfile(claims.UserID, req.FdcID, req.CustomFoodID)
+		profile, status, err := h.resolveReferenceProfile(claims.UserID, req.FdcID, req.OffCode, req.CustomFoodID)
 		if err != nil {
 			http.Error(w, err.Error(), status)
 			return
 		}
 		item.FdcID = req.FdcID
 		item.CustomFoodID = req.CustomFoodID
+		item.OffCode = req.OffCode
 		item.WeightGrams = *req.WeightGrams
 		item.ApplyProfile(profile)
 	default:
-		http.Error(w, "specify manual macros or a food reference (fdc_id/custom_food_id) with weight_grams", http.StatusBadRequest)
+		http.Error(w, "specify manual macros or a food reference (fdc_id/off_code/custom_food_id) with weight_grams", http.StatusBadRequest)
 		return
 	}
 

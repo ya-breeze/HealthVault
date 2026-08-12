@@ -115,16 +115,24 @@ func TestCreateMealItem_AmbiguousSourceReturns400(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
 	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
-	h := server.NewFoodHandlers(st, idx, t.TempDir())
+	offIdx := buildOFFIndex(t, offFood("111", "Jogurt", "Olma", 65))
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithOFF(offIdx)
 	customFoodID := uuid.New()
 
+	// New checks, not extensions of existing ones — see off_code's addition
+	// to CreateManualMeal/CreateMealItem/PatchMealItem: every pairing among
+	// fdc_id/off_code/custom_food_id must be rejected, plus all three set.
 	cases := []struct {
 		name string
 		body map[string]any
 	}{
 		{"manual plus fdc_id", map[string]any{"name": "x", "manual": true, "calories": 1, "fdc_id": 7}},
 		{"manual plus custom_food_id", map[string]any{"name": "x", "manual": true, "calories": 1, "custom_food_id": customFoodID.String()}},
-		{"both reference ids", map[string]any{"name": "x", "fdc_id": 7, "custom_food_id": customFoodID.String(), "weight_grams": 100}},
+		{"manual plus off_code", map[string]any{"name": "x", "manual": true, "calories": 1, "off_code": "111"}},
+		{"fdc_id plus custom_food_id", map[string]any{"name": "x", "fdc_id": 7, "custom_food_id": customFoodID.String(), "weight_grams": 100}},
+		{"fdc_id plus off_code", map[string]any{"name": "x", "fdc_id": 7, "off_code": "111", "weight_grams": 100}},
+		{"off_code plus custom_food_id", map[string]any{"name": "x", "off_code": "111", "custom_food_id": customFoodID.String(), "weight_grams": 100}},
+		{"all three reference ids", map[string]any{"name": "x", "fdc_id": 7, "off_code": "111", "custom_food_id": customFoodID.String(), "weight_grams": 100}},
 	}
 	for _, c := range cases {
 		meal := createUnresolvedMeal(t, st, userID, familyID)

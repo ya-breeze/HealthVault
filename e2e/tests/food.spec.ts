@@ -850,6 +850,54 @@ function mockFoodMeal(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Open Food Facts source badge (tasks.md 6.6): a real OFF-sourced match
+// requires an operator-imported OFF database, which this E2E environment
+// does not provision (no import-off has run against the WIP stack). Mocking
+// the meal GET response covers the same review-UI behavior deterministically
+// instead — MealItemRow's badge is purely a function of which reference
+// field the item carries, so a mocked off_code exercises the same rendering
+// path a real OFF match would. The brand-gated resolution logic itself
+// (which source gets queried, and the fallback rule) is covered at the unit
+// level in backend/pkg/server/food_upload_test.go, since it depends on the
+// vision Select/Recognize flow this E2E suite does not drive end-to-end.
+test.describe('Open Food Facts source badge — mocked UI behavior (deterministic)', () => {
+  test('an item bound via off_code shows an Open Food Facts badge, not USDA', async ({ page }) => {
+    await login(page);
+    const meal = mockFoodMeal({
+      items: [
+        { ...mockFoodMeal().items[0], macro_source: 'reference', off_code: '8594001222227', brand: 'Olma' },
+      ],
+    });
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: meal }) : route.continue()
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+
+    await expect(page.getByText('Open Food Facts', { exact: true })).toBeVisible();
+    await expect(page.getByText('USDA', { exact: true })).not.toBeVisible();
+    // The ODbL attribution note only appears when a meal actually has an
+    // OFF-sourced item.
+    await expect(page.getByText('Open Database License (ODbL)')).toBeVisible();
+  });
+
+  test('a USDA-bound item shows a USDA badge and no attribution note', async ({ page }) => {
+    await login(page);
+    const meal = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], macro_source: 'reference', fdc_id: 42 }],
+    });
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: meal }) : route.continue()
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+
+    await expect(page.getByText('USDA', { exact: true })).toBeVisible();
+    await expect(page.getByText('Open Food Facts', { exact: true })).not.toBeVisible();
+    await expect(page.getByText('Open Database License (ODbL)')).not.toBeVisible();
+  });
+});
+
 test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', () => {
   // These mock the network response for POST .../reanalyze via
   // page.route(), so they exercise ReanalyzeControl's own success/failure

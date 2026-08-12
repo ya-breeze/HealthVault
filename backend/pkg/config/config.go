@@ -19,6 +19,7 @@ type Config struct {
 	OpenAIModel    string
 	UploadsDir     string
 	USDADBPath     string
+	OFFDBPath      string
 	MaxUploadBytes int64
 	VisionTimeout  time.Duration
 }
@@ -31,6 +32,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("COOKIE_SECURE", true)
 	viper.SetDefault("UPLOADS_DIR", "./data/uploads")
 	viper.SetDefault("USDA_DB_PATH", "./data/usda.db")
+	viper.SetDefault("OFF_DB_PATH", "./data/off.db")
 	viper.SetDefault("MAX_UPLOAD_BYTES", 10*1024*1024)
 	viper.SetDefault("VISION_TIMEOUT", "60s")
 	viper.SetDefault("OPENAI_MODEL", "gpt-4o-mini")
@@ -46,6 +48,7 @@ func Load() (*Config, error) {
 		OpenAIModel:    viper.GetString("OPENAI_MODEL"),
 		UploadsDir:     viper.GetString("UPLOADS_DIR"),
 		USDADBPath:     viper.GetString("USDA_DB_PATH"),
+		OFFDBPath:      viper.GetString("OFF_DB_PATH"),
 		MaxUploadBytes: viper.GetInt64("MAX_UPLOAD_BYTES"),
 		VisionTimeout:  viper.GetDuration("VISION_TIMEOUT"),
 	}, nil
