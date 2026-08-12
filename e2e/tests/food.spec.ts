@@ -513,8 +513,12 @@ test.describe('Editing a confirmed meal', () => {
       await expect(page.getByRole('status').filter({ hasText: 'Item added' })).toBeVisible();
 
       // Delete it again — the total must drop back immediately, with its
-      // own distinct toast.
+      // own distinct toast. Deleting a meal item is a two-step confirm (see
+      // MealItemRow's confirmingDelete state): the first click swaps the ×
+      // button for Confirm/Cancel, and only Confirm actually fires the
+      // delete request.
       await page.locator('button[title="Delete item"]').last().click();
+      await page.getByRole('button', { name: 'Confirm' }).click();
       await expect(page.getByText('Extra snack')).not.toBeVisible();
       await expect(page.getByText('250', { exact: true })).toBeVisible();
       await expect(page.getByRole('status').filter({ hasText: 'Item removed' })).toBeVisible();
@@ -791,7 +795,10 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     const start = Date.now();
     await weightInputs.first().fill('175');
     await weightInputs.first().blur(); // queues the slow weight PATCH (in flight for 400ms)
-    await page.locator('button[title="Delete item"]').last().click(); // queued behind it, not sent yet
+    // Delete is a two-step confirm (see MealItemRow's confirmingDelete state);
+    // only the Confirm click actually issues the delete mutation.
+    await page.locator('button[title="Delete item"]').last().click();
+    await page.getByRole('button', { name: 'Confirm' }).click(); // queued behind the weight PATCH, not sent yet
 
     // The delete's own network request must not go out until the weight
     // edit ahead of it in the queue has resolved — asserting on elapsed
