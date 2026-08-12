@@ -5,7 +5,7 @@ ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 # which the USDA food index depends on. Keep it on build, test and vet alike.
 GO_TAGS := sqlite_fts5
 
-.PHONY: all build test lint run-backend
+.PHONY: all build test lint run-backend projected-specs
 
 all: build
 
@@ -17,6 +17,9 @@ test:
 
 lint:
 	@cd $(ROOT_DIR)/backend && go vet -tags $(GO_TAGS) ./...
+
+projected-specs:
+	@$(ROOT_DIR)scripts/generate-projected-specs.sh
 
 run-backend: build
 	@HCW_DBPATH=$(ROOT_DIR)hcw.db \
