@@ -104,7 +104,7 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
         value={name}
         onChange={e => setName(e.target.value)}
         placeholder="Meal name"
-        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
       />
       <input
         type="datetime-local"
@@ -113,7 +113,7 @@ export default function MealMetaEditor({ meal, onUpdated }: Props) {
           setLoggedAt(e.target.value);
           setLoggedAtDirty(true);
         }}
-        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+        className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
       />
       <div className="flex justify-end gap-2">
         <button

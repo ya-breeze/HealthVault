@@ -75,7 +75,7 @@ export default function Header() {
         </Link>
         <div className="flex items-center gap-2 flex-wrap">
           {me && (
-            <span className="font-[family-name:var(--font-data)] text-xs uppercase tracking-wide text-text-muted border border-border rounded-md px-2.5 py-1.5 bg-bg">
+            <span className="font-[family-name:var(--font-data)] text-xs uppercase tracking-wide text-text-muted border border-border rounded-md px-2.5 py-2.5 min-h-11 flex items-center bg-bg">
               {me.username}
             </span>
           )}
@@ -83,14 +83,14 @@ export default function Header() {
             <div className="relative" ref={popoverRef}>
               <button
                 onClick={() => setShowWebhook(v => !v)}
-                className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-1.5 transition-colors"
+                className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-2.5 min-h-11 transition-colors"
                 title="Webhook URL"
               >
                 <LinkIcon className="w-4 h-4" />
                 Webhook
               </button>
               {showWebhook && (
-                <div className="absolute right-0 top-full mt-2 w-96 bg-bg-elevated border border-border rounded-xl shadow-lg p-4 z-50">
+                <div className="absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-3rem)] bg-bg-elevated border border-border rounded-xl shadow-lg p-4 z-50">
                   <p className="text-sm font-medium text-text mb-3">Webhook URL</p>
                   <code className="block w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm font-[family-name:var(--font-data)] text-text break-all mb-3 select-all">
                     {webhookUrl}
@@ -109,20 +109,20 @@ export default function Header() {
           )}
           <Link
             href="/food/custom/"
-            className="text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-1.5 transition-colors"
+            className="flex items-center text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-2.5 min-h-11 transition-colors"
           >
             Custom Foods
           </Link>
           <Link
             href="/import"
-            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-1.5 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-2.5 min-h-11 transition-colors"
           >
             <ImportIcon className="w-4 h-4" />
             Import
           </Link>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-red-500 font-medium transition-colors"
+            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-red-500 font-medium px-2 min-h-11 transition-colors"
             title="Logout"
           >
             <LogoutIcon className="w-4 h-4" />

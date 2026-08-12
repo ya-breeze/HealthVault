@@ -81,7 +81,7 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
             step="any"
             value={weight}
             onChange={e => setWeight(Number(e.target.value))}
-            className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
           />
           <span className="text-xs text-gray-400">g</span>
         </div>

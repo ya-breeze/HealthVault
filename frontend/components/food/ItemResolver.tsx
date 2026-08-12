@@ -105,7 +105,7 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && search()}
-              className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
             <button
               onClick={search}
@@ -146,7 +146,7 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
               type="text"
               value={manualName}
               onChange={e => setManualName(e.target.value)}
-              className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </label>
           {(
@@ -163,7 +163,7 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
                 step="any"
                 value={macros[key]}
                 onChange={e => setMacros({ ...macros, [key]: Number(e.target.value) })}
-                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
             </label>
           ))}

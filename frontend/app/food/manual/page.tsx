@@ -43,19 +43,19 @@ export default function ManualMealPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-24">
       <Header />
 
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Log a Meal Manually</h1>
-        <div className="flex gap-2 mb-4">
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
           <label className="flex-1 text-sm text-gray-700 dark:text-gray-300">
             Name (optional)
             <input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
-              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </label>
           <label className="text-sm text-gray-700 dark:text-gray-300">
@@ -64,7 +64,7 @@ export default function ManualMealPage() {
               type="datetime-local"
               value={loggedAt}
               onChange={e => setLoggedAt(e.target.value)}
-              className="mt-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-2 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </label>
         </div>
@@ -83,15 +83,19 @@ export default function ManualMealPage() {
         </button>
 
         {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
-
-        <button
-          onClick={handleSubmit}
-          disabled={saving}
-          className="w-full py-2.5 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save Meal'}
-        </button>
       </main>
+
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="max-w-md mx-auto">
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="w-full py-2.5 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save Meal'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

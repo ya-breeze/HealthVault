@@ -126,7 +126,7 @@ export default function FoodHistoryPage() {
           <div key={day.dateKey} className="mb-5">
             <div className="flex items-baseline justify-between mb-2 px-1">
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 {Math.round(day.totals.calories)} kcal · P {Math.round(day.totals.protein)}g · C{' '}
                 {Math.round(day.totals.carbs)}g · F {Math.round(day.totals.fat)}g
               </span>

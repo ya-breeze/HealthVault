@@ -47,11 +47,11 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
             setSelected(null);
             update({ name: e.target.value, fdc_id: undefined, custom_food_id: undefined });
           }}
-          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
         />
         <button
           onClick={() => onRemove(index)}
-          className="text-gray-400 hover:text-red-500 text-sm px-1"
+          className="min-w-11 min-h-11 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-base"
           aria-label="Remove item"
         >
           ✕
@@ -89,7 +89,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
               placeholder="grams"
               value={item.weight_grams ?? ''}
               onChange={e => update({ weight_grams: Number(e.target.value) })}
-              className="w-24 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-24 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
             <span className="text-xs text-gray-400">g</span>
           </div>
@@ -130,7 +130,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
                 step="any"
                 value={item[key] ?? 0}
                 onChange={e => update({ [key]: Number(e.target.value) } as Partial<ManualMealItemInput>)}
-                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
             </label>
           ))}
