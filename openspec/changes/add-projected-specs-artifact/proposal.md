@@ -9,7 +9,7 @@ OpenSpec delta specs under `openspec/changes/<id>/specs/<capability>/spec.md` us
 - Add a `projected-specs` Makefile target wiring the script into the existing task runner.
 - Add `.gitattributes` entries marking `openspec/specs.projected/**` as generated, so it collapses in PR review and is excluded from language stats.
 - Document the new artifact: what it is, that it's never hand-edited, how to regenerate it, and that `openspec/specs.projected/` is reviewed for final wording while the delta under `openspec/changes/<id>/specs/` is reviewed for intent.
-- Establish and document a lifecycle invariant: `openspec/specs.projected/` exists only while a branch has open (unarchived) deltas it touched. Once a change is archived — which this repo's workflow always does in the same PR, before merge — regenerating produces an empty projection, and that removal is committed as part of the archive step, so `main` never carries projected-spec content.
+- Establish and document a lifecycle invariant: `openspec/specs.projected/` exists only while a branch has open (unarchived, and not-yet-committed-as-archived) deltas it touched. Once a change is archived and that archive move is committed — which this repo's workflow always does in the same PR, before merge — regenerating produces an empty projection. This requires two separate commits, not one: commit the archive move first, then regenerate and commit the resulting removal, since both discovery and the generator's isolated worktree read committed `HEAD`, not the working tree — an uncommitted local archive is invisible to them. `main` never carries projected-spec content either way.
 
 ## Capabilities
 
@@ -25,4 +25,4 @@ OpenSpec delta specs under `openspec/changes/<id>/specs/<capability>/spec.md` us
 - No changes to `openspec/specs/` or `openspec/changes/` other than this change's own artifacts.
 - No changes to application code (Go backend, Next.js frontend) or its runtime behavior.
 - Adds a new CI dependency: `@fission-ai/openspec@1.6.0` installed via npm in the GitHub Actions runner (pinned to match the version this environment already uses elsewhere).
-- Amends this repo's contributor workflow: finishing an OpenSpec change (`openspec archive --yes`, done in the same PR before merge per this repo's existing process) must be followed by re-running `make projected-specs` and committing the resulting removal.
+- Amends this repo's contributor workflow: finishing an OpenSpec change now takes two commits instead of one — `openspec archive --yes` committed on its own first, then `make projected-specs` re-run and its resulting removal committed second — both still in the same PR before merge per this repo's existing process.

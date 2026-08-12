@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Projected spec generation scoped to touched capabilities
-The generator SHALL determine which OpenSpec change ids are touched on the current branch by diffing `openspec/changes/*/specs/**` against a base ref (default `origin/main`), extracting the change id from each changed path's first segment after `openspec/changes/`. For each touched id, the generator SHALL run `openspec archive <id> --yes` inside an isolated worktree. From the touched change ids' delta paths, the generator SHALL derive the set of touched capability names (the path segment immediately after `specs/` in each touched delta file). The generator SHALL write projected output only for that touched-capability set — it SHALL NOT write output for any capability not touched by a touched change, even if that capability exists in the resulting `openspec/specs/` tree.
+The generator SHALL determine which OpenSpec change ids are touched on the current branch by diffing against a base ref (default `origin/main`) using the glob pathspec `:(glob)openspec/changes/*/specs/**` — not git's default (non-glob) pathspec matching, under which `*` is not anchored to a single path segment and can match across `/` — extracting the change id from each changed path's first segment after `openspec/changes/`. For each touched id, the generator SHALL run `openspec archive <id> --yes` inside an isolated worktree. From the touched change ids' delta paths, the generator SHALL derive the set of touched capability names (the path segment immediately after `specs/` in each touched delta file). The generator SHALL write projected output only for that touched-capability set — it SHALL NOT write output for any capability not touched by a touched change, even if that capability exists in the resulting `openspec/specs/` tree.
 
 #### Scenario: Single touched change
 - **WHEN** the branch's diff against the base ref includes files under `openspec/changes/add-foo/specs/widget-api/spec.md` and no other change's `specs/**` paths
@@ -15,6 +15,10 @@ The generator SHALL determine which OpenSpec change ids are touched on the curre
 - **WHEN** a touched change modifies only capability `widget-api`, and capability `gadget-api` exists in the base specs unchanged
 - **THEN** the regenerated `openspec/specs.projected/` contains no `gadget-api` directory at all, regardless of what previously existed there
 
+#### Scenario: Archived-and-committed deltas are not mistaken for active changes
+- **WHEN** a change has been archived for real and that archive move is committed, so its delta now lives under `openspec/changes/archive/<date>-<id>/specs/<capability>/spec.md` rather than `openspec/changes/<id>/specs/<capability>/spec.md`
+- **THEN** discovery's glob pathspec does not match that archived path, so the generator does not extract `archive` (or any other bogus value) as a touched change id and does not attempt to archive it
+
 ### Requirement: Each touched capability gets both final text and an explicit comparison
 For each touched capability, the generator SHALL write `openspec/specs.projected/<capability>/spec.md` containing the full post-archive requirement text, and `openspec/specs.projected/<capability>/spec.diff` containing a unified diff (`diff -u`) between the current `openspec/specs/<capability>/spec.md` (or an empty input if the capability does not yet exist on the base) and that post-archive text. This exists because `openspec/specs.projected/` never persists on `main` (see "Projected specs never persist past merge" below), so there is no git-committed baseline for git's own diff view to compare a PR's projection against; the `.diff` file provides the old-to-new comparison independently of git history.
 
@@ -27,15 +31,19 @@ For each touched capability, the generator SHALL write `openspec/specs.projected
 - **THEN** `openspec/specs.projected/<capability>/spec.diff` shows the post-archive text as entirely added, with no "before" content
 
 ### Requirement: Zero-change case leaves no projection
-When no change ids are touched relative to the base ref, the generator SHALL remove `openspec/specs.projected/` entirely (if present) and exit successfully, without creating a worktree or invoking `openspec archive`.
+When no change ids are touched relative to the base ref, the generator SHALL remove `openspec/specs.projected/` entirely (if present) and exit successfully, without creating a worktree or invoking `openspec archive`. Because discovery diffs committed refs (`BASE...HEAD`) and the worktree is checked out from committed `HEAD`, this "zero touched" state can only be reached once an archive move has actually been committed — an `openspec archive` run still sitting uncommitted in the working tree does not count.
 
 #### Scenario: PR with no OpenSpec delta changes
-- **WHEN** the branch's diff against the base ref contains no paths matching `openspec/changes/*/specs/**`
+- **WHEN** the branch's diff against the base ref contains no paths matching `:(glob)openspec/changes/*/specs/**`
 - **THEN** the generator exits 0, and `openspec/specs.projected/` does not exist afterward
 
-#### Scenario: Self-cleaning after a change is archived
-- **WHEN** a branch previously had a committed, non-empty `openspec/specs.projected/` for change `add-foo`, and `add-foo` has since been archived for real (moving its delta out of `openspec/changes/add-foo/specs/**` into the archive folder)
+#### Scenario: Self-cleaning after a change is archived and committed
+- **WHEN** a branch previously had a committed, non-empty `openspec/specs.projected/` for change `add-foo`, and `add-foo` has since been archived for real (moving its delta out of `openspec/changes/add-foo/specs/**` into the archive folder) **and that archive move has been committed**
 - **THEN** re-running the generator finds zero touched change ids and removes `openspec/specs.projected/`, leaving no projected content for `add-foo` to carry into a merge
+
+#### Scenario: An uncommitted archive is not yet reflected
+- **WHEN** a contributor runs `openspec archive add-foo --yes` in the primary working tree but has not yet committed that move, so `HEAD` still points at the pre-archive commit
+- **THEN** re-running the generator still finds `add-foo` touched (both discovery and the worktree checkout operate on committed `HEAD`, not the working tree) and regenerates the same non-empty projection as before the archive — reaching the empty state requires committing the archive move first, as a separate step, before regenerating
 
 ### Requirement: Cross-change requirement conflicts are detected before archiving
 Before creating a worktree or invoking `openspec archive` for any touched change id, the generator SHALL parse every touched change id's delta files for `### Requirement: <name>` headers (under any of `ADDED`/`MODIFIED`/`REMOVED`), and for every `## RENAMED Requirements` entry SHALL treat both the `FROM:` name and the `TO:` name as touched requirement names, and build the set of `(capability, requirement name)` pairs each touched change id touches. If the same `(capability, requirement name)` pair is touched by more than one touched change id, the generator SHALL exit non-zero immediately, naming the conflicting change ids and the requirement, and SHALL NOT create a worktree, invoke `openspec archive`, or modify `openspec/specs.projected/`. This exists because `openspec archive` does not itself detect or reject this case (confirmed: two independently valid changes modifying the same requirement both archive successfully, with the second silently overwriting the first, order-dependent on archive order), and `openspec` 1.6.0's `RENAMED` operation (a `FROM:`/`TO:` pair applied before `REMOVED`/`MODIFIED`/`ADDED` at archive time) contains no `### Requirement:` header of its own, so a parser that only looks for that header pattern misses renames entirely — letting one change rename a requirement while another touched change modifies, removes, or adds under the old or new name go undetected.
