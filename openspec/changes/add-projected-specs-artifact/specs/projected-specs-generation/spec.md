@@ -37,6 +37,28 @@ When no change ids are touched relative to the base ref, the generator SHALL rem
 - **WHEN** a branch previously had a committed, non-empty `openspec/specs.projected/` for change `add-foo`, and `add-foo` has since been archived for real (moving its delta out of `openspec/changes/add-foo/specs/**` into the archive folder)
 - **THEN** re-running the generator finds zero touched change ids and removes `openspec/specs.projected/`, leaving no projected content for `add-foo` to carry into a merge
 
+### Requirement: Cross-change requirement conflicts are detected before archiving
+Before creating a worktree or invoking `openspec archive` for any touched change id, the generator SHALL parse every touched change id's delta files for `### Requirement: <name>` headers (under any of `ADDED`/`MODIFIED`/`REMOVED`) and build the set of `(capability, requirement name)` pairs each touched change id touches. If the same `(capability, requirement name)` pair is touched by more than one touched change id, the generator SHALL exit non-zero immediately, naming the conflicting change ids and the requirement, and SHALL NOT create a worktree, invoke `openspec archive`, or modify `openspec/specs.projected/`. This exists because `openspec archive` does not itself detect or reject this case (confirmed: two independently valid changes modifying the same requirement both archive successfully, with the second silently overwriting the first, order-dependent on archive order).
+
+#### Scenario: Conflicting touched changes are rejected
+- **WHEN** two touched change ids each contain a delta touching the same capability's same requirement name (regardless of whether each delta section is `ADDED`, `MODIFIED`, or `REMOVED`)
+- **THEN** the generator exits non-zero before creating a worktree, and its output names both conflicting change ids and the requirement
+
+#### Scenario: Non-conflicting touched changes proceed normally
+- **WHEN** touched change ids touch disjoint requirements, including cases where they touch different requirements within the same capability
+- **THEN** the generator proceeds to create the worktree and archive both, as in the "Multiple touched changes in one PR" scenario above
+
+### Requirement: Generated diffs are deterministic across runs
+The generator SHALL produce `spec.diff` using stable, fixed labels (e.g. `diff -u --label "openspec/specs/<capability>/spec.md" --label "openspec/specs/<capability>/spec.md" <before> <after>`) rather than the raw filesystem paths of its inputs. This exists because the post-archive "after" file lives inside a freshly created, randomly-named temporary worktree, so its real path (and modification timestamp) differs on every run even when content is identical; unlabeled `diff -u` output would therefore differ byte-for-byte between any two generations of the same committed state, permanently failing the CI staged-diff comparison regardless of actual content drift.
+
+#### Scenario: Identical content produces byte-identical diffs across runs
+- **WHEN** the generator is run twice in succession against the same committed state, with no commits made in between (each run using its own freshly created temporary worktree)
+- **THEN** the resulting `spec.diff` files are byte-for-byte identical across both runs
+
+#### Scenario: Diff headers show the canonical path, not a temporary worktree path
+- **WHEN** the generator writes `openspec/specs.projected/<capability>/spec.diff`
+- **THEN** its `---`/`+++` header lines show the canonical `openspec/specs/<capability>/spec.md` path, not a path under the temporary worktree
+
 ### Requirement: Generation is isolated from the primary working tree
 The generator SHALL perform all `openspec archive` calls inside a disposable, detached git worktree checked out from `HEAD`, and SHALL NOT modify any file in the primary working tree other than `openspec/specs.projected/`. The worktree SHALL be removed on exit, including on failure.
 

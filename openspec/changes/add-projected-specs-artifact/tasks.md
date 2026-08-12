@@ -2,13 +2,14 @@
 
 - [ ] 1.1 Create `scripts/generate-projected-specs.sh`: accept an optional base-ref argument (default `origin/main`), compute touched change ids via `git diff --name-only "$BASE"...HEAD -- 'openspec/changes/*/specs/**'`
 - [ ] 1.2 Zero-touched-ids path: `rm -rf openspec/specs.projected` and exit 0
-- [ ] 1.3 Non-empty path: create a detached worktree (`git worktree add --detach <tmp> HEAD`) with a `trap` that removes it on any exit (success, failure, or interrupt)
-- [ ] 1.4 Inside the worktree, run `openspec archive <id> --yes` for each touched id in sorted order; on any failure, print the error and exit non-zero without touching `openspec/specs.projected/` in the primary tree
-- [ ] 1.5 From the touched change ids' delta paths, derive the touched-capability set (the path segment after `specs/` in each changed delta file)
-- [ ] 1.6 On success, rebuild `openspec/specs.projected/` from scratch (`rm -rf openspec/specs.projected && mkdir`), writing output only for touched capabilities — never the full `openspec/specs/` tree
-- [ ] 1.7 For each touched capability, write `openspec/specs.projected/<capability>/spec.md` (full post-archive text from the worktree) and `openspec/specs.projected/<capability>/spec.diff` (`diff -u` of the current `openspec/specs/<capability>/spec.md`, or empty input if new, against the post-archive text)
-- [ ] 1.8 Prepend the generated-file header comment to every `.md` and `.diff` file written
-- [ ] 1.9 Make the script executable (`chmod +x`) and verify `shellcheck` (if available) reports no issues
+- [ ] 1.3 Before creating any worktree: for each touched change id, parse its delta files under `openspec/changes/<id>/specs/**/spec.md` for `### Requirement: <name>` headers (any of ADDED/MODIFIED/REMOVED) and build `(capability, requirement name)` pairs per change id. If the same pair appears under more than one touched change id, print the conflicting change ids and requirement name and exit non-zero without creating a worktree or touching `openspec/specs.projected/`
+- [ ] 1.4 Non-empty, non-conflicting path: create a detached worktree (`git worktree add --detach <tmp> HEAD`) with a `trap` that removes it on any exit (success, failure, or interrupt)
+- [ ] 1.5 Inside the worktree, run `openspec archive <id> --yes` for each touched id in sorted order; on any failure, print the error and exit non-zero without touching `openspec/specs.projected/` in the primary tree
+- [ ] 1.6 From the touched change ids' delta paths, derive the touched-capability set (the path segment after `specs/` in each changed delta file)
+- [ ] 1.7 On success, rebuild `openspec/specs.projected/` from scratch (`rm -rf openspec/specs.projected && mkdir`), writing output only for touched capabilities — never the full `openspec/specs/` tree
+- [ ] 1.8 For each touched capability, write `openspec/specs.projected/<capability>/spec.md` (full post-archive text from the worktree) and `openspec/specs.projected/<capability>/spec.diff` via `diff -u --label "openspec/specs/<capability>/spec.md" --label "openspec/specs/<capability>/spec.md" <before> <after>` (before = current `openspec/specs/<capability>/spec.md`, or `/dev/null` if new; after = post-archive text) — fixed labels, not the worktree's real temp path, so output is deterministic across runs
+- [ ] 1.9 Prepend the generated-file header comment to every `.md` and `.diff` file written
+- [ ] 1.10 Make the script executable (`chmod +x`) and verify `shellcheck` (if available) reports no issues
 
 ## 2. Task runner and CI integration
 
@@ -29,3 +30,5 @@
 - [ ] 4.4 Simulate the multi-change case locally if a second open change is available, or note in the PR description that this path is covered by code review + the requirement's scenario rather than a live second change
 - [ ] 4.5 Confirm `git worktree list` shows no leftover worktrees after both a successful and a failing run
 - [ ] 4.6 Commit the generated `openspec/specs.projected/` for this change itself as part of this PR, demonstrating the mechanism end-to-end
+- [ ] 4.7 Simulate two touched changes modifying the same requirement in the same capability; confirm the generator exits non-zero before creating a worktree (`git worktree list` shows nothing new from the run) and names both change ids and the requirement
+- [ ] 4.8 Run the generator twice in a row with no commits between runs and confirm every `spec.diff` is byte-for-byte identical across both runs (`diff -q` between the two outputs, or a saved copy compared after the second run)
