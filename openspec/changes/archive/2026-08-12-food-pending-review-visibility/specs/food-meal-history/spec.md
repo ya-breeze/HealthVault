@@ -1,8 +1,5 @@
-# food-meal-history Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change edit-confirmed-meals. Update Purpose after archive.
-## Requirements
 ### Requirement: Owner-Scoped Meal List
 The system SHALL expose `GET /api/food/meals`, returning a summary of the authenticated caller's own `FoodMeal` records — of any status — ordered by `logged_at` descending, then `id` descending as a deterministic tie-breaker (`id` alone is a complete, collision-free tie-break, being the primary key — no third field is needed). Unlike `GET /api/data/food_meal`, this endpoint SHALL scope strictly to the caller's own meals (`user_id`), never other family members', so every meal returned is guaranteed openable via `GET /api/food/meals/{id}`.
 
@@ -90,44 +87,7 @@ The endpoint SHALL accept an optional, repeatable `status` query parameter (e.g.
 - **WHEN** the caller requests `?status=bogus`
 - **THEN** the system returns HTTP 400 and does not return a partial or reinterpreted result
 
-### Requirement: Meal History Page
-The frontend SHALL provide a meal history page reachable from the dashboard, listing the caller's meals from `GET /api/food/meals` grouped into sections by calendar day (the meal's `logged_at` interpreted in the browser's local time zone), most-recent day first. Each day section SHALL show a header identifying that calendar day, followed by that day's meals in the existing per-meal format (name, logged date/time, status, and calories, blank for a meal whose status is not `confirmed`), each linking to that meal's existing review page (`/food/review/?meal=<id>`). Each day section SHALL also show a daily total — summed calories, protein, carbs, and fat — computed only over that day's `confirmed` meals; a day with no confirmed meals SHALL show a total of zero rather than omitting the total line. The page SHALL offer a "load older" action that re-queries with both `before` and `before_id` set from the oldest meal currently shown, so meals beyond the first page remain reachable via the lossless keyset cursor rather than the plain timestamp filter; meals returned by "load older" SHALL be merged into the correct existing day section or form new day sections as needed, keeping every day's total accurate as more meals load.
-
-#### Scenario: History page is reachable from the dashboard
-- **WHEN** an authenticated user is on the dashboard
-- **THEN** a link to the meal history page is visible
-
-#### Scenario: History row links to the review page
-- **WHEN** a user clicks a meal row in the history list
-- **THEN** the system navigates to `/food/review/?meal=<that meal's id>`
-
-#### Scenario: Unconfirmed meal shows no calorie total
-- **WHEN** the history list includes a meal whose status is `pending_review`, `pending_clarification`, `processing`, or `failed`
-- **THEN** that row shows no calorie total, since the meal has none computed yet
-
-#### Scenario: Loading older meals
-- **WHEN** the user activates "load older" at the bottom of the list
-- **THEN** the system fetches the next page using both `before` and `before_id` and appends it, without losing the meals already shown
-
-#### Scenario: Meals are grouped by local calendar day
-- **GIVEN** the caller has meals logged on two different calendar days (in the browser's local time zone)
-- **WHEN** they view the history page
-- **THEN** the meals appear under two separate day headers, most recent day first, each containing only that day's meals
-
-#### Scenario: Daily total sums only confirmed meals
-- **GIVEN** a day has one `confirmed` meal and one `pending_review` meal
-- **WHEN** the user views that day's section
-- **THEN** the displayed daily total (calories, protein, carbs, fat) reflects only the confirmed meal, and the pending meal still appears in the list below it with no calorie total on its own row
-
-#### Scenario: Day with no confirmed meals shows a zero total
-- **GIVEN** a day has only meals with status other than `confirmed`
-- **WHEN** the user views that day's section
-- **THEN** the daily total line is shown with all values at zero, not omitted
-
-#### Scenario: Loading older meals updates day groupings correctly
-- **GIVEN** the currently loaded meals end mid-way through a calendar day
-- **WHEN** the user activates "load older" and the next page includes more meals from that same day plus meals from an earlier day
-- **THEN** the earlier-loaded day's section gains the newly loaded meals (and its total updates to include them), and a new day section appears for the earlier day
+## ADDED Requirements
 
 ### Requirement: Needs-Attention Count
 The system SHALL expose `GET /api/food/meals/needs-attention-count`, returning a count of the authenticated caller's own meals whose status is `processing`, `pending_clarification`, `pending_review`, or `failed` — the set of meals with no finished, confirmed nutrition totals yet. The response SHALL be a JSON object `{"count": <integer>}`. The endpoint SHALL take no query parameters; the status set counted is fixed. As with the meal list, this endpoint SHALL scope strictly to the caller's own meals (`user_id`).
@@ -150,4 +110,3 @@ The system SHALL expose `GET /api/food/meals/needs-attention-count`, returning a
 #### Scenario: Unauthenticated access
 - **WHEN** a request without a valid JWT calls `GET /api/food/meals/needs-attention-count`
 - **THEN** the system returns HTTP 401
-

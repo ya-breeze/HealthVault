@@ -426,14 +426,16 @@ export const api = {
   // plain "meals logged before this instant" filter, which can drop meals
   // that share the exact logged_at at a page boundary. Always pass both
   // when continuing from a previous page (see the history page's loadMore).
-  listMeals: (opts?: { limit?: number; before?: string; beforeId?: string }) => {
+  listMeals: (opts?: { limit?: number; before?: string; beforeId?: string; status?: string[] }) => {
     const params = new URLSearchParams();
     if (opts?.limit) params.set('limit', String(opts.limit));
     if (opts?.before) params.set('before', opts.before);
     if (opts?.beforeId) params.set('before_id', opts.beforeId);
+    opts?.status?.forEach(s => params.append('status', s));
     const qs = params.toString();
     return apiFetch<MealSummary[]>(`/food/meals${qs ? `?${qs}` : ''}`);
   },
+  needsAttentionCount: () => apiFetch<{ count: number }>('/food/meals/needs-attention-count'),
   patchMeal: (id: string, input: PatchMealInput) =>
     apiFetch<FoodMeal>(`/food/meals/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
 

@@ -301,6 +301,203 @@ func TestListMeals_Unauthenticated(t *testing.T) {
 	}
 }
 
+func TestListMeals_StatusFilterSingle(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	now := time.Now().UTC()
+	createMealAt(t, st, userID, familyID, database.MealStatusProcessing, now.Add(-2*time.Minute))
+	pending := createMealAt(t, st, userID, familyID, database.MealStatusPendingReview, now.Add(-1*time.Minute))
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, now)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ListMeals(w, withClaims(listMealsRequest("status=pending_review"), userID))
+
+	var got []server.MealSummary
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got) != 1 || got[0].ID != pending.ID {
+		t.Fatalf("expected only the pending_review meal, got %+v", got)
+	}
+}
+
+func TestListMeals_StatusFilterMultiple(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	now := time.Now().UTC()
+	proc := createMealAt(t, st, userID, familyID, database.MealStatusProcessing, now.Add(-3*time.Minute))
+	createMealAt(t, st, userID, familyID, database.MealStatusPendingReview, now.Add(-2*time.Minute))
+	failed := createMealAt(t, st, userID, familyID, database.MealStatusFailed, now.Add(-1*time.Minute))
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, now)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ListMeals(w, withClaims(listMealsRequest("status=processing&status=failed"), userID))
+
+	var got []server.MealSummary
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	gotIDs := map[uuid.UUID]bool{}
+	for _, m := range got {
+		gotIDs[m.ID] = true
+	}
+	if len(got) != 2 || !gotIDs[proc.ID] || !gotIDs[failed.ID] {
+		t.Fatalf("expected exactly the processing and failed meals, got %+v", got)
+	}
+}
+
+func TestListMeals_StatusFilterCombinesWithPaging(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	base := time.Now().UTC()
+	want := make(map[uuid.UUID]bool, 3)
+	for i := 0; i < 3; i++ {
+		m := createMealAt(t, st, userID, familyID, database.MealStatusPendingReview, base.Add(-time.Duration(i)*time.Minute))
+		want[m.ID] = true
+	}
+	// Confirmed meals interleaved in time — must never appear in a
+	// status-filtered page.
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, base.Add(-90*time.Second))
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	got := map[uuid.UUID]bool{}
+	before, beforeID := "", ""
+	for page := 0; page < 4; page++ {
+		q := "status=pending_review&limit=1"
+		if before != "" {
+			q += "&before=" + before + "&before_id=" + beforeID
+		}
+		w := httptest.NewRecorder()
+		h.ListMeals(w, withClaims(listMealsRequest(q), userID))
+		var rows []server.MealSummary
+		json.NewDecoder(w.Body).Decode(&rows) //nolint:errcheck
+		if len(rows) == 0 {
+			break
+		}
+		for _, row := range rows {
+			if row.Status != database.MealStatusPendingReview {
+				t.Fatalf("status filter leaked a non-pending_review meal: %+v", row)
+			}
+			got[row.ID] = true
+		}
+		last := rows[len(rows)-1]
+		before, beforeID = last.LoggedAt.Format(time.RFC3339Nano), last.ID.String()
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected all %d pending_review meals reachable via paging, got %d", len(want), len(got))
+	}
+}
+
+func TestListMeals_StatusOmittedBehavesAsBefore(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	now := time.Now().UTC()
+	createMealAt(t, st, userID, familyID, database.MealStatusProcessing, now.Add(-1*time.Minute))
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, now)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ListMeals(w, withClaims(listMealsRequest(""), userID))
+
+	var got []server.MealSummary
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got) != 2 {
+		t.Fatalf("expected both meals when status is omitted, got %+v", got)
+	}
+}
+
+func TestListMeals_InvalidStatusRejected(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ListMeals(w, withClaims(listMealsRequest("status=bogus"), userID))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// --- NeedsAttentionCount ---
+
+func needsAttentionCountRequest() *http.Request {
+	return httptest.NewRequest(http.MethodGet, "/api/food/meals/needs-attention-count", nil)
+}
+
+func TestNeedsAttentionCount_ReflectsOnlyMealsNeedingAttention(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	now := time.Now().UTC()
+	createMealAt(t, st, userID, familyID, database.MealStatusProcessing, now)
+	createMealAt(t, st, userID, familyID, database.MealStatusPendingReview, now)
+	createMealAt(t, st, userID, familyID, database.MealStatusFailed, now)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, now)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, now)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.NeedsAttentionCount(w, withClaims(needsAttentionCountRequest(), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got struct{ Count int64 }
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Count != 3 {
+		t.Errorf("expected count 3, got %d", got.Count)
+	}
+}
+
+func TestNeedsAttentionCount_ZeroWhenNoneOrAllConfirmed(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	w := httptest.NewRecorder()
+	h.NeedsAttentionCount(w, withClaims(needsAttentionCountRequest(), userID))
+	var got struct{ Count int64 }
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Count != 0 {
+		t.Errorf("expected count 0 with no meals, got %d", got.Count)
+	}
+
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, time.Now())
+
+	w2 := httptest.NewRecorder()
+	h.NeedsAttentionCount(w2, withClaims(needsAttentionCountRequest(), userID))
+	var got2 struct{ Count int64 }
+	json.NewDecoder(w2.Body).Decode(&got2) //nolint:errcheck
+	if got2.Count != 0 {
+		t.Errorf("expected count 0 when all meals are confirmed, got %d", got2.Count)
+	}
+}
+
+func TestNeedsAttentionCount_ScopedToCaller(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	otherUserID := uuid.New()
+	createMealAt(t, st, userID, familyID, database.MealStatusPendingReview, time.Now())
+	createMealAt(t, st, otherUserID, familyID, database.MealStatusPendingReview, time.Now())
+	createMealAt(t, st, otherUserID, familyID, database.MealStatusFailed, time.Now())
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.NeedsAttentionCount(w, withClaims(needsAttentionCountRequest(), userID))
+
+	var got struct{ Count int64 }
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Count != 1 {
+		t.Errorf("expected count scoped to the caller's own meal only, got %d", got.Count)
+	}
+}
+
+func TestNeedsAttentionCount_Unauthenticated(t *testing.T) {
+	st := newFoodTestStorage(t)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.NeedsAttentionCount(w, needsAttentionCountRequest())
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
 // --- PatchMeal ---
 
 func patchMealNameRequest(mealID string, body map[string]any) *http.Request {

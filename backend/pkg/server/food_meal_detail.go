@@ -195,12 +195,35 @@ const (
 	maxMealListLimit     = 200
 )
 
-// ListMeals handles GET /api/food/meals?limit=&before=&before_id=: the
-// caller's own meals of any status, ordered most-recent-first. Owner-scoped
-// by claims.UserID — unlike GET /api/data/food_meal, which is family-visible
+// validMealStatuses is the complete set of database.MealStatus* values,
+// used to validate the ListMeals `status` filter and to define the
+// NeedsAttentionCount status set.
+var validMealStatuses = map[string]bool{
+	database.MealStatusProcessing:           true,
+	database.MealStatusPendingClarification: true,
+	database.MealStatusPendingReview:        true,
+	database.MealStatusConfirmed:            true,
+	database.MealStatusFailed:               true,
+}
+
+// needsAttentionStatuses is every status short of a finished, confirmed
+// meal — no nutrition totals computed yet, and (other than `processing`)
+// something the user should look at.
+var needsAttentionStatuses = []string{
+	database.MealStatusProcessing,
+	database.MealStatusPendingClarification,
+	database.MealStatusPendingReview,
+	database.MealStatusFailed,
+}
+
+// ListMeals handles GET /api/food/meals?limit=&before=&before_id=&status=:
+// the caller's own meals, ordered most-recent-first. Owner-scoped by
+// claims.UserID — unlike GET /api/data/food_meal, which is family-visible
 // — so every summary returned is guaranteed openable via GetMeal. `before`
 // (paired with `before_id`) lets the caller page past `limit`, since a hard
 // cap with no way past it would make older meals permanently unreachable.
+// `status` (repeatable) restricts the result to the given status values;
+// omitted, it behaves as before — meals of any status.
 //
 // Ordering and paging use (logged_at, id) as a keyset cursor, not a
 // timestamp-only one. `id` alone is already a complete, collision-free
@@ -214,6 +237,8 @@ const (
 // the exact (logged_at, id) of the last row returned — `(logged_at, id) <
 // (before, before_id)` in the same DESC order the list uses — always resumes
 // at exactly the next row, tied group or not, so nothing can be dropped.
+// This holds regardless of any `status` filter, since the filter and the
+// cursor apply as independent WHERE clauses.
 func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 	claims := ClaimsFromCtx(r)
 	if claims == nil {
@@ -231,10 +256,21 @@ func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 
+	statuses := r.URL.Query()["status"]
+	for _, s := range statuses {
+		if !validMealStatuses[s] {
+			http.Error(w, "status must be one of: processing, pending_clarification, pending_review, confirmed, failed", http.StatusBadRequest)
+			return
+		}
+	}
+
 	query := h.storage.DB().Model(&database.FoodMeal{}).
 		Where("user_id = ?", claims.UserID).
 		Order("logged_at DESC, id DESC").
 		Limit(limit)
+	if len(statuses) > 0 {
+		query = query.Where("status IN ?", statuses)
+	}
 
 	beforeStr := r.URL.Query().Get("before")
 	beforeIDStr := r.URL.Query().Get("before_id")
@@ -297,6 +333,37 @@ func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, summaries)
+}
+
+// needsAttentionCountResponse is the response shape for
+// GET /api/food/meals/needs-attention-count.
+type needsAttentionCountResponse struct {
+	Count int64 `json:"count"`
+}
+
+// NeedsAttentionCount handles GET /api/food/meals/needs-attention-count: a
+// single count of the caller's own meals in needsAttentionStatuses — every
+// status short of `confirmed`, i.e. meals with no finished nutrition totals
+// yet. Exists as its own endpoint (rather than len(ListMeals with a status
+// filter)) because the dashboard needs one accurate number regardless of
+// history size, and a list-based count would require either an unbounded
+// limit or paging through and summing — a single COUNT(*) query avoids both.
+func (h *foodHandlers) NeedsAttentionCount(w http.ResponseWriter, r *http.Request) {
+	claims := ClaimsFromCtx(r)
+	if claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var count int64
+	if err := h.storage.DB().Model(&database.FoodMeal{}).
+		Where("user_id = ? AND status IN ?", claims.UserID, needsAttentionStatuses).
+		Count(&count).Error; err != nil {
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, needsAttentionCountResponse{Count: count})
 }
 
 // patchMealRequest is the JSON body for PATCH /api/food/meals/{id}: correct a
