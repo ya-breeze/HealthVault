@@ -93,6 +93,17 @@ for id in "${CHANGE_IDS[@]}"; do
 			[[ -z "$name" ]] && continue
 			record_pair "$cap" "$name" "$id"
 		done < <(printf '%s\n' "$content" | grep -oP '^- TO: `### Requirement: \K[^`]*' || true)
+
+		# OpenSpec 1.6.0 also accepts REMOVED requirements written as a bullet
+		# (backticks optional): "- `### Requirement: <name>`". Mirrors the
+		# CLI's own parser regex (requirement-blocks.js: parseRemovedNames)
+		# so this preflight rejects the same conflicts the CLI would silently
+		# let a later archive overwrite.
+		# shellcheck disable=SC2016 # backticks are literal regex chars, not shell expansion
+		while IFS= read -r name; do
+			[[ -z "$name" ]] && continue
+			record_pair "$cap" "$name" "$id"
+		done < <(printf '%s\n' "$content" | grep -oP '^\s*-\s*`?###\s*Requirement:\s*\K.*?(?=`?\s*$)' || true)
 	done
 done
 
@@ -128,9 +139,17 @@ for cap in "${CAPABILITIES[@]}"; do
 
 	before="openspec/specs/$cap/spec.md"
 	after="$WORKTREE_DIR/openspec/specs/$cap/spec.md"
-	before_input="$before"
-	if [[ ! -f "$before" ]]; then
-		before_input="/dev/null"
+
+	# Read the "before" side from committed HEAD, not the primary working
+	# tree: an uncommitted local edit to openspec/specs/$cap/spec.md must
+	# not change spec.diff, since "after" is already computed purely from
+	# HEAD via the worktree.
+	before_tmp=""
+	before_input="/dev/null"
+	if git cat-file -e "HEAD:$before" 2>/dev/null; then
+		before_tmp="$(mktemp)"
+		git show "HEAD:$before" >"$before_tmp"
+		before_input="$before_tmp"
 	fi
 
 	{
@@ -142,4 +161,8 @@ for cap in "${CAPABILITIES[@]}"; do
 		generated_header
 		diff -u --label "openspec/specs/$cap/spec.md" --label "openspec/specs/$cap/spec.md" "$before_input" "$after" || true
 	} >"$PROJECTED_DIR/$cap/spec.diff"
+
+	if [[ -n "$before_tmp" ]]; then
+		rm -f "$before_tmp"
+	fi
 done
