@@ -83,13 +83,6 @@ func (i *Index) Close() error {
 	return nil
 }
 
-// searchFetchLimit is how many brand-matched rows Search pulls from SQLite
-// before re-ranking by name overlap in Go and truncating to the caller's
-// limit. Brand-matched sets are already narrow by construction (see
-// buildBrandQuery), so this only bounds how much work a very common brand
-// with many SKUs can force onto the in-process ranking step.
-const searchFetchLimit = 200
-
 // Search returns up to limit ranked candidates for a free-text product name,
 // requiring brand to match. An empty brand, or a brand with no usable
 // tokens, returns no results rather than matching on name alone — see
@@ -97,8 +90,17 @@ const searchFetchLimit = 200
 // terms rank the brand-matched set afterward in Go (rankByNameOverlap) and
 // can never exclude a correctly-branded product, even one that shares no
 // token with name — e.g. a Czech "Bílý jogurt" product still ranks (just
-// lower) against a recognized English "yogurt". An empty result is a normal
-// outcome, not an error.
+// lower) against a recognized English "yogurt".
+//
+// The brand-matched query is fetched to completion, unbounded, before
+// ranking and truncating to limit — an earlier version capped the SQL fetch
+// (ORDER BY bm25 LIMIT N) before ranking by name, which silently reintroduced
+// the same exclusion bug the two-phase design exists to prevent: a
+// correctly-branded product ranked outside that arbitrary bm25 prefix could
+// never reach the shortlist regardless of how well its name matched. Brand
+// is already the sole filter, so the matched set is bounded by how many SKUs
+// a single brand has in the CZ/SK-filtered corpus, not by the full catalog.
+// An empty result is a normal outcome, not an error.
 func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 	if i == nil || i.db == nil {
 		return nil, ErrNoDatabase
@@ -116,8 +118,7 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 		FROM off_foods_fts fts
 		JOIN off_foods f ON f.rowid = fts.rowid
 		WHERE off_foods_fts MATCH ?
-		ORDER BY bm25(off_foods_fts)
-		LIMIT ?`, q, searchFetchLimit)
+		ORDER BY bm25(off_foods_fts)`, q)
 	if err != nil {
 		return nil, fmt.Errorf("off search: %w", err)
 	}

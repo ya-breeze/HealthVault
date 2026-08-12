@@ -183,6 +183,35 @@ func TestSearch_RanksNameMatchAboveNameMismatchWithinSameBrand(t *testing.T) {
 	}
 }
 
+// A brand with more SKUs than any fixed SQL fetch cap must not lose the
+// name-matching product: the entire brand-matched set is ranked by name
+// overlap, not just an arbitrary bm25-ordered prefix of it.
+func TestSearch_NameMatchFoundBeyond200SameBrandRows(t *testing.T) {
+	extras := make([]off.Food, 0, 250)
+	for i := range 250 {
+		// Every row shares the exact brand text "Olma" and a product name
+		// with no "jogurt" token, so on brand-only bm25 ordering none of
+		// them out-scores any other — the target row can land anywhere,
+		// including past a 200-row cap.
+		extras = append(extras, product(fmt.Sprintf("filler-olma-%d", i), "Cottage cheese", "Olma", 1))
+	}
+	extras = append(extras, product("target", "Bílý jogurt", "Olma", 65))
+	path := buildIndex(t, extras...)
+	idx, err := off.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer idx.Close() //nolint:errcheck
+
+	got, err := idx.Search("jogurt", "Olma", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) == 0 || got[0].Code != "target" {
+		t.Fatalf("got %+v, want the yogurt product ranked first despite 250 same-brand rows", got)
+	}
+}
+
 func TestSearch_EmptyBrandReturnsNoResults(t *testing.T) {
 	idx, err := off.Open(buildIndex(t, product("1", "Bílý jogurt", "Olma", 65)))
 	if err != nil {
