@@ -38,11 +38,15 @@ When no change ids are touched relative to the base ref, the generator SHALL rem
 - **THEN** re-running the generator finds zero touched change ids and removes `openspec/specs.projected/`, leaving no projected content for `add-foo` to carry into a merge
 
 ### Requirement: Cross-change requirement conflicts are detected before archiving
-Before creating a worktree or invoking `openspec archive` for any touched change id, the generator SHALL parse every touched change id's delta files for `### Requirement: <name>` headers (under any of `ADDED`/`MODIFIED`/`REMOVED`) and build the set of `(capability, requirement name)` pairs each touched change id touches. If the same `(capability, requirement name)` pair is touched by more than one touched change id, the generator SHALL exit non-zero immediately, naming the conflicting change ids and the requirement, and SHALL NOT create a worktree, invoke `openspec archive`, or modify `openspec/specs.projected/`. This exists because `openspec archive` does not itself detect or reject this case (confirmed: two independently valid changes modifying the same requirement both archive successfully, with the second silently overwriting the first, order-dependent on archive order).
+Before creating a worktree or invoking `openspec archive` for any touched change id, the generator SHALL parse every touched change id's delta files for `### Requirement: <name>` headers (under any of `ADDED`/`MODIFIED`/`REMOVED`), and for every `## RENAMED Requirements` entry SHALL treat both the `FROM:` name and the `TO:` name as touched requirement names, and build the set of `(capability, requirement name)` pairs each touched change id touches. If the same `(capability, requirement name)` pair is touched by more than one touched change id, the generator SHALL exit non-zero immediately, naming the conflicting change ids and the requirement, and SHALL NOT create a worktree, invoke `openspec archive`, or modify `openspec/specs.projected/`. This exists because `openspec archive` does not itself detect or reject this case (confirmed: two independently valid changes modifying the same requirement both archive successfully, with the second silently overwriting the first, order-dependent on archive order), and `openspec` 1.6.0's `RENAMED` operation (a `FROM:`/`TO:` pair applied before `REMOVED`/`MODIFIED`/`ADDED` at archive time) contains no `### Requirement:` header of its own, so a parser that only looks for that header pattern misses renames entirely — letting one change rename a requirement while another touched change modifies, removes, or adds under the old or new name go undetected.
 
 #### Scenario: Conflicting touched changes are rejected
 - **WHEN** two touched change ids each contain a delta touching the same capability's same requirement name (regardless of whether each delta section is `ADDED`, `MODIFIED`, or `REMOVED`)
 - **THEN** the generator exits non-zero before creating a worktree, and its output names both conflicting change ids and the requirement
+
+#### Scenario: A rename conflicts with an operation on either of its endpoint names
+- **WHEN** one touched change's delta contains a `RENAMED` entry with `FROM: `### Requirement: A`` and `TO: `### Requirement: B``, and another touched change's delta contains an `ADDED`, `MODIFIED`, or `REMOVED` operation on requirement `A` or requirement `B` in the same capability
+- **THEN** the generator exits non-zero before creating a worktree, and its output names both conflicting change ids and the shared requirement name
 
 #### Scenario: Non-conflicting touched changes proceed normally
 - **WHEN** touched change ids touch disjoint requirements, including cases where they touch different requirements within the same capability
@@ -89,7 +93,7 @@ Every file written into `openspec/specs.projected/` (both `spec.md` and `spec.di
 - **THEN** the file's first line is a comment stating it is generated, must not be hand-edited, and naming `make projected-specs` as the regeneration command
 
 ### Requirement: CI gate enforces regenerated output matches committed output, including entirely missing output
-A CI workflow SHALL run on pull requests that touch `openspec/**`, regenerate `openspec/specs.projected/` against the PR's base branch, and fail the check if the regenerated content differs from what is committed in the PR — including the case where the PR contains no committed `openspec/specs.projected/` content at all (untracked or absent). The check SHALL stage the regenerated output before comparing (e.g. `git add -A -- openspec/specs.projected && git diff --cached --exit-code -- openspec/specs.projected`), not compare only tracked files, so that entirely new or entirely removed projected files are detected, not just modifications to already-tracked ones. On failure it SHALL name the exact local command to run.
+A CI workflow SHALL run on pull requests that touch `openspec/**`, regenerate `openspec/specs.projected/` against the PR's base branch, and fail the check if the regenerated content differs from what is committed in the PR — including the case where the PR contains no committed `openspec/specs.projected/` content at all (untracked or absent). The check SHALL stage the regenerated output before comparing, using an existing parent pathspec (`git add -A -- openspec && git diff --cached --exit-code -- openspec/specs.projected`), not compare only tracked files and not stage `openspec/specs.projected` directly — staging that path directly errors (non-zero exit, no comparison performed) whenever it has never existed on the checkout, which is the correct state for a PR with no touched changes or one whose changes have all been archived, so staging from the always-present `openspec` parent instead is required for the check to pass on that state rather than erroring out on it. On failure it SHALL name the exact local command to run.
 
 #### Scenario: Stale projection fails CI
 - **WHEN** a PR touching `openspec/changes/*/specs/**` is opened without a matching regeneration of `openspec/specs.projected/`
@@ -98,6 +102,10 @@ A CI workflow SHALL run on pull requests that touch `openspec/**`, regenerate `o
 #### Scenario: Entirely missing projection fails CI
 - **WHEN** a PR touches `openspec/changes/*/specs/**` but never runs or commits the generator's output, so `openspec/specs.projected/` does not exist in the PR at all
 - **THEN** the CI job still fails, because regenerating produces non-empty content that the staged-diff comparison detects as entirely new, not silently passed as "no diff"
+
+#### Scenario: Correctly empty projection passes CI without a pathspec error
+- **WHEN** a PR has no touched OpenSpec deltas, or all of its touched changes have been archived, so the correct `openspec/specs.projected/` state is absent and it has never existed on that checkout (neither on disk nor in git history)
+- **THEN** the CI job succeeds — the staging step does not error, because it stages from the existing `openspec` parent path rather than the nonexistent `openspec/specs.projected` path
 
 #### Scenario: Up-to-date projection passes CI
 - **WHEN** a PR's committed `openspec/specs.projected/` matches what regenerating it against the PR's base branch produces
