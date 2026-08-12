@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ya-breeze/healthvault/pkg/database"
+	"github.com/ya-breeze/healthvault/pkg/off"
 	"github.com/ya-breeze/healthvault/pkg/server"
 	"github.com/ya-breeze/healthvault/pkg/usda"
 	kinmodels "github.com/ya-breeze/kin-core/models"
@@ -70,6 +72,44 @@ func buildUSDAIndex(t *testing.T, foods ...usda.Food) *usda.Index {
 		t.Fatalf("Promote: %v", err)
 	}
 	idx, err := usda.Open(target)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { idx.Close() }) //nolint:errcheck
+	return idx
+}
+
+func offFood(code, name, brands string, kcal float64) off.Food {
+	return off.Food{
+		Code: code, ProductName: name, Brands: brands,
+		Profile: database.NutrientProfile{CaloriesPer100g: kcal, ProteinPer100g: 5},
+	}
+}
+
+// buildOFFIndex builds and promotes a real Open Food Facts database with the
+// given products plus enough filler rows to clear MinExpectedRows, returning
+// an open read-only Index. Mirrors buildUSDAIndex.
+func buildOFFIndex(t *testing.T, products ...off.Food) *off.Index {
+	t.Helper()
+	target := filepath.Join(t.TempDir(), "off.db")
+	b, err := off.NewBuilder(target)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+	for _, p := range products {
+		if err := b.Add(p); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+	for i := range off.MinExpectedRows {
+		if err := b.Add(offFood(fmt.Sprintf("filler-%d", i), "Filler product", "Filler Brand", 1)); err != nil {
+			t.Fatalf("Add filler: %v", err)
+		}
+	}
+	if _, err := b.Promote(); err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+	idx, err := off.Open(target)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

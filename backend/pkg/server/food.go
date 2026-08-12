@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
+	"github.com/ya-breeze/healthvault/pkg/off"
 	photostorage "github.com/ya-breeze/healthvault/pkg/storage"
 	"github.com/ya-breeze/healthvault/pkg/usda"
 	"github.com/ya-breeze/healthvault/pkg/vision"
@@ -21,6 +22,7 @@ import (
 type foodHandlers struct {
 	storage database.Storage
 	usda    *usda.Index // nil if no import has run yet
+	off     *off.Index  // nil if no import has run yet
 	photos  *photostorage.Store
 
 	vision         vision.Client
@@ -58,6 +60,16 @@ func (h *foodHandlers) WithVision(client vision.Client, maxUploadBytes int64, vi
 	h.vision = client
 	h.maxUploadBytes = maxUploadBytes
 	h.visionTimeout = visionTimeout
+	return h
+}
+
+// WithOFF sets the Open Food Facts index used by candidate resolution.
+// offIndex may be nil if no import has run yet; handlers degrade to
+// USDA-only rather than fail. A separate builder method, not a
+// NewFoodHandlers parameter, so the many existing call sites that don't
+// exercise OFF-specific behavior don't all need updating.
+func (h *foodHandlers) WithOFF(offIndex *off.Index) *foodHandlers {
+	h.off = offIndex
 	return h
 }
 

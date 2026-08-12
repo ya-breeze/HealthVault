@@ -22,6 +22,7 @@ type manualMealItemRequest struct {
 	WeightGrams  float64    `json:"weight_grams"`
 	FdcID        *int64     `json:"fdc_id,omitempty"`
 	CustomFoodID *uuid.UUID `json:"custom_food_id,omitempty"`
+	OffCode      *string    `json:"off_code,omitempty"`
 
 	Calories          float64 `json:"calories"`
 	ProteinGrams      float64 `json:"protein_grams"`
@@ -83,9 +84,20 @@ func (h *foodHandlers) CreateManualMeal(w http.ResponseWriter, r *http.Request) 
 		item.ID = uuid.New()
 		item.FamilyID = familyID
 
+		// New check, not an extension of an existing one: this endpoint has
+		// never validated reference exclusivity, so both an fdc_id and a
+		// custom_food_id (now also an off_code) could be persisted together
+		// even though resolveReferenceProfile only ever resolves one of
+		// them. Fixed here as part of adding the third field rather than
+		// grandfathering the gap forward — see design.md's Risks.
+		if refSourcesSet(itemReq.FdcID, itemReq.OffCode, itemReq.CustomFoodID) > 1 {
+			http.Error(w, "specify at most one of fdc_id, off_code, or custom_food_id", http.StatusBadRequest)
+			return
+		}
+
 		switch itemReq.Source {
 		case "reference":
-			profile, status, err := h.resolveReferenceProfile(claims.UserID, itemReq.FdcID, itemReq.CustomFoodID)
+			profile, status, err := h.resolveReferenceProfile(claims.UserID, itemReq.FdcID, itemReq.OffCode, itemReq.CustomFoodID)
 			if err != nil {
 				http.Error(w, err.Error(), status)
 				return
@@ -96,6 +108,7 @@ func (h *foodHandlers) CreateManualMeal(w http.ResponseWriter, r *http.Request) 
 			}
 			item.FdcID = itemReq.FdcID
 			item.CustomFoodID = itemReq.CustomFoodID
+			item.OffCode = itemReq.OffCode
 			item.WeightGrams = itemReq.WeightGrams
 			item.ApplyProfile(profile)
 		case "manual":
@@ -133,11 +146,12 @@ func (h *foodHandlers) CreateManualMeal(w http.ResponseWriter, r *http.Request) 
 }
 
 // resolveReferenceProfile looks up the per-100g profile for a reference
-// binding (an fdc_id or custom_food_id, scoped to userID for custom foods).
-// The returned status is only meaningful when err is non-nil. Shared by
-// manual meal item creation and the item PATCH endpoint (food_item.go).
+// binding (an fdc_id, off_code, or custom_food_id, scoped to userID for
+// custom foods). The returned status is only meaningful when err is
+// non-nil. Shared by manual meal item creation and the item PATCH/POST
+// endpoints (food_item.go).
 func (h *foodHandlers) resolveReferenceProfile(
-	userID uuid.UUID, fdcID *int64, customFoodID *uuid.UUID,
+	userID uuid.UUID, fdcID *int64, offCode *string, customFoodID *uuid.UUID,
 ) (database.NutrientProfile, int, error) {
 	switch {
 	case fdcID != nil:
@@ -152,6 +166,23 @@ func (h *foodHandlers) resolveReferenceProfile(
 			return database.NutrientProfile{}, http.StatusBadRequest, errors.New("unknown fdc_id")
 		}
 		return food.Profile, 0, nil
+	case offCode != nil:
+		// "off index unavailable" (no import has ever run — h.off itself is
+		// nil) and "unknown off_code" (an open index that simply doesn't
+		// contain this code) are different failures with the same HTTP
+		// status, mirroring the fdc_id case above and the distinction
+		// off.Index.ByCode's own doc comment draws — not one merged check.
+		if h.off == nil {
+			return database.NutrientProfile{}, http.StatusBadRequest, errors.New("off index unavailable")
+		}
+		food, err := h.off.ByCode(*offCode)
+		if err != nil {
+			return database.NutrientProfile{}, http.StatusInternalServerError, errors.New("off lookup error")
+		}
+		if food == nil {
+			return database.NutrientProfile{}, http.StatusBadRequest, errors.New("unknown off_code")
+		}
+		return food.Profile, 0, nil
 	case customFoodID != nil:
 		cf, err := h.findOwnedCustomFood(*customFoodID, userID)
 		if errors.Is(err, database.ErrNotFound) {
@@ -163,6 +194,24 @@ func (h *foodHandlers) resolveReferenceProfile(
 		return cf.Profile(), 0, nil
 	default:
 		return database.NutrientProfile{}, http.StatusBadRequest,
-			errors.New("reference item requires fdc_id or custom_food_id")
+			errors.New("reference item requires fdc_id, off_code, or custom_food_id")
 	}
+}
+
+// refSourcesSet counts how many of fdc_id/off_code/custom_food_id are
+// non-nil, so every call site enforces "at most one" against the same rule
+// instead of duplicating pairwise combinations (fdc_id+off_code,
+// fdc_id+custom_food_id, off_code+custom_food_id, all three).
+func refSourcesSet(fdcID *int64, offCode *string, customFoodID *uuid.UUID) int {
+	n := 0
+	if fdcID != nil {
+		n++
+	}
+	if offCode != nil {
+		n++
+	}
+	if customFoodID != nil {
+		n++
+	}
+	return n
 }

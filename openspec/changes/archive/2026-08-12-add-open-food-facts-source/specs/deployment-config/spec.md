@@ -1,8 +1,5 @@
-# deployment-config Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change split-prod-wip-stacks. Update Purpose after archive.
-## Requirements
 ### Requirement: Compose stack configurable via environment variables
 
 The `docker-compose.yml` stack (backend + nginx) SHALL derive its host data directory and exposed ports entirely from environment variables, with no per-deployment values hardcoded in the compose file, so that multiple independent instances of the stack can run on the same host from the same compose file.
@@ -21,4 +18,3 @@ The `docker-compose.yml` stack (backend + nginx) SHALL derive its host data dire
 
 - **WHEN** the compose file is inspected
 - **THEN** it declares no `container_name`, no hardcoded host bind path, and no hardcoded host port mapping — every instance-specific value comes from the environment
-

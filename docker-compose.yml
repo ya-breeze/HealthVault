@@ -13,6 +13,7 @@ services:
       HCW_MCP_TOKEN: ${HCW_MCP_TOKEN:-}
       HCW_UPLOADS_DIR: ${HCW_UPLOADS_DIR:-/data/uploads}
       HCW_USDA_DB_PATH: ${HCW_USDA_DB_PATH:-/data/usda.db}
+      HCW_OFF_DB_PATH: ${HCW_OFF_DB_PATH:-/data/off.db}
       HCW_OPENAI_API_KEY: ${HCW_OPENAI_API_KEY:-}
       HCW_OPENAI_MODEL: ${HCW_OPENAI_MODEL:-gpt-4o-mini}
     volumes:

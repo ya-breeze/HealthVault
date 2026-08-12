@@ -192,6 +192,171 @@ func TestCreateMeal_USDAMatchViaSelect(t *testing.T) {
 	}
 }
 
+// A recognized brand routes matching to Open Food Facts first, and its
+// candidates are used without ever querying USDA (h.usda is nil here, so
+// binding via fdc_id would panic/fail if USDA were consulted at all).
+func TestCreateMeal_OFFMatchViaSelect(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	offIdx := buildOFFIndex(t, offFood("8594001222227", "Bílý jogurt", "Olma", 65))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Bílý jogurt", Brand: "Olma", WeightGrams: 150, Confidence: 0.9}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second).WithOFF(offIdx)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if len(meal.Items) != 1 {
+		t.Fatalf("expected one item, got %+v", meal.Items)
+	}
+	item := meal.Items[0]
+	if item.OffCode == nil || *item.OffCode != "8594001222227" {
+		t.Errorf("expected off_code bound, got %v", item.OffCode)
+	}
+	if item.FdcID != nil {
+		t.Errorf("expected no fdc_id (USDA must not have been queried), got %v", item.FdcID)
+	}
+	// 65 kcal/100g * 1.5 = 97.5
+	if item.Calories < 97.4 || item.Calories > 97.6 {
+		t.Errorf("expected calories ~97.5, got %v", item.Calories)
+	}
+	// The candidate offered to Select must carry the recognized item's own
+	// name/brand (design.md "Selection is offered the recognized item's own
+	// name and brand") and the OFF candidate's Brands text.
+	if len(fake.SelectCalls) != 1 || len(fake.SelectCalls[0]) != 1 {
+		t.Fatalf("expected exactly one Select call with one item, got %+v", fake.SelectCalls)
+	}
+	sent := fake.SelectCalls[0][0]
+	if sent.ItemName != "Bílý jogurt" || sent.ItemBrand != "Olma" {
+		t.Errorf("expected ItemName/ItemBrand on the Select payload, got %+v", sent)
+	}
+	if len(sent.Candidates) != 1 || sent.Candidates[0].Brands != "Olma" {
+		t.Errorf("expected the OFF candidate's Brands populated, got %+v", sent.Candidates)
+	}
+}
+
+// When a brand is present but Open Food Facts returns zero candidates for
+// it, resolution falls back to USDA rather than leaving the item unresolved.
+func TestCreateMeal_BrandPresentOFFMissFallsBackToUSDA(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	// No product under "Olma" in the OFF index — only unrelated filler rows.
+	offIdx := buildOFFIndex(t)
+	usdaIdx := buildUSDAIndex(t, usdaFood(42, "Yogurt, plain", 60))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "yogurt", Brand: "Olma", WeightGrams: 150, Confidence: 0.9}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, usdaIdx, t.TempDir()).WithVision(fake, 10<<20, time.Second).WithOFF(offIdx)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.FdcID == nil || *item.FdcID != 42 {
+		t.Errorf("expected fallback to USDA fdc_id 42, got %v", item.FdcID)
+	}
+	if item.OffCode != nil {
+		t.Errorf("expected no off_code (OFF had no match), got %v", item.OffCode)
+	}
+}
+
+// A brand naming a real manufacturer that just isn't in the OFF index for
+// this product must not let a same-named product from a *different* brand
+// through — the brand-required query still returns zero, and resolution
+// falls back to USDA, rather than binding to the wrong brand's product.
+func TestCreateMeal_BrandNotInIndexForThatNameFallsBackToUSDA(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	// The index has this product, but only under a different brand.
+	offIdx := buildOFFIndex(t, offFood("222", "yogurt", "Danone", 60))
+	usdaIdx := buildUSDAIndex(t, usdaFood(42, "Yogurt, plain", 60))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "yogurt", Brand: "Olma", WeightGrams: 150, Confidence: 0.9}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, usdaIdx, t.TempDir()).WithVision(fake, 10<<20, time.Second).WithOFF(offIdx)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.OffCode != nil {
+		t.Errorf("expected no off_code (Danone product must not match an Olma search), got %v", item.OffCode)
+	}
+	if item.FdcID == nil || *item.FdcID != 42 {
+		t.Errorf("expected fallback to USDA fdc_id 42, got %v", item.FdcID)
+	}
+}
+
+// No recognized brand means Open Food Facts is never queried at all — even
+// though the OFF index here contains a product that would match on name
+// alone, resolution must go straight to USDA.
+func TestCreateMeal_NoBrandSkipsOFFEntirely(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	offIdx := buildOFFIndex(t, offFood("111", "Chicken breast", "SomeBrand", 999))
+	usdaIdx := buildUSDAIndex(t, usdaFood(42, "Chicken, broilers or fryers, breast, meat only, cooked, roasted", 165))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "chicken breast", WeightGrams: 180, Confidence: 0.9}}, // Brand left empty
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, usdaIdx, t.TempDir()).WithVision(fake, 10<<20, time.Second).WithOFF(offIdx)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.FdcID == nil || *item.FdcID != 42 {
+		t.Errorf("expected USDA fdc_id 42 (OFF must not have been queried without a brand), got %v", item.FdcID)
+	}
+	if item.OffCode != nil {
+		t.Errorf("expected no off_code, got %v", item.OffCode)
+	}
+}
+
 func TestCreateMeal_ClarificationQuestionsSetPendingClarification(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)

@@ -177,8 +177,10 @@ export interface FoodItem {
   name: string;
   preparation: string;
   state: string;
+  brand?: string;
   fdc_id?: number;
   custom_food_id?: string;
+  off_code?: string;
   macro_source: MacroSource;
   weight_grams: number;
   confidence: number;
@@ -233,6 +235,7 @@ export interface ManualMealItemInput {
   weight_grams?: number;
   fdc_id?: number;
   custom_food_id?: string;
+  off_code?: string;
   calories?: number;
   protein_grams?: number;
   carbs_grams?: number;
@@ -246,6 +249,7 @@ export interface PatchItemInput {
   manual?: boolean;
   fdc_id?: number;
   custom_food_id?: string;
+  off_code?: string;
   weight_grams?: number;
   name?: string;
   calories?: number;

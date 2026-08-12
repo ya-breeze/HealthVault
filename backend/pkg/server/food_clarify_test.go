@@ -98,6 +98,81 @@ func TestClarifyMeal_AnswerResolvesToReviewCarriesNoImage(t *testing.T) {
 	// guarantee that no photo bytes can be sent on a clarify round.
 }
 
+// Regression (design.md Risks / tasks.md 4.4, 6.5): the clarification-round
+// reconstruction in food_clarify.go previously rebuilt vision.Item from the
+// stored FoodItem without carrying Brand forward, silently downgrading a
+// clarified item back to brand-less USDA-only matching even though
+// recognition had actually seen a brand. This asserts both the direct fix
+// (the replayed prior item still carries Brand) and its actual consequence
+// (resolution after the clarify round still routes through Open Food Facts,
+// not just USDA, using the brand carried through).
+func TestClarifyMeal_PriorItemBrandIsReplayedAndStillRoutesToOFF(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	log, err := json.Marshal([]database.ClarifyEntry{
+		{Round: 1, Question: "Which yogurt is this?", Answer: ""},
+	})
+	if err != nil {
+		t.Fatalf("marshal clarify log: %v", err)
+	}
+	meal := database.FoodMeal{
+		UserID: userID, Status: database.MealStatusPendingClarification, LoggedAt: time.Now(),
+		ClarifyRound: 0, ClarifyLog: string(log),
+	}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "yogurt", Brand: "Olma",
+		WeightGrams: 150, MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	offIdx := buildOFFIndex(t, offFood("8594001222227", "yogurt", "Olma", 65))
+	fake := &vision.Fake{
+		// The model preserves the brand it was told about in priorItems —
+		// this is what processRecognition/resolveItems actually resolves
+		// against next.
+		ClarifyResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "yogurt", Brand: "Olma", WeightGrams: 150, Confidence: 0.9}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second).WithOFF(offIdx)
+
+	w := httptest.NewRecorder()
+	h.ClarifyMeal(w, withClaims(clarifyRequest(meal.ID.String(), []string{"The Olma one"}), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if len(fake.ClarifyCalls) != 1 {
+		t.Fatalf("expected exactly one Clarify call, got %d", len(fake.ClarifyCalls))
+	}
+	if got := fake.ClarifyCalls[0].PriorItems; len(got) != 1 || got[0].Brand != "Olma" {
+		t.Fatalf("expected the replayed prior item to carry Brand \"Olma\", got %+v", got)
+	}
+
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&gotMeal) //nolint:errcheck
+	if gotMeal.Status != database.MealStatusPendingReview {
+		t.Fatalf("expected pending_review, got %s", gotMeal.Status)
+	}
+	if len(gotMeal.Items) != 1 || gotMeal.Items[0].OffCode == nil || *gotMeal.Items[0].OffCode != "8594001222227" {
+		t.Fatalf("expected re-resolution to bind via Open Food Facts using the carried-through brand, got %+v", gotMeal.Items)
+	}
+}
+
 func TestClarifyMeal_PersistsAnswerInClarifyLog(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
