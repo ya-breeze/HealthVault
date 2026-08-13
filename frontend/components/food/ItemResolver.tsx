@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api, FoodSearchResult } from '@/lib/api';
 
 interface Props {
@@ -38,17 +38,30 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
     calories: 0, protein_grams: 0, carbs_grams: 0, fat_grams: 0,
     sugar_grams: 0, sodium_grams: 0, dietary_fiber_grams: 0,
   });
+  // search and refresh both write to the shared results/translatedQuery
+  // state below, so a slower, older response (e.g. a refresh outlived by a
+  // newer search) must not clobber a newer one's results. Each call captures
+  // the sequence number current when it starts and only applies its
+  // response if that's still the latest — a stale response is dropped
+  // entirely, though searching/refreshing still clear on their own request's
+  // completion regardless of staleness.
+  const requestSeq = useRef(0);
 
   const search = async () => {
+    const seq = ++requestSeq.current;
     setSearching(true);
     setError(null);
     setRefreshError(null);
     try {
       const res = await api.searchFood(query);
-      setResults(res.results);
-      setTranslatedQuery(res.translated_query ?? null);
+      if (seq === requestSeq.current) {
+        setResults(res.results);
+        setTranslatedQuery(res.translated_query ?? null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed');
+      if (seq === requestSeq.current) {
+        setError(err instanceof Error ? err.message : 'Search failed');
+      }
     } finally {
       setSearching(false);
     }
@@ -62,18 +75,23 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
   // input, or a translation failure on the server) doesn't blank out the
   // last known-good term.
   const refresh = async () => {
+    const seq = ++requestSeq.current;
     setRefreshing(true);
     setRefreshError(null);
     try {
       const res = await api.searchFood(query, undefined, undefined, true);
-      setResults(res.results);
-      if (res.translated_query) {
-        setTranslatedQuery(res.translated_query);
-      } else {
-        setRefreshError('Could not refresh the translation — showing the previous term.');
+      if (seq === requestSeq.current) {
+        setResults(res.results);
+        if (res.translated_query) {
+          setTranslatedQuery(res.translated_query);
+        } else {
+          setRefreshError('Could not refresh the translation — showing the previous term.');
+        }
       }
     } catch (err) {
-      setRefreshError(err instanceof Error ? err.message : 'Refresh failed');
+      if (seq === requestSeq.current) {
+        setRefreshError(err instanceof Error ? err.message : 'Refresh failed');
+      }
     } finally {
       setRefreshing(false);
     }

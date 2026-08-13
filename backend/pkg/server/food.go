@@ -148,6 +148,7 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	normalized := strings.ToLower(name)
 	refresh := r.URL.Query().Get("refresh") == "true"
+	crossSite := isCrossSiteRequest(r)
 	searchName := name
 	var translatedQuery string
 
@@ -161,21 +162,24 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 			searchName = cached.TranslatedQuery
 			translatedQuery = cached.TranslatedQuery
 		case errors.Is(cacheErr, gorm.ErrRecordNotFound):
-			if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
-				searchName = t
-				translatedQuery = t
+			if !crossSite {
+				if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
+					searchName = t
+					translatedQuery = t
+				}
 			}
 		default:
 			http.Error(w, "search error", http.StatusInternalServerError)
 			return
 		}
-	} else if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
-		searchName = t
-		translatedQuery = t
-	}
-
-	if translatedQuery != "" && strings.EqualFold(strings.TrimSpace(translatedQuery), normalized) {
-		translatedQuery = ""
+		if translatedQuery != "" && strings.EqualFold(strings.TrimSpace(translatedQuery), normalized) {
+			translatedQuery = ""
+		}
+	} else if !crossSite {
+		if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
+			searchName = t
+			translatedQuery = t
+		}
 	}
 
 	term := usda.QueryFor(searchName, r.URL.Query().Get("preparation"), r.URL.Query().Get("state"))
@@ -204,10 +208,14 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 
 // translateAndCache calls the vision client's Translate within the shared
 // vision timeout and, on success, upserts the per-user cache row for
-// (userID, normalized). On any failure — unconfigured, an API error, or a
-// timeout — it logs and returns ok=false: the caller falls back to
-// searching with the literal query, and nothing is written to the cache, so
-// a failed refresh leaves any existing cached row exactly as it was.
+// (userID, normalized). On any failure — unconfigured, an API error, a
+// timeout, or a failed cache write — it logs and returns ok=false: the
+// caller falls back to searching with the literal query, and the response
+// never reports a term as translated unless it was actually persisted. A
+// failed cache write is treated the same as a translation failure (rather
+// than ok=true with a warning) so a refresh's response can never claim a
+// term that the next plain search won't find cached, and so a failed
+// refresh still leaves any existing cached row exactly as it was.
 func (h *foodHandlers) translateAndCache(
 	ctx context.Context, userID, familyID uuid.UUID, normalized, original string,
 ) (translated string, ok bool) {
@@ -234,9 +242,24 @@ func (h *foodHandlers) translateAndCache(
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "original_query"}},
 		DoUpdates: clause.AssignmentColumns([]string{"translated_query", "updated_at"}),
 	}).Create(&row).Error; err != nil {
-		slog.Warn("failed to cache food search translation", "err", err, "user_id", userID)
+		slog.Warn("failed to cache food search translation, falling back to literal query",
+			"err", err, "user_id", userID)
+		return "", false
 	}
 	return result, true
+}
+
+// isCrossSiteRequest reports whether the browser-set Sec-Fetch-Site header
+// (sent by all modern browsers and not spoofable by page-level JavaScript,
+// unlike Origin/Referer) indicates this request originated from a different
+// site. Used to guard the only side effects a GET carries in this handler —
+// a translation call and its cache write — against being triggered by a
+// cross-site page riding the caller's SameSite=Lax session cookie. A missing
+// header (older browsers, non-browser API clients) is treated as same-site:
+// this is a targeted mitigation for this endpoint's specific cost/write
+// surface, not a general CSRF framework for the API.
+func isCrossSiteRequest(r *http.Request) bool {
+	return r.Header.Get("Sec-Fetch-Site") == "cross-site"
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

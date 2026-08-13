@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -573,5 +574,152 @@ func TestFoodSearch_FailedRefreshLeavesPriorMappingUnchanged(t *testing.T) {
 	}
 	if unchanged.ID != row.ID {
 		t.Errorf("expected the same row, got a different one (old id %s, new id %s)", row.ID, unchanged.ID)
+	}
+}
+
+// dbClosingTranslateClient wraps vision.Fake and closes the storage
+// connection right after a successful Translate call, deterministically
+// forcing the subsequent cache-write upsert to fail — used to test that a
+// failed cache write is treated as a failed translation, not a successful
+// one that merely didn't persist.
+type dbClosingTranslateClient struct {
+	vision.Fake
+	storage database.Storage
+}
+
+func (c *dbClosingTranslateClient) Translate(ctx context.Context, query string) (string, error) {
+	result, err := c.Fake.Translate(ctx, query)
+	if err == nil {
+		if sqlDB, dbErr := c.storage.DB().DB(); dbErr == nil {
+			sqlDB.Close()
+		}
+	}
+	return result, err
+}
+
+// A translation that succeeds but whose cache write fails must not be
+// reported as applied: the response falls back to the literal query exactly
+// as if Translate itself had failed.
+func TestFoodSearch_CacheWriteFailureFallsBackToLiteralQuery(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	idx := buildUSDAIndex(t, usdaFood(1, "Chicken breast, cooked", 165))
+	fake := &dbClosingTranslateClient{Fake: vision.Fake{TranslateResult: "chicken"}, storage: st}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.Search(w, newSearchRequest(userID, "chicken+breast"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 despite a cache-write failure, got %d", w.Code)
+	}
+	resp := decodeSearchResponse(t, w)
+	if resp.TranslatedQuery != "" {
+		t.Errorf("expected no translated_query when the cache write failed, got %q", resp.TranslatedQuery)
+	}
+	found := false
+	for _, r := range resp.Results {
+		if r.FdcID != nil && *r.FdcID == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected literal-query USDA results after a cache-write failure, got %+v", resp.Results)
+	}
+}
+
+// A cross-site request (Sec-Fetch-Site: cross-site) must never trigger a
+// translation call or cache write — the endpoint's only side effects — even
+// on a cache miss, since the browser attaches the caller's SameSite=Lax
+// session cookie to such requests without the caller ever proving it's the
+// app's own frontend.
+func TestFoodSearch_CrossSiteRequestSkipsTranslation(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	idx := buildUSDAIndex(t, usdaFood(1, "Chicken breast, cooked", 165))
+	fake := &vision.Fake{TranslateErr: errors.New("Translate must not be called for a cross-site request")}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	req := newSearchRequest(userID, "chicken+breast")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	w := httptest.NewRecorder()
+	h.Search(w, req)
+
+	if len(fake.TranslateCalls) != 0 {
+		t.Fatalf("expected Translate not to be called for a cross-site request, got %d calls", len(fake.TranslateCalls))
+	}
+	resp := decodeSearchResponse(t, w)
+	if resp.TranslatedQuery != "" {
+		t.Errorf("expected no translated_query for a cross-site request, got %q", resp.TranslatedQuery)
+	}
+	var count int64
+	st.DB().Model(&database.FoodSearchTranslation{}).Where("user_id = ?", userID).Count(&count)
+	if count != 0 {
+		t.Errorf("expected no cache row written for a cross-site request, found %d", count)
+	}
+}
+
+// TestFoodSearch_CrossSiteRefreshSkipsTranslation mirrors the cache-miss
+// case above for refresh=true, which carries the same side effects.
+func TestFoodSearch_CrossSiteRefreshSkipsTranslation(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	row := database.FoodSearchTranslation{UserID: userID, OriginalQuery: "porridge", TranslatedQuery: "oatmeal"}
+	row.ID = uuid.New()
+	row.FamilyID = familyID
+	if err := st.DB().Create(&row).Error; err != nil {
+		t.Fatalf("seed cache row: %v", err)
+	}
+
+	idx := buildUSDAIndex(t, usdaFood(1, "Oatmeal, raw", 389))
+	fake := &vision.Fake{TranslateErr: errors.New("Translate must not be called for a cross-site refresh")}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	req := newSearchRequestRefresh(userID, "porridge")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	w := httptest.NewRecorder()
+	h.Search(w, req)
+
+	if len(fake.TranslateCalls) != 0 {
+		t.Fatalf("expected Translate not to be called for a cross-site refresh, got %d calls", len(fake.TranslateCalls))
+	}
+	var unchanged database.FoodSearchTranslation
+	if err := st.DB().Where("user_id = ? AND original_query = ?", userID, "porridge").First(&unchanged).Error; err != nil {
+		t.Fatalf("expected the prior row to still exist: %v", err)
+	}
+	if unchanged.TranslatedQuery != "oatmeal" {
+		t.Errorf("expected the prior mapping left unchanged by a cross-site refresh, got %q", unchanged.TranslatedQuery)
+	}
+}
+
+// A successful refresh always reports its translated term, even when that
+// term equals the normalized input — otherwise the response is
+// indistinguishable from a failed refresh, which also omits
+// translated_query.
+func TestFoodSearch_RefreshEqualToInputStillReportsTranslatedQuery(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	row := database.FoodSearchTranslation{UserID: userID, OriginalQuery: "chicken breast", TranslatedQuery: "chicken liver"}
+	row.ID = uuid.New()
+	row.FamilyID = familyID
+	if err := st.DB().Create(&row).Error; err != nil {
+		t.Fatalf("seed stale cache row: %v", err)
+	}
+
+	idx := buildUSDAIndex(t, usdaFood(1, "Chicken breast, cooked", 165))
+	fake := &vision.Fake{TranslateResult: "chicken breast"}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.Search(w, newSearchRequestRefresh(userID, "chicken+breast"))
+
+	resp := decodeSearchResponse(t, w)
+	if resp.TranslatedQuery != "chicken breast" {
+		t.Errorf("expected translated_query %q on a successful refresh even though it equals the input, got %q",
+			"chicken breast", resp.TranslatedQuery)
 	}
 }

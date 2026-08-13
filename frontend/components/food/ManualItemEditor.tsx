@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api, FoodSearchResult, ManualMealItemInput } from '@/lib/api';
 
 interface Props {
@@ -24,16 +24,25 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
 
   const update = (patch: Partial<ManualMealItemInput>) => onChange(index, { ...item, ...patch });
 
+  // See ItemResolver's requestSeq for the same stale-response-drops contract
+  // — kept in sync since both search food the same way.
+  const requestSeq = useRef(0);
+
   const search = async () => {
+    const seq = ++requestSeq.current;
     setSearching(true);
     setError(null);
     setRefreshError(null);
     try {
       const res = await api.searchFood(query);
-      setResults(res.results);
-      setTranslatedQuery(res.translated_query ?? null);
+      if (seq === requestSeq.current) {
+        setResults(res.results);
+        setTranslatedQuery(res.translated_query ?? null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed');
+      if (seq === requestSeq.current) {
+        setError(err instanceof Error ? err.message : 'Search failed');
+      }
     } finally {
       setSearching(false);
     }
@@ -42,18 +51,23 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
   // See ItemResolver's refresh for the same fresh-results/preserve-banner
   // contract — kept in sync since both search food the same way.
   const refresh = async () => {
+    const seq = ++requestSeq.current;
     setRefreshing(true);
     setRefreshError(null);
     try {
       const res = await api.searchFood(query, undefined, undefined, true);
-      setResults(res.results);
-      if (res.translated_query) {
-        setTranslatedQuery(res.translated_query);
-      } else {
-        setRefreshError('Could not refresh the translation — showing the previous term.');
+      if (seq === requestSeq.current) {
+        setResults(res.results);
+        if (res.translated_query) {
+          setTranslatedQuery(res.translated_query);
+        } else {
+          setRefreshError('Could not refresh the translation — showing the previous term.');
+        }
       }
     } catch (err) {
-      setRefreshError(err instanceof Error ? err.message : 'Refresh failed');
+      if (seq === requestSeq.current) {
+        setRefreshError(err instanceof Error ? err.message : 'Refresh failed');
+      }
     } finally {
       setRefreshing(false);
     }
