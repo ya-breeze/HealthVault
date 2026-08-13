@@ -114,7 +114,7 @@ The system SHALL persist user-authored food logging data in five family-scoped t
 | Table                     | Purpose                                                        | Time anchor    |
 |---------------------------|------------------------------------------------------------------|----------------|
 | `FoodMeal`                | One logged meal: photo path, status, aggregate macros           | `logged_at`    |
-| `FoodItem`                | One food within a meal: reference, weight, 7 scaled macros      | via `meal_id`  |
+| `FoodItem`                | One food within a meal: reference, weight, 7 scaled macros, optional persisted per-100g estimated profile | via `meal_id`  |
 | `CustomFood`              | A user's own per-100g food profile                              | —              |
 | `FoodCalibrationSample`   | A weighed-food ground-truth photo for model benchmarking        | `captured_at`  |
 | `FoodSearchTranslation`   | A user's cached free-text-to-USDA-vocabulary query translation  | —              |
@@ -127,11 +127,12 @@ The system SHALL persist user-authored food logging data in five family-scoped t
 |-------------|---------------------------------------------------------------|-----------------------|
 | `reference` | Bound to an `fdc_id`, `off_code`, or `custom_food_id`; macros scaled by weight | yes    |
 | `manual`    | Macro values supplied directly by the user                    | yes                    |
+| `estimated` | No reference or custom-food match found; macros scaled from a photo-derived model estimate, persisted per-100g on the row | yes |
 | `none`      | Unresolved; macros zero, awaiting user resolution              | no                     |
 
-`fdc_id`, `off_code`, and `custom_food_id` SHALL all be nullable, and at most one of the three SHALL be set on a given `FoodItem`. `macro_source` replaces a plain matched/unmatched boolean because "bound to a reference food" and "has usable macros" are different questions, and a manually entered item is the case where they diverge.
+`fdc_id`, `off_code`, and `custom_food_id` SHALL all be nullable, and at most one of the three SHALL be set on a given `FoodItem`. `macro_source` replaces a plain matched/unmatched boolean because "bound to a reference food" and "has usable macros" are different questions, and a manually entered or model-estimated item is the case where they diverge.
 
-`FoodItem` SHALL also carry `preparation`, `state`, and `brand`, each permitted to be empty for unknown. They are persisted rather than merely used in-flight so that a later clarification answer can re-run food lookup without re-analyzing the photo. `brand` additionally determines whether the Open Food Facts index is queried during matching (see `usda-nutrition-database` "Match Selection and Explicit Non-Match").
+`FoodItem` SHALL also carry `preparation`, `state`, and `brand`, each permitted to be empty for unknown, and an optional per-100g estimated nutrient profile (calories, protein, carbs, fat, sugar, sodium, dietary fiber). All of these are persisted rather than merely used in-flight: `preparation`/`state`/`brand` so that a later clarification answer can re-run food lookup without re-analyzing the photo, and the estimated profile so it remains available as a macro-source-of-last-resort and as a rescaling basis for later weight edits even after a clarification round, whose follow-up call is text-only and cannot regenerate it (see `food-photo-recognition` "Macro Estimate Fallback for Unmatched Items"). `brand` additionally determines whether the Open Food Facts index is queried during matching (see `usda-nutrition-database` "Match Selection and Explicit Non-Match").
 
 `CustomFood` SHALL be uniquely indexed on `(user_id, name)`, so that name-based precedence over USDA and Open Food Facts entries has exactly one winner.
 
@@ -158,6 +159,11 @@ There SHALL be no unique constraint on `(user_id, logged_at)` for `FoodMeal`, be
 
 - **WHEN** any food logging row is created
 - **THEN** the system SHALL assign `id` and `family_id` explicitly, because the shared tenant model provides no `BeforeCreate` hook to populate them
+
+#### Scenario: An estimated profile is persisted at item creation
+
+- **WHEN** Recognize produces a per-item estimated nutrient profile alongside a recognized item
+- **THEN** the system persists that profile on the created `FoodItem` row at creation time, independent of whether candidate selection later finds a match, so it remains available afterward regardless of `macro_source`
 
 #### Scenario: A FoodItem cannot bind to more than one reference source
 
