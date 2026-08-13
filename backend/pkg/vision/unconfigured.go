@@ -30,3 +30,7 @@ func (Unconfigured) Clarify(context.Context, []Item, []ClarifyTurn) (*RecognizeR
 func (Unconfigured) Select(context.Context, []ItemCandidates) (*SelectResult, error) {
 	return nil, ErrNotConfigured
 }
+
+func (Unconfigured) Translate(context.Context, string) (string, error) {
+	return "", ErrNotConfigured
+}

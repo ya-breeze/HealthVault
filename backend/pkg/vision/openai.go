@@ -431,4 +431,45 @@ func (c *OpenAIClient) Select(ctx context.Context, itemCandidates []ItemCandidat
 	}, nil
 }
 
+var translateJSONSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"translated_query": map[string]any{"type": "string"},
+	},
+	"required":             []string{"translated_query"},
+	"additionalProperties": false,
+}
+
+type translateSchemaResponse struct {
+	TranslatedQuery string `json:"translated_query"`
+}
+
+const translateSystemPrompt = `You translate free-text food search queries into USDA FoodData Central's American-English generic-food naming convention.
+
+The query may be in any language or regional spelling, including British
+English regional terms. Respond with the single English term most likely to
+match a USDA FoodData Central Foundation or SR Legacy food description for
+that food (e.g. "porridge" -> "oatmeal", "овсянка" -> "oatmeal"). If the
+query is already valid USDA vocabulary, return it unchanged except for
+lowercasing. Do not add preparation, brand, or state words that were not
+implied by the query itself.`
+
+// Translate is text-only: it sends only the query string, no image.
+func (c *OpenAIClient) Translate(ctx context.Context, query string) (string, error) {
+	messages := []chatMessage{
+		{Role: "system", Content: translateSystemPrompt},
+		{Role: "user", Content: query},
+	}
+	resp, _, err := c.call(ctx, messages, "food_search_translation", translateJSONSchema)
+	if err != nil {
+		return "", err
+	}
+	var schemaResp translateSchemaResponse
+	content := resp.Choices[0].Message.Content
+	if err := json.Unmarshal([]byte(content), &schemaResp); err != nil {
+		return "", fmt.Errorf("unmarshal structured content: %w", err)
+	}
+	return strings.TrimSpace(schemaResp.TranslatedQuery), nil
+}
+
 var _ Client = (*OpenAIClient)(nil)

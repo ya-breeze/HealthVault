@@ -125,6 +125,19 @@ type CustomFood struct {
 	DietaryFiberPer100g float64 `gorm:"not null" json:"dietary_fiber_per_100g"`
 }
 
+// FoodSearchTranslation is a user's cached free-text-to-USDA-vocabulary
+// search-query translation, e.g. "porridge" -> "oatmeal" or "овсянка" ->
+// "oatmeal". Unique on (user_id, original_query) so a refresh upserts the
+// existing row in place rather than accumulating history. OriginalQuery is
+// normalized (trimmed, lowercased) by the caller before it is ever compared
+// or stored; TranslatedQuery is the term actually used to search USDA.
+type FoodSearchTranslation struct {
+	models.TenantModel
+	UserID          uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_food_search_translation_user_query" json:"user_id"`
+	OriginalQuery   string    `gorm:"not null;uniqueIndex:idx_food_search_translation_user_query" json:"original_query"`
+	TranslatedQuery string    `gorm:"not null" json:"translated_query"`
+}
+
 // FoodCalibrationSample is a weighed-food ground-truth photo used to benchmark
 // vision models. It never produces a FoodMeal.
 type FoodCalibrationSample struct {

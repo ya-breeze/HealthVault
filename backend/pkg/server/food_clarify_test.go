@@ -346,6 +346,9 @@ func (c slowClarifyClient) Clarify(_ context.Context, _ []vision.Item, _ []visio
 func (c slowClarifyClient) Select(context.Context, []vision.ItemCandidates) (*vision.SelectResult, error) {
 	return &vision.SelectResult{}, nil
 }
+func (c slowClarifyClient) Translate(context.Context, string) (string, error) {
+	return "", nil
+}
 
 // Two genuinely concurrent submissions of the same clarify round (a
 // double-click, or two tabs) must not both succeed: only one may claim the

@@ -774,6 +774,10 @@ func (c *gatedRecognizeClient) Select(context.Context, []vision.ItemCandidates) 
 	return &vision.SelectResult{}, nil
 }
 
+func (c *gatedRecognizeClient) Translate(context.Context, string) (string, error) {
+	return "", nil
+}
+
 // Regression: the claim used to be `WHERE status IN (eligible...)`, which
 // matches *any* eligible status, not specifically the one this request
 // actually observed. If a concurrent ConfirmMeal committed pending_review ->

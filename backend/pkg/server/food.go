@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/off"
@@ -89,11 +92,21 @@ type FoodSearchResponse struct {
 	// USDAUnavailable is set when no USDA import has run yet, so an empty
 	// Results is distinguishable from "nothing matched".
 	USDAUnavailable bool `json:"usda_unavailable,omitempty"`
+	// TranslatedQuery is the USDA-vocabulary term actually used to search,
+	// when it differs from the literal query the caller typed — see
+	// openspec/changes/multilingual-food-search. Omitted when the search
+	// resolved via an exact custom-food match, translation was never
+	// attempted (no USDA index), it was attempted but failed or timed out,
+	// or the translated term is the same as what the caller typed.
+	TranslatedQuery string `json:"translated_query,omitempty"`
 }
 
-// Search handles GET /api/food/search?q=&preparation=&state=. A custom food
-// whose name exactly matches (case-insensitive) wins outright and is returned
-// alone; otherwise the query falls through to the USDA candidate shortlist.
+// Search handles GET /api/food/search?q=&preparation=&state=&refresh=. A
+// custom food whose name exactly matches (case-insensitive) wins outright
+// and is returned alone; otherwise the query is translated to USDA
+// vocabulary (via a per-user cache, refreshed on request) before falling
+// through to the USDA candidate shortlist. See
+// openspec/changes/multilingual-food-search/design.md.
 func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	claims := ClaimsFromCtx(r)
 	if claims == nil {
@@ -107,25 +120,27 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var custom database.CustomFood
-	err := h.storage.DB().
-		Where("user_id = ? AND LOWER(name) = LOWER(?)", claims.UserID, name).
-		First(&custom).Error
-	switch {
-	case err == nil:
-		id := custom.ID
-		writeJSON(w, FoodSearchResponse{Results: []FoodSearchResult{{
-			Source:       "custom",
-			CustomFoodID: &id,
-			Name:         custom.Name,
-			Profile:      custom.Profile(),
-		}}})
-		return
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		// No exact custom match; fall through to USDA search.
-	default:
+	// Compared with strings.EqualFold rather than a SQL LOWER() predicate:
+	// SQLite's built-in lower() only case-folds ASCII, so a stored non-ASCII
+	// name (e.g. Cyrillic "Овсянка") would never match a same-name,
+	// different-case query and would incorrectly fall through to
+	// translation. Found in PR review (Codex).
+	var customFoods []database.CustomFood
+	if err := h.storage.DB().Where("user_id = ?", claims.UserID).Find(&customFoods).Error; err != nil {
 		http.Error(w, "search error", http.StatusInternalServerError)
 		return
+	}
+	for _, custom := range customFoods {
+		if strings.EqualFold(custom.Name, name) {
+			id := custom.ID
+			writeJSON(w, FoodSearchResponse{Results: []FoodSearchResult{{
+				Source:       "custom",
+				CustomFoodID: &id,
+				Name:         custom.Name,
+				Profile:      custom.Profile(),
+			}}})
+			return
+		}
 	}
 
 	if h.usda == nil {
@@ -133,7 +148,43 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	term := usda.QueryFor(name, r.URL.Query().Get("preparation"), r.URL.Query().Get("state"))
+	normalized := strings.ToLower(name)
+	refresh := r.URL.Query().Get("refresh") == "true"
+	sameOrigin := isSameOriginRequest(r)
+	searchName := name
+	var translatedQuery string
+
+	if !refresh {
+		var cached database.FoodSearchTranslation
+		cacheErr := h.storage.DB().
+			Where("user_id = ? AND original_query = ?", claims.UserID, normalized).
+			First(&cached).Error
+		switch {
+		case cacheErr == nil:
+			searchName = cached.TranslatedQuery
+			translatedQuery = cached.TranslatedQuery
+		case errors.Is(cacheErr, gorm.ErrRecordNotFound):
+			if sameOrigin {
+				if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
+					searchName = t
+					translatedQuery = t
+				}
+			}
+		default:
+			http.Error(w, "search error", http.StatusInternalServerError)
+			return
+		}
+		if translatedQuery != "" && strings.EqualFold(strings.TrimSpace(translatedQuery), normalized) {
+			translatedQuery = ""
+		}
+	} else if sameOrigin {
+		if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
+			searchName = t
+			translatedQuery = t
+		}
+	}
+
+	term := usda.QueryFor(searchName, r.URL.Query().Get("preparation"), r.URL.Query().Get("state"))
 	foods, err := h.usda.Search(term, usda.DefaultCandidates)
 	if err != nil {
 		if errors.Is(err, usda.ErrNoDatabase) {
@@ -154,7 +205,71 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 			Profile: f.Profile,
 		})
 	}
-	writeJSON(w, FoodSearchResponse{Results: results})
+	writeJSON(w, FoodSearchResponse{Results: results, TranslatedQuery: translatedQuery})
+}
+
+// translateAndCache calls the vision client's Translate within the shared
+// vision timeout and, on success, upserts the per-user cache row for
+// (userID, normalized). On any failure — unconfigured, an API error, a
+// timeout, or a failed cache write — it logs and returns ok=false: the
+// caller falls back to searching with the literal query, and the response
+// never reports a term as translated unless it was actually persisted. A
+// failed cache write is treated the same as a translation failure (rather
+// than ok=true with a warning) so a refresh's response can never claim a
+// term that the next plain search won't find cached, and so a failed
+// refresh still leaves any existing cached row exactly as it was.
+func (h *foodHandlers) translateAndCache(
+	ctx context.Context, userID, familyID uuid.UUID, normalized, original string,
+) (translated string, ok bool) {
+	tctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
+	defer cancel()
+
+	result, err := h.vision.Translate(tctx, original)
+	if err != nil {
+		slog.Warn("food search translation failed, falling back to literal query",
+			"err", err, "user_id", userID)
+		return "", false
+	}
+	result = strings.TrimSpace(result)
+	if result == "" {
+		slog.Warn("food search translation returned an empty result, falling back to literal query",
+			"user_id", userID)
+		return "", false
+	}
+
+	row := database.FoodSearchTranslation{UserID: userID, OriginalQuery: normalized, TranslatedQuery: result}
+	row.ID = uuid.New()
+	row.FamilyID = familyID
+	if err := h.storage.DB().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "original_query"}},
+		DoUpdates: clause.AssignmentColumns([]string{"translated_query", "updated_at"}),
+	}).Create(&row).Error; err != nil {
+		slog.Warn("failed to cache food search translation, falling back to literal query",
+			"err", err, "user_id", userID)
+		return "", false
+	}
+	return result, true
+}
+
+// isSameOriginRequest reports whether the browser-set Sec-Fetch-Site header
+// (sent by all modern browsers and not spoofable by page-level JavaScript,
+// unlike Origin/Referer) indicates this request originated from this exact
+// origin. Used to guard the only side effects a GET carries in this handler —
+// a translation call and its cache write — against being triggered by a page
+// riding the caller's SameSite=Lax session cookie: HealthVault's cookies are
+// host-scoped, not port-scoped, and this host runs sibling apps on other
+// ports (see the truenas environment's port table), so `same-site` (a
+// different port or subdomain on the same host) is just as untrusted here as
+// `cross-site` — as is `none` (a direct navigation, which this endpoint is
+// never legitimately reached by). A missing header (older browsers,
+// non-browser API clients, this project's own backend tests) is treated as
+// same-origin: every modern browser sends this header today, so its absence
+// signals a non-browser caller, not the browser-driven attack this guards
+// against. This is a targeted mitigation for this endpoint's specific
+// cost/write surface, not a general CSRF framework for the API.
+func isSameOriginRequest(r *http.Request) bool {
+	v := r.Header.Get("Sec-Fetch-Site")
+	return v == "" || v == "same-origin"
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

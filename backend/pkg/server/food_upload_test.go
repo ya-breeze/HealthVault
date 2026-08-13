@@ -487,6 +487,13 @@ func (slowRecognizeClient) Select(context.Context, []vision.ItemCandidates) (*vi
 	return &vision.SelectResult{}, nil
 }
 
+// Translate also blocks until its context is cancelled, so this double can
+// stand in for a stalled translation call in food search timeout tests too.
+func (slowRecognizeClient) Translate(ctx context.Context, _ string) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
 func TestCreateMeal_TimeoutMarksFailed(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)
