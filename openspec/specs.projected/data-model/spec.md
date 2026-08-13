@@ -9,7 +9,7 @@ Defines the typed database schema for ingested health metrics — family- and us
 ### Requirement: Health metric types
 The system SHALL persist health data in typed tables. Each table SHALL belong to a family (via `family_id`) and be associated with a user (via `user_id`).
 
-Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`), which have no upstream payload and are specified separately under "Food logging tables".
+Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`, `FoodSearchTranslation`), which have no upstream payload and are specified separately under "Food logging tables".
 
 Types are grouped into three categories based on their temporal shape:
 

@@ -4,6 +4,15 @@
 
 --- openspec/specs/data-model/spec.md
 +++ openspec/specs/data-model/spec.md
+@@ -5,7 +5,7 @@
+ ### Requirement: Health metric types
+ The system SHALL persist health data in typed tables. Each table SHALL belong to a family (via `family_id`) and be associated with a user (via `user_id`).
+ 
+-Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`), which have no upstream payload and are specified separately under "Food logging tables".
++Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`, `FoodSearchTranslation`), which have no upstream payload and are specified separately under "Food logging tables".
+ 
+ Types are grouped into three categories based on their temporal shape:
+ 
 @@ -109,7 +109,7 @@
  
  ### Requirement: Food logging tables
