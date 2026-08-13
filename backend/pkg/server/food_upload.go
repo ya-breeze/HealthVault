@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -257,29 +258,39 @@ func buildPendingQuestionsLog(existingLog string, round int, questions []string)
 
 // resolveItems retrieves a candidate shortlist per recognized item, offers
 // every non-empty shortlist to the model in a single Select call, and binds
-// whatever it chooses. An item with no candidates, or not selected, or
-// selected as "none of these" keeps MacroSource none — see
-// design.md "Matching is candidate retrieval, not auto-assignment."
+// whatever it chooses. An item left unresolved by every path below — no
+// candidates, not selected, selected as "none of these", an out-of-range
+// index, or a selected candidate whose profile lookup fails — falls back to
+// its own persisted Recognize estimate (MacroSource estimated) when one is
+// present and usable, and only keeps MacroSource none when it is not. See
+// design.md "Matching is candidate retrieval, not auto-assignment" and
+// decision 4 (the estimate fallback).
 //
 // strict controls what happens when the Select call itself errors (e.g. it
 // shares runAnalysis's overall timeout with Recognize, so a slow Recognize
 // call can leave Select to fail with a context deadline): false (upload,
 // retry, clarify — the analyzeMeal/failMeal family, which has nothing
-// valuable to lose) degrades gracefully, leaving every candidate item
-// unresolved rather than failing the whole analysis over a Select hiccup.
-// true (Reanalyze only) returns the error instead, because Reanalyze's own
-// contract is that a failure leaves the meal completely unchanged — silently
-// swallowing a Select failure there would let this function return a
-// "successful" but effectively unresolved item set, and Reanalyze would
-// then replace a confirmed meal's real, reviewed items (and zero its
-// aggregate) with that unresolved set and report 200, when the correct
-// outcome for a vision-provider failure is 502 with nothing changed.
+// valuable to lose) degrades gracefully, leaving every candidate item to the
+// estimate fallback (or none) rather than failing the whole analysis over a
+// Select hiccup. true (Reanalyze only) returns the error instead, because
+// Reanalyze's own contract is that a failure leaves the meal completely
+// unchanged — silently swallowing a Select failure there would let this
+// function return a "successful" but effectively unresolved item set, and
+// Reanalyze would then replace a confirmed meal's real, reviewed items (and
+// zero its aggregate) with that unresolved set and report 200, when the
+// correct outcome for a vision-provider failure is 502 with nothing changed.
 func (h *foodHandlers) resolveItems(
 	ctx context.Context, meal *database.FoodMeal, recognizedItems []vision.Item, strict bool,
 ) ([]database.FoodItem, error) {
 	items := make([]database.FoodItem, len(recognizedItems))
 	candidateSets := make([][]vision.Candidate, len(recognizedItems))
 	itemCandidates := make([]vision.ItemCandidates, 0, len(recognizedItems))
+
+	// Computed once per meal, not per item: rankedCustomFoodCandidates depends
+	// only on userID, so its join+aggregate+sort pipeline would otherwise rerun
+	// identically for every recognized item in the meal (5-8 DB round-trip
+	// pairs for a full plate instead of one).
+	ranked := h.rankedCustomFoodCandidates(meal.UserID)
 
 	for i, ri := range recognizedItems {
 		item := database.FoodItem{
@@ -290,9 +301,10 @@ func (h *foodHandlers) resolveItems(
 		}
 		item.ID = uuid.New()
 		item.FamilyID = meal.FamilyID
+		item.SetEstimatedProfile(ri.EstimatedProfile)
 		items[i] = item
 
-		candidates := h.retrieveCandidates(meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
+		candidates := h.retrieveCandidates(ranked, meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
 		candidateSets[i] = candidates
 		if len(candidates) > 0 {
 			itemCandidates = append(itemCandidates, vision.ItemCandidates{
@@ -301,48 +313,223 @@ func (h *foodHandlers) resolveItems(
 		}
 	}
 
-	if len(itemCandidates) == 0 {
-		return items, nil
-	}
-
-	sel, err := h.vision.Select(ctx, itemCandidates)
-	if err != nil {
-		if strict {
+	if len(itemCandidates) > 0 {
+		sel, err := h.vision.Select(ctx, itemCandidates)
+		switch {
+		case err != nil && strict:
 			return nil, err
+		case err == nil:
+			for _, s := range sel.Selections {
+				if s.ItemIndex < 0 || s.ItemIndex >= len(items) {
+					continue
+				}
+				candidates := candidateSets[s.ItemIndex]
+				if s.CandidateIndex < 0 || s.CandidateIndex >= len(candidates) {
+					continue // "none of these" — the estimate fallback below still applies
+				}
+				chosen := candidates[s.CandidateIndex]
+				profile, ok := h.profileForCandidate(meal.UserID, chosen)
+				if !ok {
+					continue // profile lookup failed — the estimate fallback below still applies
+				}
+				items[s.ItemIndex].FdcID = chosen.FdcID
+				items[s.ItemIndex].CustomFoodID = chosen.CustomFoodID
+				items[s.ItemIndex].OffCode = chosen.OffCode
+				items[s.ItemIndex].ApplyProfile(profile)
+			}
+			// err != nil && !strict falls straight through to the loop below with
+			// every item still MacroSource none, same as today plus the fallback.
 		}
-		return items, nil
 	}
 
-	for _, s := range sel.Selections {
-		if s.ItemIndex < 0 || s.ItemIndex >= len(items) {
-			continue
+	for i := range items {
+		if items[i].MacroSource == database.MacroSourceNone {
+			items[i].ApplyEstimatedProfile()
 		}
-		candidates := candidateSets[s.ItemIndex]
-		if s.CandidateIndex < 0 || s.CandidateIndex >= len(candidates) {
-			continue // "none of these"
-		}
-		chosen := candidates[s.CandidateIndex]
-		profile, ok := h.profileForCandidate(meal.UserID, chosen)
-		if !ok {
-			continue
-		}
-		items[s.ItemIndex].FdcID = chosen.FdcID
-		items[s.ItemIndex].CustomFoodID = chosen.CustomFoodID
-		items[s.ItemIndex].OffCode = chosen.OffCode
-		items[s.ItemIndex].ApplyProfile(profile)
 	}
 	return items, nil
 }
 
+// rankedCustomFoodLimit bounds how many frequency/recency-ranked custom
+// foods are offered as candidates alongside whatever Open Food Facts/USDA
+// candidates the existing brand-based routing produces — see design.md
+// decision 2.
+const rankedCustomFoodLimit = 5
+
+// customFoodUsageRow is one confirmed-meal item bound to a custom food,
+// fetched unaggregated (see rankedCustomFoodCandidates for why: SQLite's
+// driver returns a MAX(logged_at) aggregate as a plain string with no
+// column-type metadata attached, which the standard library's default
+// scanner cannot convert into time.Time — a plain per-row select of the
+// column, by contrast, still carries that metadata and scans cleanly. usage
+// and recency are aggregated in Go instead, over what is expected to be a
+// small number of rows for a single family's data).
+type customFoodUsageRow struct {
+	CustomFoodID uuid.UUID
+	LoggedAt     time.Time
+}
+
+// customFoodUsage is one custom food's aggregated usage, computed from
+// customFoodUsageRow rows.
+type customFoodUsage struct {
+	CustomFoodID uuid.UUID
+	UsageCount   int
+	LastUsed     time.Time
+}
+
+// usageScore weights usage frequency higher than recency, so a dish
+// confirmed only monthly still outranks a food used once recently — see
+// design.md decision 2. Recency contributes a bounded (0,1] term that decays
+// toward 0 as the last use gets older, never able to outweigh even a single
+// additional use. now is passed in rather than read internally via
+// time.Since so that every score in a single ranking pass is computed
+// against the same instant — see rankedCustomFoodCandidates.
+func usageScore(u customFoodUsage, now time.Time) float64 {
+	const frequencyWeight = 10.0
+	daysSinceUse := now.Sub(u.LastUsed).Hours() / 24
+	if daysSinceUse < 0 {
+		daysSinceUse = 0
+	}
+	recencyScore := 1.0 / (1.0 + daysSinceUse)
+	return float64(u.UsageCount)*frequencyWeight + recencyScore
+}
+
+// rankedCustomFoodCandidates returns the caller's own custom foods ranked by
+// usageScore, computed from their confirmed meal history only — a
+// still-pending_review meal's item already carries a custom_food_id from
+// this very matching process, so counting it here would let an unverified,
+// possibly-wrong automatic match reinforce its own future ranking before the
+// user ever confirmed it was correct. See design.md decision 2 for the exact
+// query and why the join key is meal_id, not user_id.
+func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Candidate {
+	var rows []customFoodUsageRow
+	// .Table() bypasses GORM's model-level deleted_at scope (that scoping is
+	// attached to the FoodItem/FoodMeal models, not to a raw table query), so
+	// the deleted_at IS NULL predicates below are explicit: without them, a
+	// match the user removed via DeleteMealItem — or an entire meal removed
+	// via the generic DELETE /api/data/food_meal endpoint — would still count
+	// toward and keep reinforcing that food's future ranking.
+	err := h.storage.DB().
+		Table("food_items").
+		Select("food_items.custom_food_id AS custom_food_id, food_meals.logged_at AS logged_at").
+		Joins("JOIN food_meals ON food_items.meal_id = food_meals.id").
+		Where("food_items.user_id = ? AND food_items.custom_food_id IS NOT NULL AND food_meals.status = ? "+
+			"AND food_items.deleted_at IS NULL AND food_meals.deleted_at IS NULL",
+			userID, database.MealStatusConfirmed).
+		Scan(&rows).Error
+	if err != nil || len(rows) == 0 {
+		return nil
+	}
+
+	byFood := make(map[uuid.UUID]*customFoodUsage, len(rows))
+	for _, r := range rows {
+		u, ok := byFood[r.CustomFoodID]
+		if !ok {
+			u = &customFoodUsage{CustomFoodID: r.CustomFoodID}
+			byFood[r.CustomFoodID] = u
+		}
+		u.UsageCount++
+		if r.LoggedAt.After(u.LastUsed) {
+			u.LastUsed = r.LoggedAt
+		}
+	}
+	usage := make([]customFoodUsage, 0, len(byFood))
+	for _, u := range byFood {
+		usage = append(usage, *u)
+	}
+
+	// usage is built from a Go map above, so its starting order is already
+	// randomized on every call — sort.SliceStable alone would not make this
+	// deterministic, since "stable" only preserves whatever (random) input
+	// order two tied elements arrived in. Breaking ties on CustomFoodID
+	// instead makes the result deterministic outright: two foods tied on
+	// usageScore (equal count, near-equal recency) get a consistent relative
+	// order across repeated, otherwise-identical requests, so which one gets
+	// cut by rankedCustomFoodLimit below can't flip from one upload to the next.
+	//
+	// Scores are precomputed once against a single `now` rather than calling
+	// usageScore(u) — which reads time.Since internally — from inside the
+	// comparator: sort's contract requires less(i,j) and less(j,i) to be
+	// consistent for the lifetime of the sort, but two calls to time.Since
+	// made at different instants can each return a (however slightly)
+	// different score for the same tied pair, so both could come back true
+	// depending on evaluation order — violating that contract and silently
+	// bypassing the CustomFoodID tie-breaker below. Sorted by index, not by
+	// usage directly, since sort.Slice only permutes the slice it's given —
+	// sorting usage directly while indexing into a same-length scores slice
+	// from the comparator would desync the two after the first swap.
+	now := time.Now()
+	scores := make([]float64, len(usage))
+	for i, u := range usage {
+		scores[i] = usageScore(u, now)
+	}
+	order := make([]int, len(usage))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(i, j int) bool {
+		a, b := order[i], order[j]
+		if scores[a] != scores[b] {
+			return scores[a] > scores[b]
+		}
+		return usage[a].CustomFoodID.String() < usage[b].CustomFoodID.String()
+	})
+	sorted := make([]customFoodUsage, len(usage))
+	for i, idx := range order {
+		sorted[i] = usage[idx]
+	}
+	usage = sorted
+	if len(usage) > rankedCustomFoodLimit {
+		usage = usage[:rankedCustomFoodLimit]
+	}
+
+	ids := make([]uuid.UUID, len(usage))
+	for i, u := range usage {
+		ids[i] = u.CustomFoodID
+	}
+	var foods []database.CustomFood
+	if err := h.storage.DB().Where("id IN ? AND user_id = ?", ids, userID).Find(&foods).Error; err != nil {
+		return nil
+	}
+	byID := make(map[uuid.UUID]database.CustomFood, len(foods))
+	for _, f := range foods {
+		byID[f.ID] = f
+	}
+
+	out := make([]vision.Candidate, 0, len(usage))
+	for _, u := range usage {
+		f, ok := byID[u.CustomFoodID]
+		if !ok {
+			continue
+		}
+		id := f.ID
+		out = append(out, vision.Candidate{CustomFoodID: &id, Description: f.Name})
+	}
+	return out
+}
+
 // retrieveCandidates mirrors Search's precedence rule: an exact (case-
-// insensitive) custom food name match wins outright. Otherwise, a non-empty
-// brand routes to Open Food Facts first — its candidates are used if it
-// returns any, falling back to USDA only when OFF returns none (including
-// when no OFF database is open at all). An empty brand skips OFF entirely
-// and queries USDA directly: there is no signal to safely select among
-// differently-branded OFF products for a brandless query. See design.md "OFF
-// queried only when a brand was extracted, USDA as the fallback".
-func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, state, brand string) []vision.Candidate {
+// insensitive) custom food name match wins outright, offered as the sole
+// candidate — Open Food Facts and USDA are not additionally queried for it.
+// Otherwise, ranked (the caller's frequency/recency-ranked custom foods, see
+// rankedCustomFoodCandidates — computed once per meal by the caller, not per
+// item, since it depends only on userID) is combined with whatever Open Food
+// Facts/USDA candidates the existing brand-based routing produces: a
+// non-empty brand routes to Open Food Facts first — its candidates are used
+// if it returns any, falling back to USDA only when OFF returns none
+// (including when no OFF database is open at all). An empty brand skips OFF
+// entirely and queries USDA directly: there is no signal to safely select
+// among differently-branded OFF products for a brandless query. See
+// design.md "OFF queried only when a brand was extracted, USDA as the
+// fallback".
+//
+// ranked is only ever read here, never appended to in place: it is shared
+// across every recognized item in the meal, so growing it in place via a
+// plain append could, when it has spare capacity, overwrite data written by
+// a sibling call for a different item in the same meal.
+func (h *foodHandlers) retrieveCandidates(
+	ranked []vision.Candidate, userID uuid.UUID, name, preparation, state, brand string,
+) []vision.Candidate {
 	var custom database.CustomFood
 	err := h.storage.DB().
 		Where("user_id = ? AND LOWER(name) = LOWER(?)", userID, name).
@@ -355,29 +542,30 @@ func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, s
 	if brand != "" && h.off != nil {
 		foods, offErr := h.off.Search(name, brand, off.DefaultCandidates)
 		if offErr == nil && len(foods) > 0 {
-			out := make([]vision.Candidate, len(foods))
-			for i, f := range foods {
+			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
+			out = append(out, ranked...)
+			for _, f := range foods {
 				code := f.Code
-				out[i] = vision.Candidate{OffCode: &code, Brands: f.Brands, Description: f.ProductName}
+				out = append(out, vision.Candidate{OffCode: &code, Brands: f.Brands, Description: f.ProductName})
 			}
 			return out
 		}
 	}
 
-	if h.usda == nil {
-		return nil
+	if h.usda != nil {
+		term := usda.QueryFor(name, preparation, state)
+		foods, usdaErr := h.usda.Search(term, usda.DefaultCandidates)
+		if usdaErr == nil {
+			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
+			out = append(out, ranked...)
+			for _, f := range foods {
+				fdcID := f.FdcID
+				out = append(out, vision.Candidate{FdcID: &fdcID, Description: f.Description})
+			}
+			return out
+		}
 	}
-	term := usda.QueryFor(name, preparation, state)
-	foods, err := h.usda.Search(term, usda.DefaultCandidates)
-	if err != nil {
-		return nil
-	}
-	out := make([]vision.Candidate, len(foods))
-	for i, f := range foods {
-		fdcID := f.FdcID
-		out[i] = vision.Candidate{FdcID: &fdcID, Description: f.Description}
-	}
-	return out
+	return ranked
 }
 
 func (h *foodHandlers) profileForCandidate(userID uuid.UUID, c vision.Candidate) (database.NutrientProfile, bool) {
@@ -416,6 +604,7 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 		}
 		item.ID = uuid.New()
 		item.FamilyID = familyID
+		item.SetEstimatedProfile(ri.EstimatedProfile)
 		items[i] = item
 	}
 	return items

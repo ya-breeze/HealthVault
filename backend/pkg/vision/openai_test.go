@@ -87,6 +87,70 @@ func TestOpenAIClient_Recognize_SetsStoreFalseAndSendsImage(t *testing.T) {
 	}
 }
 
+func TestOpenAIClient_Recognize_EstimatedProfileParsed(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"name":"Mexican vegetable mix","preparation":"unknown","state":"unknown",`+
+				`"weight_grams":200,"confidence":0.6,`+
+				`"estimated_profile":{"calories_per_100g":90,"protein_per_100g":3,"carbs_per_100g":15,`+
+				`"fat_per_100g":2,"sugar_per_100g":4,"sodium_per_100g":0.3,"dietary_fiber_per_100g":3}}],`+
+				`"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+
+	// The request's JSON schema must require estimated_profile (nullable, not
+	// omittable) on every item — OpenAI's strict structured-output mode
+	// requires every property to be listed in "required".
+	schema := capturedBody["response_format"].(map[string]any)["json_schema"].(map[string]any)["schema"].(map[string]any)
+	itemSchema := schema["properties"].(map[string]any)["items"].(map[string]any)["items"].(map[string]any)
+	required, _ := itemSchema["required"].([]any)
+	var sawEstimatedProfile bool
+	for _, r := range required {
+		if r == "estimated_profile" {
+			sawEstimatedProfile = true
+		}
+	}
+	if !sawEstimatedProfile {
+		t.Errorf("expected estimated_profile listed as required in the item schema, got %+v", required)
+	}
+
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	p := result.Items[0].EstimatedProfile
+	if p == nil {
+		t.Fatal("expected a non-nil estimated profile")
+	}
+	if p.CaloriesPer100g != 90 || p.ProteinPer100g != 3 || p.CarbsPer100g != 15 ||
+		p.FatPer100g != 2 || p.SugarPer100g != 4 || p.SodiumPer100g != 0.3 || p.DietaryFiberPer100g != 3 {
+		t.Errorf("unexpected estimated profile: %+v", p)
+	}
+}
+
+func TestOpenAIClient_Recognize_NullEstimatedProfileParsedAsNil(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"name":"unidentifiable item","preparation":"unknown","state":"unknown",`+
+				`"weight_grams":50,"confidence":0.2,"estimated_profile":null}],"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	if result.Items[0].EstimatedProfile != nil {
+		t.Errorf("expected nil estimated profile for a null response, got %+v", result.Items[0].EstimatedProfile)
+	}
+}
+
 func TestOpenAIClient_Recognize_UnknownMapsToEmptyString(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(chatResponse(t, //nolint:errcheck

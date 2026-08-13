@@ -21,19 +21,28 @@ import (
 //  1. Manual: the 7 macro fields are stored as given, macro_source = manual.
 //  2. FdcID or CustomFoodID: bound to that reference food, macro_source =
 //     reference, macros scaled from its profile by WeightGrams.
-//  3. WeightGrams alone: rescales the item from its existing binding, if any.
+//  3. WeightGrams alone: rescales the item from its existing binding, if
+//     any — a reference food's profile, or (for macro_source = estimated) its
+//     own persisted per-100g estimate, the same way a reference item does.
 //
 // Name is independent of the above and may be sent alongside any of them, or
 // alone: it corrects the item's displayed description (e.g. the vision
 // model's guess was "dark berries" but it's actually cherries) without
 // implying anything about macro_source.
+//
+// SaveAsCustomFood, alongside Manual, additionally creates a CustomFood
+// owned by the caller from the item's (possibly just-corrected) name and the
+// supplied per-100g-converted macro values — see design.md decision 5. It has
+// no effect without Manual: there is no other supplied per-100g profile to
+// save.
 type patchItemRequest struct {
-	Manual       bool       `json:"manual,omitempty"`
-	FdcID        *int64     `json:"fdc_id,omitempty"`
-	CustomFoodID *uuid.UUID `json:"custom_food_id,omitempty"`
-	OffCode      *string    `json:"off_code,omitempty"`
-	WeightGrams  *float64   `json:"weight_grams,omitempty"`
-	Name         *string    `json:"name,omitempty"`
+	Manual           bool       `json:"manual,omitempty"`
+	FdcID            *int64     `json:"fdc_id,omitempty"`
+	CustomFoodID     *uuid.UUID `json:"custom_food_id,omitempty"`
+	OffCode          *string    `json:"off_code,omitempty"`
+	WeightGrams      *float64   `json:"weight_grams,omitempty"`
+	Name             *string    `json:"name,omitempty"`
+	SaveAsCustomFood bool       `json:"save_as_custom_food,omitempty"`
 
 	Calories          float64 `json:"calories,omitempty"`
 	ProteinGrams      float64 `json:"protein_grams,omitempty"`
@@ -338,7 +347,8 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.ApplyProfile(profile)
 		case req.WeightGrams != nil:
 			item.WeightGrams = *req.WeightGrams
-			if item.MacroSource == database.MacroSourceReference {
+			switch item.MacroSource {
+			case database.MacroSourceReference:
 				if item.WeightGrams <= 0 {
 					return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive for a reference item"}
 				}
@@ -347,6 +357,11 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 					return &itemMutationError{status: status, msg: err.Error()}
 				}
 				item.ApplyProfile(profile)
+			case database.MacroSourceEstimated:
+				if item.WeightGrams <= 0 {
+					return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive for an estimated item"}
+				}
+				item.ApplyEstimatedProfile()
 			}
 		}
 
@@ -354,6 +369,58 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			if name := strings.TrimSpace(*req.Name); name != "" {
 				item.Name = name
 			}
+		}
+
+		if req.Manual && req.SaveAsCustomFood {
+			if item.WeightGrams <= 0 {
+				return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive to save as a reusable food"}
+			}
+			// No calorie/macro floor here, deliberately matching the standalone
+			// POST /api/food/custom endpoint (customFoodRequest has no such
+			// check either) — a genuinely zero-calorie reusable food (water,
+			// black coffee) is valid, and save_as_custom_food is already an
+			// explicit opt-in checkbox, so the checkbox itself is the
+			// intentional-save signal rather than a nonzero value.
+			//
+			// req.Calories etc. are the item's total macros at its current
+			// weight, not per-100g — CustomFood stores per-100g, matching
+			// every other reference-food profile in this codebase. Reuses
+			// customFoodRequest.applyTo (food_custom.go) rather than
+			// hand-assigning each field a second time, so this "save my
+			// correction as reusable food" path can't silently drift from
+			// direct custom-food creation/update if a macro field is ever
+			// added or renamed.
+			scale := 100.0 / item.WeightGrams
+			cfReq := customFoodRequest{
+				Name:                item.Name,
+				CaloriesPer100g:     item.Calories * scale,
+				ProteinPer100g:      item.ProteinGrams * scale,
+				CarbsPer100g:        item.CarbsGrams * scale,
+				FatPer100g:          item.FatGrams * scale,
+				SugarPer100g:        item.SugarGrams * scale,
+				SodiumPer100g:       item.SodiumGrams * scale,
+				DietaryFiberPer100g: item.DietaryFiberGrams * scale,
+			}
+			cf := database.CustomFood{UserID: claims.UserID}
+			cf.ID = uuid.New()
+			cf.FamilyID = FamilyIDFromCtx(r)
+			cfReq.applyTo(&cf)
+			if err := tx.Create(&cf).Error; err != nil {
+				if isUniqueViolation(err) {
+					return &itemMutationError{status: http.StatusConflict, msg: "a custom food with this name already exists"}
+				}
+				return err
+			}
+			// Bind this item to the food it just created. Without this,
+			// rankedCustomFoodCandidates (food_upload.go) — which only
+			// considers custom foods referenced by a confirmed FoodItem row —
+			// would see zero usage history for cf and never surface it as a
+			// candidate for a later, differently-worded photo; only an exact
+			// name match could ever find it. macro_source stays "manual" (the
+			// values were typed in directly, not resolved from cf), matching
+			// how a reference/off/fdc binding leaves the source reflecting
+			// where the numbers came from.
+			item.CustomFoodID = &cf.ID
 		}
 
 		res := tx.Model(&database.FoodItem{}).

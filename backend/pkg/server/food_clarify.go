@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -135,6 +136,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 		priorItems[i] = vision.Item{
 			Name: it.Name, Preparation: it.Preparation, State: it.State, Brand: it.Brand,
 			WeightGrams: it.WeightGrams, Confidence: it.Confidence,
+			EstimatedProfile: estimatedProfilePtr(it),
 		}
 	}
 
@@ -142,6 +144,9 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	recognized, err := h.vision.Clarify(ctx, priorItems, history)
+	if err == nil {
+		carryForwardEstimates(priorItems, recognized.Items)
+	}
 	if err != nil {
 		applied, failErr := h.failMeal(meal, lease)
 		if failErr != nil {
@@ -163,4 +168,72 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	}
 	result, reloadErr := h.reloadIfSuperseded(meal, applied)
 	writeReloadedMeal(w, result, reloadErr, http.StatusOK)
+}
+
+// carryForwardEstimates overwrites every recognized item's EstimatedProfile
+// with the corresponding prior item's persisted estimate, positionally,
+// discarding whatever (if anything) Clarify itself returned for
+// estimated_profile first. Clarify shares Recognize's prompt/schema even
+// though it is text-only, so a response can still carry a non-null
+// estimated_profile — a guess made without the photo, which must never be
+// trusted over the original photo-grounded one; processRecognition treats a
+// nil EstimatedProfile as "no estimate" when persisting the resulting
+// FoodItem rows. A prior item's estimate is only carried forward when the
+// item count is unchanged AND the name at that position is still plausibly
+// the same item (see namesLikelySameItem): a round that added, removed, or
+// reordered items has no reliable position to carry an estimate forward to,
+// and a same-count reorder is otherwise indistinguishable from an unchanged
+// list by position alone — carrying an estimate to a same-index-but-different
+// item would silently misattribute it (e.g. swap "grilled chicken" and
+// "mixed salad"). This positional/name heuristic is not a substitute for a
+// genuine per-item identity echoed back by the model — a same-count reorder
+// between two items whose names happen to share a substring (e.g. "Rice" and
+// "Fried rice") can still misattribute; that residual gap needs the model to
+// echo back an explicit prior-item index, which is a larger schema/prompt
+// change tracked separately rather than solved here.
+func carryForwardEstimates(priorItems, recognizedItems []vision.Item) {
+	for i := range recognizedItems {
+		recognizedItems[i].EstimatedProfile = nil
+	}
+	if len(priorItems) != len(recognizedItems) {
+		return
+	}
+	for i := range recognizedItems {
+		if !namesLikelySameItem(priorItems[i].Name, recognizedItems[i].Name) {
+			continue
+		}
+		recognizedItems[i].EstimatedProfile = priorItems[i].EstimatedProfile
+	}
+}
+
+// namesLikelySameItem reports whether a recognized item's name is plausibly
+// still the same item as a prior round's, tolerating the ordinary case where
+// a clarification round narrows a vague name into a more specific one (e.g.
+// "Sauce" -> "Tomato sauce", still the same single item) while still
+// rejecting a same-count reorder that swapped two genuinely unrelated items
+// (e.g. "grilled chicken" and "mixed salad" share no substring either way).
+func namesLikelySameItem(prior, recognized string) bool {
+	p := strings.ToLower(strings.TrimSpace(prior))
+	r := strings.ToLower(strings.TrimSpace(recognized))
+	if p == "" || r == "" {
+		return false
+	}
+	return p == r || strings.Contains(r, p) || strings.Contains(p, r)
+}
+
+// estimatedProfilePtr returns the item's persisted estimate as a pointer, or nil
+// if none is present or usable. The clarify round's follow-up call is
+// text-only and cannot regenerate a photo-grounded estimate, so the original
+// one — persisted on the row when the item was first created, see
+// database.FoodItem.SetEstimatedProfile — is fed back to the model as
+// context instead, the same way Name/Preparation/State/Brand/WeightGrams
+// already are, so it can carry forward into whatever items the clarify
+// response produces. See
+// openspec/changes/composite-food-recognition/design.md decision 4.
+func estimatedProfilePtr(it database.FoodItem) *database.NutrientProfile {
+	p, ok := it.EstimatedProfile()
+	if !ok {
+		return nil
+	}
+	return &p
 }

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/ya-breeze/healthvault/pkg/database"
 )
 
 // Item is one food recognized in a photo, before any candidate matching.
@@ -25,6 +27,13 @@ type Item struct {
 	Brand       string  `json:"brand,omitempty"`
 	WeightGrams float64 `json:"weight_grams"`
 	Confidence  float64 `json:"confidence"`
+	// EstimatedProfile is Recognize's own per-100g macro estimate for this
+	// item, produced in the same call as recognition — no separate model
+	// call. Nil when Recognize produced none (or an invalid one) for this
+	// item. Used as a macro-source-of-last-resort when candidate selection
+	// finds no match — see
+	// openspec/changes/composite-food-recognition/design.md decision 4.
+	EstimatedProfile *database.NutrientProfile `json:"estimated_profile,omitempty"`
 }
 
 // RecognizeResult is the outcome of the first call: what foods are in the

@@ -8,7 +8,12 @@ interface Props {
   onManual: (name: string, macros: {
     calories: number; protein_grams: number; carbs_grams: number; fat_grams: number;
     sugar_grams: number; sodium_grams: number; dietary_fiber_grams: number;
-  }) => Promise<void>;
+  }, saveAsCustomFood: boolean) => Promise<void>;
+  // Shows a "save as reusable food" checkbox alongside the manual-macros
+  // form — only meaningful for a correction to an existing item (see
+  // MealItemRow), not for adding a brand-new one (AddItemForm), which POSTs
+  // to an endpoint that doesn't accept this option.
+  allowSaveAsCustomFood?: boolean;
 }
 
 // The review UI for correcting an item's food match: search for a reference
@@ -16,7 +21,7 @@ interface Props {
 // or fall back to entering a name and macros directly (e.g. from a package
 // label). Reachable for any item, matched or not, until the meal is
 // confirmed — not just ones the vision model left unresolved.
-export default function ItemResolver({ itemName, onBind, onManual }: Props) {
+export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCustomFood }: Props) {
   const [mode, setMode] = useState<'search' | 'manual'>('search');
   const [query, setQuery] = useState(itemName);
   const [results, setResults] = useState<FoodSearchResult[] | null>(null);
@@ -38,6 +43,7 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
     calories: 0, protein_grams: 0, carbs_grams: 0, fat_grams: 0,
     sugar_grams: 0, sodium_grams: 0, dietary_fiber_grams: 0,
   });
+  const [saveAsCustomFood, setSaveAsCustomFood] = useState(false);
   // search and refresh both write to the shared results/translatedQuery
   // state below, so a slower, older response (e.g. a refresh outlived by a
   // newer search) must not clobber a newer one's results. Each call captures
@@ -120,7 +126,7 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
     }
     setSubmitting(true);
     try {
-      await onManual(name, macros);
+      await onManual(name, macros, saveAsCustomFood);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save macros');
     } finally {
@@ -235,6 +241,17 @@ export default function ItemResolver({ itemName, onBind, onManual }: Props) {
               />
             </label>
           ))}
+          {allowSaveAsCustomFood && (
+            <label className="col-span-2 flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={saveAsCustomFood}
+                onChange={e => setSaveAsCustomFood(e.target.checked)}
+                className="h-4 w-4"
+              />
+              Save as a reusable food, so a future photo of this dish can match it automatically
+            </label>
+          )}
           <button
             onClick={handleManualSubmit}
             disabled={submitting}
