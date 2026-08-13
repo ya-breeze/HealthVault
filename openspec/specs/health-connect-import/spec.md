@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Lets a user import their full Health Connect export (a zip containing a SQLite database) in one upload, converting HC's native units/enums to HealthVault's internal format and deduplicating against existing records.
+
+## Requirements
 
 ### Requirement: Upload Health Connect archive
 The system SHALL accept a multipart/form-data POST to `/api/import/health-connect` with a file field named `file` containing a zip archive that includes a Health Connect SQLite database (`health_connect_export.db`). The endpoint SHALL require JWT authentication identical to other `/api/*` routes.

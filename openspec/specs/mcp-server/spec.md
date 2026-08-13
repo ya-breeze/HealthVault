@@ -1,3 +1,7 @@
+## Purpose
+
+Exposes a Model Context Protocol server so an external LLM agent can query a user's health data (list users, query records by type/range, get a summary) over a single bearer-token-protected endpoint, without needing the REST API's cookie-based session auth.
+
 ## Requirements
 
 ### Requirement: MCP endpoint and bearer token protection
