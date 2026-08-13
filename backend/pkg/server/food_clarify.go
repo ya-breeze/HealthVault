@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -175,18 +176,41 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 // estimate — it is fed the prior estimate as context (see estimatedProfilePtr
 // above) but is not guaranteed to echo it back in its response, and
 // processRecognition treats a nil EstimatedProfile as "no estimate" when
-// persisting the resulting FoodItem rows. Only applied when the item count
-// is unchanged: a round that added, removed, or reordered items has no
-// reliable position to carry an estimate forward to.
+// persisting the resulting FoodItem rows. Only applied when the item count is
+// unchanged AND the name at that position is still plausibly the same item
+// (see namesLikelySameItem): a round that added, removed, or reordered items
+// has no reliable position to carry an estimate forward to, and a same-count
+// reorder is otherwise indistinguishable from an unchanged list by position
+// alone — carrying an estimate to a same-index-but-different item would
+// silently misattribute it (e.g. swap "grilled chicken" and "mixed salad").
 func carryForwardEstimates(priorItems, recognizedItems []vision.Item) {
 	if len(priorItems) != len(recognizedItems) {
 		return
 	}
 	for i := range recognizedItems {
-		if recognizedItems[i].EstimatedProfile == nil {
-			recognizedItems[i].EstimatedProfile = priorItems[i].EstimatedProfile
+		if recognizedItems[i].EstimatedProfile != nil {
+			continue
 		}
+		if !namesLikelySameItem(priorItems[i].Name, recognizedItems[i].Name) {
+			continue
+		}
+		recognizedItems[i].EstimatedProfile = priorItems[i].EstimatedProfile
 	}
+}
+
+// namesLikelySameItem reports whether a recognized item's name is plausibly
+// still the same item as a prior round's, tolerating the ordinary case where
+// a clarification round narrows a vague name into a more specific one (e.g.
+// "Sauce" -> "Tomato sauce", still the same single item) while still
+// rejecting a same-count reorder that swapped two genuinely unrelated items
+// (e.g. "grilled chicken" and "mixed salad" share no substring either way).
+func namesLikelySameItem(prior, recognized string) bool {
+	p := strings.ToLower(strings.TrimSpace(prior))
+	r := strings.ToLower(strings.TrimSpace(recognized))
+	if p == "" || r == "" {
+		return false
+	}
+	return p == r || strings.Contains(r, p) || strings.Contains(p, r)
 }
 
 // estimatedProfilePtr returns the item's persisted estimate as a pointer, or nil

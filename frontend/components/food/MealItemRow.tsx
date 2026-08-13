@@ -69,12 +69,12 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
   const commitWeight = async () => {
     if (weight === item.weight_grams) return;
     // Mirrors PatchMealItem's server-side check: a non-positive weight on a
-    // reference-bound item would rescale it to negative or zero macros (see
-    // ApplyProfile), and the backend now rejects that. Only applies to
-    // reference items — a manual item's weight is metadata, not a scale
-    // factor, so it's not restricted here.
-    if (item.macro_source === 'reference' && weight <= 0) {
-      setError('Weight must be positive for a matched item');
+    // reference- or estimated-sourced item would rescale it to negative or
+    // zero macros (see ApplyProfile/ApplyEstimatedProfile), and the backend
+    // now rejects both. Only applies to those two sources — a manual item's
+    // weight is metadata, not a scale factor, so it's not restricted here.
+    if ((item.macro_source === 'reference' || item.macro_source === 'estimated') && weight <= 0) {
+      setError(`Weight must be positive for a${item.macro_source === 'estimated' ? 'n estimated' : ' matched'} item`);
       setWeight(item.weight_grams);
       return;
     }

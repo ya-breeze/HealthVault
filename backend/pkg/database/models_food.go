@@ -255,10 +255,17 @@ func (i *FoodItem) ApplyProfile(p NutrientProfile) {
 // ApplyEstimatedProfile scales the item's own persisted per-100g estimate
 // (set by SetEstimatedProfile at creation time) by its current weight and
 // marks it as an AI estimate rather than a database-bound reference. Returns
-// false, changing nothing, when no usable estimate is present — callers
-// should leave the item at whatever MacroSource it already has (typically
-// none) in that case.
+// false, changing nothing, when no usable estimate is present or the item's
+// weight is not positive — callers should leave the item at whatever
+// MacroSource it already has (typically none) in that case. The weight check
+// lives here, not only at call sites, so every caller (including the
+// unresolved-item fallback loop in resolveItems, which has no weight check
+// of its own) is protected from silently "resolving" a zero-weight item to a
+// zeroed-out estimate instead of leaving it flagged as needing review.
 func (i *FoodItem) ApplyEstimatedProfile() bool {
+	if i.WeightGrams <= 0 {
+		return false
+	}
 	p, ok := i.EstimatedProfile()
 	if !ok {
 		return false

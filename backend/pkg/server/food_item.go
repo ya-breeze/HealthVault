@@ -375,21 +375,40 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			if item.WeightGrams <= 0 {
 				return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive to save as a reusable food"}
 			}
+			// The manual-macro form defaults every field to 0, so an accidental
+			// save before entering any values would otherwise persist a
+			// permanent, reusable CustomFood with every macro at zero — future
+			// candidate matching could then offer it and silently zero out a
+			// real meal. Calories is used as a simple required-signal check;
+			// a genuinely calorie-free item (e.g. black coffee) isn't a
+			// realistic candidate for "save as reusable food" in the first
+			// place.
+			if req.Calories <= 0 {
+				return &itemMutationError{status: http.StatusBadRequest, msg: "calories must be positive to save as a reusable food"}
+			}
 			// req.Calories etc. are the item's total macros at its current
 			// weight, not per-100g — CustomFood stores per-100g, matching
-			// every other reference-food profile in this codebase.
+			// every other reference-food profile in this codebase. Reuses
+			// customFoodRequest.applyTo (food_custom.go) rather than
+			// hand-assigning each field a second time, so this "save my
+			// correction as reusable food" path can't silently drift from
+			// direct custom-food creation/update if a macro field is ever
+			// added or renamed.
 			scale := 100.0 / item.WeightGrams
+			cfReq := customFoodRequest{
+				Name:                item.Name,
+				CaloriesPer100g:     item.Calories * scale,
+				ProteinPer100g:      item.ProteinGrams * scale,
+				CarbsPer100g:        item.CarbsGrams * scale,
+				FatPer100g:          item.FatGrams * scale,
+				SugarPer100g:        item.SugarGrams * scale,
+				SodiumPer100g:       item.SodiumGrams * scale,
+				DietaryFiberPer100g: item.DietaryFiberGrams * scale,
+			}
 			cf := database.CustomFood{UserID: claims.UserID}
 			cf.ID = uuid.New()
 			cf.FamilyID = FamilyIDFromCtx(r)
-			cf.Name = item.Name
-			cf.CaloriesPer100g = item.Calories * scale
-			cf.ProteinPer100g = item.ProteinGrams * scale
-			cf.CarbsPer100g = item.CarbsGrams * scale
-			cf.FatPer100g = item.FatGrams * scale
-			cf.SugarPer100g = item.SugarGrams * scale
-			cf.SodiumPer100g = item.SodiumGrams * scale
-			cf.DietaryFiberPer100g = item.DietaryFiberGrams * scale
+			cfReq.applyTo(&cf)
 			if err := tx.Create(&cf).Error; err != nil {
 				if isUniqueViolation(err) {
 					return &itemMutationError{status: http.StatusConflict, msg: "a custom food with this name already exists"}

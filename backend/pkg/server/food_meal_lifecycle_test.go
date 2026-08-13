@@ -937,6 +937,31 @@ func TestPatchMealItem_ManualWithoutSaveFlagCreatesNoCustomFood(t *testing.T) {
 	}
 }
 
+// The manual-macro form defaults every field to 0, so an accidental save
+// before entering real values must be rejected rather than silently
+// persisting a permanent, reusable CustomFood with every macro at zero.
+func TestPatchMealItem_SaveAsCustomFoodZeroCaloriesReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	st.DB().Model(&database.CustomFood{}).Where("user_id = ?", userID).Count(&count)
+	if count != 0 {
+		t.Errorf("expected no CustomFood created when calories is 0, got %d", count)
+	}
+}
+
 // A name conflict on the save-as-custom-food side must abort the whole
 // PATCH atomically — the item correction is not silently half-applied.
 func TestPatchMealItem_SaveAsCustomFoodDuplicateNameReturns409(t *testing.T) {

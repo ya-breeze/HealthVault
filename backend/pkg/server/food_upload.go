@@ -286,6 +286,12 @@ func (h *foodHandlers) resolveItems(
 	candidateSets := make([][]vision.Candidate, len(recognizedItems))
 	itemCandidates := make([]vision.ItemCandidates, 0, len(recognizedItems))
 
+	// Computed once per meal, not per item: rankedCustomFoodCandidates depends
+	// only on userID, so its join+aggregate+sort pipeline would otherwise rerun
+	// identically for every recognized item in the meal (5-8 DB round-trip
+	// pairs for a full plate instead of one).
+	ranked := h.rankedCustomFoodCandidates(meal.UserID)
+
 	for i, ri := range recognizedItems {
 		item := database.FoodItem{
 			UserID: meal.UserID, MealID: meal.ID, Name: ri.Name,
@@ -298,7 +304,7 @@ func (h *foodHandlers) resolveItems(
 		item.SetEstimatedProfile(ri.EstimatedProfile)
 		items[i] = item
 
-		candidates := h.retrieveCandidates(meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
+		candidates := h.retrieveCandidates(ranked, meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
 		candidateSets[i] = candidates
 		if len(candidates) > 0 {
 			itemCandidates = append(itemCandidates, vision.ItemCandidates{
@@ -423,7 +429,21 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 		usage = append(usage, *u)
 	}
 
-	sort.Slice(usage, func(i, j int) bool { return usageScore(usage[i]) > usageScore(usage[j]) })
+	// usage is built from a Go map above, so its starting order is already
+	// randomized on every call — sort.SliceStable alone would not make this
+	// deterministic, since "stable" only preserves whatever (random) input
+	// order two tied elements arrived in. Breaking ties on CustomFoodID
+	// instead makes the result deterministic outright: two foods tied on
+	// usageScore (equal count, near-equal recency) get a consistent relative
+	// order across repeated, otherwise-identical requests, so which one gets
+	// cut by rankedCustomFoodLimit below can't flip from one upload to the next.
+	sort.Slice(usage, func(i, j int) bool {
+		si, sj := usageScore(usage[i]), usageScore(usage[j])
+		if si != sj {
+			return si > sj
+		}
+		return usage[i].CustomFoodID.String() < usage[j].CustomFoodID.String()
+	})
 	if len(usage) > rankedCustomFoodLimit {
 		usage = usage[:rankedCustomFoodLimit]
 	}
@@ -456,16 +476,25 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 // retrieveCandidates mirrors Search's precedence rule: an exact (case-
 // insensitive) custom food name match wins outright, offered as the sole
 // candidate — Open Food Facts and USDA are not additionally queried for it.
-// Otherwise, the caller's frequency/recency-ranked custom foods (see
-// rankedCustomFoodCandidates) are combined with whatever Open Food Facts/USDA
-// candidates the existing brand-based routing produces: a non-empty brand
-// routes to Open Food Facts first — its candidates are used if it returns
-// any, falling back to USDA only when OFF returns none (including when no
-// OFF database is open at all). An empty brand skips OFF entirely and
-// queries USDA directly: there is no signal to safely select among
-// differently-branded OFF products for a brandless query. See design.md "OFF
-// queried only when a brand was extracted, USDA as the fallback".
-func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, state, brand string) []vision.Candidate {
+// Otherwise, ranked (the caller's frequency/recency-ranked custom foods, see
+// rankedCustomFoodCandidates — computed once per meal by the caller, not per
+// item, since it depends only on userID) is combined with whatever Open Food
+// Facts/USDA candidates the existing brand-based routing produces: a
+// non-empty brand routes to Open Food Facts first — its candidates are used
+// if it returns any, falling back to USDA only when OFF returns none
+// (including when no OFF database is open at all). An empty brand skips OFF
+// entirely and queries USDA directly: there is no signal to safely select
+// among differently-branded OFF products for a brandless query. See
+// design.md "OFF queried only when a brand was extracted, USDA as the
+// fallback".
+//
+// ranked is only ever read here, never appended to in place: it is shared
+// across every recognized item in the meal, so growing it in place via a
+// plain append could, when it has spare capacity, overwrite data written by
+// a sibling call for a different item in the same meal.
+func (h *foodHandlers) retrieveCandidates(
+	ranked []vision.Candidate, userID uuid.UUID, name, preparation, state, brand string,
+) []vision.Candidate {
 	var custom database.CustomFood
 	err := h.storage.DB().
 		Where("user_id = ? AND LOWER(name) = LOWER(?)", userID, name).
@@ -475,17 +504,16 @@ func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, s
 		return []vision.Candidate{{CustomFoodID: &id, Description: custom.Name}}
 	}
 
-	ranked := h.rankedCustomFoodCandidates(userID)
-
 	if brand != "" && h.off != nil {
 		foods, offErr := h.off.Search(name, brand, off.DefaultCandidates)
 		if offErr == nil && len(foods) > 0 {
-			out := make([]vision.Candidate, len(foods))
-			for i, f := range foods {
+			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
+			out = append(out, ranked...)
+			for _, f := range foods {
 				code := f.Code
-				out[i] = vision.Candidate{OffCode: &code, Brands: f.Brands, Description: f.ProductName}
+				out = append(out, vision.Candidate{OffCode: &code, Brands: f.Brands, Description: f.ProductName})
 			}
-			return append(ranked, out...)
+			return out
 		}
 	}
 
@@ -493,12 +521,13 @@ func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, s
 		term := usda.QueryFor(name, preparation, state)
 		foods, usdaErr := h.usda.Search(term, usda.DefaultCandidates)
 		if usdaErr == nil {
-			out := make([]vision.Candidate, len(foods))
-			for i, f := range foods {
+			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
+			out = append(out, ranked...)
+			for _, f := range foods {
 				fdcID := f.FdcID
-				out[i] = vision.Candidate{FdcID: &fdcID, Description: f.Description}
+				out = append(out, vision.Candidate{FdcID: &fdcID, Description: f.Description})
 			}
-			return append(ranked, out...)
+			return out
 		}
 	}
 	return ranked

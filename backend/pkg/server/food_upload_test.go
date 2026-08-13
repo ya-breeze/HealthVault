@@ -692,6 +692,36 @@ func TestCreateMeal_EmptyShortlistFallsBackToEstimate(t *testing.T) {
 	}
 }
 
+// A zero weight (vision returned no usable weight for this item) must not
+// silently "resolve" to a zeroed-out estimate — the item should stay
+// unresolved so it's still flagged for review, not hidden behind a
+// legitimate-looking estimated badge with 0 calories.
+func TestCreateMeal_EmptyShortlistZeroWeightEstimateStaysNone(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "Mexican vegetable mix", WeightGrams: 0, Confidence: 0.7,
+				EstimatedProfile: &database.NutrientProfile{CaloriesPer100g: 90, ProteinPer100g: 3, CarbsPer100g: 15},
+			}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if len(meal.Items) != 1 || meal.Items[0].MacroSource != database.MacroSourceNone {
+		t.Fatalf("expected macro_source none for a zero-weight item despite a usable estimate, got %+v", meal.Items)
+	}
+	if !meal.Items[0].HasEstimate {
+		t.Error("expected the estimate to remain stored on the row for a later weight correction")
+	}
+}
+
 // No usable estimate either (Recognize produced none) — the item stays
 // macro_source none, exactly as before this change.
 func TestCreateMeal_EmptyShortlistNoEstimateStaysNone(t *testing.T) {
