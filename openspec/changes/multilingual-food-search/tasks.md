@@ -20,6 +20,9 @@
 - [x] 3.4 On `Translate` failure/error/timeout (including `Unconfigured`'s sentinel): log, fall back to searching with the literal query, do not write to the cache, do not fail the request
 - [x] 3.5 Add `translated_query` to `FoodSearchResponse`, populated only when a translated term was actually used for the search AND differs from the normalized original query (case/whitespace-only matches are suppressed, even though the mapping is still cached)
 - [x] 3.6 Parse the `refresh` query parameter (boolean, default false)
+- [x] 3.7 Suppress `translated_query` on an equal-to-input result only on a plain search; a successful `refresh` always reports its term, even when unchanged, so an omitted `translated_query` on a refresh response unambiguously means the refresh failed
+- [x] 3.8 Treat a failed cache write (the upsert in `translateAndCache`) as a failed translation: return `ok=false`, log, fall back to the literal query — never report a term as translated unless it was actually persisted
+- [x] 3.9 Add an `isCrossSiteRequest` guard (`Sec-Fetch-Site: cross-site`) around both `translateAndCache` call sites (cache miss and `refresh=true`), so a cross-site request never triggers a translation call or cache write
 
 ## 4. Backend tests
 
@@ -33,6 +36,9 @@
 - [x] 4.8 `food_search_test.go`: USDA-unavailable path — `Translate` is never invoked when `h.usda == nil`
 - [x] 4.9 `food_search_test.go`: translation-equals-input path — fake client returns the same (normalized) term as the query, assert the row is still cached but `translated_query` is omitted from the response
 - [x] 4.10 `food_search_test.go`: failed refresh leaves the prior cached row's `TranslatedQuery` unchanged
+- [x] 4.11 `food_search_test.go`: a cache-write failure (Translate succeeds, upsert fails) falls back to the literal query and omits `translated_query`
+- [x] 4.12 `food_search_test.go`: a cross-site request (`Sec-Fetch-Site: cross-site`) skips translation and writes no cache row, on both a cache miss and `refresh=true`
+- [x] 4.13 `food_search_test.go`: a successful refresh whose fresh translation equals the input still reports `translated_query`
 
 ## 5. Frontend
 
@@ -40,6 +46,7 @@
 - [x] 5.2 `ItemResolver.tsx`: show "Searched as: `<translated_query>`" plus a refresh control when `translated_query` is present; refresh re-calls `searchFood` with `refresh: true`; while a refresh is in flight, show a distinct loading state from a normal search; on refresh failure, show an inline error and keep the previous "Searched as" display rather than clearing it
 - [x] 5.3 `ManualItemEditor.tsx`: same display + refresh treatment in its search results section; add the `try/catch` + error-state plumbing it currently lacks so a failed refresh can be surfaced instead of silently swallowed
 - [x] 5.4 Add a standing disclosure notice (near the search input in both components, or a shared location both render) stating that new search terms may be sent to an external model provider for translation, visible before a search is ever submitted
+- [x] 5.5 Add a per-component request-sequence counter so `search`/`refresh` each capture the value current at call time and only apply their response to shared `results`/`translatedQuery`/error state if it's still current when the response arrives, dropping stale responses; `searching`/`refreshing` still clear on their own request's completion regardless of staleness
 
 ## 6. E2E
 

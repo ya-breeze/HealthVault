@@ -116,17 +116,28 @@ has nowhere to search against would spend an LLM call (and, on a cache miss, a D
 write) for zero benefit on a deployment without a loaded USDA index — the same
 degraded-source handling already applies to the custom-food-only fallback path.
 
-### `translated_query` is omitted when the translation doesn't change the query
+### `translated_query` is omitted when the translation doesn't change the query — but only on a plain search
 Translation runs on every cache miss, not only when the literal query returns zero
 USDA results (see "Translate on every search" above) — so a well-formed English query
 like "chicken breast" still costs one LLM round-trip and would, without this
 exception, show a "Searched as: chicken breast" banner and refresh control on
-essentially every first-time English search. The response SHALL omit
-`translated_query` when the translated term is equal to the normalized (trimmed,
+essentially every first-time English search. A plain (non-refresh) response SHALL
+omit `translated_query` when the translated term is equal to the normalized (trimmed,
 lowercased) original query — the common case for existing English-speaking users —
 so the banner appears only when translation actually changed what was searched for.
 The row is still cached either way, so a repeat search of the same phrase remains a
 cache hit with no LLM call.
+
+This suppression SHALL NOT apply when `refresh=true`: a successful refresh always
+returns `translated_query`, even when the fresh translation happens to equal the
+input. Without this carve-out, a refresh that legitimately re-translates back to the
+literal input (e.g. a stale cached mapping "chicken breast" → "chicken liver" gets
+corrected by refresh back to "chicken breast") is indistinguishable on the wire from
+a *failed* refresh, which also omits `translated_query`. The frontend treats
+"refresh response has no `translated_query`" as its sole failure signal (see "Refresh
+failure preserves the prior display" below), so refresh must be unambiguous:
+omission means failure, presence means success, full stop — even when the displayed
+term doesn't change. Found in PR review (Codex).
 
 ### Search interface discloses external transmission before it happens
 `food-photo-recognition` already requires the upload interface to state that a photo
@@ -156,7 +167,57 @@ the banner; a failed refresh SHALL show an inline error (e.g. "Couldn't refresh
 translation, try again") while leaving the prior "Searched as" display in place,
 since the old mapping is still what's cached and would be used again on the next
 plain search. `ManualItemEditor.tsx` has no error-state plumbing today (its `search()`
-has no `try/catch`) and needs it added for this.
+has no `try/catch`) and needs it added for this. This reading is now unambiguous
+because refresh never suppresses `translated_query` on an equal-to-input result (see
+above) — omission on a refresh response means the translation failed, never that it
+was a no-op.
+
+### An in-flight search or refresh can't have its result clobbered by a slower, older one
+`ItemResolver.tsx` and `ManualItemEditor.tsx` each track `searching` and `refreshing`
+as independent booleans, but both write to the same shared `results` /
+`translatedQuery` / error state. If a user triggers a refresh and then, before it
+resolves, edits the query and issues a new plain search, the two requests race: if the
+refresh's response arrives after the newer search's, it overwrites the newer search's
+results and banner with stale data for a query the input no longer even shows. Both
+components SHALL track a monotonically increasing request sequence number; `search`
+and `refresh` each capture the value current at call time and only apply their
+response to shared display state if that value is still current when the response
+arrives. A stale response is dropped rather than clearing or partially applying, and
+each function still resets its own `searching`/`refreshing` flag on completion
+regardless of staleness, so neither spinner can get stuck on. Found in PR review
+(Codex).
+
+### A failed cache write means the translation was not applied, not merely not persisted
+`translateAndCache` upserts the mapping after a successful `Translate` call. If that
+upsert fails (e.g. the DB is briefly unavailable), the handler SHALL treat the whole
+translation attempt as failed — return the same fail-open outcome as a `Translate`
+error (log, fall back to the literal query, `ok=false`) — rather than returning the
+freshly translated term as if it were cached. Reporting `ok=true` on a failed write
+would let a refresh's response and the resulting search results diverge from what's
+actually cached: the UI would show the corrected term for that one response, but the
+very next plain search would read the old (or absent) cache row and silently revert.
+Treating a write failure as a translation failure keeps "what the response says was
+used" and "what's cached" from ever disagreeing. Found in PR review (Codex).
+
+### Cross-site requests never trigger translation or a cache write
+`GET /api/food/search` gained a side effect this change: a cache miss (or an explicit
+`refresh=true`) now calls the external LLM and writes a per-user DB row, both real
+costs, from a plain authenticated `GET`. Cookie auth here uses `SameSite=Lax` (see
+`kin-core/cookies`), which still attaches on a cross-site top-level navigation, so a
+third-party page can force this request without ever reading its JSON response — the
+UI being submit-only isn't an API-side control. The handler SHALL treat a request
+whose `Sec-Fetch-Site` header (sent by all modern browsers and not spoofable by
+page-level JavaScript) is `cross-site` as untrusted for this purpose: it skips both
+the cache-miss translate-and-cache call and the `refresh=true` translate-and-cache
+call, falling back to a literal-query search exactly as if translation were
+unavailable. Absent the header (older browsers, non-browser API clients, existing
+tests) the request is treated as same-site, matching this app's lack of any prior
+CSRF-token infrastructure — this is a targeted mitigation for the specific
+cost/write-triggering surface this change adds, following the OWASP Fetch Metadata
+pattern, not a general CSRF framework for the whole API. A cache-hit lookup is left
+unguarded: reading an existing row has no cost and no write, and its content isn't
+attacker-readable cross-site without permissive CORS (which this app doesn't set).
+Found in PR review (Codex).
 
 ### Test doubles must implement `Translate` too
 `vision.Client` is implemented by more than `OpenAIClient` and `Unconfigured`:

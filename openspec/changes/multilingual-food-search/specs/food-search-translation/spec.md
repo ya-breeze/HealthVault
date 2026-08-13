@@ -53,11 +53,13 @@ that user and query in place, and uses the new translation to search.
 
 ### Requirement: Search Degrades Gracefully When Translation Is Unavailable Or Fails
 The system SHALL fall back to searching with the literal, untranslated query when the
-translation model is unconfigured, the translation call fails, or the translation
-call exceeds a bounded deadline, without failing the search request, and SHALL NOT
-cache a failed, missing, or timed-out translation. On a failed refresh specifically,
-any previously cached mapping for that query SHALL be left unchanged (the refresh
-upsert only happens on a successful translation).
+translation model is unconfigured, the translation call fails, the translation call
+exceeds a bounded deadline, or the cache write for a successful translation fails,
+without failing the search request, and SHALL NOT cache a failed, missing, or
+timed-out translation. On a failed refresh specifically, any previously cached
+mapping for that query SHALL be left unchanged (the refresh upsert only happens on a
+successful translation, and a translation whose upsert itself fails is treated as a
+failed translation, not a successful-but-unpersisted one).
 
 #### Scenario: Translation client unconfigured
 - **WHEN** no translation model is configured for the deployment
@@ -81,6 +83,21 @@ upsert only happens on a successful translation).
   `translated_query` for that request, and the client SHALL show an error state for
   the refresh attempt rather than presenting the omission as "no translation exists"
 
+#### Scenario: A successful translation whose cache write fails is treated as a failed translation
+- **WHEN** the translation model call succeeds but persisting the resulting
+  `FoodSearchTranslation` row fails (e.g. a transient database error)
+- **THEN** the system SHALL search with the literal query, SHALL NOT report the
+  freshly translated term in `translated_query`, and (on a refresh) SHALL leave any
+  previously cached mapping for that query unchanged — an unpersisted translation is
+  never presented as if it had been applied and cached
+
+#### Scenario: A cross-site request never triggers translation or a cache write
+- **WHEN** `GET /api/food/search` is a cache miss, or is called with `refresh=true`,
+  and the request's `Sec-Fetch-Site` header is `cross-site`
+- **THEN** the system SHALL skip the translation call and any cache write for that
+  request, and SHALL search with the literal query instead, the same as when
+  translation is unavailable
+
 ### Requirement: Response Surfaces the Translated Query
 The system SHALL include the translated term used for the USDA search in
 `FoodSearchResponse` whenever a translation was applied and it changed what was
@@ -96,8 +113,24 @@ refresh it.
 - **THEN** the response SHALL omit the `translated_query` field
 
 #### Scenario: Translated query omitted when the translation equals the input
-- **WHEN** a search runs (or re-runs, via cache or fresh translation) and the translated term equals the normalized original query
+- **WHEN** a plain (non-refresh) search runs and the translated term (whether from cache or freshly translated) equals the normalized original query
 - **THEN** the response SHALL omit `translated_query`, even though the mapping is still cached, so the interface shows no banner for a query that was already valid USDA vocabulary
+
+#### Scenario: A successful refresh always reports its translated term, even when unchanged
+- **WHEN** a user triggers `refresh=true` and the fresh translation succeeds, including the case where the resulting term equals the normalized original query
+- **THEN** the response SHALL include `translated_query` equal to that term, so an omitted `translated_query` on a refresh response unambiguously means the refresh failed, never that the term was already correct
+
+### Requirement: Search And Refresh Results Reflect Only The Latest Request
+The search interface SHALL apply a search or refresh response to the displayed
+results and translated-query banner only if no newer search or refresh request has
+been issued since, so that a slower, older response can never overwrite a newer
+one's results.
+
+#### Scenario: A slow refresh response arrives after a newer search
+- **WHEN** a user triggers a refresh, then issues a new plain search before the
+  refresh's response arrives, and the refresh's response arrives after the search's
+- **THEN** the interface SHALL discard the refresh's response and continue showing
+  the newer search's results and translated-query state
 
 ### Requirement: Search Interface Discloses External Transmission Before It Happens
 The search interface SHALL state, before any query is submitted, that new search
