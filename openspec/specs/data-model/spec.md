@@ -5,7 +5,7 @@ Defines the typed database schema for ingested health metrics — family- and us
 ### Requirement: Health metric types
 The system SHALL persist health data in typed tables. Each table SHALL belong to a family (via `family_id`) and be associated with a user (via `user_id`).
 
-Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`), which have no upstream payload and are specified separately under "Food logging tables".
+Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`, `FoodSearchTranslation`), which have no upstream payload and are specified separately under "Food logging tables".
 
 Types are grouped into three categories based on their temporal shape:
 
@@ -109,7 +109,7 @@ The system SHALL store every raw incoming webhook payload in a `webhook_payloads
 
 ### Requirement: Food logging tables
 
-The system SHALL persist user-authored food logging data in four family-scoped tables. Each SHALL embed the shared tenant model (`id`, `created_at`, `updated_at`, `deleted_at`, `family_id`) and carry a `user_id`. None SHALL carry a `source_payload_id`.
+The system SHALL persist user-authored food logging data in five family-scoped tables. Each SHALL embed the shared tenant model (`id`, `created_at`, `updated_at`, `deleted_at`, `family_id`) and carry a `user_id`. None SHALL carry a `source_payload_id`.
 
 | Table                     | Purpose                                                        | Time anchor    |
 |---------------------------|------------------------------------------------------------------|----------------|
@@ -117,6 +117,7 @@ The system SHALL persist user-authored food logging data in four family-scoped t
 | `FoodItem`                | One food within a meal: reference, weight, 7 scaled macros      | via `meal_id`  |
 | `CustomFood`              | A user's own per-100g food profile                              | —              |
 | `FoodCalibrationSample`   | A weighed-food ground-truth photo for model benchmarking        | `captured_at`  |
+| `FoodSearchTranslation`   | A user's cached free-text-to-USDA-vocabulary query translation  | —              |
 
 `FoodMeal.status` SHALL be one of `processing`, `pending_clarification`, `pending_review`, `confirmed`, `failed`, and `FoodMeal.logged_at` SHALL always be non-zero. Nutrient field names SHALL match the existing `Nutrition` model (`dietary_fiber_grams`, `sodium_grams`) so the two are directly comparable.
 
@@ -133,6 +134,8 @@ The system SHALL persist user-authored food logging data in four family-scoped t
 `FoodItem` SHALL also carry `preparation`, `state`, and `brand`, each permitted to be empty for unknown. They are persisted rather than merely used in-flight so that a later clarification answer can re-run food lookup without re-analyzing the photo. `brand` additionally determines whether the Open Food Facts index is queried during matching (see `usda-nutrition-database` "Match Selection and Explicit Non-Match").
 
 `CustomFood` SHALL be uniquely indexed on `(user_id, name)`, so that name-based precedence over USDA and Open Food Facts entries has exactly one winner.
+
+`FoodSearchTranslation` SHALL be uniquely indexed on `(user_id, original_query)`, where `original_query` is the trimmed, lowercased free-text search string, so that each user has at most one cached translation per normalized query. It carries no reference-source fields (`fdc_id`, `off_code`, `custom_food_id`) and does not participate in the FoodItem reference-source exclusivity rule below — it caches a translated search term, not a bound reference food.
 
 There SHALL be no unique constraint on `(user_id, logged_at)` for `FoodMeal`, because a user may legitimately log more than one meal at the same recorded time.
 
@@ -160,4 +163,9 @@ There SHALL be no unique constraint on `(user_id, logged_at)` for `FoodMeal`, be
 
 - **WHEN** a `FoodItem` is created or updated with more than one of `fdc_id`, `off_code`, and `custom_food_id` set
 - **THEN** the system SHALL reject it, since exactly which field is set is what identifies the reference source and more than one set would be ambiguous
+
+#### Scenario: FoodSearchTranslation rows are private to the user who created them
+
+- **WHEN** a `FoodSearchTranslation` row is created
+- **THEN** it SHALL carry the owning `user_id`, and a lookup for that cached translation SHALL only match rows owned by the requesting user
 
