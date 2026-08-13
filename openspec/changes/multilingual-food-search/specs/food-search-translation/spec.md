@@ -18,6 +18,17 @@ re-invoke the translation model.
 - **WHEN** two different users search the same query text for the first time
 - **THEN** each SHALL get their own `FoodSearchTranslation` row, and a translation cached for one user SHALL NOT be reused for another user's search
 
+### Requirement: Translation Only Runs When The Reference Database Is Available
+The system SHALL perform the cache lookup and, on a miss, the translation call only
+after confirming the USDA reference index is available, so that a deployment without
+a loaded USDA database never pays for a translation it cannot use.
+
+#### Scenario: USDA unavailable skips translation entirely
+- **WHEN** the USDA reference index is not loaded for the deployment
+- **THEN** `GET /api/food/search` SHALL return the existing degraded response (custom
+  foods only) without checking the `FoodSearchTranslation` cache or calling the
+  translation model
+
 ### Requirement: Custom Food Matching Is Unaffected By Translation
 The system SHALL check the caller's custom foods for an exact case-insensitive name
 match against the literal, untranslated query before applying translation, unchanged
@@ -42,26 +53,57 @@ that user and query in place, and uses the new translation to search.
 
 ### Requirement: Search Degrades Gracefully When Translation Is Unavailable Or Fails
 The system SHALL fall back to searching with the literal, untranslated query when the
-translation model is unconfigured or the translation call fails, without failing the
-search request, and SHALL NOT cache a failed or missing translation.
+translation model is unconfigured, the translation call fails, or the translation
+call exceeds a bounded deadline, without failing the search request, and SHALL NOT
+cache a failed, missing, or timed-out translation. On a failed refresh specifically,
+any previously cached mapping for that query SHALL be left unchanged (the refresh
+upsert only happens on a successful translation).
 
 #### Scenario: Translation client unconfigured
 - **WHEN** no translation model is configured for the deployment
 - **THEN** `GET /api/food/search` SHALL search USDA using the literal query, SHALL NOT create a `FoodSearchTranslation` row, and the response SHALL omit `translated_query`
 
 #### Scenario: Translation call fails
-- **WHEN** the translation model call errors or times out
+- **WHEN** the translation model call errors
 - **THEN** `GET /api/food/search` SHALL still return USDA search results for the literal query, SHALL NOT create or update a `FoodSearchTranslation` row, and SHALL NOT return an error to the caller solely because translation failed
+
+#### Scenario: Translation call exceeds its deadline
+- **WHEN** the translation model call does not complete within the configured vision
+  timeout (the same timeout already applied to photo-recognition calls)
+- **THEN** the system SHALL abandon the call, treat it identically to a translation
+  failure (literal-query fallback, no cache write), and SHALL NOT block the search
+  request beyond that deadline
+
+#### Scenario: Failed refresh does not erase the existing cached mapping or its display
+- **WHEN** a user triggers `refresh=true` for a query with an existing
+  `FoodSearchTranslation` row, and the refresh's translation call fails
+- **THEN** the existing cached row SHALL remain unchanged, the response SHALL omit
+  `translated_query` for that request, and the client SHALL show an error state for
+  the refresh attempt rather than presenting the omission as "no translation exists"
 
 ### Requirement: Response Surfaces the Translated Query
 The system SHALL include the translated term used for the USDA search in
-`FoodSearchResponse` whenever a translation was applied, so the caller can display
-what was actually searched and offer to refresh it.
+`FoodSearchResponse` whenever a translation was applied and it changed what was
+searched for, so the caller can display what was actually searched and offer to
+refresh it.
 
-#### Scenario: Translated query included when translation applied
-- **WHEN** a search uses a translated term, whether from cache or freshly translated
+#### Scenario: Translated query included when translation applied and differs from the input
+- **WHEN** a search uses a translated term, whether from cache or freshly translated, and that term is not equal to the normalized (trimmed, lowercased) original query
 - **THEN** the response SHALL include a `translated_query` field equal to that term
 
 #### Scenario: Translated query omitted when no translation was applied
 - **WHEN** a search resolves via an exact custom food match, or falls back to the literal query because translation is unavailable or failed
 - **THEN** the response SHALL omit the `translated_query` field
+
+#### Scenario: Translated query omitted when the translation equals the input
+- **WHEN** a search runs (or re-runs, via cache or fresh translation) and the translated term equals the normalized original query
+- **THEN** the response SHALL omit `translated_query`, even though the mapping is still cached, so the interface shows no banner for a query that was already valid USDA vocabulary
+
+### Requirement: Search Interface Discloses External Transmission Before It Happens
+The search interface SHALL state, before any query is submitted, that new search
+text may be sent to an external model provider for translation — the same
+disclosure pattern already required for photo uploads.
+
+#### Scenario: Disclosure visible before first search
+- **WHEN** a user opens the food search interface
+- **THEN** the interface SHALL display a standing notice that new search terms may be sent to an external model provider for translation, visible before the user submits a query

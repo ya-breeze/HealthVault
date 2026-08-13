@@ -97,6 +97,48 @@ cache) but rejected as unnecessary ceremony for an endpoint only ever invoked by
 explicit, non-prefetched user click, where repeating the call is harmless (each call
 just re-translates and overwrites, no accumulation).
 
+### Translate is time-bounded by the existing vision timeout, not the bare HTTP client default
+`OpenAIClient.HTTPClient` is a plain `&http.Client{}` with no timeout, and unlike the
+async photo-recognition flows (`Recognize`/`Clarify`/`EstimateWeights`, each already
+wrapped in `context.WithTimeout(r.Context(), h.visionTimeout)` at their call sites),
+this call sits synchronously on a `GET` the browser is waiting on. The handler SHALL
+wrap the `Translate` call the same way, using the same `h.visionTimeout` config value.
+A timeout is treated identically to any other `Translate` error: fail-open, log, fall
+back to the literal query, do not write to the cache (see "Failure handling" below).
+Reviewed and flagged independently by both a pre-implementation design review and a
+PR review comment (Codex) — see tasks.md 2.5/4.7 for the corresponding implementation
+and regression-test tasks.
+
+### Translation lookup runs only when USDA is available
+The cache lookup and `Translate` call happen after the existing `h.usda == nil` /
+`ErrNoDatabase` short-circuit in `food.go`, not before it. Translating a query that
+has nowhere to search against would spend an LLM call (and, on a cache miss, a DB
+write) for zero benefit on a deployment without a loaded USDA index — the same
+degraded-source handling already applies to the custom-food-only fallback path.
+
+### `translated_query` is omitted when the translation doesn't change the query
+Translation runs on every cache miss, not only when the literal query returns zero
+USDA results (see "Translate on every search" above) — so a well-formed English query
+like "chicken breast" still costs one LLM round-trip and would, without this
+exception, show a "Searched as: chicken breast" banner and refresh control on
+essentially every first-time English search. The response SHALL omit
+`translated_query` when the translated term is equal to the normalized (trimmed,
+lowercased) original query — the common case for existing English-speaking users —
+so the banner appears only when translation actually changed what was searched for.
+The row is still cached either way, so a repeat search of the same phrase remains a
+cache hit with no LLM call.
+
+### Search interface discloses external transmission before it happens
+`food-photo-recognition` already requires the upload interface to state that a photo
+will be sent to an external model provider before it happens (see
+`openspec/specs/food-photo-recognition/spec.md`, "external model provider" scenario).
+This change follows the same pattern: the search interface SHALL carry a standing
+notice (not a per-search interstitial) that new search terms may be sent to an
+external model provider for translation, visible before the first search is ever
+submitted. `Translate` reuses the same `call()` helper as `Clarify`/`Select`, which
+already sets `store: false` on every request — no new decision needed there, it's
+inherited from the existing plumbing.
+
 ### Failure handling is fail-open, not fail-closed
 If `Translate` errors or times out, the handler logs and falls back to searching with
 the literal query for that request — it does not fail the whole `/api/food/search`
@@ -104,6 +146,24 @@ call, and it does not write anything to the cache (so the next search retries th
 rather than being stuck with a missing/bad mapping). This matches the existing
 pattern for `h.usda == nil` and `usda.ErrNoDatabase`: a degraded reference source
 degrades the response, it never 500s the request.
+
+### Refresh failure preserves the prior display; it isn't treated as "never translated"
+On a failed refresh, the server falls back to a literal-query search and omits
+`translated_query` (same as any other `Translate` failure — see "Failure handling"
+below) — but the *previous* cached mapping is untouched (the upsert never ran). The
+frontend SHALL NOT read that omission as "no translation exists" and silently drop
+the banner; a failed refresh SHALL show an inline error (e.g. "Couldn't refresh
+translation, try again") while leaving the prior "Searched as" display in place,
+since the old mapping is still what's cached and would be used again on the next
+plain search. `ManualItemEditor.tsx` has no error-state plumbing today (its `search()`
+has no `try/catch`) and needs it added for this.
+
+### Test doubles must implement `Translate` too
+`vision.Client` is implemented by more than `OpenAIClient` and `Unconfigured`:
+`vision.Fake` (the general test double) and three server-package-local doubles
+(`slowRecognizeClient`, `slowClarifyClient`, `gatedRecognizeClient`) all satisfy the
+interface today. Adding `Translate` to the interface without adding it to all four
+breaks the build, not just the new tests — see tasks.md 2.6.
 
 ## Risks / Trade-offs
 
@@ -123,11 +183,25 @@ degrades the response, it never 500s the request.
 - **[Trade-off] Per-user cache means N users searching "porridge" pay for translation
   N times**, not once → accepted per the per-user-dictionary decision above; revisit
   only if usage data shows this is a real cost driver.
+- **[Minor risk] No query length cap before an LLM call** → accepted; search only
+  fires on explicit submit (not per-keystroke), so this isn't a rate-amplification
+  risk, just an uncapped-cost one. Not worth a hard requirement at this scale; revisit
+  if abuse or cost data says otherwise.
+- **[Minor risk] Cache key normalization (trim + lowercase) has no Unicode
+  normalization (NFC)** → byte-different, visually-identical strings (e.g.
+  differently-composed Cyrillic sequences) would miss the cache and each pay for a
+  redundant LLM call, notably for this change's own motivating language. Accepted as
+  a minor cost, not a correctness bug — the worst case is an extra cache miss, not a
+  wrong result — and not worth the added normalization-library dependency at this
+  stage.
 
 ## Migration Plan
 
 - New table `FoodSearchTranslation`, added via GORM auto-migration (same mechanism as
-  existing tables — no manual SQL migration file in this codebase).
+  existing tables — no manual SQL migration file in this codebase). This is the fifth
+  food-logging tenant table; `openspec/specs/data-model/spec.md`'s "Food logging
+  tables" requirement is updated via a `data-model` delta in this change (see
+  `specs/data-model/spec.md`) so the canonical inventory doesn't go stale on archive.
 - No backfill: the cache starts empty and populates itself as users search. No
   existing behavior depends on this table's absence.
 - Rollback: reverting the code change leaves an unused, harmless table behind (or it
