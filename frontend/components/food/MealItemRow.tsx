@@ -15,12 +15,17 @@ interface Props {
 const SOURCE_LABEL: Record<string, string> = {
   reference: 'Matched',
   manual: 'Manual',
+  estimated: 'AI estimate',
   none: 'Unresolved',
 };
 
 const SOURCE_COLOR: Record<string, string> = {
   reference: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   manual: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  // Distinct from both "manual" (a value the user typed) and "none"
+  // (nothing at all) — an estimated item has real macro values, but they're
+  // a model guess, not a database fact or something the user confirmed.
+  estimated: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
   none: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
 };
 
@@ -128,9 +133,12 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
 
   const handleManual = async (
     name: string,
-    macros: Omit<Parameters<typeof api.patchMealItem>[2], 'manual' | 'name'>
+    macros: Omit<Parameters<typeof api.patchMealItem>[2], 'manual' | 'name' | 'save_as_custom_food'>,
+    saveAsCustomFood: boolean
   ) => {
-    await onUpdated(() => api.patchMealItem(mealId, item.id, { manual: true, name, ...macros }), 'Item updated');
+    await onUpdated(() => api.patchMealItem(mealId, item.id, {
+      manual: true, name, save_as_custom_food: saveAsCustomFood, ...macros,
+    }), 'Item updated');
     setResolving(false);
   };
 
@@ -210,15 +218,21 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
         <button
           onClick={() => setResolving(true)}
           className={
-            item.macro_source === 'none'
+            item.macro_source === 'none' || item.macro_source === 'estimated'
               ? 'mt-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline'
               : 'mt-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline'
           }
         >
-          {item.macro_source === 'none' ? 'Resolve this item' : 'Change match'}
+          {item.macro_source === 'none'
+            ? 'Resolve this item'
+            : item.macro_source === 'estimated'
+              ? 'Verify this estimate'
+              : 'Change match'}
         </button>
       )}
-      {resolving && <ItemResolver itemName={item.name} onBind={handleBind} onManual={handleManual} />}
+      {resolving && (
+        <ItemResolver itemName={item.name} onBind={handleBind} onManual={handleManual} allowSaveAsCustomFood />
+      )}
 
       {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>

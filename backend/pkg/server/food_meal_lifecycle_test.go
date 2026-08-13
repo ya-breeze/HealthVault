@@ -65,6 +65,31 @@ func createUnresolvedMeal(t *testing.T, st database.Storage, userID, familyID uu
 	return meal
 }
 
+// createEstimatedItemMeal is like createUnresolvedMeal but the item already
+// carries a persisted estimate and macro_source=estimated, mirroring what
+// resolveItems' fallback produces when no candidate matches.
+func createEstimatedItemMeal(t *testing.T, st database.Storage, userID, familyID uuid.UUID) database.FoodMeal {
+	t.Helper()
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "Mexican vegetable mix", WeightGrams: 100,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	item.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 90, ProteinPer100g: 3, CarbsPer100g: 15})
+	item.ApplyEstimatedProfile()
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	meal.Items = []database.FoodItem{item}
+	return meal
+}
+
 // --- GetMeal ---
 
 func TestGetMeal_ReturnsMealWithItems(t *testing.T) {
@@ -817,6 +842,131 @@ func TestPatchMealItem_WeightOnlyChangeRescalesFromExistingBinding(t *testing.T)
 	// 130 kcal/100g * 2.0 (200g) = 260
 	if got.Calories < 259.9 || got.Calories > 260.1 {
 		t.Errorf("expected calories ~260 after rescale, got %v", got.Calories)
+	}
+}
+
+func TestPatchMealItem_WeightOnlyChangeRescalesFromEstimatedProfile(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createEstimatedItemMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"weight_grams": 200})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var gotMeal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&gotMeal) //nolint:errcheck
+	got := gotMeal.Items[0]
+	if got.MacroSource != database.MacroSourceEstimated {
+		t.Errorf("expected macro_source to remain estimated across a weight-only change, got %s", got.MacroSource)
+	}
+	// 90 kcal/100g * 2.0 (200g) = 180
+	if got.Calories < 179.9 || got.Calories > 180.1 {
+		t.Errorf("expected calories ~180 after rescale, got %v", got.Calories)
+	}
+}
+
+func TestPatchMealItem_WeightOnlyRescaleOnEstimatedRequiresPositiveWeight(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createEstimatedItemMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"weight_grams": 0})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// A correction that supplies direct macro values, with the save flag set,
+// also creates a reusable CustomFood from the item's per-100g-converted
+// macros — so a later, differently-worded photo of the same dish can match
+// it via the ranked candidate shortlist.
+func TestPatchMealItem_ManualWithSaveAsCustomFoodCreatesReusableFood(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID) // item "Chicken", weight 100g
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true,
+		"calories": 300, "protein_grams": 25, "carbs_grams": 10,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "Chicken").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	// item weight is 100g, so per-100g equals the supplied totals directly.
+	if cf.CaloriesPer100g != 300 || cf.ProteinPer100g != 25 || cf.CarbsPer100g != 10 {
+		t.Errorf("expected per-100g values matching the item's macros at its weight, got %+v", cf)
+	}
+}
+
+// Without the save flag, behavior is exactly as before this change: no
+// CustomFood is created as a side effect of a manual correction.
+func TestPatchMealItem_ManualWithoutSaveFlagCreatesNoCustomFood(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"manual": true, "calories": 300,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	st.DB().Model(&database.CustomFood{}).Where("user_id = ?", userID).Count(&count)
+	if count != 0 {
+		t.Errorf("expected no CustomFood created without the save flag, got %d", count)
+	}
+}
+
+// A name conflict on the save-as-custom-food side must abort the whole
+// PATCH atomically — the item correction is not silently half-applied.
+func TestPatchMealItem_SaveAsCustomFoodDuplicateNameReturns409(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID) // item name "Chicken"
+
+	existing := database.CustomFood{UserID: userID, Name: "Chicken", CaloriesPer100g: 100}
+	existing.ID = uuid.New()
+	existing.FamilyID = familyID
+	if err := st.DB().Create(&existing).Error; err != nil {
+		t.Fatalf("create existing custom food: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true, "calories": 300,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var gotItem database.FoodItem
+	if err := st.DB().First(&gotItem, "id = ?", meal.Items[0].ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if gotItem.MacroSource != database.MacroSourceNone {
+		t.Errorf("expected the item unchanged when the custom-food save conflicts, got %s", gotItem.MacroSource)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -257,23 +258,27 @@ func buildPendingQuestionsLog(existingLog string, round int, questions []string)
 
 // resolveItems retrieves a candidate shortlist per recognized item, offers
 // every non-empty shortlist to the model in a single Select call, and binds
-// whatever it chooses. An item with no candidates, or not selected, or
-// selected as "none of these" keeps MacroSource none — see
-// design.md "Matching is candidate retrieval, not auto-assignment."
+// whatever it chooses. An item left unresolved by every path below — no
+// candidates, not selected, selected as "none of these", an out-of-range
+// index, or a selected candidate whose profile lookup fails — falls back to
+// its own persisted Recognize estimate (MacroSource estimated) when one is
+// present and usable, and only keeps MacroSource none when it is not. See
+// design.md "Matching is candidate retrieval, not auto-assignment" and
+// decision 4 (the estimate fallback).
 //
 // strict controls what happens when the Select call itself errors (e.g. it
 // shares runAnalysis's overall timeout with Recognize, so a slow Recognize
 // call can leave Select to fail with a context deadline): false (upload,
 // retry, clarify — the analyzeMeal/failMeal family, which has nothing
-// valuable to lose) degrades gracefully, leaving every candidate item
-// unresolved rather than failing the whole analysis over a Select hiccup.
-// true (Reanalyze only) returns the error instead, because Reanalyze's own
-// contract is that a failure leaves the meal completely unchanged — silently
-// swallowing a Select failure there would let this function return a
-// "successful" but effectively unresolved item set, and Reanalyze would
-// then replace a confirmed meal's real, reviewed items (and zero its
-// aggregate) with that unresolved set and report 200, when the correct
-// outcome for a vision-provider failure is 502 with nothing changed.
+// valuable to lose) degrades gracefully, leaving every candidate item to the
+// estimate fallback (or none) rather than failing the whole analysis over a
+// Select hiccup. true (Reanalyze only) returns the error instead, because
+// Reanalyze's own contract is that a failure leaves the meal completely
+// unchanged — silently swallowing a Select failure there would let this
+// function return a "successful" but effectively unresolved item set, and
+// Reanalyze would then replace a confirmed meal's real, reviewed items (and
+// zero its aggregate) with that unresolved set and report 200, when the
+// correct outcome for a vision-provider failure is 502 with nothing changed.
 func (h *foodHandlers) resolveItems(
 	ctx context.Context, meal *database.FoodMeal, recognizedItems []vision.Item, strict bool,
 ) ([]database.FoodItem, error) {
@@ -290,6 +295,7 @@ func (h *foodHandlers) resolveItems(
 		}
 		item.ID = uuid.New()
 		item.FamilyID = meal.FamilyID
+		item.SetEstimatedProfile(ri.EstimatedProfile)
 		items[i] = item
 
 		candidates := h.retrieveCandidates(meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
@@ -301,45 +307,162 @@ func (h *foodHandlers) resolveItems(
 		}
 	}
 
-	if len(itemCandidates) == 0 {
-		return items, nil
-	}
-
-	sel, err := h.vision.Select(ctx, itemCandidates)
-	if err != nil {
-		if strict {
+	if len(itemCandidates) > 0 {
+		sel, err := h.vision.Select(ctx, itemCandidates)
+		switch {
+		case err != nil && strict:
 			return nil, err
+		case err == nil:
+			for _, s := range sel.Selections {
+				if s.ItemIndex < 0 || s.ItemIndex >= len(items) {
+					continue
+				}
+				candidates := candidateSets[s.ItemIndex]
+				if s.CandidateIndex < 0 || s.CandidateIndex >= len(candidates) {
+					continue // "none of these" — the estimate fallback below still applies
+				}
+				chosen := candidates[s.CandidateIndex]
+				profile, ok := h.profileForCandidate(meal.UserID, chosen)
+				if !ok {
+					continue // profile lookup failed — the estimate fallback below still applies
+				}
+				items[s.ItemIndex].FdcID = chosen.FdcID
+				items[s.ItemIndex].CustomFoodID = chosen.CustomFoodID
+				items[s.ItemIndex].OffCode = chosen.OffCode
+				items[s.ItemIndex].ApplyProfile(profile)
+			}
+			// err != nil && !strict falls straight through to the loop below with
+			// every item still MacroSource none, same as today plus the fallback.
 		}
-		return items, nil
 	}
 
-	for _, s := range sel.Selections {
-		if s.ItemIndex < 0 || s.ItemIndex >= len(items) {
-			continue
+	for i := range items {
+		if items[i].MacroSource == database.MacroSourceNone {
+			items[i].ApplyEstimatedProfile()
 		}
-		candidates := candidateSets[s.ItemIndex]
-		if s.CandidateIndex < 0 || s.CandidateIndex >= len(candidates) {
-			continue // "none of these"
-		}
-		chosen := candidates[s.CandidateIndex]
-		profile, ok := h.profileForCandidate(meal.UserID, chosen)
-		if !ok {
-			continue
-		}
-		items[s.ItemIndex].FdcID = chosen.FdcID
-		items[s.ItemIndex].CustomFoodID = chosen.CustomFoodID
-		items[s.ItemIndex].OffCode = chosen.OffCode
-		items[s.ItemIndex].ApplyProfile(profile)
 	}
 	return items, nil
 }
 
+// rankedCustomFoodLimit bounds how many frequency/recency-ranked custom
+// foods are offered as candidates alongside whatever Open Food Facts/USDA
+// candidates the existing brand-based routing produces — see design.md
+// decision 2.
+const rankedCustomFoodLimit = 5
+
+// customFoodUsageRow is one confirmed-meal item bound to a custom food,
+// fetched unaggregated (see rankedCustomFoodCandidates for why: SQLite's
+// driver returns a MAX(logged_at) aggregate as a plain string with no
+// column-type metadata attached, which the standard library's default
+// scanner cannot convert into time.Time — a plain per-row select of the
+// column, by contrast, still carries that metadata and scans cleanly. usage
+// and recency are aggregated in Go instead, over what is expected to be a
+// small number of rows for a single family's data).
+type customFoodUsageRow struct {
+	CustomFoodID uuid.UUID
+	LoggedAt     time.Time
+}
+
+// customFoodUsage is one custom food's aggregated usage, computed from
+// customFoodUsageRow rows.
+type customFoodUsage struct {
+	CustomFoodID uuid.UUID
+	UsageCount   int
+	LastUsed     time.Time
+}
+
+// usageScore weights usage frequency higher than recency, so a dish
+// confirmed only monthly still outranks a food used once recently — see
+// design.md decision 2. Recency contributes a bounded (0,1] term that decays
+// toward 0 as the last use gets older, never able to outweigh even a single
+// additional use.
+func usageScore(u customFoodUsage) float64 {
+	const frequencyWeight = 10.0
+	daysSinceUse := time.Since(u.LastUsed).Hours() / 24
+	if daysSinceUse < 0 {
+		daysSinceUse = 0
+	}
+	recencyScore := 1.0 / (1.0 + daysSinceUse)
+	return float64(u.UsageCount)*frequencyWeight + recencyScore
+}
+
+// rankedCustomFoodCandidates returns the caller's own custom foods ranked by
+// usageScore, computed from their confirmed meal history only — a
+// still-pending_review meal's item already carries a custom_food_id from
+// this very matching process, so counting it here would let an unverified,
+// possibly-wrong automatic match reinforce its own future ranking before the
+// user ever confirmed it was correct. See design.md decision 2 for the exact
+// query and why the join key is meal_id, not user_id.
+func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Candidate {
+	var rows []customFoodUsageRow
+	err := h.storage.DB().
+		Table("food_items").
+		Select("food_items.custom_food_id AS custom_food_id, food_meals.logged_at AS logged_at").
+		Joins("JOIN food_meals ON food_items.meal_id = food_meals.id").
+		Where("food_items.user_id = ? AND food_items.custom_food_id IS NOT NULL AND food_meals.status = ?",
+			userID, database.MealStatusConfirmed).
+		Scan(&rows).Error
+	if err != nil || len(rows) == 0 {
+		return nil
+	}
+
+	byFood := make(map[uuid.UUID]*customFoodUsage, len(rows))
+	for _, r := range rows {
+		u, ok := byFood[r.CustomFoodID]
+		if !ok {
+			u = &customFoodUsage{CustomFoodID: r.CustomFoodID}
+			byFood[r.CustomFoodID] = u
+		}
+		u.UsageCount++
+		if r.LoggedAt.After(u.LastUsed) {
+			u.LastUsed = r.LoggedAt
+		}
+	}
+	usage := make([]customFoodUsage, 0, len(byFood))
+	for _, u := range byFood {
+		usage = append(usage, *u)
+	}
+
+	sort.Slice(usage, func(i, j int) bool { return usageScore(usage[i]) > usageScore(usage[j]) })
+	if len(usage) > rankedCustomFoodLimit {
+		usage = usage[:rankedCustomFoodLimit]
+	}
+
+	ids := make([]uuid.UUID, len(usage))
+	for i, u := range usage {
+		ids[i] = u.CustomFoodID
+	}
+	var foods []database.CustomFood
+	if err := h.storage.DB().Where("id IN ? AND user_id = ?", ids, userID).Find(&foods).Error; err != nil {
+		return nil
+	}
+	byID := make(map[uuid.UUID]database.CustomFood, len(foods))
+	for _, f := range foods {
+		byID[f.ID] = f
+	}
+
+	out := make([]vision.Candidate, 0, len(usage))
+	for _, u := range usage {
+		f, ok := byID[u.CustomFoodID]
+		if !ok {
+			continue
+		}
+		id := f.ID
+		out = append(out, vision.Candidate{CustomFoodID: &id, Description: f.Name})
+	}
+	return out
+}
+
 // retrieveCandidates mirrors Search's precedence rule: an exact (case-
-// insensitive) custom food name match wins outright. Otherwise, a non-empty
-// brand routes to Open Food Facts first — its candidates are used if it
-// returns any, falling back to USDA only when OFF returns none (including
-// when no OFF database is open at all). An empty brand skips OFF entirely
-// and queries USDA directly: there is no signal to safely select among
+// insensitive) custom food name match wins outright, offered as the sole
+// candidate — Open Food Facts and USDA are not additionally queried for it.
+// Otherwise, the caller's frequency/recency-ranked custom foods (see
+// rankedCustomFoodCandidates) are combined with whatever Open Food Facts/USDA
+// candidates the existing brand-based routing produces: a non-empty brand
+// routes to Open Food Facts first — its candidates are used if it returns
+// any, falling back to USDA only when OFF returns none (including when no
+// OFF database is open at all). An empty brand skips OFF entirely and
+// queries USDA directly: there is no signal to safely select among
 // differently-branded OFF products for a brandless query. See design.md "OFF
 // queried only when a brand was extracted, USDA as the fallback".
 func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, state, brand string) []vision.Candidate {
@@ -352,6 +475,8 @@ func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, s
 		return []vision.Candidate{{CustomFoodID: &id, Description: custom.Name}}
 	}
 
+	ranked := h.rankedCustomFoodCandidates(userID)
+
 	if brand != "" && h.off != nil {
 		foods, offErr := h.off.Search(name, brand, off.DefaultCandidates)
 		if offErr == nil && len(foods) > 0 {
@@ -360,24 +485,23 @@ func (h *foodHandlers) retrieveCandidates(userID uuid.UUID, name, preparation, s
 				code := f.Code
 				out[i] = vision.Candidate{OffCode: &code, Brands: f.Brands, Description: f.ProductName}
 			}
-			return out
+			return append(ranked, out...)
 		}
 	}
 
-	if h.usda == nil {
-		return nil
+	if h.usda != nil {
+		term := usda.QueryFor(name, preparation, state)
+		foods, usdaErr := h.usda.Search(term, usda.DefaultCandidates)
+		if usdaErr == nil {
+			out := make([]vision.Candidate, len(foods))
+			for i, f := range foods {
+				fdcID := f.FdcID
+				out[i] = vision.Candidate{FdcID: &fdcID, Description: f.Description}
+			}
+			return append(ranked, out...)
+		}
 	}
-	term := usda.QueryFor(name, preparation, state)
-	foods, err := h.usda.Search(term, usda.DefaultCandidates)
-	if err != nil {
-		return nil
-	}
-	out := make([]vision.Candidate, len(foods))
-	for i, f := range foods {
-		fdcID := f.FdcID
-		out[i] = vision.Candidate{FdcID: &fdcID, Description: f.Description}
-	}
-	return out
+	return ranked
 }
 
 func (h *foodHandlers) profileForCandidate(userID uuid.UUID, c vision.Candidate) (database.NutrientProfile, bool) {
@@ -416,6 +540,7 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 		}
 		item.ID = uuid.New()
 		item.FamilyID = familyID
+		item.SetEstimatedProfile(ri.EstimatedProfile)
 		items[i] = item
 	}
 	return items

@@ -153,6 +153,91 @@ func TestFoodMeal_AggregateIncludesManualItems(t *testing.T) {
 	}
 }
 
+func TestFoodMeal_AggregateIncludesEstimatedItems(t *testing.T) {
+	items := []database.FoodItem{
+		{MacroSource: database.MacroSourceReference, Calories: 100},
+		{MacroSource: database.MacroSourceEstimated, Calories: 80},
+		{MacroSource: database.MacroSourceNone, Calories: 999},
+	}
+	var m database.FoodMeal
+	m.Aggregate(items)
+	if m.Calories != 180 {
+		t.Errorf("Calories = %v, want 180 (reference + estimated, excluding none)", m.Calories)
+	}
+}
+
+func TestFoodItem_SetAndReadEstimatedProfile(t *testing.T) {
+	it := database.FoodItem{}
+	if _, ok := it.EstimatedProfile(); ok {
+		t.Fatal("expected no estimate present on a zero-value item")
+	}
+
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 120, ProteinPer100g: 8})
+	p, ok := it.EstimatedProfile()
+	if !ok {
+		t.Fatal("expected estimate present after SetEstimatedProfile")
+	}
+	if p.CaloriesPer100g != 120 || p.ProteinPer100g != 8 {
+		t.Errorf("EstimatedProfile = %+v, want calories=120 protein=8", p)
+	}
+	if !it.HasEstimate {
+		t.Error("expected HasEstimate=true")
+	}
+}
+
+// SetEstimatedProfile(nil) is the case where Recognize produced no usable
+// estimate for an item — it must leave the item exactly as it found it, not
+// flip HasEstimate on with zeroed values (which EstimatedProfile could not
+// then distinguish from a real all-zero estimate, e.g. water).
+func TestFoodItem_SetEstimatedProfileNilIsNoOp(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(nil)
+	if it.HasEstimate {
+		t.Error("expected HasEstimate to remain false when passed a nil profile")
+	}
+	if _, ok := it.EstimatedProfile(); ok {
+		t.Error("expected no usable estimate after SetEstimatedProfile(nil)")
+	}
+}
+
+// A negative value anywhere in the persisted estimate is treated as no
+// usable estimate at all, not stored as nonsensical negative macros.
+func TestFoodItem_EstimatedProfileRejectsNegativeValues(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 100, SodiumPer100g: -1})
+	if _, ok := it.EstimatedProfile(); ok {
+		t.Error("expected a negative-valued estimate to be reported as unusable")
+	}
+}
+
+func TestFoodItem_ApplyEstimatedProfileScalesByWeightAndSetsSource(t *testing.T) {
+	it := database.FoodItem{WeightGrams: 200}
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 150, ProteinPer100g: 10})
+
+	if ok := it.ApplyEstimatedProfile(); !ok {
+		t.Fatal("expected ApplyEstimatedProfile to succeed with a usable estimate")
+	}
+	if it.Calories != 300 || it.ProteinGrams != 20 {
+		t.Errorf("Calories/Protein = %v/%v, want 300/20", it.Calories, it.ProteinGrams)
+	}
+	if it.MacroSource != database.MacroSourceEstimated {
+		t.Errorf("MacroSource = %q, want %q", it.MacroSource, database.MacroSourceEstimated)
+	}
+}
+
+// Applying an estimate that isn't present must change nothing — callers rely
+// on this to leave a still-unresolved item at whatever MacroSource it
+// already had (typically none) rather than silently zeroing it out.
+func TestFoodItem_ApplyEstimatedProfileNoOpWhenAbsent(t *testing.T) {
+	it := database.FoodItem{WeightGrams: 200, MacroSource: database.MacroSourceNone, Calories: 0}
+	if ok := it.ApplyEstimatedProfile(); ok {
+		t.Fatal("expected ApplyEstimatedProfile to report false with no usable estimate")
+	}
+	if it.MacroSource != database.MacroSourceNone || it.Calories != 0 {
+		t.Errorf("expected item unchanged, got MacroSource=%q Calories=%v", it.MacroSource, it.Calories)
+	}
+}
+
 func TestFoodMeal_AggregateManualOnlyIsNonZero(t *testing.T) {
 	items := []database.FoodItem{
 		{MacroSource: database.MacroSourceManual, Calories: 210, FatGrams: 9},

@@ -28,6 +28,7 @@ const (
 const (
 	MacroSourceReference = "reference" // bound to an FDC or custom food, scaled by weight
 	MacroSourceManual    = "manual"    // values supplied directly by the user
+	MacroSourceEstimated = "estimated" // no reference/custom-food match; scaled from Recognize's own photo-derived estimate
 	MacroSourceNone      = "none"      // unresolved; zeroed, excluded from aggregates
 )
 
@@ -102,11 +103,72 @@ type FoodItem struct {
 	SugarGrams        float64 `gorm:"not null" json:"sugar_grams"`
 	SodiumGrams       float64 `gorm:"not null" json:"sodium_grams"`
 	DietaryFiberGrams float64 `gorm:"not null" json:"dietary_fiber_grams"`
+
+	// HasEstimate and the EstimatedXPer100g fields are Recognize's own
+	// per-100g macro estimate for this item (see vision.Item.EstimatedProfile),
+	// persisted at row-creation time regardless of whether a candidate match
+	// is later found. This is what a clarification round's text-only follow-up
+	// call cannot regenerate, and what a later weight-only edit rescales from
+	// when MacroSource is estimated — see EstimatedProfile and
+	// ApplyEstimatedProfile below. HasEstimate distinguishes "Recognize
+	// produced no usable estimate" from "the estimate happens to be all
+	// zeros" (e.g. water).
+	HasEstimate                  bool    `gorm:"not null;default:false" json:"has_estimate,omitempty"`
+	EstimatedCaloriesPer100g     float64 `gorm:"not null;default:0" json:"estimated_calories_per_100g,omitempty"`
+	EstimatedProteinPer100g      float64 `gorm:"not null;default:0" json:"estimated_protein_per_100g,omitempty"`
+	EstimatedCarbsPer100g        float64 `gorm:"not null;default:0" json:"estimated_carbs_per_100g,omitempty"`
+	EstimatedFatPer100g          float64 `gorm:"not null;default:0" json:"estimated_fat_per_100g,omitempty"`
+	EstimatedSugarPer100g        float64 `gorm:"not null;default:0" json:"estimated_sugar_per_100g,omitempty"`
+	EstimatedSodiumPer100g       float64 `gorm:"not null;default:0" json:"estimated_sodium_per_100g,omitempty"`
+	EstimatedDietaryFiberPer100g float64 `gorm:"not null;default:0" json:"estimated_dietary_fiber_per_100g,omitempty"`
 }
 
 // HasMacros reports whether the item contributes to its meal's aggregate.
 func (i FoodItem) HasMacros() bool {
-	return i.MacroSource == MacroSourceReference || i.MacroSource == MacroSourceManual
+	return i.MacroSource == MacroSourceReference || i.MacroSource == MacroSourceManual ||
+		i.MacroSource == MacroSourceEstimated
+}
+
+// SetEstimatedProfile persists Recognize's per-item estimate (nil when
+// Recognize produced none for this item) onto the row. Called for every
+// FoodItem built from a vision.Item, whether or not a candidate match is
+// later found — see design.md decision 4.
+func (i *FoodItem) SetEstimatedProfile(p *NutrientProfile) {
+	if p == nil {
+		return
+	}
+	i.HasEstimate = true
+	i.EstimatedCaloriesPer100g = p.CaloriesPer100g
+	i.EstimatedProteinPer100g = p.ProteinPer100g
+	i.EstimatedCarbsPer100g = p.CarbsPer100g
+	i.EstimatedFatPer100g = p.FatPer100g
+	i.EstimatedSugarPer100g = p.SugarPer100g
+	i.EstimatedSodiumPer100g = p.SodiumPer100g
+	i.EstimatedDietaryFiberPer100g = p.DietaryFiberPer100g
+}
+
+// EstimatedProfile returns the item's persisted per-100g estimate and
+// whether it is present and usable. A present-but-invalid estimate (any
+// negative value — e.g. a parse/validation failure on Recognize's output)
+// is treated as absent, not stored as nonsensical negative macros.
+func (i FoodItem) EstimatedProfile() (NutrientProfile, bool) {
+	if !i.HasEstimate {
+		return NutrientProfile{}, false
+	}
+	p := NutrientProfile{
+		CaloriesPer100g:     i.EstimatedCaloriesPer100g,
+		ProteinPer100g:      i.EstimatedProteinPer100g,
+		CarbsPer100g:        i.EstimatedCarbsPer100g,
+		FatPer100g:          i.EstimatedFatPer100g,
+		SugarPer100g:        i.EstimatedSugarPer100g,
+		SodiumPer100g:       i.EstimatedSodiumPer100g,
+		DietaryFiberPer100g: i.EstimatedDietaryFiberPer100g,
+	}
+	if p.CaloriesPer100g < 0 || p.ProteinPer100g < 0 || p.CarbsPer100g < 0 || p.FatPer100g < 0 ||
+		p.SugarPer100g < 0 || p.SodiumPer100g < 0 || p.DietaryFiberPer100g < 0 {
+		return NutrientProfile{}, false
+	}
+	return p, true
 }
 
 // CustomFood is a user's own per-100g profile, e.g. from a package label.
@@ -187,6 +249,25 @@ func (c CustomFood) Profile() NutrientProfile {
 // ApplyProfile scales a per-100g profile by the item's weight and marks it
 // as reference-sourced.
 func (i *FoodItem) ApplyProfile(p NutrientProfile) {
+	i.applyScaledProfile(p, MacroSourceReference)
+}
+
+// ApplyEstimatedProfile scales the item's own persisted per-100g estimate
+// (set by SetEstimatedProfile at creation time) by its current weight and
+// marks it as an AI estimate rather than a database-bound reference. Returns
+// false, changing nothing, when no usable estimate is present — callers
+// should leave the item at whatever MacroSource it already has (typically
+// none) in that case.
+func (i *FoodItem) ApplyEstimatedProfile() bool {
+	p, ok := i.EstimatedProfile()
+	if !ok {
+		return false
+	}
+	i.applyScaledProfile(p, MacroSourceEstimated)
+	return true
+}
+
+func (i *FoodItem) applyScaledProfile(p NutrientProfile, source string) {
 	f := i.WeightGrams / 100.0
 	i.Calories = p.CaloriesPer100g * f
 	i.ProteinGrams = p.ProteinPer100g * f
@@ -195,7 +276,7 @@ func (i *FoodItem) ApplyProfile(p NutrientProfile) {
 	i.SugarGrams = p.SugarPer100g * f
 	i.SodiumGrams = p.SodiumPer100g * f
 	i.DietaryFiberGrams = p.DietaryFiberPer100g * f
-	i.MacroSource = MacroSourceReference
+	i.MacroSource = source
 }
 
 // Aggregate sums the 7 macros over items that have usable macros. Items with

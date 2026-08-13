@@ -170,7 +170,7 @@ export type CustomFoodInput = Omit<CustomFood, 'id'>;
 export type MealStatus =
   | 'processing' | 'pending_clarification' | 'pending_review' | 'confirmed' | 'failed';
 
-export type MacroSource = 'reference' | 'manual' | 'none';
+export type MacroSource = 'reference' | 'manual' | 'estimated' | 'none';
 
 export interface FoodItem {
   id: string;
@@ -253,6 +253,11 @@ export interface PatchItemInput {
   off_code?: string;
   weight_grams?: number;
   name?: string;
+  // Alongside manual: also creates a CustomFood from this request's name and
+  // per-100g-converted macros, so a correction already typed here becomes
+  // reusable without a separate visit to custom food management. Has no
+  // effect without manual — see PatchMealItem's doc comment (food_item.go).
+  save_as_custom_food?: boolean;
   calories?: number;
   protein_grams?: number;
   carbs_grams?: number;

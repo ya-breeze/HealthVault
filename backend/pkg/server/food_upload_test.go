@@ -649,3 +649,342 @@ func TestCreateMeal_CustomFoodWinsOverUSDAInSelection(t *testing.T) {
 		t.Fatalf("expected exactly one candidate offered, got %+v", fake.SelectCalls)
 	}
 }
+
+// --- Estimate fallback (composite-food-recognition) ---
+
+// No candidates at all (no USDA/OFF configured, no custom food) — the item
+// falls back to Recognize's own persisted estimate instead of staying
+// unresolved.
+func TestCreateMeal_EmptyShortlistFallsBackToEstimate(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "Mexican vegetable mix", WeightGrams: 200, Confidence: 0.7,
+				EstimatedProfile: &database.NutrientProfile{CaloriesPer100g: 90, ProteinPer100g: 3, CarbsPer100g: 15},
+			}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if len(meal.Items) != 1 {
+		t.Fatalf("expected one item, got %+v", meal.Items)
+	}
+	item := meal.Items[0]
+	if item.MacroSource != database.MacroSourceEstimated {
+		t.Fatalf("expected estimated macro source, got %s", item.MacroSource)
+	}
+	// 90 kcal/100g * 2.0 (200g) = 180
+	if item.Calories < 179.9 || item.Calories > 180.1 {
+		t.Errorf("expected calories ~180, got %v", item.Calories)
+	}
+	if len(fake.SelectCalls) != 0 {
+		t.Errorf("expected no Select call with an empty shortlist, got %d", len(fake.SelectCalls))
+	}
+}
+
+// No usable estimate either (Recognize produced none) — the item stays
+// macro_source none, exactly as before this change.
+func TestCreateMeal_EmptyShortlistNoEstimateStaysNone(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Mystery food", WeightGrams: 100, Confidence: 0.5}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if len(meal.Items) != 1 || meal.Items[0].MacroSource != database.MacroSourceNone {
+		t.Fatalf("expected macro_source none with no estimate, got %+v", meal.Items)
+	}
+}
+
+// Select explicitly returning -1 ("none of these") still falls back to the
+// item's own persisted estimate.
+func TestCreateMeal_SelectNoneOfTheseFallsBackToEstimate(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(1, "Unrelated food", 50))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "chicken curry", WeightGrams: 250, Confidence: 0.8,
+				EstimatedProfile: &database.NutrientProfile{CaloriesPer100g: 140, ProteinPer100g: 9},
+			}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: -1}},
+		},
+	}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if len(meal.Items) != 1 {
+		t.Fatalf("expected one item, got %+v", meal.Items)
+	}
+	item := meal.Items[0]
+	if item.MacroSource != database.MacroSourceEstimated {
+		t.Fatalf("expected estimated macro source after an explicit non-match, got %s", item.MacroSource)
+	}
+	// 140 kcal/100g * 2.5 (250g) = 350
+	if item.Calories < 349.9 || item.Calories > 350.1 {
+		t.Errorf("expected calories ~350, got %v", item.Calories)
+	}
+}
+
+// A matched candidate takes precedence: the estimate is discarded for macro
+// purposes (macro_source stays reference) even though it remains stored on
+// the row.
+func TestCreateMeal_MatchedCandidateDiscardsUnusedEstimate(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(42, "Chicken breast", 165))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "chicken breast", WeightGrams: 180, Confidence: 0.9,
+				EstimatedProfile: &database.NutrientProfile{CaloriesPer100g: 500, ProteinPer100g: 500},
+			}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.MacroSource != database.MacroSourceReference {
+		t.Fatalf("expected reference macro source (matched candidate wins), got %s", item.MacroSource)
+	}
+	// 165 kcal/100g * 1.8 = 297, not the wildly different estimate values.
+	if item.Calories < 296.9 || item.Calories > 297.1 {
+		t.Errorf("expected calories from the matched reference (~297), not the discarded estimate, got %v", item.Calories)
+	}
+	if !item.HasEstimate {
+		t.Error("expected the estimate to remain stored on the row even though unused")
+	}
+}
+
+// --- Ranked custom-food candidates (composite-food-recognition) ---
+
+// logConfirmedCustomFoodUse creates a confirmed meal with one item bound to
+// customFoodID, so it counts toward that food's future ranking score.
+func logConfirmedCustomFoodUse(t *testing.T, st database.Storage, userID, familyID, customFoodID uuid.UUID, loggedAt time.Time) {
+	t.Helper()
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: loggedAt}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create confirmed meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "prior use", WeightGrams: 100,
+		MacroSource: database.MacroSourceReference, CustomFoodID: &customFoodID,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create confirmed item: %v", err)
+	}
+}
+
+// A differently-worded recognized item still matches a previously-used
+// custom food via the ranked shortlist, not only an exact name match.
+func TestCreateMeal_RankedCustomFoodOffersDifferentlyWordedName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	custom := database.CustomFood{UserID: userID, Name: "Mexican vegetable mix", CaloriesPer100g: 90}
+	custom.ID = uuid.New()
+	custom.FamilyID = familyID
+	if err := st.DB().Create(&custom).Error; err != nil {
+		t.Fatalf("create custom food: %v", err)
+	}
+	logConfirmedCustomFoodUse(t, st, userID, familyID, custom.ID, time.Now().Add(-30*24*time.Hour))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			// Deliberately worded differently from the saved custom food's name.
+			Items: []vision.Item{{Name: "Mexican veggie mix", WeightGrams: 200, Confidence: 0.6}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.SelectCalls) != 1 || len(fake.SelectCalls[0][0].Candidates) != 1 {
+		t.Fatalf("expected exactly one ranked custom-food candidate offered, got %+v", fake.SelectCalls)
+	}
+	got := fake.SelectCalls[0][0].Candidates[0]
+	if got.CustomFoodID == nil || *got.CustomFoodID != custom.ID {
+		t.Errorf("expected the previously-used custom food offered as a candidate, got %+v", got)
+	}
+}
+
+// A custom food used only on a still-pending_review meal must not yet count
+// toward its own future ranking — only confirmed usage does.
+func TestCreateMeal_RankedCustomFoodExcludesUnconfirmedUsage(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	custom := database.CustomFood{UserID: userID, Name: "Mexican vegetable mix", CaloriesPer100g: 90}
+	custom.ID = uuid.New()
+	custom.FamilyID = familyID
+	if err := st.DB().Create(&custom).Error; err != nil {
+		t.Fatalf("create custom food: %v", err)
+	}
+	// A pending_review meal (not confirmed) already bound to this custom food.
+	pending := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	pending.ID = uuid.New()
+	pending.FamilyID = familyID
+	if err := st.DB().Create(&pending).Error; err != nil {
+		t.Fatalf("create pending meal: %v", err)
+	}
+	pendingItem := database.FoodItem{
+		UserID: userID, MealID: pending.ID, Name: "unverified match", WeightGrams: 100,
+		MacroSource: database.MacroSourceReference, CustomFoodID: &custom.ID,
+	}
+	pendingItem.ID = uuid.New()
+	pendingItem.FamilyID = familyID
+	if err := st.DB().Create(&pendingItem).Error; err != nil {
+		t.Fatalf("create pending item: %v", err)
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Mexican veggie mix", WeightGrams: 200, Confidence: 0.6}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	if len(meal.Items) != 1 || meal.Items[0].MacroSource != database.MacroSourceNone {
+		t.Fatalf("expected macro_source none: an unconfirmed use must not have surfaced the candidate, got %+v", meal.Items)
+	}
+	if len(fake.SelectCalls) != 0 {
+		t.Errorf("expected no Select call (no candidates offered), got %d", len(fake.SelectCalls))
+	}
+}
+
+// Frequency outranks recency: a custom food used twice (confirmed, long ago)
+// ranks ahead of one used once (confirmed, very recently).
+func TestCreateMeal_RankedCustomFoodFrequencyOutranksRecency(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	frequent := database.CustomFood{UserID: userID, Name: "Frequent Mix", CaloriesPer100g: 90}
+	frequent.ID = uuid.New()
+	frequent.FamilyID = familyID
+	if err := st.DB().Create(&frequent).Error; err != nil {
+		t.Fatalf("create frequent custom food: %v", err)
+	}
+	recent := database.CustomFood{UserID: userID, Name: "Recent Mix", CaloriesPer100g: 90}
+	recent.ID = uuid.New()
+	recent.FamilyID = familyID
+	if err := st.DB().Create(&recent).Error; err != nil {
+		t.Fatalf("create recent custom food: %v", err)
+	}
+	logConfirmedCustomFoodUse(t, st, userID, familyID, frequent.ID, time.Now().Add(-60*24*time.Hour))
+	logConfirmedCustomFoodUse(t, st, userID, familyID, frequent.ID, time.Now().Add(-45*24*time.Hour))
+	logConfirmedCustomFoodUse(t, st, userID, familyID, recent.ID, time.Now().Add(-1*time.Hour))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Some new mix", WeightGrams: 200, Confidence: 0.6}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.SelectCalls) != 1 || len(fake.SelectCalls[0][0].Candidates) != 2 {
+		t.Fatalf("expected both custom foods offered as candidates, got %+v", fake.SelectCalls)
+	}
+	candidates := fake.SelectCalls[0][0].Candidates
+	if candidates[0].CustomFoodID == nil || *candidates[0].CustomFoodID != frequent.ID {
+		t.Errorf("expected the twice-used food ranked first despite being older, got %+v", candidates)
+	}
+}
+
+// A branded item with Open Food Facts candidates still also gets
+// frequency/recency-ranked custom-food candidates alongside them.
+func TestCreateMeal_RankedCustomFoodAdditiveWithOFFCandidates(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	offIdx := buildOFFIndex(t, offFood("8594001222227", "Bílý jogurt", "Olma", 65))
+
+	custom := database.CustomFood{UserID: userID, Name: "My Own Yogurt Blend", CaloriesPer100g: 80}
+	custom.ID = uuid.New()
+	custom.FamilyID = familyID
+	if err := st.DB().Create(&custom).Error; err != nil {
+		t.Fatalf("create custom food: %v", err)
+	}
+	logConfirmedCustomFoodUse(t, st, userID, familyID, custom.ID, time.Now().Add(-10*24*time.Hour))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Bílý jogurt", Brand: "Olma", WeightGrams: 150, Confidence: 0.9}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second).WithOFF(offIdx)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.SelectCalls) != 1 || len(fake.SelectCalls[0][0].Candidates) != 2 {
+		t.Fatalf("expected both the OFF candidate and the ranked custom food offered, got %+v", fake.SelectCalls)
+	}
+	var sawOFF, sawCustom bool
+	for _, c := range fake.SelectCalls[0][0].Candidates {
+		if c.OffCode != nil {
+			sawOFF = true
+		}
+		if c.CustomFoodID != nil && *c.CustomFoodID == custom.ID {
+			sawCustom = true
+		}
+	}
+	if !sawOFF || !sawCustom {
+		t.Errorf("expected both OFF and custom-food candidates present, got %+v", fake.SelectCalls[0][0].Candidates)
+	}
+}

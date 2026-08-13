@@ -98,6 +98,62 @@ func TestClarifyMeal_AnswerResolvesToReviewCarriesNoImage(t *testing.T) {
 	// guarantee that no photo bytes can be sent on a clarify round.
 }
 
+// An item's persisted estimate (set by the original photo-based Recognize
+// call) is fed to Clarify as context and, when the round concludes with
+// still no candidate match, used as the item's fallback macros — even
+// though Clarify's own response (text-only, no photo access) does not
+// reproduce a fresh estimate itself.
+func TestClarifyMeal_EstimatePersistsThroughClarificationRound(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createPendingClarificationMeal(t, st, userID, familyID)
+
+	// Simulate the original Recognize call having already persisted an
+	// estimate on the pending item, the way unresolvedItemsFrom does.
+	if err := st.DB().Model(&database.FoodItem{}).Where("meal_id = ?", meal.ID).Updates(map[string]any{
+		"has_estimate": true, "estimated_calories_per100g": 90, "estimated_protein_per100g": 3,
+	}).Error; err != nil {
+		t.Fatalf("seed estimate: %v", err)
+	}
+
+	fake := &vision.Fake{
+		// Deliberately carries no estimated_profile of its own — Clarify is
+		// text-only and the fake mirrors that by not fabricating one.
+		ClarifyResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Tomato sauce", Preparation: "simmered", WeightGrams: 30, Confidence: 0.8}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.ClarifyMeal(w, withClaims(clarifyRequest(meal.ID.String(), []string{"Tomato-based"}), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if len(fake.ClarifyCalls) != 1 || len(fake.ClarifyCalls[0].PriorItems) != 1 {
+		t.Fatalf("expected one Clarify call with one prior item, got %+v", fake.ClarifyCalls)
+	}
+	priorEstimate := fake.ClarifyCalls[0].PriorItems[0].EstimatedProfile
+	if priorEstimate == nil || priorEstimate.CaloriesPer100g != 90 {
+		t.Fatalf("expected the persisted estimate replayed to Clarify as context, got %+v", priorEstimate)
+	}
+
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got.Items) != 1 {
+		t.Fatalf("expected one item, got %+v", got.Items)
+	}
+	item := got.Items[0]
+	if item.MacroSource != database.MacroSourceEstimated {
+		t.Fatalf("expected the item to fall back to its persisted estimate after clarification, got %s", item.MacroSource)
+	}
+	// 90 kcal/100g * 0.3 (30g) = 27
+	if item.Calories < 26.9 || item.Calories > 27.1 {
+		t.Errorf("expected calories ~27 from the carried-forward estimate, got %v", item.Calories)
+	}
+}
+
 // Regression (design.md Risks / tasks.md 4.4, 6.5): the clarification-round
 // reconstruction in food_clarify.go previously rebuilt vision.Item from the
 // stored FoodItem without carrying Brand forward, silently downgrading a

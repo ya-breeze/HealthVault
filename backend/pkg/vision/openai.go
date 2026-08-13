@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ya-breeze/healthvault/pkg/database"
 )
 
 const openAIChatCompletionsURL = "https://api.openai.com/v1/chat/completions"
@@ -19,8 +21,16 @@ const openAIChatCompletionsURL = "https://api.openai.com/v1/chat/completions"
 // schema, so they share a prompt.
 const recognizeSystemPrompt = `You are a nutrition assistant identifying foods in a photo of a meal.
 
-For each distinct food item, estimate its name, preparation, state, brand,
-weight in grams, and your confidence (0-1).
+Default to naming what you see as a single whole dish (e.g. "Mexican
+vegetable mix", "chicken curry", "mixed salad") rather than breaking it into
+its individual ingredients — a homogeneous composite dish is one item even
+when you know it contains several ingredients. Only return multiple items
+when the photo shows clearly separate components: distinct piles on a plate,
+or separate foods placed next to each other (e.g. a portion of rice, a piece
+of grilled protein, and a side salad plated apart).
+
+For each item, estimate its name, preparation, state, brand, weight in
+grams, and your confidence (0-1).
 
 preparation must be one of: raw, boiled, steamed, roasted, baked, grilled,
 fried, breaded_fried, braised, unknown.
@@ -31,6 +41,13 @@ brand is the manufacturer or product brand name, only when it is legibly
 printed on packaging visible in the photo (e.g. a yogurt cup or cereal box
 label) — leave it empty for unpackaged or home-cooked food, or when no brand
 text is actually readable. Do not guess a brand from appearance alone.
+
+Also estimate each item's own per-100g nutrition (calories, protein, carbs,
+fat, sugar, sodium, dietary fiber) as estimated_profile — your best guess
+from the photo, even for an item you expect will be matched to a known food
+or product afterward, since this is only used as a fallback if no match is
+found later. Set estimated_profile to null only if you genuinely cannot make
+any reasonable estimate for that item.
 
 If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
@@ -104,6 +121,29 @@ type chatCompletionResponse struct {
 	} `json:"error"`
 }
 
+// estimatedProfileSchema is the per-100g macro estimate attached to each
+// recognized item. Nullable (type includes "null") rather than omittable —
+// OpenAI's strict structured-output mode requires every property to be
+// listed in "required", so nullability is how an item can still legitimately
+// carry no usable estimate.
+var estimatedProfileSchema = map[string]any{
+	"type": []string{"object", "null"},
+	"properties": map[string]any{
+		"calories_per_100g":      map[string]any{"type": "number"},
+		"protein_per_100g":       map[string]any{"type": "number"},
+		"carbs_per_100g":         map[string]any{"type": "number"},
+		"fat_per_100g":           map[string]any{"type": "number"},
+		"sugar_per_100g":         map[string]any{"type": "number"},
+		"sodium_per_100g":        map[string]any{"type": "number"},
+		"dietary_fiber_per_100g": map[string]any{"type": "number"},
+	},
+	"required": []string{
+		"calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g",
+		"sugar_per_100g", "sodium_per_100g", "dietary_fiber_per_100g",
+	},
+	"additionalProperties": false,
+}
+
 var recognizeJSONSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -112,14 +152,17 @@ var recognizeJSONSchema = map[string]any{
 			"items": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name":         map[string]any{"type": "string"},
-					"preparation":  map[string]any{"type": "string", "enum": preparationEnum},
-					"state":        map[string]any{"type": "string", "enum": stateEnum},
-					"brand":        map[string]any{"type": "string"},
-					"weight_grams": map[string]any{"type": "number"},
-					"confidence":   map[string]any{"type": "number"},
+					"name":              map[string]any{"type": "string"},
+					"preparation":       map[string]any{"type": "string", "enum": preparationEnum},
+					"state":             map[string]any{"type": "string", "enum": stateEnum},
+					"brand":             map[string]any{"type": "string"},
+					"weight_grams":      map[string]any{"type": "number"},
+					"confidence":        map[string]any{"type": "number"},
+					"estimated_profile": estimatedProfileSchema,
 				},
-				"required":             []string{"name", "preparation", "state", "brand", "weight_grams", "confidence"},
+				"required": []string{
+					"name", "preparation", "state", "brand", "weight_grams", "confidence", "estimated_profile",
+				},
 				"additionalProperties": false,
 			},
 		},
@@ -138,18 +181,47 @@ var preparationEnum = []string{
 }
 var stateEnum = []string{"raw", "cooked", "unknown"}
 
+type recognizeSchemaEstimatedProfile struct {
+	CaloriesPer100g     float64 `json:"calories_per_100g"`
+	ProteinPer100g      float64 `json:"protein_per_100g"`
+	CarbsPer100g        float64 `json:"carbs_per_100g"`
+	FatPer100g          float64 `json:"fat_per_100g"`
+	SugarPer100g        float64 `json:"sugar_per_100g"`
+	SodiumPer100g       float64 `json:"sodium_per_100g"`
+	DietaryFiberPer100g float64 `json:"dietary_fiber_per_100g"`
+}
+
 type recognizeSchemaItem struct {
-	Name        string  `json:"name"`
-	Preparation string  `json:"preparation"`
-	State       string  `json:"state"`
-	Brand       string  `json:"brand"`
-	WeightGrams float64 `json:"weight_grams"`
-	Confidence  float64 `json:"confidence"`
+	Name             string                           `json:"name"`
+	Preparation      string                           `json:"preparation"`
+	State            string                           `json:"state"`
+	Brand            string                           `json:"brand"`
+	WeightGrams      float64                          `json:"weight_grams"`
+	Confidence       float64                          `json:"confidence"`
+	EstimatedProfile *recognizeSchemaEstimatedProfile `json:"estimated_profile"`
 }
 
 type recognizeSchemaResponse struct {
 	Items                  []recognizeSchemaItem `json:"items"`
 	ClarificationQuestions []string              `json:"clarification_questions"`
+}
+
+// toEstimatedProfile converts the schema's nullable estimated-profile shape
+// to the shared database.NutrientProfile type, or nil when the model
+// returned no usable estimate for that item.
+func toEstimatedProfile(p *recognizeSchemaEstimatedProfile) *database.NutrientProfile {
+	if p == nil {
+		return nil
+	}
+	return &database.NutrientProfile{
+		CaloriesPer100g:     p.CaloriesPer100g,
+		ProteinPer100g:      p.ProteinPer100g,
+		CarbsPer100g:        p.CarbsPer100g,
+		FatPer100g:          p.FatPer100g,
+		SugarPer100g:        p.SugarPer100g,
+		SodiumPer100g:       p.SodiumPer100g,
+		DietaryFiberPer100g: p.DietaryFiberPer100g,
+	}
 }
 
 // unknownToEmpty maps the model's explicit "unknown" enum value to "", the
@@ -227,12 +299,13 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration) (*Re
 	items := make([]Item, len(schemaResp.Items))
 	for i, it := range schemaResp.Items {
 		items[i] = Item{
-			Name:        it.Name,
-			Preparation: unknownToEmpty(it.Preparation),
-			State:       unknownToEmpty(it.State),
-			Brand:       strings.TrimSpace(it.Brand),
-			WeightGrams: it.WeightGrams,
-			Confidence:  it.Confidence,
+			Name:             it.Name,
+			Preparation:      unknownToEmpty(it.Preparation),
+			State:            unknownToEmpty(it.State),
+			Brand:            strings.TrimSpace(it.Brand),
+			WeightGrams:      it.WeightGrams,
+			Confidence:       it.Confidence,
+			EstimatedProfile: toEstimatedProfile(it.EstimatedProfile),
 		}
 	}
 
@@ -390,6 +463,14 @@ identity, not just against the other candidates: a shortlist can contain
 several different products from the same brand (e.g. different yogurt
 flavors or sizes), and only item_name/item_brand tell you which one was
 actually photographed.
+
+A candidate with a custom_food_id is one of the user's own previously saved
+foods, reflecting real-world macros they entered themselves (e.g. copied from
+a package label) rather than a generic database entry. When such a candidate
+is a reasonable match for the recognized item, prefer it over a generic
+Open Food Facts or USDA candidate, even if the generic candidate's name
+matches slightly more closely — the user's own saved value is more likely to
+be accurate for what they actually eat.
 
 For each item, choose the candidate_index of the single best-matching entry
 from its own candidates list, or -1 if none of them are a good match. Do not

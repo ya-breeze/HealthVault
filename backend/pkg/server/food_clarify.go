@@ -135,6 +135,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 		priorItems[i] = vision.Item{
 			Name: it.Name, Preparation: it.Preparation, State: it.State, Brand: it.Brand,
 			WeightGrams: it.WeightGrams, Confidence: it.Confidence,
+			EstimatedProfile: estimatedProfilePtr(it),
 		}
 	}
 
@@ -142,6 +143,9 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	recognized, err := h.vision.Clarify(ctx, priorItems, history)
+	if err == nil {
+		carryForwardEstimates(priorItems, recognized.Items)
+	}
 	if err != nil {
 		applied, failErr := h.failMeal(meal, lease)
 		if failErr != nil {
@@ -163,4 +167,41 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	}
 	result, reloadErr := h.reloadIfSuperseded(meal, applied)
 	writeReloadedMeal(w, result, reloadErr, http.StatusOK)
+}
+
+// carryForwardEstimates fills in a nil EstimatedProfile on a Clarify
+// response's items from the corresponding prior item's persisted estimate,
+// positionally. Clarify is text-only and cannot regenerate a photo-grounded
+// estimate — it is fed the prior estimate as context (see estimatedProfilePtr
+// above) but is not guaranteed to echo it back in its response, and
+// processRecognition treats a nil EstimatedProfile as "no estimate" when
+// persisting the resulting FoodItem rows. Only applied when the item count
+// is unchanged: a round that added, removed, or reordered items has no
+// reliable position to carry an estimate forward to.
+func carryForwardEstimates(priorItems, recognizedItems []vision.Item) {
+	if len(priorItems) != len(recognizedItems) {
+		return
+	}
+	for i := range recognizedItems {
+		if recognizedItems[i].EstimatedProfile == nil {
+			recognizedItems[i].EstimatedProfile = priorItems[i].EstimatedProfile
+		}
+	}
+}
+
+// estimatedProfilePtr returns the item's persisted estimate as a pointer, or nil
+// if none is present or usable. The clarify round's follow-up call is
+// text-only and cannot regenerate a photo-grounded estimate, so the original
+// one — persisted on the row when the item was first created, see
+// database.FoodItem.SetEstimatedProfile — is fed back to the model as
+// context instead, the same way Name/Preparation/State/Brand/WeightGrams
+// already are, so it can carry forward into whatever items the clarify
+// response produces. See
+// openspec/changes/composite-food-recognition/design.md decision 4.
+func estimatedProfilePtr(it database.FoodItem) *database.NutrientProfile {
+	p, ok := it.EstimatedProfile()
+	if !ok {
+		return nil
+	}
+	return &p
 }
