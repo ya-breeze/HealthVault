@@ -144,4 +144,10 @@ type Client interface {
 	// dominant cost for no additional information.
 	Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn) (*RecognizeResult, error)
 	Select(ctx context.Context, itemCandidates []ItemCandidates) (*SelectResult, error)
+	// Translate maps a free-text food-search query, in any language or
+	// regional spelling, to the term most likely to appear in USDA
+	// FoodData Central's American-English generic-food naming (e.g.
+	// "porridge" -> "oatmeal", "овсянка" -> "oatmeal"). Text-only, no
+	// image. See openspec/changes/multilingual-food-search/design.md.
+	Translate(ctx context.Context, query string) (string, error)
 }

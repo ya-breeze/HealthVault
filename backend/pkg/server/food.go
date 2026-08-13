@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/off"
@@ -89,11 +92,21 @@ type FoodSearchResponse struct {
 	// USDAUnavailable is set when no USDA import has run yet, so an empty
 	// Results is distinguishable from "nothing matched".
 	USDAUnavailable bool `json:"usda_unavailable,omitempty"`
+	// TranslatedQuery is the USDA-vocabulary term actually used to search,
+	// when it differs from the literal query the caller typed — see
+	// openspec/changes/multilingual-food-search. Omitted when the search
+	// resolved via an exact custom-food match, translation was never
+	// attempted (no USDA index), it was attempted but failed or timed out,
+	// or the translated term is the same as what the caller typed.
+	TranslatedQuery string `json:"translated_query,omitempty"`
 }
 
-// Search handles GET /api/food/search?q=&preparation=&state=. A custom food
-// whose name exactly matches (case-insensitive) wins outright and is returned
-// alone; otherwise the query falls through to the USDA candidate shortlist.
+// Search handles GET /api/food/search?q=&preparation=&state=&refresh=. A
+// custom food whose name exactly matches (case-insensitive) wins outright
+// and is returned alone; otherwise the query is translated to USDA
+// vocabulary (via a per-user cache, refreshed on request) before falling
+// through to the USDA candidate shortlist. See
+// openspec/changes/multilingual-food-search/design.md.
 func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	claims := ClaimsFromCtx(r)
 	if claims == nil {
@@ -133,7 +146,39 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	term := usda.QueryFor(name, r.URL.Query().Get("preparation"), r.URL.Query().Get("state"))
+	normalized := strings.ToLower(name)
+	refresh := r.URL.Query().Get("refresh") == "true"
+	searchName := name
+	var translatedQuery string
+
+	if !refresh {
+		var cached database.FoodSearchTranslation
+		cacheErr := h.storage.DB().
+			Where("user_id = ? AND original_query = ?", claims.UserID, normalized).
+			First(&cached).Error
+		switch {
+		case cacheErr == nil:
+			searchName = cached.TranslatedQuery
+			translatedQuery = cached.TranslatedQuery
+		case errors.Is(cacheErr, gorm.ErrRecordNotFound):
+			if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
+				searchName = t
+				translatedQuery = t
+			}
+		default:
+			http.Error(w, "search error", http.StatusInternalServerError)
+			return
+		}
+	} else if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
+		searchName = t
+		translatedQuery = t
+	}
+
+	if translatedQuery != "" && strings.EqualFold(strings.TrimSpace(translatedQuery), normalized) {
+		translatedQuery = ""
+	}
+
+	term := usda.QueryFor(searchName, r.URL.Query().Get("preparation"), r.URL.Query().Get("state"))
 	foods, err := h.usda.Search(term, usda.DefaultCandidates)
 	if err != nil {
 		if errors.Is(err, usda.ErrNoDatabase) {
@@ -154,7 +199,44 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 			Profile: f.Profile,
 		})
 	}
-	writeJSON(w, FoodSearchResponse{Results: results})
+	writeJSON(w, FoodSearchResponse{Results: results, TranslatedQuery: translatedQuery})
+}
+
+// translateAndCache calls the vision client's Translate within the shared
+// vision timeout and, on success, upserts the per-user cache row for
+// (userID, normalized). On any failure — unconfigured, an API error, or a
+// timeout — it logs and returns ok=false: the caller falls back to
+// searching with the literal query, and nothing is written to the cache, so
+// a failed refresh leaves any existing cached row exactly as it was.
+func (h *foodHandlers) translateAndCache(
+	ctx context.Context, userID, familyID uuid.UUID, normalized, original string,
+) (translated string, ok bool) {
+	tctx, cancel := context.WithTimeout(ctx, h.visionTimeout)
+	defer cancel()
+
+	result, err := h.vision.Translate(tctx, original)
+	if err != nil {
+		slog.Warn("food search translation failed, falling back to literal query",
+			"err", err, "user_id", userID)
+		return "", false
+	}
+	result = strings.TrimSpace(result)
+	if result == "" {
+		slog.Warn("food search translation returned an empty result, falling back to literal query",
+			"user_id", userID)
+		return "", false
+	}
+
+	row := database.FoodSearchTranslation{UserID: userID, OriginalQuery: normalized, TranslatedQuery: result}
+	row.ID = uuid.New()
+	row.FamilyID = familyID
+	if err := h.storage.DB().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "original_query"}},
+		DoUpdates: clause.AssignmentColumns([]string{"translated_query", "updated_at"}),
+	}).Create(&row).Error; err != nil {
+		slog.Warn("failed to cache food search translation", "err", err, "user_id", userID)
+	}
+	return result, true
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

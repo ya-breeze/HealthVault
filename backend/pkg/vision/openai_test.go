@@ -296,3 +296,68 @@ func TestOpenAIClient_ContextCancellationReturnsError(t *testing.T) {
 		t.Fatal("expected an error for a cancelled context")
 	}
 }
+
+func TestOpenAIClient_Translate_SendsQueryAndReturnsTerm(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
+		w.Write([]byte(chatResponse(t,                //nolint:errcheck
+			`{"translated_query":"oatmeal"}`)))
+	})
+
+	result, err := c.Translate(context.Background(), "овсянка")
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	if result != "oatmeal" {
+		t.Errorf("expected \"oatmeal\", got %q", result)
+	}
+
+	messages, _ := capturedBody["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %+v", messages)
+	}
+	userMsg, _ := messages[1].(map[string]any)
+	content, _ := userMsg["content"].(string)
+	if content != "овсянка" {
+		t.Errorf("expected the raw query as the user message, got %q", content)
+	}
+	if strings.Contains(string(mustMarshal(t, capturedBody)), "image_url") {
+		t.Error("expected no image_url content in a Translate request")
+	}
+	if store, _ := capturedBody["store"].(bool); store {
+		t.Error("expected store=false")
+	}
+}
+
+func TestOpenAIClient_Translate_APIErrorIsReturned(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":{"message":"invalid api key"}}`)) //nolint:errcheck
+	})
+
+	_, err := c.Translate(context.Background(), "porridge")
+	if err == nil {
+		t.Fatal("expected an error for a 401 response")
+	}
+}
+
+func TestOpenAIClient_Translate_MalformedResponseIsReturned(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, `not valid json`))) //nolint:errcheck
+	})
+
+	_, err := c.Translate(context.Background(), "porridge")
+	if err == nil {
+		t.Fatal("expected an error for malformed structured content")
+	}
+}
+
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return b
+}

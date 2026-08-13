@@ -150,6 +150,7 @@ export interface FoodSearchResult {
 export interface FoodSearchResponse {
   results: FoodSearchResult[];
   usda_unavailable?: boolean;
+  translated_query?: string;
 }
 
 export interface CustomFood {
@@ -371,10 +372,11 @@ export const api = {
     return apiFetchForm('/import/libra', form);
   },
 
-  searchFood: (q: string, preparation?: string, state?: string) => {
+  searchFood: (q: string, preparation?: string, state?: string, refresh?: boolean) => {
     const params = new URLSearchParams({ q });
     if (preparation) params.set('preparation', preparation);
     if (state) params.set('state', state);
+    if (refresh) params.set('refresh', 'true');
     return apiFetch<FoodSearchResponse>(`/food/search?${params}`);
   },
 

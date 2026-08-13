@@ -17,6 +17,8 @@ type Fake struct {
 	ClarifyErr            error
 	SelectResult          *SelectResult
 	SelectErr             error
+	TranslateResult       string
+	TranslateErr          error
 
 	// The *Calls fields record each operation's arguments
 	// arguments, in order, so a test can assert on what was actually sent
@@ -26,6 +28,7 @@ type Fake struct {
 	EstimateWeightsCalls []EstimateWeightsCall
 	ClarifyCalls         []ClarifyCall
 	SelectCalls          [][]ItemCandidates
+	TranslateCalls       []string
 }
 
 type EstimateWeightsCall struct {
@@ -92,6 +95,14 @@ func (f *Fake) Select(_ context.Context, itemCandidates []ItemCandidates) (*Sele
 		return f.SelectResult, nil
 	}
 	return &SelectResult{}, nil
+}
+
+func (f *Fake) Translate(_ context.Context, query string) (string, error) {
+	f.TranslateCalls = append(f.TranslateCalls, query)
+	if f.TranslateErr != nil {
+		return "", f.TranslateErr
+	}
+	return f.TranslateResult, nil
 }
 
 var _ Client = (*Fake)(nil)

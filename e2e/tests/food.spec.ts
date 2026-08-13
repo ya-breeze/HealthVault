@@ -805,6 +805,74 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(page.getByText('Keep Me')).toBeVisible();
     await expect(weightInputs.first()).toHaveValue('175');
   });
+
+  // multilingual-food-search (tasks.md 6.1): a translated search shows what
+  // was actually searched for, plus a control to redo the translation.
+  test('a translated search shows the translated term and a refresh control', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/search**', route =>
+      route.fulfill({
+        json: {
+          results: [{ source: 'usda', fdc_id: 1, name: 'Oatmeal, raw', profile: { calories_per_100g: 389, protein_per_100g: 17, carbs_per_100g: 66, fat_per_100g: 7, sugar_per_100g: 0, sodium_per_100g: 0, dietary_fiber_per_100g: 10 } }],
+          translated_query: 'oatmeal',
+        },
+      })
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Change match' }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+
+    await expect(page.getByText('Searched as:')).toBeVisible();
+    // Scoped to <strong> — the result list below also contains "Oatmeal,
+    // raw", and getByText's default substring match is case-insensitive.
+    await expect(page.locator('strong', { hasText: 'oatmeal' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Refresh translation' })).toBeVisible();
+  });
+
+  // multilingual-food-search (tasks.md 6.2): a refresh that comes back
+  // without a translation (the server's fail-open path) must not blank out
+  // the last known-good "Searched as" text — it should keep showing it
+  // alongside an indication that the refresh itself didn't produce a new one.
+  test('a failed refresh keeps the previous translated term visible with an error indication', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+    let refreshed = false;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/search**', route => {
+      const isRefresh = route.request().url().includes('refresh=true');
+      if (isRefresh) refreshed = true;
+      return route.fulfill({
+        json: {
+          results: [{ source: 'usda', fdc_id: 1, name: 'Oatmeal, raw', profile: { calories_per_100g: 389, protein_per_100g: 17, carbs_per_100g: 66, fat_per_100g: 7, sugar_per_100g: 0, sodium_per_100g: 0, dietary_fiber_per_100g: 10 } }],
+          // The first (non-refresh) call reports a translation; the refresh
+          // call mimics the server's fail-open path and omits it.
+          ...(isRefresh ? {} : { translated_query: 'oatmeal' }),
+        },
+      });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Change match' }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+    await expect(page.getByText('Searched as:')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Refresh translation' }).click();
+
+    expect(refreshed).toBe(true);
+    // Still showing the previous term, not blanked out.
+    await expect(page.getByText('Searched as:')).toBeVisible();
+    await expect(page.locator('strong', { hasText: 'oatmeal' })).toBeVisible();
+    await expect(page.getByText(/Could not refresh the translation/)).toBeVisible();
+  });
 });
 
 // A minimal mocked meal shape ReviewClient/ReanalyzeControl need to render
