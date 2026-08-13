@@ -98,12 +98,20 @@ failed translation, not a successful-but-unpersisted one).
   previously cached mapping for that query unchanged — an unpersisted translation is
   never presented as if it had been applied and cached
 
-#### Scenario: A cross-site request never triggers translation or a cache write
+#### Scenario: A non-same-origin request never triggers translation or a cache write
 - **WHEN** `GET /api/food/search` is a cache miss, or is called with `refresh=true`,
-  and the request's `Sec-Fetch-Site` header is `cross-site`
+  and the request carries a `Sec-Fetch-Site` header whose value is not `same-origin`
+  (including `same-site`, `cross-site`, and `none`)
 - **THEN** the system SHALL skip the translation call and any cache write for that
   request, and SHALL search with the literal query instead, the same as when
   translation is unavailable
+
+#### Scenario: A request with no Sec-Fetch-Site header is treated as trusted
+- **WHEN** `GET /api/food/search` is a cache miss, or is called with `refresh=true`,
+  and the request carries no `Sec-Fetch-Site` header at all
+- **THEN** the system SHALL treat the request as same-origin and proceed with
+  translation and caching as normal, since all modern browsers send this header on
+  every request and its absence indicates a non-browser caller, not an attacker
 
 ### Requirement: Response Surfaces the Translated Query
 The system SHALL include the translated term used for the USDA search in
