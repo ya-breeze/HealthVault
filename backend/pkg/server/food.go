@@ -120,25 +120,27 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var custom database.CustomFood
-	err := h.storage.DB().
-		Where("user_id = ? AND LOWER(name) = LOWER(?)", claims.UserID, name).
-		First(&custom).Error
-	switch {
-	case err == nil:
-		id := custom.ID
-		writeJSON(w, FoodSearchResponse{Results: []FoodSearchResult{{
-			Source:       "custom",
-			CustomFoodID: &id,
-			Name:         custom.Name,
-			Profile:      custom.Profile(),
-		}}})
-		return
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		// No exact custom match; fall through to USDA search.
-	default:
+	// Compared with strings.EqualFold rather than a SQL LOWER() predicate:
+	// SQLite's built-in lower() only case-folds ASCII, so a stored non-ASCII
+	// name (e.g. Cyrillic "Овсянка") would never match a same-name,
+	// different-case query and would incorrectly fall through to
+	// translation. Found in PR review (Codex).
+	var customFoods []database.CustomFood
+	if err := h.storage.DB().Where("user_id = ?", claims.UserID).Find(&customFoods).Error; err != nil {
 		http.Error(w, "search error", http.StatusInternalServerError)
 		return
+	}
+	for _, custom := range customFoods {
+		if strings.EqualFold(custom.Name, name) {
+			id := custom.ID
+			writeJSON(w, FoodSearchResponse{Results: []FoodSearchResult{{
+				Source:       "custom",
+				CustomFoodID: &id,
+				Name:         custom.Name,
+				Profile:      custom.Profile(),
+			}}})
+			return
+		}
 	}
 
 	if h.usda == nil {
@@ -148,7 +150,7 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	normalized := strings.ToLower(name)
 	refresh := r.URL.Query().Get("refresh") == "true"
-	crossSite := isCrossSiteRequest(r)
+	sameOrigin := isSameOriginRequest(r)
 	searchName := name
 	var translatedQuery string
 
@@ -162,7 +164,7 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 			searchName = cached.TranslatedQuery
 			translatedQuery = cached.TranslatedQuery
 		case errors.Is(cacheErr, gorm.ErrRecordNotFound):
-			if !crossSite {
+			if sameOrigin {
 				if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
 					searchName = t
 					translatedQuery = t
@@ -175,7 +177,7 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 		if translatedQuery != "" && strings.EqualFold(strings.TrimSpace(translatedQuery), normalized) {
 			translatedQuery = ""
 		}
-	} else if !crossSite {
+	} else if sameOrigin {
 		if t, ok := h.translateAndCache(r.Context(), claims.UserID, FamilyIDFromCtx(r), normalized, name); ok {
 			searchName = t
 			translatedQuery = t
@@ -249,17 +251,25 @@ func (h *foodHandlers) translateAndCache(
 	return result, true
 }
 
-// isCrossSiteRequest reports whether the browser-set Sec-Fetch-Site header
+// isSameOriginRequest reports whether the browser-set Sec-Fetch-Site header
 // (sent by all modern browsers and not spoofable by page-level JavaScript,
-// unlike Origin/Referer) indicates this request originated from a different
-// site. Used to guard the only side effects a GET carries in this handler —
-// a translation call and its cache write — against being triggered by a
-// cross-site page riding the caller's SameSite=Lax session cookie. A missing
-// header (older browsers, non-browser API clients) is treated as same-site:
-// this is a targeted mitigation for this endpoint's specific cost/write
-// surface, not a general CSRF framework for the API.
-func isCrossSiteRequest(r *http.Request) bool {
-	return r.Header.Get("Sec-Fetch-Site") == "cross-site"
+// unlike Origin/Referer) indicates this request originated from this exact
+// origin. Used to guard the only side effects a GET carries in this handler —
+// a translation call and its cache write — against being triggered by a page
+// riding the caller's SameSite=Lax session cookie: HealthVault's cookies are
+// host-scoped, not port-scoped, and this host runs sibling apps on other
+// ports (see the truenas environment's port table), so `same-site` (a
+// different port or subdomain on the same host) is just as untrusted here as
+// `cross-site` — as is `none` (a direct navigation, which this endpoint is
+// never legitimately reached by). A missing header (older browsers,
+// non-browser API clients, this project's own backend tests) is treated as
+// same-origin: every modern browser sends this header today, so its absence
+// signals a non-browser caller, not the browser-driven attack this guards
+// against. This is a targeted mitigation for this endpoint's specific
+// cost/write surface, not a general CSRF framework for the API.
+func isSameOriginRequest(r *http.Request) bool {
+	v := r.Header.Get("Sec-Fetch-Site")
+	return v == "" || v == "same-origin"
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

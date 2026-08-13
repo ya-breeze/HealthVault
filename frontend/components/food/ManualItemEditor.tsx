@@ -38,6 +38,10 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
       if (seq === requestSeq.current) {
         setResults(res.results);
         setTranslatedQuery(res.translated_query ?? null);
+        if (selected) {
+          setSelected(null);
+          update({ fdc_id: undefined, custom_food_id: undefined });
+        }
       }
     } catch (err) {
       if (seq === requestSeq.current) {
@@ -58,6 +62,10 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
       const res = await api.searchFood(query, undefined, undefined, true);
       if (seq === requestSeq.current) {
         setResults(res.results);
+        if (selected) {
+          setSelected(null);
+          update({ fdc_id: undefined, custom_food_id: undefined });
+        }
         if (res.translated_query) {
           setTranslatedQuery(res.translated_query);
         } else {

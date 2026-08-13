@@ -873,6 +873,47 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(page.locator('strong', { hasText: 'oatmeal' })).toBeVisible();
     await expect(page.getByText(/Could not refresh the translation/)).toBeVisible();
   });
+
+  // multilingual-food-search (tasks.md 6.3): a successful refresh must
+  // replace a stale banner with the corrected term and show no error —
+  // distinct from the failed-refresh case above, whose response omits
+  // translated_query entirely. Backend coverage for the specific
+  // equals-the-input edge of "successful" lives in
+  // TestFoodSearch_RefreshEqualToInputStillReportsTranslatedQuery; this
+  // exercises the frontend's success path end to end.
+  test('a successful refresh replaces a stale banner with the corrected term and no error', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+    let refreshed = false;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/search**', route => {
+      const isRefresh = route.request().url().includes('refresh=true');
+      if (isRefresh) refreshed = true;
+      return route.fulfill({
+        json: {
+          results: [{ source: 'usda', fdc_id: 1, name: 'Oatmeal, raw', profile: { calories_per_100g: 389, protein_per_100g: 17, carbs_per_100g: 66, fat_per_100g: 7, sugar_per_100g: 0, sodium_per_100g: 0, dietary_fiber_per_100g: 10 } }],
+          // The stale (pre-refresh) mapping resolved to the wrong term; the
+          // refresh corrects it.
+          translated_query: isRefresh ? 'oatmeal' : 'porridge',
+        },
+      });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Change match' }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+    await expect(page.getByText('Searched as:')).toBeVisible();
+    await expect(page.locator('strong', { hasText: 'porridge' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Refresh translation' }).click();
+
+    expect(refreshed).toBe(true);
+    await expect(page.locator('strong', { hasText: 'oatmeal' })).toBeVisible();
+    await expect(page.getByText(/Could not refresh the translation/)).not.toBeVisible();
+  });
 });
 
 // A minimal mocked meal shape ReviewClient/ReanalyzeControl need to render

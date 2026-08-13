@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -721,5 +722,112 @@ func TestFoodSearch_RefreshEqualToInputStillReportsTranslatedQuery(t *testing.T)
 	if resp.TranslatedQuery != "chicken breast" {
 		t.Errorf("expected translated_query %q on a successful refresh even though it equals the input, got %q",
 			"chicken breast", resp.TranslatedQuery)
+	}
+}
+
+// Sec-Fetch-Site values other than "same-origin" — same-site, cross-site, and
+// none — must all skip translation and cache writes on both a cache miss and
+// refresh=true; only "same-origin" (or a missing header, exercised by every
+// other test in this file) is trusted. This widens the original guard, which
+// only rejected "cross-site": HealthVault runs sibling apps on other ports on
+// this host, so a "same-site" (same host, different port) request would
+// otherwise still carry the SameSite=Lax session cookie without ever proving
+// it's this app's own frontend.
+func TestFoodSearch_NonSameOriginRequestsSkipTranslation(t *testing.T) {
+	for _, secFetchSite := range []string{"same-site", "cross-site", "none"} {
+		t.Run(secFetchSite+"/cache-miss", func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, _ := seedFoodUser(t, st)
+
+			idx := buildUSDAIndex(t, usdaFood(1, "Chicken breast, cooked", 165))
+			fake := &vision.Fake{TranslateErr: fmt.Errorf("Translate must not be called for a %s request", secFetchSite)}
+			h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+			req := newSearchRequest(userID, "chicken+breast")
+			req.Header.Set("Sec-Fetch-Site", secFetchSite)
+			w := httptest.NewRecorder()
+			h.Search(w, req)
+
+			if len(fake.TranslateCalls) != 0 {
+				t.Fatalf("expected Translate not to be called for a %s request, got %d calls", secFetchSite, len(fake.TranslateCalls))
+			}
+			var count int64
+			st.DB().Model(&database.FoodSearchTranslation{}).Where("user_id = ?", userID).Count(&count)
+			if count != 0 {
+				t.Errorf("expected no cache row written for a %s request, found %d", secFetchSite, count)
+			}
+		})
+
+		t.Run(secFetchSite+"/refresh", func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, familyID := seedFoodUser(t, st)
+
+			row := database.FoodSearchTranslation{UserID: userID, OriginalQuery: "porridge", TranslatedQuery: "oatmeal"}
+			row.ID = uuid.New()
+			row.FamilyID = familyID
+			if err := st.DB().Create(&row).Error; err != nil {
+				t.Fatalf("seed cache row: %v", err)
+			}
+
+			idx := buildUSDAIndex(t, usdaFood(1, "Oatmeal, raw", 389))
+			fake := &vision.Fake{TranslateErr: fmt.Errorf("Translate must not be called for a %s refresh", secFetchSite)}
+			h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+			req := newSearchRequestRefresh(userID, "porridge")
+			req.Header.Set("Sec-Fetch-Site", secFetchSite)
+			w := httptest.NewRecorder()
+			h.Search(w, req)
+
+			if len(fake.TranslateCalls) != 0 {
+				t.Fatalf("expected Translate not to be called for a %s refresh, got %d calls", secFetchSite, len(fake.TranslateCalls))
+			}
+			var unchanged database.FoodSearchTranslation
+			if err := st.DB().Where("user_id = ? AND original_query = ?", userID, "porridge").First(&unchanged).Error; err != nil {
+				t.Fatalf("expected the prior row to still exist: %v", err)
+			}
+			if unchanged.TranslatedQuery != "oatmeal" {
+				t.Errorf("expected the prior mapping left unchanged by a %s refresh, got %q", secFetchSite, unchanged.TranslatedQuery)
+			}
+		})
+	}
+}
+
+// A custom food's exact-match short-circuit must be Unicode-aware: SQLite's
+// built-in LOWER() only case-folds ASCII, so a naive SQL-side comparison
+// would miss a non-ASCII name typed in different case and incorrectly fall
+// through to translation (spending an LLM call and returning USDA results
+// instead of the user's own food).
+func TestFoodSearch_CustomFoodMatchIsUnicodeAware(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	custom := database.CustomFood{
+		UserID: userID, Name: "Овсянка",
+		CaloriesPer100g: 150, ProteinPer100g: 5, CarbsPer100g: 25, FatPer100g: 3,
+	}
+	custom.ID = uuid.New()
+	custom.FamilyID = familyID
+	if err := st.DB().Create(&custom).Error; err != nil {
+		t.Fatalf("create custom food: %v", err)
+	}
+
+	idx := buildUSDAIndex(t, usdaFood(1, "Oatmeal, raw", 389))
+	fake := &vision.Fake{TranslateErr: errors.New("Translate must not be called when a custom food matches")}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	// Same word as the stored name, uppercased — SQLite's ASCII-only LOWER()
+	// would fail to fold this, unlike strings.EqualFold.
+	h.Search(w, newSearchRequest(userID, url.QueryEscape("ОВСЯНКА")))
+
+	if len(fake.TranslateCalls) != 0 {
+		t.Fatalf("expected Translate not to be called for an exact custom-food match, got %d calls", len(fake.TranslateCalls))
+	}
+	resp := decodeSearchResponse(t, w)
+	if len(resp.Results) != 1 || resp.Results[0].Source != "custom" {
+		t.Fatalf("expected exactly one custom result, got %+v", resp.Results)
+	}
+	if resp.Results[0].CustomFoodID == nil || *resp.Results[0].CustomFoodID != custom.ID {
+		t.Errorf("expected match against %s, got %+v", custom.ID, resp.Results[0].CustomFoodID)
 	}
 }
