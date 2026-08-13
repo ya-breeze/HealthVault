@@ -47,5 +47,5 @@
 ## 9. Validation
 
 - [x] 9.1 Run backend unit tests (`make test` or equivalent) and confirm all pass.
-- [ ] 9.2 Deploy to the WIP/dogfood stack per the standard workflow and manually verify: a composite dish photo produces one item; a repeated (differently-worded) dish reuses a saved custom food's macros; an unmatched dish gets an `estimated` macro fallback shown distinctly in review; a weight edit on an estimated item rescales correctly; a correction can be saved as a reusable custom food and is picked up on a later photo.
-- [ ] 9.3 Run the existing Playwright E2E suite against the deployed stack and confirm no regressions; add/extend a spec if an existing gap is found for this behavior.
+- [x] 9.2 Deploy to the WIP/dogfood stack per the standard workflow and manually verify: a composite dish photo produces one item; a repeated (differently-worded) dish reuses a saved custom food's macros; an unmatched dish gets an `estimated` macro fallback shown distinctly in review; a weight edit on an estimated item rescales correctly; a correction can be saved as a reusable custom food and is picked up on a later photo.
+- [x] 9.3 Run the existing Playwright E2E suite against the deployed stack and confirm no regressions; add/extend a spec if an existing gap is found for this behavior.

@@ -1020,6 +1020,60 @@ test.describe('Open Food Facts source badge — mocked UI behavior (deterministi
   });
 });
 
+// macro_source=estimated (composite-food-recognition): a real occurrence
+// requires the vision model to actually leave an item unmatched with a
+// usable estimate, which is non-deterministic against a synthetic test
+// image (see the live-upload test above). Mocking the meal GET response
+// covers the review-UI treatment deterministically instead — the badge and
+// "Verify this estimate" label are purely a function of macro_source. The
+// resolution logic that produces macro_source=estimated in the first place
+// is covered at the unit level in backend/pkg/server/food_upload_test.go.
+test.describe('Estimated macro source badge — mocked UI behavior (deterministic)', () => {
+  test('an estimated item shows a distinct badge and a "Verify this estimate" prompt', async ({ page }) => {
+    await login(page);
+    const meal = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], macro_source: 'estimated', name: 'Mexican vegetable mix' }],
+    });
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: meal }) : route.continue()
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+
+    await expect(page.locator('span', { hasText: 'AI estimate' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Verify this estimate' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Change match' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Resolve this item' })).not.toBeVisible();
+  });
+
+  test('correcting an estimated item can save it as a reusable food', async ({ page }) => {
+    await login(page);
+    const meal = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], macro_source: 'estimated', name: 'Mexican vegetable mix' }],
+    });
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: meal }) : route.continue()
+    );
+    let patchBody: Record<string, unknown> | undefined;
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', route => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      patchBody = route.request().postDataJSON();
+      return route.fulfill({ json: meal });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Verify this estimate' }).click();
+    await page.getByRole('button', { name: 'Enter macros' }).click();
+    await expect(page.getByText('Save as a reusable food')).toBeVisible();
+    await page.getByText('Save as a reusable food').click();
+    await page.locator('label:has-text("Calories") input').fill('180');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await expect.poll(() => patchBody?.save_as_custom_food).toBe(true);
+    expect(patchBody?.manual).toBe(true);
+  });
+});
+
 test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', () => {
   // These mock the network response for POST .../reanalyze via
   // page.route(), so they exercise ReanalyzeControl's own success/failure
