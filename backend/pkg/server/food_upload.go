@@ -381,10 +381,12 @@ type customFoodUsage struct {
 // confirmed only monthly still outranks a food used once recently — see
 // design.md decision 2. Recency contributes a bounded (0,1] term that decays
 // toward 0 as the last use gets older, never able to outweigh even a single
-// additional use.
-func usageScore(u customFoodUsage) float64 {
+// additional use. now is passed in rather than read internally via
+// time.Since so that every score in a single ranking pass is computed
+// against the same instant — see rankedCustomFoodCandidates.
+func usageScore(u customFoodUsage, now time.Time) float64 {
 	const frequencyWeight = 10.0
-	daysSinceUse := time.Since(u.LastUsed).Hours() / 24
+	daysSinceUse := now.Sub(u.LastUsed).Hours() / 24
 	if daysSinceUse < 0 {
 		daysSinceUse = 0
 	}
@@ -401,11 +403,18 @@ func usageScore(u customFoodUsage) float64 {
 // query and why the join key is meal_id, not user_id.
 func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Candidate {
 	var rows []customFoodUsageRow
+	// .Table() bypasses GORM's model-level deleted_at scope (that scoping is
+	// attached to the FoodItem/FoodMeal models, not to a raw table query), so
+	// the deleted_at IS NULL predicates below are explicit: without them, a
+	// match the user removed via DeleteMealItem — or an entire meal removed
+	// via the generic DELETE /api/data/food_meal endpoint — would still count
+	// toward and keep reinforcing that food's future ranking.
 	err := h.storage.DB().
 		Table("food_items").
 		Select("food_items.custom_food_id AS custom_food_id, food_meals.logged_at AS logged_at").
 		Joins("JOIN food_meals ON food_items.meal_id = food_meals.id").
-		Where("food_items.user_id = ? AND food_items.custom_food_id IS NOT NULL AND food_meals.status = ?",
+		Where("food_items.user_id = ? AND food_items.custom_food_id IS NOT NULL AND food_meals.status = ? "+
+			"AND food_items.deleted_at IS NULL AND food_meals.deleted_at IS NULL",
 			userID, database.MealStatusConfirmed).
 		Scan(&rows).Error
 	if err != nil || len(rows) == 0 {
@@ -437,13 +446,39 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 	// usageScore (equal count, near-equal recency) get a consistent relative
 	// order across repeated, otherwise-identical requests, so which one gets
 	// cut by rankedCustomFoodLimit below can't flip from one upload to the next.
-	sort.Slice(usage, func(i, j int) bool {
-		si, sj := usageScore(usage[i]), usageScore(usage[j])
-		if si != sj {
-			return si > sj
+	//
+	// Scores are precomputed once against a single `now` rather than calling
+	// usageScore(u) — which reads time.Since internally — from inside the
+	// comparator: sort's contract requires less(i,j) and less(j,i) to be
+	// consistent for the lifetime of the sort, but two calls to time.Since
+	// made at different instants can each return a (however slightly)
+	// different score for the same tied pair, so both could come back true
+	// depending on evaluation order — violating that contract and silently
+	// bypassing the CustomFoodID tie-breaker below. Sorted by index, not by
+	// usage directly, since sort.Slice only permutes the slice it's given —
+	// sorting usage directly while indexing into a same-length scores slice
+	// from the comparator would desync the two after the first swap.
+	now := time.Now()
+	scores := make([]float64, len(usage))
+	for i, u := range usage {
+		scores[i] = usageScore(u, now)
+	}
+	order := make([]int, len(usage))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(i, j int) bool {
+		a, b := order[i], order[j]
+		if scores[a] != scores[b] {
+			return scores[a] > scores[b]
 		}
-		return usage[i].CustomFoodID.String() < usage[j].CustomFoodID.String()
+		return usage[a].CustomFoodID.String() < usage[b].CustomFoodID.String()
 	})
+	sorted := make([]customFoodUsage, len(usage))
+	for i, idx := range order {
+		sorted[i] = usage[idx]
+	}
+	usage = sorted
 	if len(usage) > rankedCustomFoodLimit {
 		usage = usage[:rankedCustomFoodLimit]
 	}

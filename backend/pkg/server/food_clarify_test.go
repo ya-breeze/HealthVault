@@ -154,6 +154,54 @@ func TestClarifyMeal_EstimatePersistsThroughClarificationRound(t *testing.T) {
 	}
 }
 
+// Regression: Clarify is text-only but shares Recognize's prompt/schema, so
+// its response can still carry its own non-null estimated_profile — a guess
+// made with no photo access. That guess must be discarded in favor of the
+// persisted photo-grounded estimate, not silently trusted over it.
+func TestClarifyMeal_ConflictingClarifyEstimateIsDiscarded(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createPendingClarificationMeal(t, st, userID, familyID)
+
+	if err := st.DB().Model(&database.FoodItem{}).Where("meal_id = ?", meal.ID).Updates(map[string]any{
+		"has_estimate": true, "estimated_calories_per100g": 90, "estimated_protein_per100g": 3,
+	}).Error; err != nil {
+		t.Fatalf("seed estimate: %v", err)
+	}
+
+	fake := &vision.Fake{
+		// A conflicting, photo-blind guess wildly different from the
+		// persisted 90 kcal/100g estimate.
+		ClarifyResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "Tomato sauce", Preparation: "simmered", WeightGrams: 30, Confidence: 0.8,
+				EstimatedProfile: &database.NutrientProfile{CaloriesPer100g: 500, ProteinPer100g: 500},
+			}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.ClarifyMeal(w, withClaims(clarifyRequest(meal.ID.String(), []string{"Tomato-based"}), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got.Items) != 1 {
+		t.Fatalf("expected one item, got %+v", got.Items)
+	}
+	item := got.Items[0]
+	if item.MacroSource != database.MacroSourceEstimated {
+		t.Fatalf("expected macro_source estimated, got %s", item.MacroSource)
+	}
+	// 90 kcal/100g * 0.3 (30g) = 27, not 500 * 0.3 = 150 from Clarify's own guess.
+	if item.Calories < 26.9 || item.Calories > 27.1 {
+		t.Errorf("expected calories ~27 from the persisted estimate, not Clarify's own conflicting guess, got %v", item.Calories)
+	}
+}
+
 // Regression: a same-count clarify round must not misattribute a persisted
 // estimate across a reorder. Two prior items, each with a distinct estimate,
 // come back from Clarify in swapped order and under unrelated names

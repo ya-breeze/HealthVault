@@ -42,12 +42,14 @@ printed on packaging visible in the photo (e.g. a yogurt cup or cereal box
 label) — leave it empty for unpackaged or home-cooked food, or when no brand
 text is actually readable. Do not guess a brand from appearance alone.
 
-Also estimate each item's own per-100g nutrition (calories, protein, carbs,
-fat, sugar, sodium, dietary fiber) as estimated_profile — your best guess
-from the photo, even for an item you expect will be matched to a known food
-or product afterward, since this is only used as a fallback if no match is
-found later. Set estimated_profile to null only if you genuinely cannot make
-any reasonable estimate for that item.
+Also estimate each item's own per-100g nutrition as estimated_profile — your
+best guess from the photo, even for an item you expect will be matched to a
+known food or product afterward, since this is only used as a fallback if no
+match is found later. Units: calories_per_100g is kcal; every other field
+(protein, carbs, fat, sugar, sodium, dietary_fiber) is grams per 100g —
+sodium included: a food label's milligram sodium value must be converted to
+grams (divide by 1000) before reporting it here. Set estimated_profile to
+null only if you genuinely cannot make any reasonable estimate for that item.
 
 If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user

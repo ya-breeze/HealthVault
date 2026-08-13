@@ -375,17 +375,13 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			if item.WeightGrams <= 0 {
 				return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive to save as a reusable food"}
 			}
-			// The manual-macro form defaults every field to 0, so an accidental
-			// save before entering any values would otherwise persist a
-			// permanent, reusable CustomFood with every macro at zero — future
-			// candidate matching could then offer it and silently zero out a
-			// real meal. Calories is used as a simple required-signal check;
-			// a genuinely calorie-free item (e.g. black coffee) isn't a
-			// realistic candidate for "save as reusable food" in the first
-			// place.
-			if req.Calories <= 0 {
-				return &itemMutationError{status: http.StatusBadRequest, msg: "calories must be positive to save as a reusable food"}
-			}
+			// No calorie/macro floor here, deliberately matching the standalone
+			// POST /api/food/custom endpoint (customFoodRequest has no such
+			// check either) — a genuinely zero-calorie reusable food (water,
+			// black coffee) is valid, and save_as_custom_food is already an
+			// explicit opt-in checkbox, so the checkbox itself is the
+			// intentional-save signal rather than a nonzero value.
+			//
 			// req.Calories etc. are the item's total macros at its current
 			// weight, not per-100g — CustomFood stores per-100g, matching
 			// every other reference-food profile in this codebase. Reuses
@@ -415,6 +411,16 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				}
 				return err
 			}
+			// Bind this item to the food it just created. Without this,
+			// rankedCustomFoodCandidates (food_upload.go) — which only
+			// considers custom foods referenced by a confirmed FoodItem row —
+			// would see zero usage history for cf and never surface it as a
+			// candidate for a later, differently-worded photo; only an exact
+			// name match could ever find it. macro_source stays "manual" (the
+			// values were typed in directly, not resolved from cf), matching
+			// how a reference/off/fdc binding leaves the source reflecting
+			// where the numbers came from.
+			item.CustomFoodID = &cf.ID
 		}
 
 		res := tx.Model(&database.FoodItem{}).

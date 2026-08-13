@@ -929,6 +929,112 @@ func TestCreateMeal_RankedCustomFoodExcludesUnconfirmedUsage(t *testing.T) {
 	}
 }
 
+// A correction saved as a reusable food via PatchMealItem's
+// save_as_custom_food flag must itself be bound to the item so it counts as
+// usage — otherwise it has zero history and can never be offered for a
+// later, differently-worded photo; only an exact name match would find it.
+func TestCreateMeal_SaveAsCustomFoodFromCorrectionIsLaterOfferedAsRankedCandidate(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID) // item "Chicken", weight 100g
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true,
+		"calories": 300, "protein_grams": 25, "carbs_grams": 10,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "Chicken").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	if err := st.DB().Model(&database.FoodMeal{}).Where("id = ?", meal.ID).
+		Update("status", database.MealStatusConfirmed).Error; err != nil {
+		t.Fatalf("confirm meal: %v", err)
+	}
+
+	fake := &vision.Fake{
+		// Deliberately worded differently from "Chicken".
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Grilled chicken breast", WeightGrams: 200, Confidence: 0.6}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h2 := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+	w2 := httptest.NewRecorder()
+	h2.CreateMeal(w2, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w2.Code, w2.Body.String())
+	}
+	if len(fake.SelectCalls) != 1 || len(fake.SelectCalls[0][0].Candidates) != 1 {
+		t.Fatalf("expected the newly saved custom food offered as the ranked candidate, got %+v", fake.SelectCalls)
+	}
+	got := fake.SelectCalls[0][0].Candidates[0]
+	if got.CustomFoodID == nil || *got.CustomFoodID != cf.ID {
+		t.Errorf("expected the food saved from the correction offered as a candidate, got %+v", got)
+	}
+}
+
+// A custom-food match on an item the user later deleted (soft-delete) must
+// not keep counting toward that food's future ranking — the raw .Table()
+// ranking query bypasses GORM's model-level deleted_at scope, so this needs
+// its own explicit predicate.
+func TestCreateMeal_RankedCustomFoodExcludesSoftDeletedUsage(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	custom := database.CustomFood{UserID: userID, Name: "Mexican vegetable mix", CaloriesPer100g: 90}
+	custom.ID = uuid.New()
+	custom.FamilyID = familyID
+	if err := st.DB().Create(&custom).Error; err != nil {
+		t.Fatalf("create custom food: %v", err)
+	}
+
+	confirmedMeal := database.FoodMeal{UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: time.Now().Add(-30 * 24 * time.Hour)}
+	confirmedMeal.ID = uuid.New()
+	confirmedMeal.FamilyID = familyID
+	if err := st.DB().Create(&confirmedMeal).Error; err != nil {
+		t.Fatalf("create confirmed meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: confirmedMeal.ID, Name: "prior use", WeightGrams: 100,
+		MacroSource: database.MacroSourceReference, CustomFoodID: &custom.ID,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create confirmed item: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	dw := httptest.NewRecorder()
+	h.DeleteMealItem(dw, withClaims(deleteItemRequest(confirmedMeal.ID.String(), item.ID.String()), userID))
+	if dw.Code != http.StatusOK {
+		t.Fatalf("expected 200 deleting the item, got %d: %s", dw.Code, dw.Body.String())
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "Mexican veggie mix", WeightGrams: 200, Confidence: 0.6}},
+		},
+	}
+	h2 := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+	w := httptest.NewRecorder()
+	h2.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.SelectCalls) != 0 {
+		t.Errorf("expected the soft-deleted usage excluded from ranking (no Select call), got %d", len(fake.SelectCalls))
+	}
+}
+
 // Frequency outranks recency: a custom food used twice (confirmed, long ago)
 // ranks ahead of one used once (confirmed, very recently).
 func TestCreateMeal_RankedCustomFoodFrequencyOutranksRecency(t *testing.T) {

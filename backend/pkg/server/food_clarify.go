@@ -170,27 +170,35 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	writeReloadedMeal(w, result, reloadErr, http.StatusOK)
 }
 
-// carryForwardEstimates fills in a nil EstimatedProfile on a Clarify
-// response's items from the corresponding prior item's persisted estimate,
-// positionally. Clarify is text-only and cannot regenerate a photo-grounded
-// estimate — it is fed the prior estimate as context (see estimatedProfilePtr
-// above) but is not guaranteed to echo it back in its response, and
-// processRecognition treats a nil EstimatedProfile as "no estimate" when
-// persisting the resulting FoodItem rows. Only applied when the item count is
-// unchanged AND the name at that position is still plausibly the same item
-// (see namesLikelySameItem): a round that added, removed, or reordered items
-// has no reliable position to carry an estimate forward to, and a same-count
-// reorder is otherwise indistinguishable from an unchanged list by position
-// alone — carrying an estimate to a same-index-but-different item would
-// silently misattribute it (e.g. swap "grilled chicken" and "mixed salad").
+// carryForwardEstimates overwrites every recognized item's EstimatedProfile
+// with the corresponding prior item's persisted estimate, positionally,
+// discarding whatever (if anything) Clarify itself returned for
+// estimated_profile first. Clarify shares Recognize's prompt/schema even
+// though it is text-only, so a response can still carry a non-null
+// estimated_profile — a guess made without the photo, which must never be
+// trusted over the original photo-grounded one; processRecognition treats a
+// nil EstimatedProfile as "no estimate" when persisting the resulting
+// FoodItem rows. A prior item's estimate is only carried forward when the
+// item count is unchanged AND the name at that position is still plausibly
+// the same item (see namesLikelySameItem): a round that added, removed, or
+// reordered items has no reliable position to carry an estimate forward to,
+// and a same-count reorder is otherwise indistinguishable from an unchanged
+// list by position alone — carrying an estimate to a same-index-but-different
+// item would silently misattribute it (e.g. swap "grilled chicken" and
+// "mixed salad"). This positional/name heuristic is not a substitute for a
+// genuine per-item identity echoed back by the model — a same-count reorder
+// between two items whose names happen to share a substring (e.g. "Rice" and
+// "Fried rice") can still misattribute; that residual gap needs the model to
+// echo back an explicit prior-item index, which is a larger schema/prompt
+// change tracked separately rather than solved here.
 func carryForwardEstimates(priorItems, recognizedItems []vision.Item) {
+	for i := range recognizedItems {
+		recognizedItems[i].EstimatedProfile = nil
+	}
 	if len(priorItems) != len(recognizedItems) {
 		return
 	}
 	for i := range recognizedItems {
-		if recognizedItems[i].EstimatedProfile != nil {
-			continue
-		}
 		if !namesLikelySameItem(priorItems[i].Name, recognizedItems[i].Name) {
 			continue
 		}

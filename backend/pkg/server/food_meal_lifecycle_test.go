@@ -937,13 +937,14 @@ func TestPatchMealItem_ManualWithoutSaveFlagCreatesNoCustomFood(t *testing.T) {
 	}
 }
 
-// The manual-macro form defaults every field to 0, so an accidental save
-// before entering real values must be rejected rather than silently
-// persisting a permanent, reusable CustomFood with every macro at zero.
-func TestPatchMealItem_SaveAsCustomFoodZeroCaloriesReturns400(t *testing.T) {
+// A genuinely zero-calorie item (water, black coffee) is a valid reusable
+// food — save_as_custom_food is already an explicit opt-in checkbox, and the
+// standalone POST /api/food/custom endpoint accepts zero-calorie foods too,
+// so this path must not impose a stricter rule than that one.
+func TestPatchMealItem_SaveAsCustomFoodZeroCaloriesSucceeds(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
-	meal := createUnresolvedMeal(t, st, userID, familyID)
+	meal := createUnresolvedMeal(t, st, userID, familyID) // item "Chicken", weight 100g
 
 	h := server.NewFoodHandlers(st, nil, t.TempDir())
 	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
@@ -951,14 +952,16 @@ func TestPatchMealItem_SaveAsCustomFoodZeroCaloriesReturns400(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 	h.PatchMealItem(w, withClaims(r, userID))
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var count int64
-	st.DB().Model(&database.CustomFood{}).Where("user_id = ?", userID).Count(&count)
-	if count != 0 {
-		t.Errorf("expected no CustomFood created when calories is 0, got %d", count)
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "Chicken").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	if cf.CaloriesPer100g != 0 {
+		t.Errorf("expected zero-calorie CustomFood, got %+v", cf)
 	}
 }
 
