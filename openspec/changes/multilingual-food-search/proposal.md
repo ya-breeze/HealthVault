@@ -25,7 +25,9 @@ find the right USDA reference food.
   show what was actually searched and offer a refresh action.
 - `ItemResolver.tsx` and `ManualItemEditor.tsx` display the translated term next to
   search results and a refresh control, both only when translation was applied and
-  differs from what the user typed.
+  differs from what the user typed — except on a successful `refresh=true`, which
+  always shows its resulting term, even when it equals what the user typed, so an
+  omitted term on a refresh response unambiguously means the refresh failed.
 - The search interface states, before a query is ever sent, that new search text may
   be translated by an external model provider — the same disclosure pattern already
   used for photo uploads (`food-photo-recognition`'s "external model provider" notice).

@@ -199,25 +199,51 @@ very next plain search would read the old (or absent) cache row and silently rev
 Treating a write failure as a translation failure keeps "what the response says was
 used" and "what's cached" from ever disagreeing. Found in PR review (Codex).
 
-### Cross-site requests never trigger translation or a cache write
+### Only a same-origin request triggers translation or a cache write
 `GET /api/food/search` gained a side effect this change: a cache miss (or an explicit
 `refresh=true`) now calls the external LLM and writes a per-user DB row, both real
 costs, from a plain authenticated `GET`. Cookie auth here uses `SameSite=Lax` (see
 `kin-core/cookies`), which still attaches on a cross-site top-level navigation, so a
 third-party page can force this request without ever reading its JSON response — the
-UI being submit-only isn't an API-side control. The handler SHALL treat a request
-whose `Sec-Fetch-Site` header (sent by all modern browsers and not spoofable by
-page-level JavaScript) is `cross-site` as untrusted for this purpose: it skips both
-the cache-miss translate-and-cache call and the `refresh=true` translate-and-cache
-call, falling back to a literal-query search exactly as if translation were
-unavailable. Absent the header (older browsers, non-browser API clients, existing
-tests) the request is treated as same-site, matching this app's lack of any prior
-CSRF-token infrastructure — this is a targeted mitigation for the specific
-cost/write-triggering surface this change adds, following the OWASP Fetch Metadata
-pattern, not a general CSRF framework for the whole API. A cache-hit lookup is left
-unguarded: reading an existing row has no cost and no write, and its content isn't
-attacker-readable cross-site without permissive CORS (which this app doesn't set).
+UI being submit-only isn't an API-side control.
+
+The first version of this guard rejected only `Sec-Fetch-Site: cross-site`, which
+under-protects this deployment specifically: HealthVault runs alongside sibling apps
+on the same host at different ports (`192.168.1.54:<port>`, see the truenas
+environment's port table), and browser cookies are host-scoped, not port-scoped — a
+page on a neighboring port sees `Sec-Fetch-Site: same-site`, not `cross-site`, yet
+still rides the same session cookie. A bare top-level navigation to the search URL
+(no referring page at all) sends `none`, which is equally untrusted here since the
+frontend only ever calls this endpoint via same-origin `fetch`, never a navigation.
+The handler SHALL therefore require `Sec-Fetch-Site: same-origin` specifically to
+allow the translate-and-cache call — `same-site`, `cross-site`, and `none` are all
+treated as untrusted and fall back to a literal-query search, exactly as if
+translation were unavailable. Absent the header entirely (older browsers, non-browser
+API clients, this project's own backend tests) the request is still treated as
+trusted: a real browser sends this header on every request today, so a missing header
+signals a non-browser caller, not an attacker — the actual attack surface (a browser
+navigating or fetching from another site or port) always carries an explicit,
+distrusted value. This remains a targeted mitigation for this endpoint's specific
+cost/write-triggering surface, following the OWASP Fetch Metadata pattern, not a
+general CSRF framework for the whole API. A cache-hit lookup is left unguarded:
+reading an existing row has no cost and no write, and its content isn't
+attacker-readable cross-origin without permissive CORS (which this app doesn't set).
 Found in PR review (Codex).
+
+### A fresh search/refresh in `ManualItemEditor` clears a stale candidate binding
+Unlike `ItemResolver` (whose results list disappears once `onBind` fires and the
+parent moves on), `ManualItemEditor` keeps its search UI mounted after a pick:
+`selected` stays set, the result list stays hidden behind `results && !selected`,
+and the parent item keeps whatever `fdc_id`/`custom_food_id` `pick()` last wrote via
+`update()`. If the user then re-searches or refreshes — e.g. to correct a wrong
+translation — the fresh results arrive but stay invisible, and the meal item still
+silently carries the old (possibly wrong) binding at submit time: the correction
+control cannot actually correct anything once a candidate was selected. `search` and
+`refresh` SHALL, when applying a response while `selected` is still set, clear
+`selected` (so the fresh list becomes visible again) and clear the parent's
+`fdc_id`/`custom_food_id` via `update()` (so a stale binding can't survive
+unnoticed) — the user must explicitly re-pick from the corrected list before
+submitting. Found in PR review (Codex).
 
 ### Test doubles must implement `Translate` too
 `vision.Client` is implemented by more than `OpenAIClient` and `Unconfigured`:
