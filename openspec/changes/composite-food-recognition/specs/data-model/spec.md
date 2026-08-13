@@ -57,3 +57,13 @@ There SHALL be no unique constraint on `(user_id, logged_at)` for `FoodMeal`, be
 
 - **WHEN** Recognize produces a per-item estimated nutrient profile alongside a recognized item
 - **THEN** the system persists that profile on the created `FoodItem` row at creation time, independent of whether candidate selection later finds a match, so it remains available afterward regardless of `macro_source`
+
+#### Scenario: A FoodItem cannot bind to more than one reference source
+
+- **WHEN** a `FoodItem` is created or updated with more than one of `fdc_id`, `off_code`, and `custom_food_id` set
+- **THEN** the system SHALL reject it, since exactly which field is set is what identifies the reference source and more than one set would be ambiguous
+
+#### Scenario: FoodSearchTranslation rows are private to the user who created them
+
+- **WHEN** a `FoodSearchTranslation` row is created
+- **THEN** it SHALL carry the owning `user_id`, and a lookup for that cached translation SHALL only match rows owned by the requesting user
