@@ -831,7 +831,9 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await expect(page.getByText('Keep Me')).toBeVisible();
-    await expect(page.getByText('Delete Me')).toBeVisible();
+    // exact: true — a substring match would also hit the page-level "Delete
+    // meal" control introduced alongside this item-level delete flow.
+    await expect(page.getByText('Delete Me', { exact: true })).toBeVisible();
 
     const weightInputs = page.locator('input[type="number"]');
     const start = Date.now();
@@ -850,7 +852,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-2');
     expect(Date.now() - start).toBeGreaterThanOrEqual(350);
 
-    await expect(page.getByText('Delete Me')).not.toBeVisible();
+    await expect(page.getByText('Delete Me', { exact: true })).not.toBeVisible();
     await expect(page.getByText('Keep Me')).toBeVisible();
     await expect(weightInputs.first()).toHaveValue('175');
   });
