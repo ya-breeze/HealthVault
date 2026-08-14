@@ -291,6 +291,48 @@ test.describe('Meal history', () => {
     }
   });
 
+  test('deleting a meal from the review page removes it and returns to history', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const meal = await createConfirmedMeal(request, cookies, 'E2E Delete Meal', 'Snack', 90);
+    try {
+      await page.goto(`/food/review/?meal=${meal.id}`);
+      await expect(page.getByText('E2E Delete Meal')).toBeVisible();
+
+      await page.getByRole('button', { name: 'Delete meal' }).click();
+      await page.getByRole('button', { name: 'Confirm' }).click();
+
+      await page.waitForURL(/\/food\/history\/?$/);
+      await expect(page.getByText('E2E Delete Meal')).not.toBeVisible();
+    } finally {
+      // Already gone on the success path above — deleteMeal treats 404 as
+      // already-clean, so this is a no-op there and a real cleanup if any
+      // assertion above failed before the delete actually completed.
+      await deleteMeal(request, cookies, meal.id);
+    }
+  });
+
+  test('Cancel on the review page delete control leaves the meal intact', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const meal = await createConfirmedMeal(request, cookies, 'E2E Cancel Delete Meal', 'Snack', 90);
+    try {
+      await page.goto(`/food/review/?meal=${meal.id}`);
+      await page.getByRole('button', { name: 'Delete meal' }).click();
+      await page.getByRole('button', { name: 'Cancel' }).click();
+
+      await expect(page).toHaveURL(new RegExp(`meal=${meal.id}`));
+      await expect(page.getByText('E2E Cancel Delete Meal')).toBeVisible();
+
+      // Reload to prove nothing was actually sent to the server, not just
+      // that the UI reverted its own local state.
+      await page.reload();
+      await expect(page.getByText('E2E Cancel Delete Meal')).toBeVisible();
+    } finally {
+      await deleteMeal(request, cookies, meal.id);
+    }
+  });
+
   test('"Load older" fetches and appends a real second page', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
@@ -789,7 +831,9 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await expect(page.getByText('Keep Me')).toBeVisible();
-    await expect(page.getByText('Delete Me')).toBeVisible();
+    // exact: true — a substring match would also hit the page-level "Delete
+    // meal" control introduced alongside this item-level delete flow.
+    await expect(page.getByText('Delete Me', { exact: true })).toBeVisible();
 
     const weightInputs = page.locator('input[type="number"]');
     const start = Date.now();
@@ -808,9 +852,67 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-2');
     expect(Date.now() - start).toBeGreaterThanOrEqual(350);
 
-    await expect(page.getByText('Delete Me')).not.toBeVisible();
+    await expect(page.getByText('Delete Me', { exact: true })).not.toBeVisible();
     await expect(page.getByText('Keep Me')).toBeVisible();
     await expect(weightInputs.first()).toHaveValue('175');
+  });
+
+  // Regression: the whole-meal delete (handleDelete) bypassed the same
+  // applyMealUpdate queue the item-level mutations above rely on, so a slow
+  // item edit still in flight when the user confirmed the page-level delete
+  // could complete *after* the meal was already gone, 404 against the
+  // deleted meal, and surface a confusing "Update failed" toast on
+  // /food/history right after the delete itself had succeeded. handleDelete
+  // now awaits the same queue before issuing DELETE — this proves the
+  // whole-meal delete request doesn't go out until the queued weight edit
+  // ahead of it has resolved.
+  test('deleting the whole meal waits for a slow queued edit before firing the delete request', async ({
+    page,
+  }) => {
+    await login(page);
+    const initial = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 }],
+    });
+    const afterWeightEditOnly = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 175 }],
+    });
+    let deleteRequested = false;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      await new Promise(resolve => setTimeout(resolve, 400));
+      return route.fulfill({ json: afterWeightEditOnly });
+    });
+    await page.route('**/api/data/food_meal/mock-meal-id', route => {
+      if (route.request().method() === 'DELETE') {
+        deleteRequested = true;
+        return route.fulfill({ status: 204 });
+      }
+      return route.continue();
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await expect(page.getByText('Keep Me')).toBeVisible();
+
+    const weightInput = page.locator('input[type="number"]').first();
+    const start = Date.now();
+    await weightInput.fill('175');
+    await weightInput.blur(); // queues the slow weight PATCH (in flight for 400ms)
+    await page.getByRole('button', { name: 'Delete meal' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click(); // must wait behind the weight PATCH
+
+    // Wait on the delete request itself — the one actually gated by the
+    // queue — not the weight PATCH: that request goes out immediately on
+    // blur (only its *response* is delayed), so a waitForRequest set up
+    // this late would miss it and hang, the same trap the ordering here is
+    // designed to catch on the delete side instead.
+    await page.waitForRequest('**/api/data/food_meal/mock-meal-id');
+    expect(Date.now() - start).toBeGreaterThanOrEqual(350);
+
+    await page.waitForURL(/\/food\/history\/?$/);
+    expect(deleteRequested).toBe(true);
   });
 
   // multilingual-food-search (tasks.md 6.1): a translated search shows what
@@ -920,6 +1022,227 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     expect(refreshed).toBe(true);
     await expect(page.locator('strong', { hasText: 'oatmeal' })).toBeVisible();
     await expect(page.getByText(/Could not refresh the translation/)).not.toBeVisible();
+  });
+
+  // Regression: Cancel only reset confirmingDelete, not deleteError — after a
+  // failed delete attempt, clicking Cancel left the stale error message
+  // displayed under the "Delete meal" link indefinitely instead of returning
+  // the control to its normal appearance.
+  test('Cancel after a failed delete clears the stale error message', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/data/food_meal/mock-meal-id', route =>
+      route.request().method() === 'DELETE'
+        ? route.fulfill({ status: 500, contentType: 'text/plain', body: 'delete boom' })
+        : route.continue()
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Delete meal' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    await expect(page.getByText('delete boom')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Delete meal' })).toBeVisible();
+    await expect(page.getByText('delete boom')).not.toBeVisible();
+  });
+
+  // Regression: ClarifyModal's fixed inset-0 overlay fully covers the review
+  // page, including the Delete meal control rendered in <main> — a meal
+  // stuck in pending_clarification (e.g. an accidental upload) had no way to
+  // be deleted short of answering questions the user might not want to
+  // answer, contradicting design.md's accepted risk that deletion works
+  // "regardless of meal status" with "no mitigation needed beyond the
+  // existing confirm step." ClarifyModal now renders its own copy of the
+  // delete control as an escape hatch, scoped via data-testid since the
+  // page's own (covered, unreachable) copy is also present in the DOM.
+  test('the delete control inside the clarify modal deletes the meal', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal({
+      status: 'pending_clarification',
+      clarify_round: 0,
+      clarify_log: JSON.stringify([{ round: 1, question: 'Large or small portion?', answer: '' }]),
+    });
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/data/food_meal/mock-meal-id', route =>
+      route.request().method() === 'DELETE' ? route.fulfill({ status: 204 }) : route.continue()
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await expect(page.getByText('Large or small portion?')).toBeVisible();
+
+    // Regression: the page's own (covered, unreachable) copy used to stay
+    // mounted behind the modal, so a keyboard user tabbing past the modal's
+    // backdrop could reach and activate it without ever seeing the confirm
+    // UI. Only the modal's copy should be present in the DOM now.
+    await expect(page.getByRole('button', { name: 'Delete meal' })).toHaveCount(1);
+
+    const modal = page.getByTestId('clarify-modal');
+    await modal.getByRole('button', { name: 'Delete meal' }).click();
+    await modal.getByRole('button', { name: 'Confirm' }).click();
+
+    await page.waitForURL(/\/food\/history\/?$/);
+  });
+
+  // Regression: a DELETE that 404s (the meal is already gone — e.g. deleted
+  // from another tab) was shown as a generic failure and left the user
+  // stuck in the confirm state with no way to make a retry succeed, since
+  // every subsequent attempt would 404 again. Treated the same as success
+  // instead, matching how this same "already gone" case is already handled
+  // in this suite's own deleteMeal cleanup helper.
+  test('a delete that 404s because the meal is already gone is treated as success', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/data/food_meal/mock-meal-id', route =>
+      route.request().method() === 'DELETE'
+        ? route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' })
+        : route.continue()
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Delete meal' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+
+    await page.waitForURL(/\/food\/history\/?$/);
+  });
+
+  // Regression: handleDelete previously only awaited a one-time snapshot of
+  // queueRef.current taken when Confirm was clicked, so a mutation queued
+  // *while that await was still pending* raced the delete instead of being
+  // ordered behind it. The fix (queueDelete) claims a slot in the queue the
+  // same way applyMealUpdate does, so anything queued after Confirm is
+  // clicked chains behind the delete's own promise. item-2's edit is queued
+  // here only after Confirm has already been clicked (while item-1's PATCH
+  // is still artificially in flight) — proving it, not just the delete
+  // itself, waits its turn.
+  test('an edit queued after Confirm still runs after the delete, not racing it', async ({ page }) => {
+    await login(page);
+    const twoItems = mockFoodMeal({
+      items: [
+        { ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 },
+        { ...mockFoodMeal().items[0], id: 'item-2', name: 'Also Keep', weight_grams: 100 },
+      ],
+    });
+    const order: string[] = [];
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: twoItems }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      await new Promise(resolve => setTimeout(resolve, 400));
+      order.push('item-1');
+      return route.fulfill({ json: twoItems });
+    });
+    await page.route('**/api/food/meals/mock-meal-id/items/item-2', route => {
+      order.push('item-2');
+      return route.fulfill({ json: twoItems });
+    });
+    await page.route('**/api/data/food_meal/mock-meal-id', route => {
+      if (route.request().method() === 'DELETE') {
+        order.push('delete');
+        return route.fulfill({ status: 204 });
+      }
+      return route.continue();
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    const weightInputs = page.locator('input[type="number"]');
+
+    await weightInputs.first().fill('175');
+    await weightInputs.first().blur(); // queues item-1's slow PATCH (400ms)
+    await page.getByRole('button', { name: 'Delete meal' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click(); // claims the queue slot right behind item-1
+
+    // Queued only after Confirm was clicked — must chain behind the delete.
+    await weightInputs.last().fill('150');
+    await weightInputs.last().blur();
+
+    await page.waitForURL(/\/food\/history\/?$/);
+    await expect.poll(() => order).toEqual(['item-1', 'delete', 'item-2']);
+  });
+
+  // Regression: queueDelete previously resolved as soon as the delete's own
+  // request settled, without waiting out anything chained behind it in the
+  // queue. handleDelete navigated to /food/history immediately on that
+  // resolution, so a trailing mutation queued after Confirm (still in
+  // flight when the delete itself finished) kept running after the user had
+  // already left the page — surfacing its error toast (its meal is now
+  // gone, so it always fails — the real backend 404s a PATCH whose parent
+  // meal was just hard-deleted) on /food/history, right after "Meal
+  // deleted". queueDelete now also awaits the queue's tail, so navigation
+  // waits for that trailing mutation to settle first, and a shared
+  // mealGoneRef suppresses the "Update failed" toast that mutation would
+  // otherwise show — it's fallout from the user's own delete, not a real
+  // failure. item-2's edit is given its own delay here (distinct from
+  // item-1's) so there's a clear window, after the delete itself has
+  // resolved, in which navigation must NOT yet have happened. Its route
+  // returns 404, matching what the real backend does once the parent meal
+  // is gone (not the 200 the "still runs after the delete" test above uses,
+  // which only checks ordering, not this failure-suppression behavior).
+  test('navigation to history waits for a mutation queued after Confirm, and its resulting failure is not shown as an error', async ({ page }) => {
+    await login(page);
+    const twoItems = mockFoodMeal({
+      items: [
+        { ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 },
+        { ...mockFoodMeal().items[0], id: 'item-2', name: 'Also Keep', weight_grams: 100 },
+      ],
+    });
+    const order: string[] = [];
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: twoItems }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      order.push('item-1');
+      return route.fulfill({ json: twoItems });
+    });
+    await page.route('**/api/food/meals/mock-meal-id/items/item-2', async route => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      order.push('item-2');
+      // Matches real backend behavior: PatchMealItem 404s once its parent
+      // meal has been hard-deleted.
+      return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
+    });
+    await page.route('**/api/data/food_meal/mock-meal-id', route => {
+      if (route.request().method() === 'DELETE') {
+        order.push('delete');
+        return route.fulfill({ status: 204 });
+      }
+      return route.continue();
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    const weightInputs = page.locator('input[type="number"]');
+
+    await weightInputs.first().fill('175');
+    await weightInputs.first().blur(); // queues item-1's slow PATCH (300ms)
+    await page.getByRole('button', { name: 'Delete meal' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click(); // claims the queue slot right behind item-1
+
+    // Queued only after Confirm was clicked — must chain behind the delete.
+    await weightInputs.last().fill('150');
+    await weightInputs.last().blur(); // item-2's own slow PATCH (300ms), issued only once the delete settles
+
+    // The delete has settled, but item-2 (issued right after) hasn't yet —
+    // navigation must still be pending.
+    await expect.poll(() => order).toEqual(['item-1', 'delete']);
+    await expect(page).toHaveURL(/\/food\/review\//);
+
+    await expect.poll(() => order).toEqual(['item-1', 'delete', 'item-2']);
+    await page.waitForURL(/\/food\/history\/?$/);
+    await expect(page.getByRole('status').filter({ hasText: 'Update failed' })).not.toBeVisible();
   });
 });
 
