@@ -903,13 +903,15 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.getByRole('button', { name: 'Delete meal' }).click();
     await page.getByRole('button', { name: 'Confirm' }).click(); // must wait behind the weight PATCH
 
-    // Assert on the weight PATCH itself resolving before the delete request
-    // goes out, not just elapsed time — proves ordering, not just delay.
-    await page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-1');
-    expect(deleteRequested).toBe(false);
+    // Wait on the delete request itself — the one actually gated by the
+    // queue — not the weight PATCH: that request goes out immediately on
+    // blur (only its *response* is delayed), so a waitForRequest set up
+    // this late would miss it and hang, the same trap the ordering here is
+    // designed to catch on the delete side instead.
+    await page.waitForRequest('**/api/data/food_meal/mock-meal-id');
+    expect(Date.now() - start).toBeGreaterThanOrEqual(350);
 
     await page.waitForURL(/\/food\/history\/?$/);
-    expect(Date.now() - start).toBeGreaterThanOrEqual(350);
     expect(deleteRequested).toBe(true);
   });
 
@@ -1030,13 +1032,14 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await login(page);
     const initial = mockFoodMeal();
 
-    await page.route('**/api/food/meals/mock-meal-id', route => {
-      if (route.request().method() === 'GET') return route.fulfill({ json: initial });
-      if (route.request().method() === 'DELETE') {
-        return route.fulfill({ status: 500, contentType: 'text/plain', body: 'delete boom' });
-      }
-      return route.continue();
-    });
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/data/food_meal/mock-meal-id', route =>
+      route.request().method() === 'DELETE'
+        ? route.fulfill({ status: 500, contentType: 'text/plain', body: 'delete boom' })
+        : route.continue()
+    );
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await page.getByRole('button', { name: 'Delete meal' }).click();
