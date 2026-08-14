@@ -12,6 +12,6 @@
 
 ## 3. Validation
 
-- [ ] 3.1 Run frontend lint/build (`make` target or `npm run build` under `frontend/`) and fix any issues.
-- [ ] 3.2 Run the new/updated Playwright specs against the deployed WIP stack per the project's E2E workflow.
+- [x] 3.1 Run frontend lint/build (`make` target or `npm run build` under `frontend/`) and fix any issues.
+- [x] 3.2 Run the new/updated Playwright specs against the deployed WIP stack per the project's E2E workflow.
 - [ ] 3.3 Run `openspec validate --specs --strict` after archiving.
