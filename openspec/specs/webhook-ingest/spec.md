@@ -1,3 +1,7 @@
+## Purpose
+
+Accepts unauthenticated push ingestion of health records from a phone-side companion app, one JSON payload per sync covering any mix of supported health types, with per-type upsert semantics so re-sends are safe and an audit trail of every raw payload is kept.
+
 ## Requirements
 
 ### Requirement: Webhook endpoint

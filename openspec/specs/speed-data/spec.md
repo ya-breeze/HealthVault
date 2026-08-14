@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Adds speed (metres per second) as a supported point-in-time health data type, modelled and queried identically to heart rate, so it can be ingested via webhook/import and read back through the generic data endpoint.
+
+## Requirements
 
 ### Requirement: Store speed samples
 The system SHALL store point-in-time speed measurements (in metres per second) associated with a user, modelled identically to `HeartRate`. The `speeds` table SHALL have a unique constraint on `(user_id, time)` to support idempotent upserts.

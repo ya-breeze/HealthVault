@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Lets a user import weight and body-fat history from a Libra Body Composition Scale CSV export, parsing its semicolon-delimited format and deduplicating to one record per calendar date.
+
+## Requirements
 
 ### Requirement: Libra CSV import endpoint
 The system SHALL provide `POST /api/import/libra` accepting a multipart form upload with a `file` field containing a Libra CSV export. The endpoint SHALL require authentication. On success it SHALL return HTTP 200 with a JSON object containing integer counts for each imported type (e.g. `{"weight": 1209, "body_fat": 6}`).

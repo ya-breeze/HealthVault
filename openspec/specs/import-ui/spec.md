@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Defines the Import page's frontend layout: a card per supported import source (Health Connect, Libra), each with its own file picker, upload state, and result/error display, so adding a new import source doesn't disturb the others.
+
+## Requirements
 
 ### Requirement: Libra import card on Import page
 The Import page (`/import`) SHALL display a dedicated card for Libra CSV import below the existing Health Connect card. The card SHALL include a file input restricted to `.csv` files, an Import button, and a result table showing per-type counts after a successful import.
