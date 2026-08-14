@@ -22,3 +22,10 @@
 - [x] 4.2 `handleDelete`'s one-time `await queueRef.current` snapshot missed mutations queued while that await was pending — replaced with `queueDelete`, which claims a queue slot the same way `applyMealUpdate` does.
 - [x] 4.3 A 404 on delete (meal already gone) is now treated as success instead of an unrecoverable retry loop.
 - [x] 4.4 Added regression coverage for all three: reachability inside the clarify modal, an edit queued after Confirm still ordering behind the delete, and 404-as-success.
+
+## 5. Code review fixes (round 3)
+
+- [x] 5.1 `queueDelete`'s returned promise only awaited the delete request itself, not the queue's tail — a trailing mutation queued right after Confirm (still in flight when the delete settled) kept running after `DeleteMealControl` had already navigated to `/food/history`, surfacing its error toast there. `queueDelete` now also awaits `queueRef.current` after its own request settles.
+- [x] 5.2 The review page's own `DeleteMealControl` stayed mounted (invisible but still in tab order) behind `ClarifyModal`'s opaque backdrop, making its confirm/delete flow keyboard-reachable without the user seeing it. It's now unmounted whenever the modal is actually showing (same condition that gates the modal itself), leaving the modal's own copy as the only reachable instance.
+- [x] 5.3 `handleDelete`'s 404-treated-as-success and plain-success branches left `deleting` stuck `true` if navigation were ever delayed or interrupted — both now reset it before returning, matching the explicit-error branch.
+- [x] 5.4 Added regression coverage for 5.1 (navigation waits for a trailing mutation, asserted via a timing window before/after it settles) and 5.2 (exactly one "Delete meal" button present while the clarify modal is open).

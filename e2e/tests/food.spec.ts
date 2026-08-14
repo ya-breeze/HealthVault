@@ -1078,6 +1078,12 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.goto('/food/review/?meal=mock-meal-id');
     await expect(page.getByText('Large or small portion?')).toBeVisible();
 
+    // Regression: the page's own (covered, unreachable) copy used to stay
+    // mounted behind the modal, so a keyboard user tabbing past the modal's
+    // backdrop could reach and activate it without ever seeing the confirm
+    // UI. Only the modal's copy should be present in the DOM now.
+    await expect(page.getByRole('button', { name: 'Delete meal' })).toHaveCount(1);
+
     const modal = page.getByTestId('clarify-modal');
     await modal.getByRole('button', { name: 'Delete meal' }).click();
     await modal.getByRole('button', { name: 'Confirm' }).click();
@@ -1164,6 +1170,70 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await page.waitForURL(/\/food\/history\/?$/);
     await expect.poll(() => order).toEqual(['item-1', 'delete', 'item-2']);
+  });
+
+  // Regression: queueDelete previously resolved as soon as the delete's own
+  // request settled, without waiting out anything chained behind it in the
+  // queue. handleDelete navigated to /food/history immediately on that
+  // resolution, so a trailing mutation queued after Confirm (still in
+  // flight when the delete itself finished) kept running after the user had
+  // already left the page — surfacing its error toast (its meal is now
+  // gone, so it always fails) on /food/history, right after "Meal deleted".
+  // queueDelete now also awaits the queue's tail, so navigation waits for
+  // that trailing mutation to settle first. item-2's edit is given its own
+  // delay here (distinct from item-1's) so there's a clear window, after
+  // the delete itself has resolved, in which navigation must NOT yet have
+  // happened.
+  test('navigation to history waits for a mutation queued after Confirm, not just the delete itself', async ({ page }) => {
+    await login(page);
+    const twoItems = mockFoodMeal({
+      items: [
+        { ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 },
+        { ...mockFoodMeal().items[0], id: 'item-2', name: 'Also Keep', weight_grams: 100 },
+      ],
+    });
+    const order: string[] = [];
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: twoItems }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      order.push('item-1');
+      return route.fulfill({ json: twoItems });
+    });
+    await page.route('**/api/food/meals/mock-meal-id/items/item-2', async route => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      order.push('item-2');
+      return route.fulfill({ json: twoItems });
+    });
+    await page.route('**/api/data/food_meal/mock-meal-id', route => {
+      if (route.request().method() === 'DELETE') {
+        order.push('delete');
+        return route.fulfill({ status: 204 });
+      }
+      return route.continue();
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    const weightInputs = page.locator('input[type="number"]');
+
+    await weightInputs.first().fill('175');
+    await weightInputs.first().blur(); // queues item-1's slow PATCH (300ms)
+    await page.getByRole('button', { name: 'Delete meal' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click(); // claims the queue slot right behind item-1
+
+    // Queued only after Confirm was clicked — must chain behind the delete.
+    await weightInputs.last().fill('150');
+    await weightInputs.last().blur(); // item-2's own slow PATCH (300ms), issued only once the delete settles
+
+    // The delete has settled, but item-2 (issued right after) hasn't yet —
+    // navigation must still be pending.
+    await expect.poll(() => order).toEqual(['item-1', 'delete']);
+    await expect(page).toHaveURL(/\/food\/review\//);
+
+    await expect.poll(() => order).toEqual(['item-1', 'delete', 'item-2']);
+    await page.waitForURL(/\/food\/history\/?$/);
   });
 });
 

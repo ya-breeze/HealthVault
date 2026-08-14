@@ -33,6 +33,7 @@ export default function DeleteMealControl({ mealId, queueDelete }: Props) {
       await queueDelete(() => api.deleteRecord('food_meal', mealId));
       showToast('Meal deleted', 'success');
       router.push('/food/history');
+      setDeleting(false);
     } catch (err) {
       // A 404 means the meal is already gone (e.g. deleted from another
       // tab) — treat that the same as a successful delete instead of
@@ -40,6 +41,7 @@ export default function DeleteMealControl({ mealId, queueDelete }: Props) {
       if (err instanceof ApiError && err.status === 404) {
         showToast('Meal deleted', 'success');
         router.push('/food/history');
+        setDeleting(false);
         return;
       }
       setDeleteError(err instanceof Error ? err.message : 'Failed to delete meal');

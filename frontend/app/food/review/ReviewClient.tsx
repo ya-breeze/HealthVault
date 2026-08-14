@@ -80,10 +80,19 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   // one-time `await queueRef.current` snapshot doesn't cover that second
   // case, since a mutation queued while that await is still pending would
   // reassign the ref to something this call never sees.
+  //
+  // The returned promise also waits out `queueRef.current` *after* the
+  // delete's own request settles, not just the request itself — otherwise a
+  // caller that navigates away as soon as this resolves (DeleteMealControl
+  // does) can leave a trailing mutation queued behind the delete still in
+  // flight. That mutation is now guaranteed to fail (its meal is gone), and
+  // applyMealUpdate's error toast would surface after the page has already
+  // moved on to /food/history, which reads as a spurious failure following
+  // a successful delete instead of what actually happened.
   const queueDelete = useCallback((issue: () => Promise<void>): Promise<void> => {
     const run = queueRef.current.then(issue);
     queueRef.current = run.catch(() => undefined);
-    return run;
+    return run.then(() => queueRef.current).then(() => undefined);
   }, []);
 
   const load = () => {
@@ -146,6 +155,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
   const items = meal.items ?? [];
   const pendingQuestions = pendingClarifyQuestions(meal);
+  const showClarifyModal = meal.status === 'pending_clarification' && pendingQuestions.length > 0;
   const canConfirm = meal.status === 'pending_review' && !busy;
   const showConfirmBar = meal.status === 'pending_review';
   // Manual entries are confirmed but have no stored photo — the backend
@@ -252,9 +262,16 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
         {actionError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
 
-        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <DeleteMealControl mealId={mealId} queueDelete={queueDelete} />
-        </div>
+        {/* Hidden here only when ClarifyModal is actually covering the page
+            (its own copy below is the only reachable one then) — gating on
+            bare status would also hide this when pending_clarification has
+            no pending questions to show, in which case the modal itself
+            doesn't render and this would be the only copy. */}
+        {!showClarifyModal && (
+          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <DeleteMealControl mealId={mealId} queueDelete={queueDelete} />
+          </div>
+        )}
       </main>
 
       {showConfirmBar && (
@@ -271,7 +288,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         </div>
       )}
 
-      {meal.status === 'pending_clarification' && pendingQuestions.length > 0 && (
+      {showClarifyModal && (
         <ClarifyModal
           questions={pendingQuestions}
           onSubmit={handleClarify}
