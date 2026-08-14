@@ -1,14 +1,14 @@
 ## 1. Frontend: delete control on the review page
 
-- [ ] 1.1 In `frontend/app/food/review/ReviewClient.tsx`, add delete state (`confirmingDelete`, `deleting`, `deleteError`) and a delete affordance rendered regardless of `meal.status`.
-- [ ] 1.2 Wire the trash-icon → Confirm/Cancel inline flow, matching `MealItemRow.tsx`'s existing `confirmingDelete` pattern (Confirm disabled while `deleting`).
-- [ ] 1.3 On Confirm, call `api.deleteRecord('food_meal', mealId)`; on success show a success toast via `useToast` and `router.push('/food/history')`.
-- [ ] 1.4 On failure, show an inline error and remain in the confirm state (do not reset to the non-confirming state), matching the pattern in `design.md`.
+- [x] 1.1 In `frontend/app/food/review/ReviewClient.tsx`, add delete state (`confirmingDelete`, `deleting`, `deleteError`) and a delete affordance rendered regardless of `meal.status`.
+- [x] 1.2 Wire the trash-icon → Confirm/Cancel inline flow, matching `MealItemRow.tsx`'s existing `confirmingDelete` pattern (Confirm disabled while `deleting`).
+- [x] 1.3 On Confirm, call `api.deleteRecord('food_meal', mealId)`; on success show a success toast via `useToast` and `router.push('/food/history')`.
+- [x] 1.4 On failure, show an inline error and remain in the confirm state (do not reset to the non-confirming state), matching the pattern in `design.md`.
 
 ## 2. E2E coverage
 
-- [ ] 2.1 Add a test case to the "Meal history" describe block in `e2e/tests/food.spec.ts`: create a manual meal, open its review page, delete it (confirm flow), assert navigation to `/food/history` and that the meal no longer appears there.
-- [ ] 2.2 Add a test case (or extend an existing mocked-UI describe block) covering the Cancel path: activate delete, click Cancel, assert the meal is unchanged and still present on reload.
+- [x] 2.1 Add a test case to the "Meal history" describe block in `e2e/tests/food.spec.ts`: create a manual meal, open its review page, delete it (confirm flow), assert navigation to `/food/history` and that the meal no longer appears there.
+- [x] 2.2 Add a test case (or extend an existing mocked-UI describe block) covering the Cancel path: activate delete, click Cancel, assert the meal is unchanged and still present on reload.
 
 ## 3. Validation
 

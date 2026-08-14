@@ -291,6 +291,48 @@ test.describe('Meal history', () => {
     }
   });
 
+  test('deleting a meal from the review page removes it and returns to history', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const meal = await createConfirmedMeal(request, cookies, 'E2E Delete Meal', 'Snack', 90);
+    try {
+      await page.goto(`/food/review/?meal=${meal.id}`);
+      await expect(page.getByText('E2E Delete Meal')).toBeVisible();
+
+      await page.getByRole('button', { name: 'Delete meal' }).click();
+      await page.getByRole('button', { name: 'Confirm' }).click();
+
+      await page.waitForURL(/\/food\/history\/?$/);
+      await expect(page.getByText('E2E Delete Meal')).not.toBeVisible();
+    } finally {
+      // Already gone on the success path above — deleteMeal treats 404 as
+      // already-clean, so this is a no-op there and a real cleanup if any
+      // assertion above failed before the delete actually completed.
+      await deleteMeal(request, cookies, meal.id);
+    }
+  });
+
+  test('Cancel on the review page delete control leaves the meal intact', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const meal = await createConfirmedMeal(request, cookies, 'E2E Cancel Delete Meal', 'Snack', 90);
+    try {
+      await page.goto(`/food/review/?meal=${meal.id}`);
+      await page.getByRole('button', { name: 'Delete meal' }).click();
+      await page.getByRole('button', { name: 'Cancel' }).click();
+
+      await expect(page).toHaveURL(new RegExp(`meal=${meal.id}`));
+      await expect(page.getByText('E2E Cancel Delete Meal')).toBeVisible();
+
+      // Reload to prove nothing was actually sent to the server, not just
+      // that the UI reverted its own local state.
+      await page.reload();
+      await expect(page.getByText('E2E Cancel Delete Meal')).toBeVisible();
+    } finally {
+      await deleteMeal(request, cookies, meal.id);
+    }
+  });
+
   test('"Load older" fetches and appends a real second page', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);

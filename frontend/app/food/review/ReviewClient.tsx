@@ -27,6 +27,9 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Every mutation control below (item rows, add-item, meal name/time,
   // reanalyze, retry, clarify, confirm) needs its resulting FoodMeal
@@ -108,6 +111,22 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
       setActionError(err instanceof Error ? err.message : 'Confirm failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Not routed through applyMealUpdate's queue — deletion removes the meal
+  // entirely, so there is no resulting FoodMeal to reconcile against other
+  // queued mutations, and this page is about to navigate away on success.
+  const handleDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteRecord('food_meal', mealId);
+      showToast('Meal deleted', 'success');
+      router.push('/food/history');
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete meal');
+      setDeleting(false);
     }
   };
 
@@ -237,6 +256,36 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         {canReanalyze && <ReanalyzeControl mealId={mealId} onReanalyzed={applyMealUpdate} />}
 
         {actionError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
+
+        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+          {confirmingDelete ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 dark:text-gray-300">Delete this meal?</span>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="py-2 px-4 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Confirm'}
+              </button>
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                disabled={deleting}
+                className="py-2 px-4 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setDeleteError(null); setConfirmingDelete(true); }}
+              className="text-sm font-medium text-red-600 dark:text-red-400 hover:underline"
+            >
+              Delete meal
+            </button>
+          )}
+          {deleteError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{deleteError}</p>}
+        </div>
       </main>
 
       {showConfirmBar && (
