@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, FoodMeal, pendingClarifyQuestions } from '@/lib/api';
+import { api, ApiError, FoodMeal, pendingClarifyQuestions } from '@/lib/api';
 import ClarifyModal from '@/components/food/ClarifyModal';
 import MealItemRow from '@/components/food/MealItemRow';
 import AddItemForm from '@/components/food/AddItemForm';
@@ -51,49 +51,76 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   // confirmed", ...); omitted call sites fall back to a generic "Saved".
   // A rejection shows a generic error toast and is then rethrown unchanged,
   // so each call site's own inline error handling (unaffected by this) still
-  // runs — the toast is additive, never a replacement for it.
+  // runs — the toast is additive, never a replacement for it. Suppressed
+  // once mealGoneRef is set (see queueDelete below): a mutation that's
+  // queued behind a confirmed delete is guaranteed to fail once its turn
+  // comes, since its meal no longer exists — that's fallout from the user's
+  // own delete, not a real failure worth an "Update failed" toast.
   const queueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const mealGoneRef = useRef(false);
+
+  // Low-level "claim a slot in the mutation queue" primitive shared by
+  // applyMealUpdate and queueDelete below: chains `issue` behind whatever is
+  // still outstanding, and immediately re-points queueRef.current at the
+  // result — not at a snapshot taken before `issue` settles — so anything
+  // queued *after* this call, including while `issue` is still in flight,
+  // chains behind it instead of behind something stale. The queue keeps
+  // moving even if `issue` rejects, so one failed mutation can't wedge
+  // everything queued behind it. This exact "claim the ref synchronously,
+  // don't snapshot it" mechanism has already needed fixing more than once
+  // (round 2, round 3) after being duplicated by hand — shared here so
+  // future fixes only need to happen in one place.
+  const claimSlot = useCallback(<T,>(issue: () => Promise<T>): Promise<T> => {
+    const run = queueRef.current.then(issue);
+    queueRef.current = run.catch(() => undefined);
+    return run;
+  }, []);
+
   const applyMealUpdate = useCallback((issue: () => Promise<FoodMeal>, label?: string): Promise<FoodMeal> => {
-    const run = queueRef.current
-      .then(issue)
+    return claimSlot(issue)
       .then(result => {
         setMeal(result);
         showToast(label ?? 'Saved', 'success');
         return result;
       })
       .catch(err => {
-        showToast('Update failed', 'error');
+        if (!mealGoneRef.current) {
+          showToast('Update failed', 'error');
+        }
         throw err;
       });
-    // Keep the queue moving even if this mutation failed — a rejected
-    // mutation must not wedge every mutation queued behind it.
-    queueRef.current = run.catch(() => undefined);
-    return run;
-  }, [showToast]);
+  }, [claimSlot, showToast]);
 
-  // Same ordering guarantee as applyMealUpdate above — queue *issuing*, not
-  // just resolution — but without a FoodMeal result to apply, since a
+  // Same ordering guarantee as applyMealUpdate above, via the shared
+  // claimSlot primitive, but without a FoodMeal result to apply, since a
   // delete leaves nothing to reconcile into `meal`. Used by
-  // DeleteMealControl: waits for anything already queued ahead of the
-  // delete to settle, and immediately re-claims the ref so anything queued
-  // after this call chains behind the delete too, instead of racing it — a
-  // one-time `await queueRef.current` snapshot doesn't cover that second
-  // case, since a mutation queued while that await is still pending would
-  // reassign the ref to something this call never sees.
+  // DeleteMealControl.
   //
   // The returned promise also waits out `queueRef.current` *after* the
-  // delete's own request settles, not just the request itself — otherwise a
-  // caller that navigates away as soon as this resolves (DeleteMealControl
-  // does) can leave a trailing mutation queued behind the delete still in
-  // flight. That mutation is now guaranteed to fail (its meal is gone), and
-  // applyMealUpdate's error toast would surface after the page has already
-  // moved on to /food/history, which reads as a spurious failure following
-  // a successful delete instead of what actually happened.
+  // delete itself settles — success (204) or 404 (already gone, e.g.
+  // deleted from another tab; both mean the meal no longer exists) — not
+  // just the delete's own request. A caller that navigates away as soon as
+  // this resolves (DeleteMealControl does, for both outcomes) would
+  // otherwise leave a mutation still queued behind the delete in flight
+  // when the page moves on. mealGoneRef is set before that wait, in both
+  // outcomes, so applyMealUpdate's catch above already knows to suppress
+  // its toast by the time that trailing mutation fails.
   const queueDelete = useCallback((issue: () => Promise<void>): Promise<void> => {
-    const run = queueRef.current.then(issue);
-    queueRef.current = run.catch(() => undefined);
-    return run.then(() => queueRef.current).then(() => undefined);
-  }, []);
+    const settled = claimSlot(issue).then(
+      () => ({ ok: true as const }),
+      (err: unknown) => {
+        if (err instanceof ApiError && err.status === 404) {
+          return { ok: false as const, err };
+        }
+        throw err;
+      }
+    );
+    return settled.then(async outcome => {
+      mealGoneRef.current = true;
+      await queueRef.current;
+      if (!outcome.ok) throw outcome.err;
+    });
+  }, [claimSlot]);
 
   const load = () => {
     setLoading(true);

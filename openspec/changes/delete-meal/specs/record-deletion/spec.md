@@ -24,7 +24,7 @@ The meal review page (`/food/review/?meal={id}`) SHALL display a delete affordan
 - **THEN** the frontend calls `DELETE /api/data/food_meal/{id}`, and on a successful response shows a success notification and navigates to `/food/history`
 
 #### Scenario: Delete failure keeps the user on the review page
-- **WHEN** the delete request fails (network error or server error)
+- **WHEN** the delete request fails with anything other than 404 (network error or server error)
 - **THEN** the page shows an inline error, remains on the review page in the confirm state, and does not navigate away
 
 #### Scenario: A 404 on delete is treated as success

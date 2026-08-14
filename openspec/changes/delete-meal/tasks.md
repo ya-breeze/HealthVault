@@ -29,3 +29,19 @@
 - [x] 5.2 The review page's own `DeleteMealControl` stayed mounted (invisible but still in tab order) behind `ClarifyModal`'s opaque backdrop, making its confirm/delete flow keyboard-reachable without the user seeing it. It's now unmounted whenever the modal is actually showing (same condition that gates the modal itself), leaving the modal's own copy as the only reachable instance.
 - [x] 5.3 `handleDelete`'s 404-treated-as-success and plain-success branches left `deleting` stuck `true` if navigation were ever delayed or interrupted — both now reset it before returning, matching the explicit-error branch.
 - [x] 5.4 Added regression coverage for 5.1 (navigation waits for a trailing mutation, asserted via a timing window before/after it settles) and 5.2 (exactly one "Delete meal" button present while the clarify modal is open).
+
+## 6. Code review fixes (round 4)
+
+- [x] 6.1 A mutation queued after Confirm and chained behind the delete is guaranteed to fail once the meal is gone (backend confirms: `PatchMealItem` 404s once its parent meal is hard-deleted) — its "Update failed" toast was real but confusing, surfacing right next to "Meal deleted" for a failure that's just fallout of the user's own action. `queueDelete` now sets a shared `mealGoneRef` before waiting out the queue's tail, and `applyMealUpdate`'s catch suppresses its toast when set.
+- [x] 6.2 That same tail-wait had a gap: it only applied when the delete's own request resolved (204), not when it rejected with 404 (treated as success by `DeleteMealControl`) — so the round-3 fix never actually covered the 404-as-success path. `queueDelete` now waits out the tail for both outcomes before resolving/rejecting.
+- [x] 6.3 Extracted the queue-slot-claiming mechanism duplicated (and independently bug-prone) across `applyMealUpdate` and `queueDelete` into one shared `claimSlot` primitive both now build on.
+- [x] 6.4 Collapsed `DeleteMealControl`'s triplicated success-path statements (toast, navigate, reset `deleting`) down to one shared block reached by both the plain-success and 404-as-success paths.
+- [x] 6.5 `openspec/specs.projected/` was never generated for this change across rounds 1–5, which the repo's CI drift check (`.github/workflows/openspec-projected-specs.yml`) treats as a hard failure for any PR touching `openspec/**`. Ran `make projected-specs` and committed the result.
+- [x] 6.6 Fixed a wording contradiction in `specs/record-deletion/spec.md`: the pre-existing "Delete failure keeps the user on the review page" scenario didn't exclude 404 and so literally contradicted the newer "404 is treated as success" scenario when read in isolation.
+- [x] 6.7 Updated the round-3 "navigation waits for a trailing mutation" e2e test to mock a realistic 404 for the trailing PATCH (matching actual backend behavior) instead of a 200, and assert no "Update failed" toast appears.
+
+### Findings from round 4 explicitly not acted on (with reasoning)
+
+- `MealItemRow.tsx` and `DataTypeClient.tsx` have a pre-existing bug where Cancel after a failed delete leaves the stale error message displayed (the same bug this change's round-2 fix addressed in `DeleteMealControl`, just never applied to the two components it says it mirrors). Real bug, but out of scope: both components predate this change and aren't touched by it. Left as a follow-up for a separate change rather than expanding this PR's scope.
+- Generalizing `ClarifyModal`'s `deleteControl` prop into a reusable "stay reachable under any full-screen overlay" mechanism — this page has exactly one such overlay today; see design.md.
+- The two `DeleteMealControl` mounts not sharing state across the modal/main-content swap — accepted risk, see design.md.

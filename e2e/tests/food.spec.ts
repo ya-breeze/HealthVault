@@ -1178,13 +1178,19 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
   // resolution, so a trailing mutation queued after Confirm (still in
   // flight when the delete itself finished) kept running after the user had
   // already left the page — surfacing its error toast (its meal is now
-  // gone, so it always fails) on /food/history, right after "Meal deleted".
-  // queueDelete now also awaits the queue's tail, so navigation waits for
-  // that trailing mutation to settle first. item-2's edit is given its own
-  // delay here (distinct from item-1's) so there's a clear window, after
-  // the delete itself has resolved, in which navigation must NOT yet have
-  // happened.
-  test('navigation to history waits for a mutation queued after Confirm, not just the delete itself', async ({ page }) => {
+  // gone, so it always fails — the real backend 404s a PATCH whose parent
+  // meal was just hard-deleted) on /food/history, right after "Meal
+  // deleted". queueDelete now also awaits the queue's tail, so navigation
+  // waits for that trailing mutation to settle first, and a shared
+  // mealGoneRef suppresses the "Update failed" toast that mutation would
+  // otherwise show — it's fallout from the user's own delete, not a real
+  // failure. item-2's edit is given its own delay here (distinct from
+  // item-1's) so there's a clear window, after the delete itself has
+  // resolved, in which navigation must NOT yet have happened. Its route
+  // returns 404, matching what the real backend does once the parent meal
+  // is gone (not the 200 the "still runs after the delete" test above uses,
+  // which only checks ordering, not this failure-suppression behavior).
+  test('navigation to history waits for a mutation queued after Confirm, and its resulting failure is not shown as an error', async ({ page }) => {
     await login(page);
     const twoItems = mockFoodMeal({
       items: [
@@ -1205,7 +1211,9 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.route('**/api/food/meals/mock-meal-id/items/item-2', async route => {
       await new Promise(resolve => setTimeout(resolve, 300));
       order.push('item-2');
-      return route.fulfill({ json: twoItems });
+      // Matches real backend behavior: PatchMealItem 404s once its parent
+      // meal has been hard-deleted.
+      return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
     });
     await page.route('**/api/data/food_meal/mock-meal-id', route => {
       if (route.request().method() === 'DELETE') {
@@ -1234,6 +1242,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await expect.poll(() => order).toEqual(['item-1', 'delete', 'item-2']);
     await page.waitForURL(/\/food\/history\/?$/);
+    await expect(page.getByRole('status').filter({ hasText: 'Update failed' })).not.toBeVisible();
   });
 });
 
