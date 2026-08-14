@@ -15,3 +15,10 @@
 - [x] 3.1 Run frontend lint/build (`make` target or `npm run build` under `frontend/`) and fix any issues.
 - [x] 3.2 Run the new/updated Playwright specs against the deployed WIP stack per the project's E2E workflow.
 - [ ] 3.3 Run `openspec validate --specs --strict` after archiving.
+
+## 4. Code review fixes (round 2)
+
+- [x] 4.1 `ClarifyModal`'s full-screen overlay hid the delete control entirely during `pending_clarification` — extracted `DeleteMealControl` and render a second copy inside the modal as an escape hatch.
+- [x] 4.2 `handleDelete`'s one-time `await queueRef.current` snapshot missed mutations queued while that await was pending — replaced with `queueDelete`, which claims a queue slot the same way `applyMealUpdate` does.
+- [x] 4.3 A 404 on delete (meal already gone) is now treated as success instead of an unrecoverable retry loop.
+- [x] 4.4 Added regression coverage for all three: reachability inside the clarify modal, an edit queued after Confirm still ordering behind the delete, and 404-as-success.

@@ -1,6 +1,5 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { api, FoodMeal, pendingClarifyQuestions } from '@/lib/api';
 import ClarifyModal from '@/components/food/ClarifyModal';
 import MealItemRow from '@/components/food/MealItemRow';
@@ -8,6 +7,7 @@ import AddItemForm from '@/components/food/AddItemForm';
 import ReanalyzeControl from '@/components/food/ReanalyzeControl';
 import MealMetaEditor from '@/components/food/MealMetaEditor';
 import MacroSummary from '@/components/food/MacroSummary';
+import DeleteMealControl from '@/components/food/DeleteMealControl';
 import Header from '@/components/Header';
 import { useToast } from '@/components/Toast';
 
@@ -20,16 +20,12 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function ReviewClient({ mealId }: { mealId: string }) {
-  const router = useRouter();
   const { showToast } = useToast();
   const [meal, setMeal] = useState<FoodMeal | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Every mutation control below (item rows, add-item, meal name/time,
   // reanalyze, retry, clarify, confirm) needs its resulting FoodMeal
@@ -75,6 +71,21 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     return run;
   }, [showToast]);
 
+  // Same ordering guarantee as applyMealUpdate above — queue *issuing*, not
+  // just resolution — but without a FoodMeal result to apply, since a
+  // delete leaves nothing to reconcile into `meal`. Used by
+  // DeleteMealControl: waits for anything already queued ahead of the
+  // delete to settle, and immediately re-claims the ref so anything queued
+  // after this call chains behind the delete too, instead of racing it — a
+  // one-time `await queueRef.current` snapshot doesn't cover that second
+  // case, since a mutation queued while that await is still pending would
+  // reassign the ref to something this call never sees.
+  const queueDelete = useCallback((issue: () => Promise<void>): Promise<void> => {
+    const run = queueRef.current.then(issue);
+    queueRef.current = run.catch(() => undefined);
+    return run;
+  }, []);
+
   const load = () => {
     setLoading(true);
     setLoadError(null);
@@ -111,27 +122,6 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
       setActionError(err instanceof Error ? err.message : 'Confirm failed');
     } finally {
       setBusy(false);
-    }
-  };
-
-  // Not routed through applyMealUpdate's queue — deletion removes the meal
-  // entirely, so there is no resulting FoodMeal to reconcile against other
-  // queued mutations, and this page is about to navigate away on success.
-  // It still waits on queueRef first: without that, a mutation already
-  // queued (e.g. an item weight edit committed on blur) can complete after
-  // the meal is gone, 404, and surface a confusing "Update failed" toast
-  // on /food/history right after the delete succeeded.
-  const handleDelete = async () => {
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await queueRef.current;
-      await api.deleteRecord('food_meal', mealId);
-      showToast('Meal deleted', 'success');
-      router.push('/food/history');
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete meal');
-      setDeleting(false);
     }
   };
 
@@ -263,33 +253,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         {actionError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
 
         <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-          {confirmingDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 dark:text-gray-300">Delete this meal?</span>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="py-2 px-4 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
-              >
-                {deleting ? 'Deleting…' : 'Confirm'}
-              </button>
-              <button
-                onClick={() => { setDeleteError(null); setConfirmingDelete(false); }}
-                disabled={deleting}
-                className="py-2 px-4 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => { setDeleteError(null); setConfirmingDelete(true); }}
-              className="text-sm font-medium text-red-600 dark:text-red-400 hover:underline"
-            >
-              Delete meal
-            </button>
-          )}
-          {deleteError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{deleteError}</p>}
+          <DeleteMealControl mealId={mealId} queueDelete={queueDelete} />
         </div>
       </main>
 
@@ -308,7 +272,11 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
       )}
 
       {meal.status === 'pending_clarification' && pendingQuestions.length > 0 && (
-        <ClarifyModal questions={pendingQuestions} onSubmit={handleClarify} />
+        <ClarifyModal
+          questions={pendingQuestions}
+          onSubmit={handleClarify}
+          deleteControl={<DeleteMealControl mealId={mealId} queueDelete={queueDelete} />}
+        />
       )}
     </div>
   );

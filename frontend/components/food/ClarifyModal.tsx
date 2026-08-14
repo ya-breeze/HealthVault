@@ -1,14 +1,21 @@
 'use client';
-import { useState } from 'react';
+import { ReactNode, useState } from 'react';
 
 interface Props {
   questions: string[];
   onSubmit: (answers: string[]) => Promise<void>;
+  // This modal's fixed inset-0 backdrop fully covers the rest of the review
+  // page, so a meal stuck in pending_clarification (e.g. an accidental
+  // upload) would otherwise have no way to be deleted short of answering
+  // questions the user may not want to answer — this renders that escape
+  // hatch inside the modal itself. Optional so this component stays usable
+  // without coupling it to ReviewClient's delete plumbing.
+  deleteControl?: ReactNode;
 }
 
 // Text-only by construction: no photo is shown or sent here, matching the
 // backend's clarify endpoint, which never re-sends the image.
-export default function ClarifyModal({ questions, onSubmit }: Props) {
+export default function ClarifyModal({ questions, onSubmit, deleteControl }: Props) {
   const [answers, setAnswers] = useState<string[]>(() => questions.map(() => ''));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +34,7 @@ export default function ClarifyModal({ questions, onSubmit }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+    <div data-testid="clarify-modal" className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md w-full p-6">
         <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
           A couple of questions
@@ -63,6 +70,12 @@ export default function ClarifyModal({ questions, onSubmit }: Props) {
         >
           {submitting ? 'Submitting…' : 'Submit'}
         </button>
+
+        {deleteControl && (
+          <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+            {deleteControl}
+          </div>
+        )}
       </div>
     </div>
   );
