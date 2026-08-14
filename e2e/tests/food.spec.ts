@@ -857,6 +857,62 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(weightInputs.first()).toHaveValue('175');
   });
 
+  // Regression: the whole-meal delete (handleDelete) bypassed the same
+  // applyMealUpdate queue the item-level mutations above rely on, so a slow
+  // item edit still in flight when the user confirmed the page-level delete
+  // could complete *after* the meal was already gone, 404 against the
+  // deleted meal, and surface a confusing "Update failed" toast on
+  // /food/history right after the delete itself had succeeded. handleDelete
+  // now awaits the same queue before issuing DELETE — this proves the
+  // whole-meal delete request doesn't go out until the queued weight edit
+  // ahead of it has resolved.
+  test('deleting the whole meal waits for a slow queued edit before firing the delete request', async ({
+    page,
+  }) => {
+    await login(page);
+    const initial = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 }],
+    });
+    const afterWeightEditOnly = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 175 }],
+    });
+    let deleteRequested = false;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      await new Promise(resolve => setTimeout(resolve, 400));
+      return route.fulfill({ json: afterWeightEditOnly });
+    });
+    await page.route('**/api/data/food_meal/mock-meal-id', route => {
+      if (route.request().method() === 'DELETE') {
+        deleteRequested = true;
+        return route.fulfill({ status: 204 });
+      }
+      return route.continue();
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await expect(page.getByText('Keep Me')).toBeVisible();
+
+    const weightInput = page.locator('input[type="number"]').first();
+    const start = Date.now();
+    await weightInput.fill('175');
+    await weightInput.blur(); // queues the slow weight PATCH (in flight for 400ms)
+    await page.getByRole('button', { name: 'Delete meal' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click(); // must wait behind the weight PATCH
+
+    // Assert on the weight PATCH itself resolving before the delete request
+    // goes out, not just elapsed time — proves ordering, not just delay.
+    await page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-1');
+    expect(deleteRequested).toBe(false);
+
+    await page.waitForURL(/\/food\/history\/?$/);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(350);
+    expect(deleteRequested).toBe(true);
+  });
+
   // multilingual-food-search (tasks.md 6.1): a translated search shows what
   // was actually searched for, plus a control to redo the translation.
   test('a translated search shows the translated term and a refresh control', async ({ page }) => {
@@ -964,6 +1020,32 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     expect(refreshed).toBe(true);
     await expect(page.locator('strong', { hasText: 'oatmeal' })).toBeVisible();
     await expect(page.getByText(/Could not refresh the translation/)).not.toBeVisible();
+  });
+
+  // Regression: Cancel only reset confirmingDelete, not deleteError — after a
+  // failed delete attempt, clicking Cancel left the stale error message
+  // displayed under the "Delete meal" link indefinitely instead of returning
+  // the control to its normal appearance.
+  test('Cancel after a failed delete clears the stale error message', async ({ page }) => {
+    await login(page);
+    const initial = mockFoodMeal();
+
+    await page.route('**/api/food/meals/mock-meal-id', route => {
+      if (route.request().method() === 'GET') return route.fulfill({ json: initial });
+      if (route.request().method() === 'DELETE') {
+        return route.fulfill({ status: 500, contentType: 'text/plain', body: 'delete boom' });
+      }
+      return route.continue();
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    await page.getByRole('button', { name: 'Delete meal' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    await expect(page.getByText('delete boom')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Delete meal' })).toBeVisible();
+    await expect(page.getByText('delete boom')).not.toBeVisible();
   });
 });
 

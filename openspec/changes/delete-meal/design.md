@@ -20,8 +20,11 @@ This is a small, frontend-only change with no new architecture, dependency, data
 - **Confirm pattern**: mirrors `MealItemRow`'s existing `confirmingDelete` boolean + Confirm/Cancel buttons, rather than a browser `confirm()` dialog or a modal, for visual consistency with the rest of the page.
 - **On success**: show a toast ("Meal deleted") via the existing `useToast` hook already used on this page, then `router.push('/food/history')` — there is nothing left to show on the review page once the meal is gone.
 - **On failure**: show an inline error (mirroring the page's existing `actionError` pattern) and leave the confirm state active so the user can retry, rather than silently reverting to the non-confirming state.
+- **On cancel**: clear any prior delete error along with leaving the confirm state, so returning to the non-confirming view doesn't leave a stale error message displayed.
+- **Ordering vs. other mutations**: `handleDelete` doesn't route through `applyMealUpdate`'s queue (there's no resulting `FoodMeal` to reconcile, and the page navigates away on success), but it does `await queueRef.current` before issuing the delete request, so any mutation already queued or in flight (e.g. an item edit committed just before Confirm is clicked) settles first instead of racing a delete-then-404 after the page has already navigated away.
 
 ## Risks / Trade-offs
 
 - [Risk] A user could delete a meal mid-analysis (`processing` or `pending_clarification`) before it's fully reviewed. → Accepted: the backend already allows this (no status gate on delete), and it's a reasonable thing to want (e.g. an accidental upload). No mitigation needed beyond the existing confirm step.
 - [Risk] Double-submit if the user double-clicks Confirm. → Mitigated the same way `MealItemRow` already does it: a `deleting` boolean disables the Confirm button while the request is in flight.
+- [Risk] A mutation queued via `applyMealUpdate` completing after the meal is deleted. → Mitigated by awaiting `queueRef.current` before issuing the delete request.

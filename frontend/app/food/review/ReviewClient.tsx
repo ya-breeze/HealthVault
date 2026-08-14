@@ -117,10 +117,15 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   // Not routed through applyMealUpdate's queue — deletion removes the meal
   // entirely, so there is no resulting FoodMeal to reconcile against other
   // queued mutations, and this page is about to navigate away on success.
+  // It still waits on queueRef first: without that, a mutation already
+  // queued (e.g. an item weight edit committed on blur) can complete after
+  // the meal is gone, 404, and surface a confusing "Update failed" toast
+  // on /food/history right after the delete succeeded.
   const handleDelete = async () => {
     setDeleting(true);
     setDeleteError(null);
     try {
+      await queueRef.current;
       await api.deleteRecord('food_meal', mealId);
       showToast('Meal deleted', 'success');
       router.push('/food/history');
@@ -269,7 +274,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
                 {deleting ? 'Deleting…' : 'Confirm'}
               </button>
               <button
-                onClick={() => setConfirmingDelete(false)}
+                onClick={() => { setDeleteError(null); setConfirmingDelete(false); }}
                 disabled={deleting}
                 className="py-2 px-4 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
               >
