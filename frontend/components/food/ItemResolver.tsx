@@ -154,7 +154,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
 
       {mode === 'search' ? (
         <div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <input
               type="text"
               value={query}
@@ -191,7 +191,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
           )}
           {refreshError && <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{refreshError}</p>}
           {results && (
-            <ul className="mt-2 max-h-48 overflow-auto divide-y divide-amber-100 dark:divide-amber-900">
+            <ul className="mt-2 max-h-64 overflow-auto divide-y divide-amber-100 dark:divide-amber-900">
               {results.length === 0 && (
                 <li className="py-2 text-xs text-gray-500 dark:text-gray-400">No matches found.</li>
               )}

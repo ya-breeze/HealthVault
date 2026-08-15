@@ -24,9 +24,8 @@ export default function TapTarget<T extends ElementType = 'button'>({
 }: TapTargetProps<T>) {
   const Component = (as ?? 'button') as ElementType;
   const mergedClassName = className ? `${MIN_TAP_TARGET_CLASSES} ${className}` : MIN_TAP_TARGET_CLASSES;
-  const defaultType = Component === 'button' && (rest as { type?: string }).type === undefined
-    ? { type: 'button' as const }
-    : undefined;
+  // Spread before {...rest} below, so an explicit `type` in rest overrides this default.
+  const defaultType = Component === 'button' ? { type: 'button' as const } : undefined;
 
   return <Component className={mergedClassName} {...defaultType} {...rest} />;
 }

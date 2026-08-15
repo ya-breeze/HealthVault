@@ -172,7 +172,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
             </p>
           )}
           {results && !selected && (
-            <ul className="mt-2 max-h-40 overflow-auto divide-y divide-gray-100 dark:divide-gray-700">
+            <ul className="mt-2 max-h-56 overflow-auto divide-y divide-gray-100 dark:divide-gray-700">
               {results.length === 0 && <li className="py-1 text-xs text-gray-400">No matches.</li>}
               {results.map((r, i) => (
                 <li key={i}>
