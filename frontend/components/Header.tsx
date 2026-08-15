@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { LinkIcon, ImportIcon, LogoutIcon } from '@/components/icons';
+import TapTarget from '@/components/ui/TapTarget';
 
 /**
  * Shared header/nav rendered on every authenticated page (dashboard, data
@@ -81,52 +82,54 @@ export default function Header() {
           )}
           {webhookUrl && (
             <div className="relative" ref={popoverRef}>
-              <button
+              <TapTarget
                 onClick={() => setShowWebhook(v => !v)}
-                className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-2.5 min-h-11 transition-colors"
+                className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 transition-colors"
                 title="Webhook URL"
               >
                 <LinkIcon className="w-4 h-4" />
                 Webhook
-              </button>
+              </TapTarget>
               {showWebhook && (
                 <div className="absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-3rem)] bg-bg-elevated border border-border rounded-xl shadow-lg p-4 z-50">
                   <p className="text-sm font-medium text-text mb-3">Webhook URL</p>
                   <code className="block w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm font-[family-name:var(--font-data)] text-text break-all mb-3 select-all">
                     {webhookUrl}
                   </code>
-                  <button
+                  <TapTarget
                     onClick={handleCopy}
-                    className={`w-full py-2 rounded-lg text-sm font-medium transition-all ${
+                    className={`w-full rounded-lg text-sm font-medium transition-all ${
                       copied ? 'bg-accent/20 text-accent' : 'bg-accent text-bg-elevated hover:opacity-90'
                     }`}
                   >
                     {copied ? 'Copied!' : 'Copy to clipboard'}
-                  </button>
+                  </TapTarget>
                 </div>
               )}
             </div>
           )}
-          <Link
+          <TapTarget
+            as={Link}
             href="/food/custom/"
-            className="flex items-center text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-2.5 min-h-11 transition-colors"
+            className="flex items-center text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 transition-colors"
           >
             Custom Foods
-          </Link>
-          <Link
+          </TapTarget>
+          <TapTarget
+            as={Link}
             href="/import"
-            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 py-2.5 min-h-11 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text font-medium border border-border rounded-md px-2.5 transition-colors"
           >
             <ImportIcon className="w-4 h-4" />
             Import
-          </Link>
-          <button
+          </TapTarget>
+          <TapTarget
             onClick={handleLogout}
-            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-red-500 font-medium px-2 min-h-11 transition-colors"
+            className="flex items-center justify-center gap-1.5 text-sm text-text-muted hover:text-red-500 font-medium px-2 transition-colors"
             title="Logout"
           >
             <LogoutIcon className="w-4 h-4" />
-          </button>
+          </TapTarget>
         </div>
       </div>
     </header>

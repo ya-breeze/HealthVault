@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { api, ManualMealItemInput } from '@/lib/api';
 import ManualItemEditor from '@/components/food/ManualItemEditor';
 import Header from '@/components/Header';
+import TapTarget from '@/components/ui/TapTarget';
 
 function emptyItem(): ManualMealItemInput {
   return { name: '', source: 'reference' };
@@ -75,25 +76,25 @@ export default function ManualMealPage() {
           ))}
         </div>
 
-        <button
+        <TapTarget
           onClick={() => setItems(prev => [...prev, emptyItem()])}
-          className="w-full mb-4 py-2 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+          className="w-full mb-4 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
         >
           + Add item
-        </button>
+        </TapTarget>
 
         {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="max-w-md mx-auto">
-          <button
+          <TapTarget
             onClick={handleSubmit}
             disabled={saving}
-            className="w-full py-2.5 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+            className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save Meal'}
-          </button>
+          </TapTarget>
         </div>
       </div>
     </div>

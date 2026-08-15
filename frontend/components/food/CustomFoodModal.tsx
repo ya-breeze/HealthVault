@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { CustomFood, CustomFoodInput } from '@/lib/api';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   initial?: CustomFood;
@@ -92,19 +93,19 @@ export default function CustomFoodModal({ initial, onSave, onClose }: Props) {
         {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
         <div className="mt-5 flex gap-2">
-          <button
+          <TapTarget
             onClick={onClose}
-            className="flex-1 py-2 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            className="flex-1 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
           >
             Cancel
-          </button>
-          <button
+          </TapTarget>
+          <TapTarget
             onClick={handleSave}
             disabled={saving}
-            className="flex-1 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+            className="flex-1 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save'}
-          </button>
+          </TapTarget>
         </div>
       </div>
     </div>

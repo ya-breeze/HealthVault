@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { api, FoodMeal, FoodSearchResult } from '@/lib/api';
 import ItemResolver from './ItemResolver';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   mealId: string;
@@ -62,12 +63,12 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
 
   if (!open) {
     return (
-      <button
+      <TapTarget
         onClick={() => setOpen(true)}
-        className="mt-4 w-full py-2.5 rounded-lg text-sm font-medium border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400"
+        className="mt-4 w-full rounded-lg text-sm font-medium border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400"
       >
         + Add item
-      </button>
+      </TapTarget>
     );
   }
 
@@ -88,13 +89,13 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
       </div>
       <ItemResolver itemName="" onBind={handleBind} onManual={handleManual} />
       {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-      <button
+      <TapTarget
         onClick={() => setOpen(false)}
         disabled={creating}
-        className="mt-2 text-xs text-gray-500 dark:text-gray-400 hover:underline disabled:opacity-50"
+        className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 hover:underline disabled:opacity-50"
       >
         Cancel
-      </button>
+      </TapTarget>
     </div>
   );
 }

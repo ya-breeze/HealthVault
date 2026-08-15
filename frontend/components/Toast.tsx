@@ -1,5 +1,6 @@
 'use client';
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import TapTarget from './ui/TapTarget';
 
 export type ToastVariant = 'success' | 'error';
 
@@ -51,13 +52,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             className={`pointer-events-auto flex items-center gap-3 max-w-sm w-full sm:w-auto bg-bg-elevated border rounded-xl shadow-lg px-4 py-2.5 text-sm font-medium ${VARIANT_STYLES[t.variant]}`}
           >
             <span className="flex-1">{t.message}</span>
-            <button
+            <TapTarget
               onClick={() => dismiss(t.id)}
-              className="text-text-muted hover:text-text leading-none"
+              className="flex items-center justify-center text-text-muted hover:text-text leading-none"
               aria-label="Dismiss notification"
             >
               &times;
-            </button>
+            </TapTarget>
           </div>
         ))}
       </div>

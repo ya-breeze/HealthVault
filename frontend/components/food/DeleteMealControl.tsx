@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/components/Toast';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   mealId: string;
@@ -51,30 +52,30 @@ export default function DeleteMealControl({ mealId, queueDelete }: Props) {
   return (
     <div>
       {confirmingDelete ? (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-gray-600 dark:text-gray-300">Delete this meal?</span>
-          <button
+          <TapTarget
             onClick={handleDelete}
             disabled={deleting}
-            className="py-2 px-4 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+            className="px-4 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
           >
             {deleting ? 'Deleting…' : 'Confirm'}
-          </button>
-          <button
+          </TapTarget>
+          <TapTarget
             onClick={() => { setDeleteError(null); setConfirmingDelete(false); }}
             disabled={deleting}
-            className="py-2 px-4 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+            className="px-4 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
           >
             Cancel
-          </button>
+          </TapTarget>
         </div>
       ) : (
-        <button
+        <TapTarget
           onClick={() => { setDeleteError(null); setConfirmingDelete(true); }}
-          className="text-sm font-medium text-red-600 dark:text-red-400 hover:underline"
+          className="flex items-center text-sm font-medium text-red-600 dark:text-red-400 hover:underline"
         >
           Delete meal
-        </button>
+        </TapTarget>
       )}
       {deleteError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{deleteError}</p>}
     </div>

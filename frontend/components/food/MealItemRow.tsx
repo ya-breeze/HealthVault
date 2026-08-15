@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, FoodItem, FoodMeal, FoodSearchResult } from '@/lib/api';
 import ItemResolver from './ItemResolver';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   mealId: string;
@@ -182,29 +183,29 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
           <span className="text-xs text-gray-400">g</span>
           {confirmingDelete ? (
             <div className="ml-1 flex items-center gap-1">
-              <button
+              <TapTarget
                 onClick={handleDelete}
                 disabled={deleting}
-                className="min-h-11 px-2 rounded text-xs font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                className="px-2 rounded text-xs font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
               >
                 {deleting ? '…' : 'Confirm'}
-              </button>
-              <button
+              </TapTarget>
+              <TapTarget
                 onClick={() => setConfirmingDelete(false)}
                 disabled={deleting}
-                className="min-h-11 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+                className="px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
               >
                 Cancel
-              </button>
+              </TapTarget>
             </div>
           ) : (
-            <button
+            <TapTarget
               onClick={() => setConfirmingDelete(true)}
               title="Delete item"
-              className="ml-1 min-w-11 min-h-11 flex items-center justify-center rounded text-lg leading-none text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20"
+              className="ml-1 flex items-center justify-center rounded text-lg leading-none text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20"
             >
               ×
-            </button>
+            </TapTarget>
           )}
         </div>
       </div>
@@ -215,12 +216,12 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
       </div>
 
       {!resolving && (
-        <button
+        <TapTarget
           onClick={() => setResolving(true)}
           className={
             item.macro_source === 'none' || item.macro_source === 'estimated'
-              ? 'mt-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline'
-              : 'mt-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline'
+              ? 'mt-2 flex items-center text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline'
+              : 'mt-2 flex items-center text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline'
           }
         >
           {item.macro_source === 'none'
@@ -228,7 +229,7 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
             : item.macro_source === 'estimated'
               ? 'Verify this estimate'
               : 'Change match'}
-        </button>
+        </TapTarget>
       )}
       {resolving && (
         <ItemResolver itemName={item.name} onBind={handleBind} onManual={handleManual} allowSaveAsCustomFood />

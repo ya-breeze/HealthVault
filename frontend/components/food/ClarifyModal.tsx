@@ -1,5 +1,6 @@
 'use client';
 import { ReactNode, useState } from 'react';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   questions: string[];
@@ -63,13 +64,13 @@ export default function ClarifyModal({ questions, onSubmit, deleteControl }: Pro
 
         {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-        <button
+        <TapTarget
           onClick={handleSubmit}
           disabled={!allAnswered || submitting}
-          className="mt-5 w-full py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mt-5 w-full rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? 'Submitting…' : 'Submit'}
-        </button>
+        </TapTarget>
 
         {deleteControl && (
           <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
