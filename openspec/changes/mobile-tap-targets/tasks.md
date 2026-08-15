@@ -46,7 +46,7 @@
 - [x] 6.1 Add a Playwright test at a mobile viewport (e.g. 375×667) that renders the review page (with a meal item present) and asserts the delete control, a search-result picker item, and the meal-meta edit control each have a bounding box of at least 48×48px via `getBoundingClientRect()` / `boundingBox()`. Note in the test file that this is a representative spot-check of a few controls, not exhaustive coverage of every control the "every interactive control" requirement names — full coverage is manual (6.4). (`e2e/tests/mobile-tap-targets.spec.ts` — 3/3 passing against `hcw-wip`.)
 - [x] 6.2 Extend or add a test asserting the header nav controls and toast dismiss control meet the 48×48px minimum at a mobile viewport. (Same file as 6.1.)
 - [x] 6.3 Run the full e2e suite against the deployed `hcw-wip` stack to confirm no regressions in existing flows (add-item, delete-item, confirm, clarify, custom food, history) — this is also the regression check that `TapTarget`'s prop passthrough (task 1.1) didn't break any existing `title`/`data-testid`/`aria-label`-based selector. Re-run at commit `5b2efeb` (post-code-review fixes) against `hcw-wip`: 88/89 passing, 1 pre-existing skip, 0 failures — full suite: auth, dashboard, data-types, import, food, mobile-tap-targets.
-- [ ] 6.4 Manually verify the review, history, custom-foods, and modal flows on a real Android phone before merge; note the result in the PR.
+- [x] 6.4 Manually verify the review, history, custom-foods, and modal flows on a real Android phone before merge; note the result in the PR. (Confirmed by the maintainer on their Android device against `hcw-wip`.)
 
 ## 7. Docs
 
