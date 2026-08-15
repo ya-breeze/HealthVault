@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import CameraCapture from '@/components/food/CameraCapture';
 import Header from '@/components/Header';
+import TapTarget from '@/components/ui/TapTarget';
 import { MAX_HINT_LENGTH, normalizedUnicodeLength, unicodeLength } from '@/lib/foodGuidance';
 
 export default function FoodUploadPage() {
@@ -77,26 +78,25 @@ export default function FoodUploadPage() {
                 </p>
               </div>
             ) : (
-              <button
-                type="button"
+              <TapTarget
                 onClick={() => setShowHint(true)}
-                className="min-h-12 rounded-lg border border-dashed border-gray-300 px-4 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
+                className="rounded-lg border border-dashed border-gray-300 px-4 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
               >
                 Add a hint (optional)
-              </button>
+              </TapTarget>
             )}
-            <button
+            <TapTarget
               onClick={() => setShowCamera(true)}
-              className="min-h-12 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+              className="rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
             >
               Take Photo
-            </button>
-            <button
+            </TapTarget>
+            <TapTarget
               onClick={() => fileRef.current?.click()}
-              className="min-h-12 rounded-lg text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="rounded-lg text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               Choose Photo
-            </button>
+            </TapTarget>
             <input
               ref={fileRef}
               type="file"
@@ -104,12 +104,13 @@ export default function FoodUploadPage() {
               className="hidden"
               onChange={handleFilePicked}
             />
-            <Link
+            <TapTarget
+              as={Link}
               href="/food/manual/"
-              className="text-center py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+              className="flex items-center justify-center text-center text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
             >
               Enter manually instead
-            </Link>
+            </TapTarget>
           </div>
         )}
 

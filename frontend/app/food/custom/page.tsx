@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { api, CustomFood, CustomFoodInput } from '@/lib/api';
 import CustomFoodModal from '@/components/food/CustomFoodModal';
 import Header from '@/components/Header';
+import TapTarget from '@/components/ui/TapTarget';
 
 export default function CustomFoodsPage() {
   const router = useRouter();
@@ -53,12 +54,12 @@ export default function CustomFoodsPage() {
 
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Custom Foods</h1>
-        <button
+        <TapTarget
           onClick={() => setEditing('new')}
-          className="w-full mb-4 py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+          className="w-full mb-4 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
         >
           + Add Custom Food
-        </button>
+        </TapTarget>
 
         {error && <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
@@ -70,6 +71,13 @@ export default function CustomFoodsPage() {
             <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">No custom foods yet.</p>
           )}
           {foods?.map(f => (
+            // NOTE: this row's name column has no min-w-0/truncate and the
+            // button column has no flex-shrink-0 — a known, separately
+            // tracked layout-overflow issue (deferred to a follow-up
+            // change, see openspec/changes/mobile-tap-targets/design.md).
+            // Enlarging the buttons below to the 48px tap-target minimum is
+            // sizing-only and does not fix that; it may make the overflow
+            // surface more visibly on narrow screens.
             <div key={f.id} className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-900 dark:text-white">{f.name}</p>
@@ -78,34 +86,34 @@ export default function CustomFoodsPage() {
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <button
+                <TapTarget
                   onClick={() => setEditing(f)}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  className="flex items-center text-xs text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   Edit
-                </button>
+                </TapTarget>
                 {pendingDeleteId === f.id ? (
                   <span className="flex items-center gap-1">
-                    <button
+                    <TapTarget
                       onClick={() => handleDelete(f.id)}
-                      className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                      className="text-xs px-2 rounded bg-red-600 text-white hover:bg-red-700"
                     >
                       Confirm
-                    </button>
-                    <button
+                    </TapTarget>
+                    <TapTarget
                       onClick={() => setPendingDeleteId(null)}
-                      className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200"
+                      className="text-xs px-2 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200"
                     >
                       Cancel
-                    </button>
+                    </TapTarget>
                   </span>
                 ) : (
-                  <button
+                  <TapTarget
                     onClick={() => setPendingDeleteId(f.id)}
-                    className="text-xs text-red-500 hover:text-red-700"
+                    className="flex items-center text-xs text-red-500 hover:text-red-700"
                   >
                     Delete
-                  </button>
+                  </TapTarget>
                 )}
               </div>
             </div>

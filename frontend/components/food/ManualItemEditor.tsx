@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import { api, FoodSearchResult, ManualMealItemInput } from '@/lib/api';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   index: number;
@@ -100,40 +101,40 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
           }}
           className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
         />
-        <button
+        <TapTarget
           onClick={() => onRemove(index)}
-          className="min-w-11 min-h-11 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-base"
+          className="flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-base"
           aria-label="Remove item"
         >
           ✕
-        </button>
+        </TapTarget>
       </div>
 
       <div className="flex gap-2 mb-2 text-xs">
-        <button
+        <TapTarget
           onClick={() => update({ source: 'reference' })}
-          className={`px-2 py-1 rounded ${item.source === 'reference' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+          className={`px-2 rounded ${item.source === 'reference' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
         >
           Search food
-        </button>
-        <button
+        </TapTarget>
+        <TapTarget
           onClick={() => update({ source: 'manual' })}
-          className={`px-2 py-1 rounded ${item.source === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+          className={`px-2 rounded ${item.source === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
         >
           Enter macros
-        </button>
+        </TapTarget>
       </div>
 
       {item.source === 'reference' ? (
         <div>
           <div className="flex gap-2 items-center">
-            <button
+            <TapTarget
               onClick={search}
               disabled={searching || !query}
-              className="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
+              className="px-2 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
             >
               {searching ? 'Searching…' : 'Search'}
-            </button>
+            </TapTarget>
             <input
               type="number"
               step="any"
@@ -152,15 +153,15 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
               <span>
                 Searched as: <strong>{translatedQuery}</strong>
               </span>
-              <button
+              <TapTarget
                 onClick={refresh}
                 disabled={refreshing}
                 aria-label="Refresh translation"
                 title="Refresh translation"
-                className="disabled:opacity-50"
+                className="flex items-center justify-center disabled:opacity-50"
               >
                 {refreshing ? '…' : '🔄'}
-              </button>
+              </TapTarget>
             </div>
           )}
           {refreshError && <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{refreshError}</p>}
@@ -175,12 +176,12 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
               {results.length === 0 && <li className="py-1 text-xs text-gray-400">No matches.</li>}
               {results.map((r, i) => (
                 <li key={i}>
-                  <button
+                  <TapTarget
                     onClick={() => pick(r)}
-                    className="w-full text-left py-1 text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
+                    className="w-full flex items-center text-left text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
                   >
                     {r.name} ({Math.round(r.profile.calories_per_100g)} kcal/100g)
-                  </button>
+                  </TapTarget>
                 </li>
               ))}
             </ul>

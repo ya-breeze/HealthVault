@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import { api, FoodSearchResult } from '@/lib/api';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   itemName: string;
@@ -137,18 +138,18 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
   return (
     <div className="mt-2 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
       <div className="flex gap-2 mb-2 text-xs">
-        <button
+        <TapTarget
           onClick={() => setMode('search')}
-          className={`px-2 py-1 rounded ${mode === 'search' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-300'}`}
+          className={`px-2 rounded ${mode === 'search' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-300'}`}
         >
           Search
-        </button>
-        <button
+        </TapTarget>
+        <TapTarget
           onClick={() => setMode('manual')}
-          className={`px-2 py-1 rounded ${mode === 'manual' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-300'}`}
+          className={`px-2 rounded ${mode === 'manual' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-300'}`}
         >
           Enter macros
-        </button>
+        </TapTarget>
       </div>
 
       {mode === 'search' ? (
@@ -161,13 +162,13 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
               onKeyDown={e => e.key === 'Enter' && search()}
               className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
-            <button
+            <TapTarget
               onClick={search}
               disabled={searching}
-              className="px-3 py-1.5 rounded-md text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
+              className="px-3 rounded-md text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
             >
               {searching ? '…' : 'Search'}
-            </button>
+            </TapTarget>
           </div>
           <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
             New search terms may be sent to an external model provider for translation.
@@ -177,15 +178,15 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
               <span>
                 Searched as: <strong>{translatedQuery}</strong>
               </span>
-              <button
+              <TapTarget
                 onClick={refresh}
                 disabled={refreshing}
                 aria-label="Refresh translation"
                 title="Refresh translation"
-                className="disabled:opacity-50"
+                className="flex items-center justify-center disabled:opacity-50"
               >
                 {refreshing ? '…' : '🔄'}
-              </button>
+              </TapTarget>
             </div>
           )}
           {refreshError && <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{refreshError}</p>}
@@ -196,17 +197,17 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
               )}
               {results.map((r, i) => (
                 <li key={i}>
-                  <button
+                  <TapTarget
                     onClick={() => handleBind(r)}
                     disabled={submitting}
-                    className="w-full text-left py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+                    className="w-full flex items-center text-left text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
                   >
                     {r.name}{' '}
                     <span className="text-gray-400">
                       ({Math.round(r.profile.calories_per_100g)} kcal/100g
                       {r.source === 'custom' ? ', your custom food' : ''})
                     </span>
-                  </button>
+                  </TapTarget>
                 </li>
               ))}
             </ul>
@@ -252,13 +253,13 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
               Save as a reusable food, so a future photo of this dish can match it automatically
             </label>
           )}
-          <button
+          <TapTarget
             onClick={handleManualSubmit}
             disabled={submitting}
-            className="col-span-2 mt-1 py-1.5 rounded-md text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
+            className="col-span-2 mt-1 rounded-md text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
           >
             {submitting ? 'Saving…' : 'Save'}
-          </button>
+          </TapTarget>
         </div>
       )}
 

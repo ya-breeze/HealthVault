@@ -16,6 +16,7 @@ import {
   normalizedUnicodeLength,
   unicodeLength,
 } from '@/lib/foodGuidance';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   mealId: string;
@@ -122,12 +123,12 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
 
   if (!open) {
     return (
-      <button
+      <TapTarget
         onClick={() => setOpen(true)}
-        className="mt-3 min-h-12 w-full rounded-lg border border-gray-300 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
+        className="mt-3 w-full rounded-lg border border-gray-300 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
       >
         Improve analysis
-      </button>
+      </TapTarget>
     );
   }
 
@@ -139,16 +140,15 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
       </p>
       <div className="mt-3 grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-gray-700" role="tablist" aria-label="Analysis mode">
         {(['hint', 'expert'] as const).map(value => (
-          <button
+          <TapTarget
             key={value}
-            type="button"
             role="tab"
             aria-selected={mode === value}
             onClick={() => { setMode(value); setError(null); }}
-            className={`min-h-11 rounded-md text-sm font-medium ${mode === value ? 'bg-white text-blue-700 shadow-sm dark:bg-gray-800 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300'}`}
+            className={`rounded-md text-sm font-medium ${mode === value ? 'bg-white text-blue-700 shadow-sm dark:bg-gray-800 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300'}`}
           >
             {value === 'hint' ? 'Hint' : 'Expert'}
-          </button>
+          </TapTarget>
         ))}
       </div>
 
@@ -181,20 +181,20 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
                 </div>
               </div>
               {components.length > 1 && (
-                <button type="button" onClick={() => setComponents(current => current.filter((_, i) => i !== index))} className="mt-2 min-h-11 text-xs font-medium text-red-600 dark:text-red-400">Remove ingredient</button>
+                <TapTarget onClick={() => setComponents(current => current.filter((_, i) => i !== index))} className="mt-2 flex items-center text-xs font-medium text-red-600 dark:text-red-400">Remove ingredient</TapTarget>
               )}
             </div>
           ))}
           {components.length < MAX_EXPERT_COMPONENTS && (
-            <button type="button" onClick={() => setComponents(current => [...current, blankRow()])} className="min-h-11 w-full rounded-lg border border-dashed border-gray-300 text-sm font-medium text-gray-600 dark:border-gray-600 dark:text-gray-300">Add ingredient</button>
+            <TapTarget onClick={() => setComponents(current => [...current, blankRow()])} className="w-full rounded-lg border border-dashed border-gray-300 text-sm font-medium text-gray-600 dark:border-gray-600 dark:text-gray-300">Add ingredient</TapTarget>
           )}
         </div>
       )}
 
       {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button type="button" onClick={close} disabled={busy} className="min-h-12 rounded-lg border border-gray-300 text-sm font-medium text-gray-600 dark:border-gray-600 dark:text-gray-300">Cancel</button>
-        <button type="button" onClick={submit} disabled={busy} className="min-h-12 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">{busy ? 'Reanalyzing…' : 'Reanalyze'}</button>
+        <TapTarget onClick={close} disabled={busy} className="rounded-lg border border-gray-300 text-sm font-medium text-gray-600 dark:border-gray-600 dark:text-gray-300">Cancel</TapTarget>
+        <TapTarget onClick={submit} disabled={busy} className="rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">{busy ? 'Reanalyzing…' : 'Reanalyze'}</TapTarget>
       </div>
     </div>
   );

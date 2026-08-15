@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api, MealSummary } from '@/lib/api';
 import Header from '@/components/Header';
+import TapTarget from '@/components/ui/TapTarget';
 
 const STATUS_LABEL: Record<string, string> = {
   processing: 'Analyzing…',
@@ -133,8 +134,9 @@ export default function FoodHistoryPage() {
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
               {day.meals.map(meal => (
-                <a
+                <TapTarget
                   key={meal.id}
+                  as="a"
                   href={`/food/review/?meal=${meal.id}`}
                   className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                 >
@@ -151,20 +153,20 @@ export default function FoodHistoryPage() {
                       {Math.round(meal.calories)} kcal
                     </span>
                   )}
-                </a>
+                </TapTarget>
               ))}
             </div>
           </div>
         ))}
 
         {hasMore && meals.length > 0 && (
-          <button
+          <TapTarget
             onClick={loadMore}
             disabled={loadingMore}
-            className="mt-4 w-full py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+            className="mt-4 w-full rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
           >
             {loadingMore ? 'Loading…' : 'Load older'}
-          </button>
+          </TapTarget>
         )}
       </main>
     </div>

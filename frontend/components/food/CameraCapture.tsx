@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   onCapture: (file: File) => void;
@@ -69,12 +70,12 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md w-full overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
           <p className="text-sm font-semibold text-gray-900 dark:text-white">Take a photo</p>
-          <button
+          <TapTarget
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm"
+            className="flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm"
           >
             Cancel
-          </button>
+          </TapTarget>
         </div>
         <div className="p-4">
           {error ? (
@@ -85,12 +86,12 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
           )}
           <canvas ref={canvasRef} className="hidden" />
           {!error && (
-            <button
+            <TapTarget
               onClick={capture}
-              className="mt-4 w-full py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+              className="mt-4 w-full rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
             >
               Capture
-            </button>
+            </TapTarget>
           )}
         </div>
       </div>

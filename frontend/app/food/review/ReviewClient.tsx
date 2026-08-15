@@ -10,6 +10,7 @@ import MacroSummary from '@/components/food/MacroSummary';
 import DeleteMealControl from '@/components/food/DeleteMealControl';
 import Header from '@/components/Header';
 import { useToast } from '@/components/Toast';
+import TapTarget from '@/components/ui/TapTarget';
 
 const STATUS_LABEL: Record<string, string> = {
   processing: 'Analyzing…',
@@ -222,25 +223,25 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         {meal.status === 'processing' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 text-center">
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Still analyzing…</p>
-            <button
+            <TapTarget
               onClick={load}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              className="flex items-center justify-center mx-auto text-sm text-blue-600 dark:text-blue-400 hover:underline"
             >
               Refresh
-            </button>
+            </TapTarget>
           </div>
         )}
 
         {meal.status === 'failed' && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6 text-center">
             <p className="text-sm text-red-700 dark:text-red-300 mb-3">Analysis failed.</p>
-            <button
+            <TapTarget
               onClick={handleRetry}
               disabled={busy}
-              className="py-2 px-4 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              className="px-4 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
             >
               {busy ? 'Retrying…' : 'Retry'}
-            </button>
+            </TapTarget>
           </div>
         )}
 
@@ -304,13 +305,13 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
       {showConfirmBar && (
         <div className="fixed bottom-0 left-0 right-0 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <div className="max-w-md mx-auto">
-            <button
+            <TapTarget
               onClick={handleConfirm}
               disabled={!canConfirm}
-              className="w-full py-2.5 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+              className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
             >
               {busy ? 'Confirming…' : 'Confirm Meal'}
-            </button>
+            </TapTarget>
           </div>
         </div>
       )}
