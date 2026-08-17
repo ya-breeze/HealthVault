@@ -26,5 +26,5 @@
 ## 5. Validate end-to-end
 
 - [x] 5.1 Run `make lint` / `go vet` / existing Go test suite in `backend/`.
-- [ ] 5.2 Deploy branch to `hcw-wip` (per repo workflow) and manually re-run a photo upload similar to the reported case (or replay the same image if available) to confirm the item now surfaces the model's own plausible protein estimate.
-- [ ] 5.3 Run backend food-logging tests / any relevant e2e coverage against the deployed WIP stack; note explicitly if this project has no E2E suite for this flow per the repo's E2E-testing rule.
+- [x] 5.2 Deploy branch to `hcw-wip` (per repo workflow) and manually re-run a photo upload similar to the reported case (or replay the same image if available) to confirm the item now surfaces the model's own plausible protein estimate.
+- [x] 5.3 Run backend food-logging tests / any relevant e2e coverage against the deployed WIP stack; note explicitly if this project has no E2E suite for this flow per the repo's E2E-testing rule.
