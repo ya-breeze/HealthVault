@@ -55,7 +55,7 @@ The candidate shortlist offered for selection SHALL be accompanied by the recogn
 - **WHEN** the vision model is offered the exact-name custom-food candidate shortlist for a recognized item and selects it
 - **THEN** the system binds the item to that custom food and scales its macros from its profile, setting `macro_source = reference`, regardless of whether the item also carries an estimated nutrient profile
 
-#### Scenario: Candidate selected from a fuzzy shortlist is a fallback, not unconditional
+#### Scenario: Candidate selected from shortlist
 
 - **WHEN** the vision model is given a fuzzy shortlist (ranked custom food, Open Food Facts, or USDA candidates) for a recognized item and selects one
 - **THEN** the system uses that candidate's macros with `macro_source = reference` only if the item has no usable estimated profile (see `food-photo-recognition` "Macro Estimate Fallback for Unmatched Items"); when a usable estimate is present, the system uses the estimate instead and does not bind to the selected candidate
