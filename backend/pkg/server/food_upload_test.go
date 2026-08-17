@@ -781,10 +781,15 @@ func TestCreateMeal_SelectNoneOfTheseFallsBackToEstimate(t *testing.T) {
 	}
 }
 
-// A matched candidate takes precedence: the estimate is discarded for macro
-// purposes (macro_source stays reference) even though it remains stored on
-// the row.
-func TestCreateMeal_MatchedCandidateDiscardsUnusedEstimate(t *testing.T) {
+// An implausible estimate (fails PlausibleEstimatedProfile — 500g
+// protein/100g is well past the 102g ceiling) falls back to the
+// fuzzy-matched USDA candidate: macro_source stays reference, even though
+// the estimate remains stored on the row. This is no longer "a matched
+// candidate always wins" (that's only true for a deterministic exact-name
+// match, see TestCreateMeal_ExactNameMatchWinsOverPlausibleEstimate below) —
+// it now passes because the estimate itself is implausible, not because a
+// fuzzy Select match is unconditionally authoritative.
+func TestCreateMeal_ImplausibleEstimateFallsBackToMatchedCandidate(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)
 	idx := buildUSDAIndex(t, usdaFood(42, "Chicken breast", 165))
@@ -808,14 +813,98 @@ func TestCreateMeal_MatchedCandidateDiscardsUnusedEstimate(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
 	item := meal.Items[0]
 	if item.MacroSource != database.MacroSourceReference {
-		t.Fatalf("expected reference macro source (matched candidate wins), got %s", item.MacroSource)
+		t.Fatalf("expected reference macro source (implausible estimate falls back), got %s", item.MacroSource)
 	}
-	// 165 kcal/100g * 1.8 = 297, not the wildly different estimate values.
+	// 165 kcal/100g * 1.8 = 297, not the wildly different (and implausible) estimate values.
 	if item.Calories < 296.9 || item.Calories > 297.1 {
 		t.Errorf("expected calories from the matched reference (~297), not the discarded estimate, got %v", item.Calories)
 	}
 	if !item.HasEstimate {
 		t.Error("expected the estimate to remain stored on the row even though unused")
+	}
+}
+
+// A plausible estimate now takes precedence over a fuzzy-matched (non-exact-
+// name) USDA candidate — the new default behavior this change introduces.
+// This is the reported-bug shape: Select picks a nutritionally wrong
+// reference despite a good estimate being available.
+func TestCreateMeal_PlausibleEstimateBeatsFuzzyMatchedCandidate(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	// A deliberately wrong USDA match, mirroring the reported bug (a fish item
+	// matched to a near-zero-protein squash entry).
+	idx := buildUSDAIndex(t, usdaFood(170130, "Squash, winter, butternut, cooked, baked, with salt", 40))
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "Lean white fish", WeightGrams: 180, Confidence: 0.9,
+				EstimatedProfile: &database.NutrientProfile{
+					CaloriesPer100g: 110, ProteinPer100g: 26, CarbsPer100g: 0, FatPer100g: 1,
+				},
+			}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.MacroSource != database.MacroSourceEstimated {
+		t.Fatalf("expected estimated macro source (plausible estimate beats the fuzzy match), got %s", item.MacroSource)
+	}
+	if item.FdcID != nil {
+		t.Errorf("expected the discarded candidate's fdc_id left nil, got %v", item.FdcID)
+	}
+	// 26g protein/100g * 1.8 (180g) = 46.8, not the squash candidate's numbers.
+	if item.ProteinGrams < 46.7 || item.ProteinGrams > 46.9 {
+		t.Errorf("expected protein from the estimate (~46.8g), not the discarded candidate, got %v", item.ProteinGrams)
+	}
+}
+
+// A deterministic exact-name custom-food match still wins unconditionally
+// over even a plausible competing estimate — this precedence flip is scoped
+// to fuzzy (Select-guessed) matches only.
+func TestCreateMeal_ExactNameMatchWinsOverPlausibleEstimate(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	custom := database.CustomFood{UserID: userID, Name: "Chicken breast", CaloriesPer100g: 165, ProteinPer100g: 31}
+	custom.ID = uuid.New()
+	custom.FamilyID = familyID
+	if err := st.DB().Create(&custom).Error; err != nil {
+		t.Fatalf("create custom food: %v", err)
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "Chicken breast", WeightGrams: 180, Confidence: 0.9,
+				EstimatedProfile: &database.NutrientProfile{CaloriesPer100g: 150, ProteinPer100g: 28},
+			}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.MacroSource != database.MacroSourceReference || item.CustomFoodID == nil || *item.CustomFoodID != custom.ID {
+		t.Fatalf("expected the exact-name custom food to win regardless of a plausible competing estimate, got %+v", item)
+	}
+	// 165 kcal/100g * 1.8 = 297, the custom food's numbers, not the estimate's.
+	if item.Calories < 296.9 || item.Calories > 297.1 {
+		t.Errorf("expected calories from the exact-match custom food (~297), not the estimate, got %v", item.Calories)
 	}
 }
 

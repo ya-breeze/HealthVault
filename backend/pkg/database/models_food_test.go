@@ -238,6 +238,174 @@ func TestFoodItem_ApplyEstimatedProfileNoOpWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestFoodItem_PlausibleEstimatedProfile_NormalFoodPasses(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 310, ProteinPer100g: 25, CarbsPer100g: 30, FatPer100g: 10,
+		SugarPer100g: 5, DietaryFiberPer100g: 3,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); !ok {
+		t.Fatal("expected a normal profile to be usable")
+	}
+}
+
+// No estimate at all is unusable, same as EstimatedProfile.
+func TestFoodItem_PlausibleEstimatedProfile_AbsentIsUnusable(t *testing.T) {
+	it := database.FoodItem{}
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Fatal("expected no estimate to be reported as unusable")
+	}
+}
+
+// An individual macro past the 102g/100g ceiling is rejected, even though
+// (given non-negative inputs) it also always breaches the combined-sum
+// check — the two checks overlap by construction, not a gap.
+func TestFoodItem_PlausibleEstimatedProfile_IndividualMacroCeilingRejected(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 420, ProteinPer100g: 105})
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Error("expected protein at 105g/100g to be rejected")
+	}
+}
+
+// A profile where no single macro exceeds 102g/100g but the three still sum
+// past 102g/100g must still be rejected — this is the case the individual
+// check alone cannot catch.
+func TestFoodItem_PlausibleEstimatedProfile_CombinedSumRejectedWithoutIndividualViolation(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 1080, ProteinPer100g: 40, CarbsPer100g: 40, FatPer100g: 40,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Error("expected protein=carbs=fat=40 (sum 120) to be rejected despite no individual macro exceeding 102g")
+	}
+}
+
+// Exactly at the 102g/100g combined ceiling is still usable — the tolerance
+// is inclusive, not a strict-less-than boundary.
+func TestFoodItem_PlausibleEstimatedProfile_CombinedSumBoundaryPasses(t *testing.T) {
+	it := database.FoodItem{}
+	// atwater = 34*4 + 34*4 + 34*9 = 578.
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 578, ProteinPer100g: 34, CarbsPer100g: 34, FatPer100g: 34})
+	if _, ok := it.PlausibleEstimatedProfile(); !ok {
+		t.Error("expected a combined macro sum of exactly 102g/100g to be usable")
+	}
+}
+
+// Sugar and fiber are each individually within carbs+2g but their sum is
+// not — both are subsets of total carbs, so they must be checked together,
+// not independently (see design.md decision 3 / llm-first-macro-estimate).
+func TestFoodItem_PlausibleEstimatedProfile_SugarPlusFiberCombinedRejected(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 100, CarbsPer100g: 10, SugarPer100g: 12, DietaryFiberPer100g: 12,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Error("expected sugar=12 + fiber=12 against carbs=10 to be rejected even though each individually is within carbs+2g")
+	}
+}
+
+// Sugar plus fiber exactly at the carbs+2g combined boundary is still usable.
+func TestFoodItem_PlausibleEstimatedProfile_SugarPlusFiberBoundaryPasses(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 100, CarbsPer100g: 10, SugarPer100g: 6, DietaryFiberPer100g: 6,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); !ok {
+		t.Error("expected sugar=6 + fiber=6 against carbs=10 (exactly carbs+2g) to be usable")
+	}
+}
+
+// Declared calories below the one-sided Atwater threshold are rejected.
+func TestFoodItem_PlausibleEstimatedProfile_CaloriesBelowAtwaterThresholdRejected(t *testing.T) {
+	it := database.FoodItem{}
+	// atwater = 25*4 = 100, tolerance = max(25, 15) = 25, threshold = 75.
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 74.9, ProteinPer100g: 25})
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Error("expected calories just below the Atwater threshold to be rejected")
+	}
+}
+
+// Exactly at the Atwater threshold is still usable.
+func TestFoodItem_PlausibleEstimatedProfile_CaloriesAtAtwaterThresholdPasses(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 75, ProteinPer100g: 25})
+	if _, ok := it.PlausibleEstimatedProfile(); !ok {
+		t.Error("expected calories exactly at the Atwater threshold to be usable")
+	}
+}
+
+// The calorie check is one-sided: calories exceeding the Atwater figure is
+// never a violation, since alcohol-containing foods legitimately have
+// calories the tracked macros don't capture (wine: ~83 kcal/100g against
+// ~10 kcal/100g of P/C/F).
+func TestFoodItem_PlausibleEstimatedProfile_WineCaloriesExceedingAtwaterPasses(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 83, CarbsPer100g: 2.6})
+	if _, ok := it.PlausibleEstimatedProfile(); !ok {
+		t.Error("expected wine's above-Atwater calories to be usable, not rejected")
+	}
+}
+
+// Legitimate high-single-macro foods pass despite being near the individual
+// ceiling: protein powder, and pure oil after model rounding pushes it just
+// past 100g/100g (within the 2g tolerance).
+func TestFoodItem_PlausibleEstimatedProfile_LegitimateHighMacroFoodsPass(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		p    database.NutrientProfile
+	}{
+		{
+			name: "protein powder",
+			p: database.NutrientProfile{
+				CaloriesPer100g: 385, ProteinPer100g: 80, CarbsPer100g: 5, FatPer100g: 5,
+				SugarPer100g: 2, DietaryFiberPer100g: 1,
+			},
+		},
+		{
+			name: "pure oil rounded to 100.4g/100g",
+			p:    database.NutrientProfile{CaloriesPer100g: 903.6, FatPer100g: 100.4},
+		},
+		{
+			name: "dry gelatin",
+			p:    database.NutrientProfile{CaloriesPer100g: 340, ProteinPer100g: 85},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			it := database.FoodItem{}
+			it.SetEstimatedProfile(&tc.p)
+			if _, ok := it.PlausibleEstimatedProfile(); !ok {
+				t.Errorf("expected %s (%+v) to be usable", tc.name, tc.p)
+			}
+		})
+	}
+}
+
+// A legacy row already persisted with MacroSource estimated, whose stored
+// profile would fail the new plausibility bounds, must still rescale
+// consistently from that same profile on a later weight-only edit —
+// PlausibleEstimatedProfile only gates the resolveItems binding decision,
+// never ApplyEstimatedProfile/EstimatedProfile's own semantics.
+func TestFoodItem_ApplyEstimatedProfileRescalesLegacyImplausibleEstimate(t *testing.T) {
+	it := database.FoodItem{WeightGrams: 100, MacroSource: database.MacroSourceEstimated}
+	it.SetEstimatedProfile(&database.NutrientProfile{CaloriesPer100g: 2000, ProteinPer100g: 500})
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Fatal("expected this profile to fail the new plausibility bounds (test setup)")
+	}
+
+	it.WeightGrams = 250 // simulate a weight-only PATCH
+	if ok := it.ApplyEstimatedProfile(); !ok {
+		t.Fatal("expected a legacy implausible-but-present estimate to still rescale")
+	}
+	if it.MacroSource != database.MacroSourceEstimated {
+		t.Errorf("MacroSource = %q, want %q", it.MacroSource, database.MacroSourceEstimated)
+	}
+	// 500g protein/100g * 2.5 (250g) = 1250
+	if it.ProteinGrams != 1250 {
+		t.Errorf("ProteinGrams = %v, want 1250 (rescaled from the persisted estimate)", it.ProteinGrams)
+	}
+}
+
 func TestFoodMeal_AggregateManualOnlyIsNonZero(t *testing.T) {
 	items := []database.FoodItem{
 		{MacroSource: database.MacroSourceManual, Calories: 210, FatGrams: 9},
