@@ -77,6 +77,37 @@ func TestCreateMealItem_ReferenceRequiresPositiveWeight(t *testing.T) {
 	}
 }
 
+// A caller-supplied fdc_id on PatchMealItem is a deterministic identity
+// match — it never goes through retrieveCandidates/Select, so it must keep
+// winning unconditionally even over an item that already carries a
+// plausible persisted estimate (see llm-first-macro-estimate design.md
+// non-goals: this precedence flip is scoped to fuzzy Select matches only).
+func TestPatchMealItem_CallerSuppliedFdcIDWinsOverExistingEstimate(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createEstimatedItemMeal(t, st, userID, familyID) // plausible estimate, macro_source=estimated
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+	w := httptest.NewRecorder()
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{"fdc_id": 7})
+	h.PatchMealItem(w, withClaims(r, userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	item := got.Items[0]
+	if item.MacroSource != database.MacroSourceReference || item.FdcID == nil || *item.FdcID != 7 {
+		t.Fatalf("expected the caller-supplied fdc_id to win unconditionally, got %+v", item)
+	}
+	// 165 kcal/100g * 1.0 (100g) = 165, the reference's numbers, not the estimate's (90).
+	if item.Calories < 164.9 || item.Calories > 165.1 {
+		t.Errorf("expected calories from the caller-supplied reference (~165), not the estimate, got %v", item.Calories)
+	}
+}
+
 func TestCreateMealItem_MissingNameReturns400(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

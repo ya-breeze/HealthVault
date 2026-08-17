@@ -258,13 +258,23 @@ func buildPendingQuestionsLog(existingLog string, round int, questions []string)
 
 // resolveItems retrieves a candidate shortlist per recognized item, offers
 // every non-empty shortlist to the model in a single Select call, and binds
-// whatever it chooses. An item left unresolved by every path below — no
-// candidates, not selected, selected as "none of these", an out-of-range
-// index, or a selected candidate whose profile lookup fails — falls back to
-// its own persisted Recognize estimate (MacroSource estimated) when one is
-// present and usable, and only keeps MacroSource none when it is not. See
-// design.md "Matching is candidate retrieval, not auto-assignment" and
-// decision 4 (the estimate fallback).
+// whatever it chooses — except that a chosen candidate only binds
+// unconditionally when its shortlist was the exact-name custom-food
+// short-circuit (a deterministic identity match). For every other selected
+// candidate (ranked custom food, Open Food Facts, or USDA — all fuzzy Select
+// guesses), the item's own persisted Recognize estimate now takes precedence
+// whenever it is present and passes PlausibleEstimatedProfile: the candidate
+// is discarded rather than bound, and the item's FdcID/CustomFoodID/OffCode
+// are left nil so a discarded ranked-custom-food pick can't inflate that
+// food's future rankedCustomFoodCandidates usage score once the meal is
+// confirmed. An item left unresolved by every path below — no candidates,
+// not selected, selected as "none of these", an out-of-range index, a
+// selected candidate whose profile lookup fails, or a fuzzy candidate
+// discarded in favor of the estimate — falls back to its own persisted
+// Recognize estimate (MacroSource estimated) when one is present and usable,
+// and only keeps MacroSource none when it is not. See
+// openspec/specs/food-photo-recognition "Macro Estimate Fallback for
+// Unmatched Items" and design.md decisions 1-3 (llm-first-macro-estimate).
 //
 // strict controls what happens when the Select call itself errors (e.g. it
 // shares runAnalysis's overall timeout with Recognize, so a slow Recognize
@@ -284,6 +294,7 @@ func (h *foodHandlers) resolveItems(
 ) ([]database.FoodItem, error) {
 	items := make([]database.FoodItem, len(recognizedItems))
 	candidateSets := make([][]vision.Candidate, len(recognizedItems))
+	exactMatch := make([]bool, len(recognizedItems))
 	itemCandidates := make([]vision.ItemCandidates, 0, len(recognizedItems))
 
 	// Computed once per meal, not per item: rankedCustomFoodCandidates depends
@@ -304,8 +315,9 @@ func (h *foodHandlers) resolveItems(
 		item.SetEstimatedProfile(ri.EstimatedProfile)
 		items[i] = item
 
-		candidates := h.retrieveCandidates(ranked, meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
+		candidates, exact := h.retrieveCandidates(ranked, meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
 		candidateSets[i] = candidates
+		exactMatch[i] = exact
 		if len(candidates) > 0 {
 			itemCandidates = append(itemCandidates, vision.ItemCandidates{
 				ItemIndex: i, ItemName: ri.Name, ItemBrand: ri.Brand, Candidates: candidates,
@@ -327,6 +339,18 @@ func (h *foodHandlers) resolveItems(
 				if s.CandidateIndex < 0 || s.CandidateIndex >= len(candidates) {
 					continue // "none of these" — the estimate fallback below still applies
 				}
+
+				// A fuzzy (non-exact-name) match is only a fallback: the item's
+				// own usable estimate wins instead, and the candidate is
+				// discarded entirely — no identity field is stamped onto the
+				// item — leaving it for the estimate fallback loop below. See
+				// design.md decision 2 (llm-first-macro-estimate).
+				if !exactMatch[s.ItemIndex] {
+					if _, usable := items[s.ItemIndex].PlausibleEstimatedProfile(); usable {
+						continue
+					}
+				}
+
 				chosen := candidates[s.CandidateIndex]
 				profile, ok := h.profileForCandidate(meal.UserID, chosen)
 				if !ok {
@@ -523,20 +547,29 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 // design.md "OFF queried only when a brand was extracted, USDA as the
 // fallback".
 //
+// The bool return is true only for the exact-name custom-food short-circuit
+// — a deterministic identity match — and false for every fuzzy shortlist
+// (ranked custom food, Open Food Facts, or USDA), including when the
+// shortlist happens to contain exactly one candidate: shortlist length is not
+// a safe proxy for exactness, since a fuzzy search can also legitimately
+// return a single result. The caller uses this to decide whether a selected
+// candidate binds unconditionally or is only a fallback to the item's own
+// estimate — see resolveItems and design.md decision 1.
+//
 // ranked is only ever read here, never appended to in place: it is shared
 // across every recognized item in the meal, so growing it in place via a
 // plain append could, when it has spare capacity, overwrite data written by
 // a sibling call for a different item in the same meal.
 func (h *foodHandlers) retrieveCandidates(
 	ranked []vision.Candidate, userID uuid.UUID, name, preparation, state, brand string,
-) []vision.Candidate {
+) ([]vision.Candidate, bool) {
 	var custom database.CustomFood
 	err := h.storage.DB().
 		Where("user_id = ? AND LOWER(name) = LOWER(?)", userID, name).
 		First(&custom).Error
 	if err == nil {
 		id := custom.ID
-		return []vision.Candidate{{CustomFoodID: &id, Description: custom.Name}}
+		return []vision.Candidate{{CustomFoodID: &id, Description: custom.Name}}, true
 	}
 
 	if brand != "" && h.off != nil {
@@ -548,7 +581,7 @@ func (h *foodHandlers) retrieveCandidates(
 				code := f.Code
 				out = append(out, vision.Candidate{OffCode: &code, Brands: f.Brands, Description: f.ProductName})
 			}
-			return out
+			return out, false
 		}
 	}
 
@@ -562,10 +595,10 @@ func (h *foodHandlers) retrieveCandidates(
 				fdcID := f.FdcID
 				out = append(out, vision.Candidate{FdcID: &fdcID, Description: f.Description})
 			}
-			return out
+			return out, false
 		}
 	}
-	return ranked
+	return ranked, false
 }
 
 func (h *foodHandlers) profileForCandidate(userID uuid.UUID, c vision.Candidate) (database.NutrientProfile, bool) {

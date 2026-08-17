@@ -1,6 +1,7 @@
 package database
 
 import (
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -168,6 +169,44 @@ func (i FoodItem) EstimatedProfile() (NutrientProfile, bool) {
 		p.SugarPer100g < 0 || p.SodiumPer100g < 0 || p.DietaryFiberPer100g < 0 {
 		return NutrientProfile{}, false
 	}
+	return p, true
+}
+
+// PlausibleEstimatedProfile returns the item's persisted estimate and whether
+// it is usable for automatic-resolution precedence, per
+// openspec/specs/food-photo-recognition "Macro Estimate Fallback for
+// Unmatched Items". This is stricter than, and separate from, EstimatedProfile:
+// EstimatedProfile's present/non-negative semantics stay unchanged so a
+// legacy row already persisted with MacroSource estimated keeps rescaling
+// consistently on a later weight-only edit even if it would fail these
+// bounds. Only the resolveItems binding decision (deciding whether a fresh
+// estimate should beat a Select-matched fuzzy candidate) uses this stricter
+// check.
+func (i FoodItem) PlausibleEstimatedProfile() (NutrientProfile, bool) {
+	p, ok := i.EstimatedProfile()
+	if !ok {
+		return NutrientProfile{}, false
+	}
+
+	const macroRoundingTolerance = 2.0 // g/100g, absorbs model rounding
+	const macroCeiling = 100.0 + macroRoundingTolerance
+
+	if p.ProteinPer100g > macroCeiling || p.CarbsPer100g > macroCeiling || p.FatPer100g > macroCeiling {
+		return NutrientProfile{}, false
+	}
+	if p.ProteinPer100g+p.CarbsPer100g+p.FatPer100g > macroCeiling {
+		return NutrientProfile{}, false
+	}
+	if p.SugarPer100g+p.DietaryFiberPer100g > p.CarbsPer100g+macroRoundingTolerance {
+		return NutrientProfile{}, false
+	}
+
+	atwater := p.ProteinPer100g*4 + p.CarbsPer100g*4 + p.FatPer100g*9
+	calorieTolerance := math.Max(25.0, atwater*0.15)
+	if p.CaloriesPer100g < atwater-calorieTolerance {
+		return NutrientProfile{}, false
+	}
+
 	return p, true
 }
 
