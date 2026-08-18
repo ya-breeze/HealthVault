@@ -14,9 +14,9 @@
 
 - [x] 3.1 Tighten the `.last()`-disambiguated "Search" selectors in `e2e/tests/food.spec.ts` (review-page tests) to target the submit button by its now-unique role/name
 - [x] 3.2 Add a new e2e test exercising the reference-search path on `/food/manual` (currently uncovered — the only existing manual-entry test uses "Enter macros" mode), including a non-ASCII/Cyrillic query, asserting results render after clicking the actual submit button
-- [ ] 3.3 Run the full food e2e suite against the WIP stack and confirm all tests pass
+- [x] 3.3 Run the full food e2e suite against the WIP stack and confirm all tests pass
 
 ## 4. Manual verification
 
-- [ ] 4.1 Deploy to the WIP stack and manually reproduce the original repro on `/food/manual`: type a Cyrillic food name, confirm the mode tab and submit button are visually distinct, click the actual submit button, and confirm USDA results appear
-- [ ] 4.2 Repeat on the meal-review page's "Add item" panel to confirm the ItemResolver.tsx fix as well
+- [x] 4.1 Deploy to the WIP stack and manually reproduce the original repro on `/food/manual`: type a Cyrillic food name, confirm the mode tab and submit button are visually distinct, click the actual submit button, and confirm USDA results appear
+- [x] 4.2 Repeat on the meal-review page's "Add item" panel to confirm the ItemResolver.tsx fix as well
