@@ -1,25 +1,37 @@
 ## Context
 
-`ItemResolver.tsx` (used from `AddItemForm.tsx` on the meal review page) offers two ways to resolve an "Add item" row: searching a food database, or entering macros manually. It implements this as a two-tab switcher (`mode: 'search' | 'manual'`) plus, within the search tab, a text input and a submit button that calls `api.searchFood`.
+Two components let a user resolve a food item either by searching a reference database or by entering macros directly, each via a two-tab switcher plus a submit button for the search path:
 
-Both the search-mode tab and the submit button currently render the literal label "Search". Since `mode` defaults to `'search'`, the tab is already selected when the panel opens. Clicking it calls `setMode('search')` with its current value; React's `useState` setter bails out on a same-value update, producing no re-render and, critically, no call into `search()`. The user sees no loading indicator, no error, and no results — indistinguishable from the app being broken, when in fact the actual submit button one row below works correctly.
+- `ItemResolver.tsx` (used from the meal review page's "Add item" panel): tabs are "Search" / "Enter macros", both rendered with the same amber accent (`bg-amber-600` when active). The submit button is also `bg-amber-600`. Tab and button share the identical label "Search".
+- `ManualItemEditor.tsx` (used from `/food/manual`, one row per item in a from-scratch meal): tabs are "Search food" / "Enter macros", rendered with a blue accent (`bg-blue-600` when active). The submit button is styled `bg-gray-100` (plain, gray) — visually the least prominent element in the row, despite being the only control that calls `search()`.
+
+Both default their mode/source to the search path, so the mode tab in question is already selected on first render. In `ItemResolver.tsx` this makes the click a true no-op (see below); in `ManualItemEditor.tsx` the click does run through `update()` (which always spreads into a new object, so no React same-value bail-out applies) but produces no visible change since the mode was already active — which reads exactly the same to a user as "nothing happened."
+
+A user's direct report ("blue search button did nothing, gray search button worked and showed USDA results") matches `ManualItemEditor.tsx`'s exact color scheme, not `ItemResolver.tsx`'s (which has no blue or gray anywhere). This is a manual-entry-page bug, not (only) a review-page bug.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Make the mode tab and the submit button visually and textually distinguishable, so a user cannot mistake one for the other.
-- Preserve all existing behavior of both controls (tab still only switches `mode`; button still only calls `search()`).
+- Eliminate the literal duplicate "Search" label in `ItemResolver.tsx`.
+- In both components, make the actual search-submit button the single visually "primary" (solid, colored) control in its panel, and make the mode tabs read as tabs (a lighter selected-state indicator), not as alternative action buttons.
+- Preserve all existing behavior of every control — this is a labeling/styling fix only.
 
 **Non-Goals:**
-- Not changing the search/translation backend logic (`food.go` `Search` handler, OpenAI translation) — it already works correctly once the real submit button is invoked.
-- Not restructuring `ItemResolver`'s tab/panel layout beyond the label change.
+- Not changing the search/translation backend logic — it works correctly once the real submit button is invoked.
+- Not unifying `ItemResolver.tsx`'s amber accent and `ManualItemEditor.tsx`'s blue accent into one shared color scheme — that's a separate, larger design decision out of scope here.
+- Not extracting a shared "tab" component. Two call sites with a small, direct class-string change each does not warrant a new abstraction.
 
 ## Decisions
 
-- Rename the mode tab's label from `"Search"` to `"Search food"`, matching the existing sibling tab pattern in `ManualItemEditor.tsx` (which already uses a descriptive, non-generic label for its own mode tab rather than a bare verb). The submit button keeps its label as `"Search"` since it is the actual action being taken once the tab is selected.
-- No component restructuring: this is a one-line label change plus corresponding e2e selector updates, not a rewrite of the mode-switch UI.
+- **Underline/border indicator for the selected mode tab, not a solid fill**, in both components: replace the active tab's `bg-{color}-600 text-white` with something like `border-b-2 border-{color}-600 text-{color}-900 dark:text-{color}-200` (no background fill). This is the key change that stops a tab from visually reading as a clickable "go" button.
+- **The search-submit button keeps (or gains) a solid, colored fill** as the one prominent action control in its panel:
+  - `ItemResolver.tsx`'s submit button already is `bg-amber-600` — unchanged.
+  - `ManualItemEditor.tsx`'s submit button changes from `bg-gray-100 text-gray-700` to a solid `bg-blue-600 hover:bg-blue-700 text-white` fill, matching that component's existing accent color and making it the visually primary control instead of the tab.
+- **Rename `ItemResolver.tsx`'s tab label** from "Search" to "Search food", matching `ManualItemEditor.tsx`'s existing label — removes the literal duplicate regardless of the styling change, so the fix isn't solely dependent on color perception.
+- Direct class-string edits at both call sites rather than a new shared "Tab" component — two sites, no third caller today, consistent with keeping this a minimal fix.
 
 ## Risks / Trade-offs
 
-- [Risk] E2e tests currently rely on `.last()` to disambiguate the two "Search" buttons; after the rename this is no longer necessary but still functionally correct, so tests are not required to change to keep passing. → We will still tighten the affected selectors to name the tab explicitly, since leaving `.last()` behind a fix for the exact bug it exists to work around should not be self-verifying.
-- [Risk] A future contributor could reintroduce a duplicate-label control elsewhere in the resolver. → Out of scope for this fix; not adding an automated lint for this narrow case given the project's scale.
+- [Risk] Restyling the tabs changes their visual weight, which could itself be read as a UI regression if done inconsistently. → Keep the change to background-fill vs. underline only; don't alter tab sizing, spacing, or the 48×48 tap-target minimum (still enforced via `TapTarget`).
+- [Risk] E2e tests reference these controls by label/role; restyling doesn't change accessible names, but the review-page tests' `.last()` disambiguation becomes unnecessary once labels are unique. → Tighten those selectors to name the submit button directly so the tests assert the fix rather than merely tolerating the old ambiguity.
+- [Risk] `/food/manual`'s search path has no existing e2e coverage at all, so this defect shipped silently. → Add a new test exercising the reference-search path on `/food/manual`, including a non-ASCII query, so this class of regression is caught going forward.

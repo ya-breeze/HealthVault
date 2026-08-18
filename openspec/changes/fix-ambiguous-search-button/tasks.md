@@ -1,13 +1,22 @@
-## 1. Frontend fix
+## 1. ItemResolver.tsx (meal review page)
 
-- [ ] 1.1 Rename the search-mode tab label in `frontend/components/food/ItemResolver.tsx` from "Search" to "Search food" (or equivalent distinct label), leaving its `onClick={() => setMode('search')}` behavior unchanged
-- [ ] 1.2 Verify the submit button (the one calling `search()`) keeps its "Search" label and behavior unchanged
+- [ ] 1.1 Rename the mode tab's label from "Search" to "Search food", leaving its `onClick={() => setMode('search')}` behavior unchanged
+- [ ] 1.2 Restyle the active mode tab from a solid `bg-amber-600` fill to a non-filled selected-state indicator (e.g. underline/border accent)
+- [ ] 1.3 Confirm the submit button (calls `search()`) remains the panel's one solid-filled control, unchanged behavior
 
-## 2. E2E test updates
+## 2. ManualItemEditor.tsx (manual meal-entry page)
 
-- [ ] 2.1 Update `e2e/tests/food.spec.ts` selectors that use `.last()` to disambiguate the two "Search" buttons to target the submit button by its new distinct role/name where practical, so the test asserts the fix rather than merely tolerating the old ambiguity
-- [ ] 2.2 Run the food e2e suite against the WIP stack and confirm all search-related tests pass
+- [ ] 2.1 Restyle the active mode tab from a solid `bg-blue-600` fill to a non-filled selected-state indicator, matching the pattern used in ItemResolver.tsx
+- [ ] 2.2 Restyle the search-submit button from `bg-gray-100 text-gray-700` to a solid colored fill (e.g. `bg-blue-600 hover:bg-blue-700 text-white`) so it is the row's visually primary control; behavior (`onClick={search}`) unchanged
+- [ ] 2.3 Verify tap targets stay at the existing 48×48 minimum after the restyle (via `TapTarget`)
 
-## 3. Manual verification
+## 3. E2E test updates
 
-- [ ] 3.1 Deploy to the dogfood/WIP stack and manually reproduce the original repro: open "Add item", confirm clicking the mode tab does nothing harmful (it's a no-op tab click, not a broken search), then click the actual "Search" submit button with a Cyrillic query and confirm results appear
+- [ ] 3.1 Tighten the `.last()`-disambiguated "Search" selectors in `e2e/tests/food.spec.ts` (review-page tests) to target the submit button by its now-unique role/name
+- [ ] 3.2 Add a new e2e test exercising the reference-search path on `/food/manual` (currently uncovered — the only existing manual-entry test uses "Enter macros" mode), including a non-ASCII/Cyrillic query, asserting results render after clicking the actual submit button
+- [ ] 3.3 Run the full food e2e suite against the WIP stack and confirm all tests pass
+
+## 4. Manual verification
+
+- [ ] 4.1 Deploy to the WIP stack and manually reproduce the original repro on `/food/manual`: type a Cyrillic food name, confirm the mode tab and submit button are visually distinct, click the actual submit button, and confirm USDA results appear
+- [ ] 4.2 Repeat on the meal-review page's "Add item" panel to confirm the ItemResolver.tsx fix as well

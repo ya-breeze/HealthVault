@@ -1,10 +1,17 @@
 ## ADDED Requirements
 
-### Requirement: Item Resolution Mode Controls Are Distinctly Labeled
+### Requirement: Item Resolution Mode Controls Are Distinctly Presented
 
-The item-resolution UI SHALL label its search-mode selector and its search-submit control with visibly different text, so a user cannot mistake the mode selector (which only switches which panel is shown and performs no search) for the control that actually triggers a food search. This applies regardless of which mode is selected by default.
+In every item-resolution UI that offers both a search-by-database mode and a manual-macros mode (the meal review page's "Add item" panel and the manual meal-entry form), the mode-selector control(s) SHALL be visually and textually distinguishable from the search-submit control, so a user cannot mistake one for the other. This holds regardless of which mode is active by default, and regardless of which mode-selector control happens to be selected.
+
+Specifically: the mode-selector control(s) SHALL NOT share identical visible text with the search-submit control, and SHALL NOT be styled as the single most visually prominent (solid-filled, colored) control in the panel when the search-submit control is also present — the search-submit control SHALL be the one control styled that way, since it is the only control that triggers a search request.
 
 #### Scenario: Search mode is already selected when the panel opens
 
-- **WHEN** the item-resolution panel opens with search mode already active
-- **THEN** the mode selector and the search-submit control are not labeled with the identical text, so clicking the mode selector cannot be mistaken for triggering a search
+- **WHEN** an item-resolution panel opens with its search mode already active
+- **THEN** the mode-selector control and the search-submit control are not labeled with identical text, and the search-submit control — not the mode-selector control — is the panel's visually primary (solid-filled) control
+
+#### Scenario: Manual meal-entry search path is reachable and distinguishable
+
+- **WHEN** a user adds an item row on the manual meal-entry form with its default (search) source selected
+- **THEN** the row's mode-selector tab and its search-submit button are visually distinguishable, and clicking the search-submit button performs a search
