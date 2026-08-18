@@ -1284,6 +1284,11 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 // and to make canReanalyze true (Boolean(meal.photo_path)). Used by the
 // route-mocked tests below, which verify the UI's *own* success/failure
 // handling deterministically — no real backend or vision call involved.
+// Single item by default, with macro_source not 'none' — MealItemRow only
+// auto-opens its own ItemResolver when macro_source is 'none', so this keeps
+// exactly one ItemResolver mounted at a time. Tests below rely on that to
+// address its exact-'Search' submit button unambiguously; a fixture with 2+
+// 'none'-source items would need to scope that selector instead.
 function mockFoodMeal(overrides: Record<string, unknown> = {}) {
   return {
     id: 'mock-meal-id',

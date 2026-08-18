@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { api, FoodSearchResult, ManualMealItemInput } from '@/lib/api';
 import TapTarget from '@/components/ui/TapTarget';
+import { tabClass } from './tabClass';
 
 interface Props {
   index: number;
@@ -113,13 +114,13 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
       <div className="flex gap-2 mb-2 text-xs">
         <TapTarget
           onClick={() => update({ source: 'reference' })}
-          className={`px-2 pb-1 border-b-2 ${item.source === 'reference' ? 'border-blue-600 text-blue-900 dark:text-blue-200' : 'border-transparent text-gray-600 dark:text-gray-300'}`}
+          className={tabClass(item.source === 'reference', 'border-blue-600 text-blue-900 dark:text-blue-200', 'border-transparent text-gray-600 dark:text-gray-300')}
         >
           Search food
         </TapTarget>
         <TapTarget
           onClick={() => update({ source: 'manual' })}
-          className={`px-2 pb-1 border-b-2 ${item.source === 'manual' ? 'border-blue-600 text-blue-900 dark:text-blue-200' : 'border-transparent text-gray-600 dark:text-gray-300'}`}
+          className={tabClass(item.source === 'manual', 'border-blue-600 text-blue-900 dark:text-blue-200', 'border-transparent text-gray-600 dark:text-gray-300')}
         >
           Enter macros
         </TapTarget>

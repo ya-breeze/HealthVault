@@ -14,6 +14,10 @@ async function login(page: Page) {
   await page.waitForURL('/');
 }
 
+// Single item by default, with macro_source not 'none' — MealItemRow only
+// auto-opens its own ItemResolver when macro_source is 'none', so this keeps
+// exactly one ItemResolver mounted at a time. The test below relies on that
+// to address its exact-'Search' submit button unambiguously.
 function mockFoodMeal(overrides: Record<string, unknown> = {}) {
   return {
     id: 'mock-meal-id',
@@ -103,7 +107,7 @@ test.describe('Mobile tap targets — review page', () => {
     await assertMinTapTarget(page.getByRole('button', { name: 'Edit name/time' }), 'meal-meta edit control');
 
     await page.getByRole('button', { name: 'Change match' }).click();
-    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
     const result = page.getByRole('button', { name: /Search Result Food/ });
     await expect(result).toBeVisible();
     await assertMinTapTarget(result, 'search-result picker row');
