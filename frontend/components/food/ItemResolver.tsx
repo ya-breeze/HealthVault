@@ -140,13 +140,13 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
       <div className="flex gap-2 mb-2 text-xs">
         <TapTarget
           onClick={() => setMode('search')}
-          className={`px-2 rounded ${mode === 'search' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-300'}`}
+          className={`px-2 pb-1 border-b-2 ${mode === 'search' ? 'border-amber-600 text-amber-900 dark:text-amber-200' : 'border-transparent text-amber-700 dark:text-amber-300'}`}
         >
-          Search
+          Search food
         </TapTarget>
         <TapTarget
           onClick={() => setMode('manual')}
-          className={`px-2 rounded ${mode === 'manual' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-300'}`}
+          className={`px-2 pb-1 border-b-2 ${mode === 'manual' ? 'border-amber-600 text-amber-900 dark:text-amber-200' : 'border-transparent text-amber-700 dark:text-amber-300'}`}
         >
           Enter macros
         </TapTarget>

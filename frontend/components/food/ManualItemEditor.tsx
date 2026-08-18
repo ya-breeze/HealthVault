@@ -113,13 +113,13 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
       <div className="flex gap-2 mb-2 text-xs">
         <TapTarget
           onClick={() => update({ source: 'reference' })}
-          className={`px-2 rounded ${item.source === 'reference' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+          className={`px-2 pb-1 border-b-2 ${item.source === 'reference' ? 'border-blue-600 text-blue-900 dark:text-blue-200' : 'border-transparent text-gray-600 dark:text-gray-300'}`}
         >
           Search food
         </TapTarget>
         <TapTarget
           onClick={() => update({ source: 'manual' })}
-          className={`px-2 rounded ${item.source === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+          className={`px-2 pb-1 border-b-2 ${item.source === 'manual' ? 'border-blue-600 text-blue-900 dark:text-blue-200' : 'border-transparent text-gray-600 dark:text-gray-300'}`}
         >
           Enter macros
         </TapTarget>
@@ -131,7 +131,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
             <TapTarget
               onClick={search}
               disabled={searching || !query}
-              className="px-2 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
+              className="px-2 rounded text-xs bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
             >
               {searching ? 'Searching…' : 'Search'}
             </TapTarget>
