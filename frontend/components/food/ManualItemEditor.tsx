@@ -111,14 +111,18 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
         </TapTarget>
       </div>
 
-      <div className="flex gap-4 mb-2 border-b border-gray-200 dark:border-gray-700 text-xs">
+      <div className="flex gap-4 mb-2 border-b border-gray-200 dark:border-gray-700 text-xs" role="tablist" aria-label="Item resolution mode">
         <TapTarget
+          role="tab"
+          aria-selected={item.source === 'reference'}
           onClick={() => update({ source: 'reference' })}
           className={tabClass(item.source === 'reference', 'border-blue-600 text-blue-900 dark:text-blue-200')}
         >
           Search food
         </TapTarget>
         <TapTarget
+          role="tab"
+          aria-selected={item.source === 'manual'}
           onClick={() => update({ source: 'manual' })}
           className={tabClass(item.source === 'manual', 'border-blue-600 text-blue-900 dark:text-blue-200')}
         >

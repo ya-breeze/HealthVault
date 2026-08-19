@@ -11,6 +11,7 @@ Both share the same underlying shape: a colored, prominent mode-tab that reads a
 
 - `ItemResolver.tsx`: rename the mode-tab label from "Search" to "Search food", removing the literal duplicate label.
 - Both `ItemResolver.tsx` and `ManualItemEditor.tsx`: restyle the mode tabs to use a non-filled "selected" indicator (e.g. an underline/border accent, not a solid colored pill) instead of a solid button-like fill, and ensure the actual search-submit button in each component is the one solid, colored, primary-looking control in its panel. This makes "solid colored button = triggers an action" a consistent, unambiguous signal in both places, rather than relying on labels alone.
+- `ManualItemEditor.tsx`: match its search-submit button's padding/rounding/font-weight to `ItemResolver.tsx`'s, move it to the right of the weight field (matching `ItemResolver.tsx`'s input-then-button order), and let the weight field fill the row's available width instead of a fixed width — so the two panels' search rows read as the same control pattern, not just the same color rule.
 - No change to either control's underlying behavior — the tab still only switches `mode`/`source`, the submit button still only calls `search()`.
 
 ## Capabilities
@@ -24,5 +25,5 @@ Both share the same underlying shape: a colored, prominent mode-tab that reads a
 ## Impact
 
 - `frontend/components/food/ItemResolver.tsx` — rename the mode-tab label; restyle mode-tab "active" state.
-- `frontend/components/food/ManualItemEditor.tsx` — restyle mode-tab "active" state; restyle the search-submit button to be the visually primary control.
+- `frontend/components/food/ManualItemEditor.tsx` — restyle mode-tab "active" state; restyle the search-submit button to be the visually primary control, match its styling/order to `ItemResolver.tsx`'s, and make the weight field fill available width.
 - `e2e/tests/food.spec.ts` — tighten the existing `.last()`-disambiguated "Search" selectors on the review page now that labels are unique; add new coverage for the manual-entry page's search path (currently untested), including a non-ASCII (Cyrillic) query to directly cover the reported case.

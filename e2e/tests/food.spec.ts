@@ -102,8 +102,10 @@ test.describe('Manual meal entry', () => {
     await page.getByPlaceholder('Food name').fill('Перепелиное яйцо');
 
     // Mirrors the reported repro: clicking the already-active "Search food"
-    // tab first (a no-op), then the actual submit button.
+    // tab first (a no-op) — assert no search actually ran — then the actual
+    // submit button.
     await page.getByRole('button', { name: 'Search food' }).click();
+    await expect(page.getByText('Searched as:')).not.toBeVisible();
     await page.getByRole('button', { name: 'Search', exact: true }).click();
 
     await expect(page.getByText('Searched as:')).toBeVisible();
