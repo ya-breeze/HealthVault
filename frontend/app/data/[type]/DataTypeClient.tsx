@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { api, DataType } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom } from '@/lib/dataTypeMeta';
+import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries } from '@/lib/dataTypeMeta';
 import Header from '@/components/Header';
 
 interface Props {
@@ -62,6 +62,28 @@ export default function DataTypeClient({ type }: Props) {
 
   const { from, to, bucket } = useMemo(() => rangeForZoom(zoom), [zoom]);
 
+  // weight's Week/Year-zoom trend line needs enough trailing bucketed history
+  // to seed its EMA before the visible window starts — see
+  // chart-zoom-aggregation's "Weight trend line" requirement. An alpha=0.25
+  // EMA needs ~14-16 periods to converge; Week's 7 daily buckets and Year's
+  // ~12-13 monthly buckets both fall short, so both get their bucketed fetch
+  // doubled. Month's 30 daily buckets already exceed it and are left
+  // untouched. Only the bucketed fetch is widened; the raw fetch (`records`)
+  // and stats row stay on the normal range regardless.
+  const needsWidenedLookback = dataType === 'weight' && (zoom === 'week' || zoom === 'year');
+  const chartFrom = useMemo(() => {
+    if (!needsWidenedLookback) return from;
+    const widened = new Date(from);
+    if (zoom === 'week') {
+      widened.setDate(widened.getDate() - 7);
+    } else {
+      widened.setFullYear(widened.getFullYear() - 1);
+    }
+    return widened.toISOString();
+  }, [needsWidenedLookback, zoom, from]);
+  const fromMs = new Date(from).getTime();
+  const toMs = new Date(to).getTime();
+
   useEffect(() => {
     setLoading(true);
     setPendingDeleteId(null);
@@ -81,13 +103,13 @@ export default function DataTypeClient({ type }: Props) {
 
     const effectiveBucket = hasChart ? bucket : undefined;
     if (effectiveBucket) {
-      api.data(type, from, to, userParam, effectiveBucket)
+      api.data(type, chartFrom, to, userParam, effectiveBucket)
         .then(setChartRows)
         .catch(() => setChartRows([]));
     } else {
       setChartRows([]);
     }
-  }, [type, from, to, bucket, hasChart, userParam, router]);
+  }, [type, from, to, chartFrom, bucket, hasChart, userParam, router]);
 
   const isDay = zoom === 'day';
 
@@ -107,29 +129,53 @@ export default function DataTypeClient({ type }: Props) {
       )
     : [];
 
-  const fromMs = new Date(from).getTime();
-  const toMs = new Date(to).getTime();
-
   const dayLineData = timeKey
     ? records.map(r => ({ ...r, [timeKey]: new Date(r[timeKey] as string).getTime() }))
     : records;
 
-  const bucketBarData = chartRows.map(r => ({
+  // For weight+week/year, `chartRows` holds the widened fetch used to seed
+  // the trend's EMA (see above); every other chart/stat must only ever see
+  // the zoom's own visible window. Filtered by each row's own bucket_start
+  // against the visible range's real start date, not by array position: the
+  // backend's bucket query is a plain GROUP BY with no zero-fill for missing
+  // days (storage_impl.go's QueryAggregate), so sparse logging can return
+  // fewer rows than the widened range spans — a positional slice(-N) would
+  // then pull buckets from well outside the visible window into what's
+  // labeled and rendered as the current view.
+  const visibleMask = needsWidenedLookback
+    ? chartRows.map(r => new Date(String(r.bucket_start)).getTime() >= fromMs)
+    : chartRows.map(() => true);
+  const visibleChartRows = chartRows.filter((_, i) => visibleMask[i]);
+
+  // Trend is computed from the full (possibly widened) series so the EMA has
+  // time to stabilize, then filtered down to the same visible window as
+  // everything else (via the same mask, so it stays aligned with
+  // visibleChartRows by index) before being merged into bucketBandData below.
+  const trendFull = dataType === 'weight' ? emaSeries(chartRows.map(r => num(r.avg)), 0.25) : [];
+  const visibleTrend = trendFull.filter((_, i) => visibleMask[i]);
+
+  const bucketBarData = visibleChartRows.map(r => ({
     label: bucketLabel(r.bucket_start, zoom),
     value: isNutrition ? num(r[`sum_${macro}`]) : num(r.sum),
   }));
 
-  const bucketBandData = chartRows.map(r => ({
+  // `range` is a [min, max] tuple rather than a stacked min+band pair: Recharts
+  // renders a dataKey that resolves to a tuple as a "ranged Area" positioned
+  // directly between those two values, with no stacking baseline involved. A
+  // stacked (transparent-bottom + visible-band) Area would instead anchor its
+  // baseline at the stack's absolute value origin (0), which silently pulls
+  // the Y-axis back toward zero regardless of the `domain` prop below.
+  const bucketBandData = visibleChartRows.map((r, i) => ({
     label: bucketLabel(r.bucket_start, zoom),
     avg: num(r.avg),
-    min: num(r.min),
-    band: num(r.max) - num(r.min),
+    range: [num(r.min), num(r.max)] as [number, number],
+    ...(dataType === 'weight' ? { trend: visibleTrend[i] } : {}),
   }));
 
-  const bucketBPData = chartRows.map(r => ({
+  const bucketBPData = visibleChartRows.map(r => ({
     label: bucketLabel(r.bucket_start, zoom),
-    sysAvg: num(r.systolic_avg), sysMin: num(r.systolic_min), sysBand: num(r.systolic_max) - num(r.systolic_min),
-    diaAvg: num(r.diastolic_avg), diaMin: num(r.diastolic_min), diaBand: num(r.diastolic_max) - num(r.diastolic_min),
+    sysAvg: num(r.systolic_avg), sysRange: [num(r.systolic_min), num(r.systolic_max)] as [number, number],
+    diaAvg: num(r.diastolic_avg), diaRange: [num(r.diastolic_min), num(r.diastolic_max)] as [number, number],
   }));
 
   // Two flattened series driving the stats row, uniform across Day (raw
@@ -142,16 +188,16 @@ export default function DataTypeClient({ type }: Props) {
   // shows and the stats row should agree with.
   const primaryAvgSeries = useMemo(() => {
     if (isBloodPressure) {
-      return isDay ? records.map(r => num(r.systolic)) : chartRows.map(r => num(r.systolic_avg));
+      return isDay ? records.map(r => num(r.systolic)) : visibleChartRows.map(r => num(r.systolic_avg));
     }
     if (isNutrition) {
-      return isDay ? records.map(r => num(r[macro])) : chartRows.map(r => num(r[`sum_${macro}`]));
+      return isDay ? records.map(r => num(r[macro])) : visibleChartRows.map(r => num(r[`sum_${macro}`]));
     }
     if (isDay) {
       return numericKey ? records.map(r => num(r[numericKey])) : [];
     }
-    return chartRows.map(r => (meta?.family === 'cumulative' ? num(r.sum) : num(r.avg)));
-  }, [isBloodPressure, isNutrition, isDay, records, chartRows, numericKey, macro, meta]);
+    return visibleChartRows.map(r => (meta?.family === 'cumulative' ? num(r.sum) : num(r.avg)));
+  }, [isBloodPressure, isNutrition, isDay, records, visibleChartRows, numericKey, macro, meta]);
 
   const primaryMaxSeries = useMemo(() => {
     // Day (raw points) and cumulative types, including nutrition (whose
@@ -161,10 +207,10 @@ export default function DataTypeClient({ type }: Props) {
       return primaryAvgSeries;
     }
     if (isBloodPressure) {
-      return chartRows.map(r => num(r.systolic_max));
+      return visibleChartRows.map(r => num(r.systolic_max));
     }
-    return chartRows.map(r => num(r.max));
-  }, [isDay, isBloodPressure, chartRows, meta, primaryAvgSeries]);
+    return visibleChartRows.map(r => num(r.max));
+  }, [isDay, isBloodPressure, visibleChartRows, meta, primaryAvgSeries]);
 
   const stats = {
     avg: mean(primaryAvgSeries),
@@ -172,6 +218,28 @@ export default function DataTypeClient({ type }: Props) {
     total: primaryAvgSeries.reduce((a, b) => a + b, 0),
   };
   const showTotal = !isBloodPressure && meta?.family === 'cumulative';
+
+  // Point-in-time Y-axis domains — computed from the values actually driving
+  // each chart, not defaulted toward zero. Cumulative types (bar charts) are
+  // deliberately excluded and keep their zero-anchored default. See
+  // chart-zoom-aggregation's "Point-in-time Y-axis domain" requirement.
+  const dayDomain = useMemo(() => {
+    if (meta?.family !== 'point') return undefined;
+    const values = isBloodPressure
+      ? records.flatMap(r => [num(r.systolic), num(r.diastolic)])
+      : (numericKey ? records.map(r => num(r[numericKey])) : []);
+    return computeYDomain(values);
+  }, [meta, isBloodPressure, records, numericKey]);
+
+  const bandDomain = useMemo(() => {
+    if (meta?.family !== 'point') return undefined;
+    const values = isBloodPressure
+      ? visibleChartRows.flatMap(r => [
+          num(r.systolic_min), num(r.systolic_max), num(r.diastolic_min), num(r.diastolic_max),
+        ])
+      : visibleChartRows.flatMap(r => [num(r.min), num(r.max)]);
+    return computeYDomain(values);
+  }, [meta, isBloodPressure, visibleChartRows]);
 
   const handleConfirmDelete = async (id: string) => {
     setDeleting(true);
@@ -249,7 +317,7 @@ export default function DataTypeClient({ type }: Props) {
                     tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
-                  <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                  <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                   <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line type="monotone" dataKey="systolic" stroke={color} dot strokeWidth={2} name="Systolic" />
@@ -266,7 +334,7 @@ export default function DataTypeClient({ type }: Props) {
                     tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
-                  <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                  <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                   <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} />
                   <Line
                     type="monotone"
@@ -281,13 +349,11 @@ export default function DataTypeClient({ type }: Props) {
               <ComposedChart data={bucketBPData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area dataKey="sysMin" stackId="sys" stroke="none" fill="transparent" legendType="none" />
-                <Area dataKey="sysBand" stackId="sys" stroke="none" fill={color} fillOpacity={0.15} legendType="none" />
-                <Area dataKey="diaMin" stackId="dia" stroke="none" fill="transparent" legendType="none" />
-                <Area dataKey="diaBand" stackId="dia" stroke="none" fill={color} fillOpacity={0.08} legendType="none" />
+                <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" />
+                <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" />
                 <Line type="monotone" dataKey="sysAvg" stroke={color} strokeWidth={2} dot={false} name="Systolic" />
                 <Line type="monotone" dataKey="diaAvg" stroke={color} strokeDasharray="4 3" strokeWidth={2} dot={false} name="Diastolic" />
               </ComposedChart>
@@ -303,11 +369,22 @@ export default function DataTypeClient({ type }: Props) {
               <ComposedChart data={bucketBandData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+                <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <Tooltip />
-                <Area dataKey="min" stackId="a" stroke="none" fill="transparent" legendType="none" />
-                <Area dataKey="band" stackId="a" stroke="none" fill={color} fillOpacity={0.18} legendType="none" />
-                <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} />
+                {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
+                <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" />
+                <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name="Avg" />
+                {dataType === 'weight' && (
+                  <Line
+                    type="monotone"
+                    dataKey="trend"
+                    stroke="var(--accent)"
+                    strokeWidth={2}
+                    strokeDasharray="5 4"
+                    dot={false}
+                    name="Trend"
+                  />
+                )}
               </ComposedChart>
             )}
           </ResponsiveContainer>

@@ -84,6 +84,119 @@ test.describe('Zoom control', () => {
   });
 });
 
+test.describe('Point-in-time Y-axis domain and weight trend line', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  async function yAxisTickTexts(page: Page) {
+    return page.locator('.recharts-yAxis-tick-labels text').allTextContents();
+  }
+
+  test('weight Year-zoom Y-axis does not zero-anchor', async ({ page }) => {
+    await page.goto('/data/weight/');
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    const ticks = await yAxisTickTexts(page);
+    // Seeded weight data on this stack clusters in the 70s-90s kg range, far
+    // from zero. A regression to zero-anchoring (either from an unset domain,
+    // or from the stacked-Area baseline bug this test also guards against)
+    // would put a "0" tick back on the axis.
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks).not.toContain('0');
+  });
+
+  test('heart_rate Year-zoom Y-axis does not zero-anchor', async ({ page }) => {
+    await page.goto('/data/heart_rate/');
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    const ticks = await yAxisTickTexts(page);
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks).not.toContain('0');
+  });
+
+  test('steps (cumulative) Y-axis keeps its zero baseline', async ({ page }) => {
+    await page.goto('/data/steps/');
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    const ticks = await yAxisTickTexts(page);
+    expect(ticks).toContain('0');
+  });
+
+  test('weight trend line renders at Week/Month/Year but not Day', async ({ page }) => {
+    await page.goto('/data/weight/');
+    for (const zoom of ['Week', 'Month', 'Year']) {
+      await page.getByRole('button', { name: zoom, exact: true }).click();
+      await expect(page.getByText('Trend', { exact: true })).toBeVisible();
+    }
+    await page.getByRole('button', { name: 'Day', exact: true }).click();
+    await expect(page.getByText('Trend', { exact: true })).not.toBeVisible();
+  });
+
+  test('trend line does not render for other point-in-time metrics', async ({ page }) => {
+    await page.goto('/data/heart_rate/');
+    for (const zoom of ['Week', 'Month', 'Year']) {
+      await page.getByRole('button', { name: zoom, exact: true }).click();
+      await expect(page.getByText('Trend', { exact: true })).not.toBeVisible();
+    }
+  });
+
+  test('blood_pressure Year-zoom band renders without a zero-anchored axis', async ({ page }) => {
+    await page.goto('/data/blood_pressure/');
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    const ticks = await yAxisTickTexts(page);
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks).not.toContain('0');
+  });
+
+  // Regression coverage for a bug found in code review: Year zoom's own ~12-13
+  // monthly buckets fall short of the ~14-16 periods an alpha=0.25 EMA needs to
+  // converge, so weight's trend line must widen its lookback fetch the same way
+  // Week's does — not just Week. These assert on the actual outgoing request
+  // range, since a rendered-but-unconverged trend line would still pass a mere
+  // visibility check.
+  test('weight Week-zoom bucketed fetch widens to >= 14 days', async ({ page }) => {
+    await page.goto('/data/weight/');
+    const [req] = await Promise.all([
+      page.waitForRequest(r => /\/api\/data\/weight\?.*bucket=day/.test(r.url())),
+      page.getByRole('button', { name: 'Week', exact: true }).click(),
+    ]);
+    const url = new URL(req.url());
+    const from = new Date(url.searchParams.get('from')!);
+    const to = new Date(url.searchParams.get('to')!);
+    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    expect(days).toBeGreaterThanOrEqual(14);
+  });
+
+  test('weight Year-zoom bucketed fetch widens to >= ~2 years', async ({ page }) => {
+    await page.goto('/data/weight/');
+    const [req] = await Promise.all([
+      page.waitForRequest(r => /\/api\/data\/weight\?.*bucket=month/.test(r.url())),
+      page.getByRole('button', { name: 'Year', exact: true }).click(),
+    ]);
+    const url = new URL(req.url());
+    const from = new Date(url.searchParams.get('from')!);
+    const to = new Date(url.searchParams.get('to')!);
+    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    // ~2 years, allowing slack for leap years/DST rather than pinning to 730.
+    expect(days).toBeGreaterThanOrEqual(700);
+  });
+
+  test('heart_rate Week-zoom bucketed fetch is not widened', async ({ page }) => {
+    await page.goto('/data/heart_rate/');
+    const [req] = await Promise.all([
+      page.waitForRequest(r => /\/api\/data\/heart_rate\?.*bucket=day/.test(r.url())),
+      page.getByRole('button', { name: 'Week', exact: true }).click(),
+    ]);
+    const url = new URL(req.url());
+    const from = new Date(url.searchParams.get('from')!);
+    const to = new Date(url.searchParams.get('to')!);
+    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    expect(days).toBeLessThan(8);
+  });
+});
+
 test.describe('API data endpoints', () => {
   test('GET /api/data/steps returns array', async ({ page, request }) => {
     await login(page);
