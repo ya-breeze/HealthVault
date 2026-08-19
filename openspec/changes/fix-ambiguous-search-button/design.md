@@ -18,7 +18,7 @@ A user's direct report ("blue search button did nothing, gray search button work
 
 **Non-Goals:**
 - Not changing the search/translation backend logic — it works correctly once the real submit button is invoked.
-- Not unifying `ItemResolver.tsx`'s amber accent and `ManualItemEditor.tsx`'s blue accent into one shared color scheme — that's a separate, larger design decision out of scope here.
+- Not unifying `ItemResolver.tsx`'s amber accent and `ManualItemEditor.tsx`'s blue accent into one shared color scheme. Raised explicitly during live review of this change and confirmed out of scope: amber elsewhere in the app signals "needs attention" (e.g. the unresolved-item badge in `MealItemRow.tsx`), so `ItemResolver.tsx`'s amber wrapper may be a deliberate choice tied to that panel always meaning "this item needs resolving," not an arbitrary inconsistency — a real design decision for a separate change, not a byproduct of this bug fix.
 - Not extracting a shared "tab" component. Two call sites with a small, direct class-string change each does not warrant a new abstraction.
 
 ## Decisions
@@ -29,6 +29,7 @@ A user's direct report ("blue search button did nothing, gray search button work
   - `ManualItemEditor.tsx`'s submit button changes from `bg-gray-100 text-gray-700` to a solid `bg-blue-600 hover:bg-blue-700 text-white` fill, matching that component's existing accent color and making it the visually primary control instead of the tab.
 - **Rename `ItemResolver.tsx`'s tab label** from "Search" to "Search food", matching `ManualItemEditor.tsx`'s existing label — removes the literal duplicate regardless of the styling change, so the fix isn't solely dependent on color perception.
 - Direct class-string edits at both call sites rather than a new shared "Tab" component — two sites, no third caller today, consistent with keeping this a minimal fix.
+- **Match the two panels' search-submit button styling and control order, and let the row's input fill available width**: `ManualItemEditor.tsx`'s button used different padding/rounding/weight than `ItemResolver.tsx`'s (`px-2 rounded text-xs` vs `px-3 rounded-md text-xs font-medium`) and sat left of its row's other field, while `ItemResolver.tsx`'s sits right of its input — flagged during live review as an inconsistency once both panels were seen side by side. Matched the button classes, moved it to the right of the weight field, and changed that field from a fixed `w-24` to `flex-1` so it fills the row the same way `ItemResolver.tsx`'s query input does. Color itself (amber vs blue) is unchanged — see Non-Goals.
 
 ## Risks / Trade-offs
 
