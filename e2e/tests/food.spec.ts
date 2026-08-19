@@ -59,7 +59,7 @@ test.describe('Manual meal entry', () => {
 
     await page.goto('/food/manual/');
     await page.getByPlaceholder('Food name').fill('E2E Test Snack');
-    await page.getByRole('button', { name: 'Enter macros' }).click();
+    await page.getByRole('tab', { name: 'Enter macros' }).click();
     await page.locator('label:has-text("Calories") input').fill('250');
     await page.locator('label:has-text("Protein (g)") input').fill('10');
 
@@ -104,7 +104,7 @@ test.describe('Manual meal entry', () => {
     // Mirrors the reported repro: clicking the already-active "Search food"
     // tab first (a no-op) — assert no search actually ran — then the actual
     // submit button.
-    await page.getByRole('button', { name: 'Search food' }).click();
+    await page.getByRole('tab', { name: 'Search food' }).click();
     await expect(page.getByText('Searched as:')).not.toBeVisible();
     await page.getByRole('button', { name: 'Search', exact: true }).click();
 
@@ -571,7 +571,7 @@ test.describe('Editing a confirmed meal', () => {
       // match" -> manual entry instead — the case that actually proves the
       // total updates from an edit.
       await page.getByRole('button', { name: 'Change match' }).click();
-      await page.getByRole('button', { name: 'Enter macros' }).click();
+      await page.getByRole('tab', { name: 'Enter macros' }).click();
       await page.locator('label:has-text("Calories") input').fill('250');
       await page.getByRole('button', { name: 'Save' }).click();
       await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
@@ -581,7 +581,7 @@ test.describe('Editing a confirmed meal', () => {
       // and a success toast must confirm the write (ui-notifications spec:
       // "Food Review Mutation Feedback").
       await page.getByRole('button', { name: '+ Add item' }).click();
-      await page.getByRole('button', { name: 'Enter macros' }).click();
+      await page.getByRole('tab', { name: 'Enter macros' }).click();
       await page.locator('label:has-text("Name") input').fill('Extra snack');
       await page.locator('label:has-text("Calories") input').fill('50');
       await page.getByRole('button', { name: 'Save' }).click();
@@ -1427,7 +1427,7 @@ test.describe('Estimated macro source badge — mocked UI behavior (deterministi
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await page.getByRole('button', { name: 'Verify this estimate' }).click();
-    await page.getByRole('button', { name: 'Enter macros' }).click();
+    await page.getByRole('tab', { name: 'Enter macros' }).click();
     await expect(page.getByText('Save as a reusable food')).toBeVisible();
     await page.getByText('Save as a reusable food').click();
     await page.locator('label:has-text("Calories") input').fill('180');
