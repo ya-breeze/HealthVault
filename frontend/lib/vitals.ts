@@ -1,4 +1,5 @@
 import type { DataType } from '@/lib/api';
+import { formatMetricValue } from '@/lib/dataTypeMeta';
 
 /** The 8 metrics shown as full vitals-grid cards on the dashboard, in display order. */
 export const PRIMARY_METRICS: { type: DataType; label: string }[] = [
@@ -45,37 +46,37 @@ export function extractVital(type: DataType, rows: Record<string, unknown>[]): V
   switch (type) {
     case 'steps': {
       const series = rows.map(r => num(r.sum));
-      return { value: Math.round(series[series.length - 1]).toLocaleString(), sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('steps', series[series.length - 1]), sparkline: series, trend: trendFrom(series) };
     }
     case 'distance': {
       const series = rows.map(r => num(r.sum) / 1000); // meters -> km
-      return { value: series[series.length - 1].toFixed(1), unit: 'km', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('distance', series[series.length - 1]), unit: 'km', sparkline: series, trend: trendFrom(series) };
     }
     case 'sleep': {
       const series = rows.map(r => num(r.sum) / 3600); // seconds -> hours
-      return { value: series[series.length - 1].toFixed(1), unit: 'h', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('sleep', series[series.length - 1]), unit: 'h', sparkline: series, trend: trendFrom(series) };
     }
     case 'heart_rate': {
       const series = rows.map(r => num(r.avg));
-      return { value: Math.round(series[series.length - 1]).toString(), unit: 'bpm', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('heart_rate', series[series.length - 1]), unit: 'bpm', sparkline: series, trend: trendFrom(series) };
     }
     case 'heart_rate_variability': {
       const series = rows.map(r => num(r.avg));
-      return { value: Math.round(series[series.length - 1]).toString(), unit: 'ms', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('heart_rate_variability', series[series.length - 1]), unit: 'ms', sparkline: series, trend: trendFrom(series) };
     }
     case 'weight': {
       const series = rows.map(r => num(r.avg));
-      return { value: series[series.length - 1].toFixed(1), unit: 'kg', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('weight', series[series.length - 1]), unit: 'kg', sparkline: series, trend: trendFrom(series) };
     }
     case 'oxygen_saturation': {
       const series = rows.map(r => num(r.avg));
-      return { value: Math.round(series[series.length - 1]).toString(), unit: '%', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('oxygen_saturation', series[series.length - 1]), unit: '%', sparkline: series, trend: trendFrom(series) };
     }
     case 'blood_pressure': {
       const sysSeries = rows.map(r => num(r.systolic_avg));
       const diaSeries = rows.map(r => num(r.diastolic_avg));
-      const sysLatest = Math.round(sysSeries[sysSeries.length - 1]);
-      const diaLatest = Math.round(diaSeries[diaSeries.length - 1]);
+      const sysLatest = formatMetricValue('blood_pressure', sysSeries[sysSeries.length - 1]);
+      const diaLatest = formatMetricValue('blood_pressure', diaSeries[diaSeries.length - 1]);
       return { value: `${sysLatest}/${diaLatest}`, sparkline: sysSeries, trend: trendFrom(sysSeries) };
     }
     default:
