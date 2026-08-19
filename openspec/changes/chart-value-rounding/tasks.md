@@ -1,6 +1,9 @@
 ## 1. Shared precision helper
 
-- [ ] 1.1 Add `decimals: number` to `TypeMeta` in `frontend/lib/dataTypeMeta.ts` and set it on every `TYPE_META` entry, carrying over the existing `vitals.ts` values (weight/distance/sleep = 1, steps/heart_rate/heart_rate_variability/oxygen_saturation = 0) and picking a default for the remaining point-in-time types not yet covered by `vitals.ts` (`height`, `blood_pressure`, `blood_glucose`, `body_temperature`, `skin_temperature`, `respiratory_rate`, `resting_heart_rate`, `basal_metabolic_rate`, `body_fat`, `lean_body_mass`, `vo2_max`, `bone_mass`, `speed`) — sanity-check each against realistic values (e.g. `body_fat`/`vo2_max`/`speed` likely want 1 decimal, not 0) rather than blanket-defaulting.
+- [ ] 1.1 Add `decimals: number` to `TypeMeta` in `frontend/lib/dataTypeMeta.ts` and set it on **every** `TYPE_META` entry (all 24 — none left unset):
+  - Carried over from `vitals.ts`: `weight`/`distance`/`sleep` = 1, `steps`/`heart_rate`/`heart_rate_variability`/`oxygen_saturation` = 0.
+  - Cumulative types with no existing rule: `active_calories`/`total_calories`/`exercise`/`nutrition` = 0 (kcal/minutes/grams, matches `MacroSummary.tsx`'s existing `Math.round`/`.toFixed(0)`); `hydration` = 1 (liters — sub-liter precision is meaningful, unlike the whole-number group).
+  - Point types with no existing rule: `height`, `blood_pressure`, `blood_glucose`, `body_temperature`, `skin_temperature`, `respiratory_rate`, `resting_heart_rate`, `basal_metabolic_rate`, `body_fat`, `lean_body_mass`, `vo2_max`, `bone_mass`, `speed` = 0 by default — sanity-check each against realistic values (e.g. `body_fat`/`vo2_max`/`speed` likely want 1 decimal, not 0) rather than blanket-defaulting.
 - [ ] 1.2 Add `formatMetricValue(type: DataType, value: number): string` to `dataTypeMeta.ts`, reading precision from `TYPE_META[type]?.decimals` (fall back to 0 for unregistered types) and applying `toFixed`/`Math.round` accordingly.
 
 ## 2. Apply to the chart
