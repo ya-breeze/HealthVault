@@ -32,3 +32,8 @@ The system SHALL expose `GET /api/users/me/settings` to return the authenticated
 
 - **WHEN** a request to either endpoint has no valid authentication
 - **THEN** the system SHALL respond 401 and SHALL NOT read or write any settings
+
+#### Scenario: Malformed write is rejected
+
+- **WHEN** an authenticated user sends `PUT /api/users/me/settings` with a body that is not valid JSON
+- **THEN** the system SHALL respond 400 and SHALL leave any previously stored settings unchanged

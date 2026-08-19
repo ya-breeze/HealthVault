@@ -2,14 +2,14 @@
 
 - [ ] 1.1 Add `UserSettings` GORM model to `backend/pkg/database/models.go` (`TenantModel` + `UserID uuid.UUID` unique-indexed + `SettingsJSON string`), following the explicit `ID`/`FamilyID` assignment convention (no `BeforeCreate` hook).
 - [ ] 1.2 Add `&UserSettings{}` to the `AutoMigrate` call in `backend/pkg/database/db.go`.
-- [ ] 1.3 Add `GetUserSettings(userID uuid.UUID) (string, error)` and `UpsertUserSettings(userID, familyID uuid.UUID, settingsJSON string) error` to the `Storage` interface and its implementation (`storage_impl.go`); `UpsertUserSettings` uses a single `clause.OnConflict` upsert on `user_id`, no read-modify-write.
+- [ ] 1.3 Add `GetUserSettings(userID uuid.UUID) (string, error)` and `UpsertUserSettings(userID, familyID uuid.UUID, settingsJSON string) error` to the `Storage` interface and its implementation (`storage_impl.go`). `GetUserSettings` returns `gorm.ErrRecordNotFound` when no row exists yet (handler translates that to `{}`, not an error response). `UpsertUserSettings` uses a single `clause.OnConflict` upsert on `user_id`, no read-modify-write — on the insert branch (first save for a user) it must set `ID` via `uuid.New()` and `FamilyID` explicitly on the struct before the call, per `TenantModel`'s no-`BeforeCreate`-hook convention.
 
 ## 2. Backend: API endpoints
 
 - [ ] 2.1 Add a handler for `GET /api/users/me/settings` — resolve `UserID` from `ClaimsFromCtx`, return `{}` if no row exists, otherwise the decoded JSON.
 - [ ] 2.2 Add a handler for `PUT /api/users/me/settings` — resolve `UserID`/`FamilyID` from claims, validate the body is JSON, call `UpsertUserSettings`.
 - [ ] 2.3 Register both routes in `backend/pkg/server/server.go` alongside the existing `/api/users/me` route; both require the existing auth middleware (401 on missing/invalid auth).
-- [ ] 2.4 Backend tests: round-trip GET/PUT, per-user isolation (two users don't see each other's settings), unauthenticated 401, GET before any PUT returns `{}` without creating a row.
+- [ ] 2.4 Backend tests: round-trip GET/PUT, per-user isolation (two users don't see each other's settings), unauthenticated 401, GET before any PUT returns `{}` without creating a row, malformed JSON body on PUT returns 400 and leaves prior settings untouched.
 
 ## 3. Frontend: API client + default order
 
