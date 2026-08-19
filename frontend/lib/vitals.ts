@@ -20,11 +20,18 @@ export const PRIMARY_METRICS: { type: DataType; label: string }[] = [
  * there's no saved order yet (default order for a user who hasn't customized).
  */
 export function reconcileMetricOrder(saved: string[] | undefined): typeof PRIMARY_METRICS {
-  if (!saved || saved.length === 0) return PRIMARY_METRICS;
+  if (!Array.isArray(saved) || saved.length === 0) return PRIMARY_METRICS;
   const byType = new Map(PRIMARY_METRICS.map(m => [m.type as string, m]));
-  const ordered = saved.map(t => byType.get(t)).filter((m): m is (typeof PRIMARY_METRICS)[number] => !!m);
-  const included = new Set(ordered.map(m => m.type));
-  const missing = PRIMARY_METRICS.filter(m => !included.has(m.type));
+  const seen = new Set<string>();
+  const ordered: typeof PRIMARY_METRICS = [];
+  for (const t of saved) {
+    const m = typeof t === 'string' ? byType.get(t) : undefined;
+    if (m && !seen.has(m.type)) {
+      seen.add(m.type);
+      ordered.push(m);
+    }
+  }
+  const missing = PRIMARY_METRICS.filter(m => !seen.has(m.type));
   return [...ordered, ...missing];
 }
 

@@ -1,3 +1,7 @@
+## Purpose
+
+Provides a per-user, family-isolated JSON settings store, addressable only by the authenticated user's own identity. Its first consumer is the dashboard card order, but it is designed as a general-purpose preferences store for future per-user settings (e.g. a goal weight).
+
 ## ADDED Requirements
 
 ### Requirement: Per-user settings storage

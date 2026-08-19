@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
   const [settings, setSettings] = useState<UserSettings>({});
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [order, setOrder] = useState(PRIMARY_METRICS);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -35,11 +36,15 @@ export default function Dashboard() {
       .then(s => {
         setSettings(s);
         setOrder(reconcileMetricOrder(s.dashboard_order));
+        setSettingsLoaded(true);
       })
       .catch(() => {
-        // Settings fetch failure just leaves the default order in place.
+        // Leave settingsLoaded false: editing/saving stays disabled rather
+        // than risking a Done that overwrites real stored settings with a
+        // PUT built from the (unknown) default order.
+        showToast('Could not load your saved dashboard order. Reordering is unavailable right now.', 'error');
       });
-  }, [ready]);
+  }, [ready, showToast]);
 
   useEffect(() => {
     if (!ready) return;
@@ -106,14 +111,16 @@ export default function Dashboard() {
             <TapTarget
               onClick={handleDone}
               disabled={saving}
-              className="!min-h-8 !min-w-8 px-3 rounded-md border border-accent text-accent text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
+              className="px-3 rounded-md border border-accent text-accent text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Done'}
             </TapTarget>
           ) : (
             <TapTarget
               onClick={() => setEditing(true)}
-              className="!min-h-8 !min-w-8 px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide"
+              disabled={!settingsLoaded}
+              title={settingsLoaded ? undefined : 'Loading your saved order…'}
+              className="px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
               Edit order
             </TapTarget>

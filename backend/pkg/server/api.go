@@ -138,11 +138,16 @@ func GetUserSettingsHandler(storage database.Storage) http.HandlerFunc {
 	}
 }
 
+// maxSettingsBodyBytes bounds the request body read before decoding — the
+// settings document is a small per-user preferences blob, not user-supplied
+// data of unbounded size.
+const maxSettingsBodyBytes = 64 * 1024
+
 // PutUserSettingsHandler replaces the authenticated user's settings with the
 // full JSON object in the request body — a full-document upsert, not a
-// merge. The body must be a JSON object; anything else (malformed JSON, a
-// bare array/scalar) is rejected with 400 and leaves the stored settings
-// untouched. Exported for use in tests.
+// merge. The body must be a JSON object; anything else (malformed JSON, the
+// literal `null`, or a bare array/scalar) is rejected with 400 and leaves
+// the stored settings untouched. Exported for use in tests.
 func PutUserSettingsHandler(storage database.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims := ClaimsFromCtx(r)
@@ -152,13 +157,19 @@ func PutUserSettingsHandler(storage database.Storage) http.HandlerFunc {
 		}
 		familyID := FamilyIDFromCtx(r)
 
+		r.Body = http.MaxBytesReader(w, r.Body, maxSettingsBodyBytes)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "invalid body", http.StatusBadRequest)
 			return
 		}
 		var obj map[string]any
-		if err := json.Unmarshal(body, &obj); err != nil {
+		if err := json.Unmarshal(body, &obj); err != nil || obj == nil {
 			http.Error(w, "body must be a JSON object", http.StatusBadRequest)
 			return
 		}

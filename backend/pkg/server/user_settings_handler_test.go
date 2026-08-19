@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -148,7 +149,7 @@ func TestUserSettings_MalformedPutBodyRejectedAndLeavesPriorSettingsUnchanged(t 
 		t.Fatalf("initial PUT: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	for _, malformed := range []string{`not json`, `["an","array"]`, ``} {
+	for _, malformed := range []string{`not json`, `["an","array"]`, ``, `null`} {
 		w := httptest.NewRecorder()
 		putH.ServeHTTP(w, withClaims(httptest.NewRequest(http.MethodPut, "/api/users/me/settings", bytes.NewBufferString(malformed)), userID))
 		if w.Code != http.StatusBadRequest {
@@ -166,5 +167,18 @@ func TestUserSettings_MalformedPutBodyRejectedAndLeavesPriorSettingsUnchanged(t 
 	order, _ := got["dashboard_order"].([]any)
 	if len(order) != 1 || order[0] != "weight" {
 		t.Errorf("settings should be unchanged after malformed PUTs, got %v", got)
+	}
+}
+
+func TestUserSettings_OversizedPutBodyRejected(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	huge := `{"dashboard_order":["` + strings.Repeat("x", 70*1024) + `"]}`
+	putH := server.PutUserSettingsHandler(st)
+	w := httptest.NewRecorder()
+	putH.ServeHTTP(w, withClaims(httptest.NewRequest(http.MethodPut, "/api/users/me/settings", bytes.NewBufferString(huge)), userID))
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413, got %d: %s", w.Code, w.Body.String())
 	}
 }

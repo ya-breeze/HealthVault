@@ -47,27 +47,30 @@ export default function VitalCard({
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
           {label}
         </p>
-        {editing && (
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <TapTarget
-              onClick={onMoveUp}
-              disabled={moveUpDisabled}
-              aria-label={`Move ${label} up`}
-              className="!min-h-8 !min-w-8 flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              ↑
-            </TapTarget>
-            <TapTarget
-              onClick={onMoveDown}
-              disabled={moveDownDisabled}
-              aria-label={`Move ${label} down`}
-              className="!min-h-8 !min-w-8 flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              ↓
-            </TapTarget>
-          </div>
-        )}
       </div>
+      {editing && (
+        // Own row, not squeezed beside the label: at full 48px (TapTarget's
+        // enforced minimum tap target) two buttons don't fit next to a label
+        // in a 2-column mobile grid, so they get the width to themselves.
+        <div className="flex items-center justify-end gap-1.5 mb-2">
+          <TapTarget
+            onClick={onMoveUp}
+            disabled={moveUpDisabled}
+            aria-label={`Move ${label} up`}
+            className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ↑
+          </TapTarget>
+          <TapTarget
+            onClick={onMoveDown}
+            disabled={moveDownDisabled}
+            aria-label={`Move ${label} down`}
+            className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ↓
+          </TapTarget>
+        </div>
+      )}
       {result ? (
         <>
           <div className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums">
@@ -96,18 +99,18 @@ export default function VitalCard({
     </>
   );
 
-  const className = 'block bg-bg-elevated border border-border rounded-[10px] px-3.5 py-3 hover:border-accent transition-colors';
+  const commonProps = {
+    className: 'block bg-bg-elevated border border-border rounded-[10px] px-3.5 py-3 hover:border-accent transition-colors',
+    style: { color },
+    'data-testid': `vital-card-${type}`,
+  };
 
   if (editing) {
-    return (
-      <div className={className} style={{ color }} data-testid={`vital-card-${type}`}>
-        {inner}
-      </div>
-    );
+    return <div {...commonProps}>{inner}</div>;
   }
 
   return (
-    <Link href={`/data/${type}/`} className={className} style={{ color }} data-testid={`vital-card-${type}`}>
+    <Link href={`/data/${type}/`} {...commonProps}>
       {inner}
     </Link>
   );
