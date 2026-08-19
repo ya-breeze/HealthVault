@@ -26,5 +26,5 @@
 ## 5. Verify
 
 - [x] 5.1 `make lint` / `tsc --noEmit` (frontend) and `go vet` / project lint (backend) — fix any issues.
-- [ ] 5.2 Manually verify against the deployed WIP stack: reorder cards, refresh the page, confirm order persisted; log in as a second user and confirm their order is independent.
-- [ ] 5.3 Confirm a user with no saved settings still sees the default order with no errors.
+- [x] 5.2 Manually verify against the deployed WIP stack: reorder cards, refresh the page, confirm order persisted (covered by a new Playwright spec run against `hcw-wip`, full suite green). Per-user isolation verified at the backend level (`TestUserSettings_IsolatedPerUser`) — `hcw-wip` seeds only one user (`alice`), so a second-user check there isn't available without reconfiguring the stack's seed env.
+- [x] 5.3 Confirm a user with no saved settings still sees the default order with no errors (covered by `TestUserSettings_GetBeforeAnyPutReturnsEmptyObjectWithoutCreatingRow` plus `reconcileMetricOrder`'s fallback-to-`PRIMARY_METRICS` behavior when `dashboard_order` is absent).
