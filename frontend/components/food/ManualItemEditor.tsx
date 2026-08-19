@@ -135,7 +135,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
               placeholder="grams"
               value={item.weight_grams ?? ''}
               onChange={e => update({ weight_grams: Number(e.target.value) })}
-              className="w-24 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
             <span className="text-xs text-gray-400">g</span>
             <TapTarget
