@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	kinmodels "github.com/ya-breeze/kin-core/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type storageImpl struct {
@@ -213,6 +214,24 @@ func (s *storageImpl) SummarySleepSeconds(userID uuid.UUID, tr TimeRange) (int, 
 		Where("user_id = ? AND start_time >= ? AND start_time <= ?", userID, tr.From, tr.To).
 		Select("COALESCE(SUM(duration_seconds), 0)").Scan(&total).Error
 	return total, err
+}
+
+func (s *storageImpl) GetUserSettings(userID uuid.UUID) (string, error) {
+	var row UserSettings
+	if err := s.db.Where("user_id = ?", userID).First(&row).Error; err != nil {
+		return "", err
+	}
+	return row.SettingsJSON, nil
+}
+
+func (s *storageImpl) UpsertUserSettings(userID, familyID uuid.UUID, settingsJSON string) error {
+	row := UserSettings{UserID: userID, SettingsJSON: settingsJSON}
+	row.ID = uuid.New()
+	row.FamilyID = familyID
+	return s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"settings_json", "updated_at"}),
+	}).Create(&row).Error
 }
 
 var _ Storage = (*storageImpl)(nil) // compile-time interface check

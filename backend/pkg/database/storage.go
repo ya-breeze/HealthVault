@@ -65,4 +65,10 @@ type Storage interface {
 	SummarySleepSeconds(userID uuid.UUID, tr TimeRange) (int, error)
 	// DB exposes raw gorm.DB for ingest fan-out
 	DB() *gorm.DB
+	// GetUserSettings returns the raw settings JSON for userID, or
+	// gorm.ErrRecordNotFound if the user has never saved settings.
+	GetUserSettings(userID uuid.UUID) (string, error)
+	// UpsertUserSettings replaces the user's entire settings document in a
+	// single atomic upsert (no read-modify-write).
+	UpsertUserSettings(userID, familyID uuid.UUID, settingsJSON string) error
 }

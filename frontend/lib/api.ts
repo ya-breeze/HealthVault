@@ -295,6 +295,13 @@ export interface PatchMealInput {
   logged_at?: string;
 }
 
+// Opaque per-user preferences blob (see the user-settings capability).
+// dashboard_order is its first field; other keys pass through untouched.
+export interface UserSettings {
+  dashboard_order?: string[];
+  [key: string]: unknown;
+}
+
 // Both error classes below set `.name` explicitly and restore the prototype
 // chain via Object.setPrototypeOf in their constructors. TypeScript/SWC
 // transpilation of `class X extends Error` can silently break `instanceof`
@@ -342,6 +349,10 @@ export const api = {
   logout: () => apiFetch('/auth/logout', { method: 'POST' }),
 
   me: () => apiFetch<{ id: string; username: string; family_id: string }>('/users/me'),
+
+  getSettings: () => apiFetch<UserSettings>('/users/me/settings'),
+  putSettings: (settings: UserSettings) =>
+    apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
 
   data: (type: string, from?: string, to?: string, user?: string, bucket?: 'day' | 'month') => {
     const params = new URLSearchParams();
