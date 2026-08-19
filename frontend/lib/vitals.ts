@@ -12,6 +12,22 @@ export const PRIMARY_METRICS: { type: DataType; label: string }[] = [
   { type: 'oxygen_saturation', label: 'Oxygen Sat.' },
 ];
 
+/**
+ * Reconciles a saved dashboard_order (from user settings) against
+ * PRIMARY_METRICS: known types are reordered to match the saved order,
+ * unknown/removed types are dropped, and any current metric missing from the
+ * saved order is appended at the end. Returns PRIMARY_METRICS unchanged when
+ * there's no saved order yet (default order for a user who hasn't customized).
+ */
+export function reconcileMetricOrder(saved: string[] | undefined): typeof PRIMARY_METRICS {
+  if (!saved || saved.length === 0) return PRIMARY_METRICS;
+  const byType = new Map(PRIMARY_METRICS.map(m => [m.type as string, m]));
+  const ordered = saved.map(t => byType.get(t)).filter((m): m is (typeof PRIMARY_METRICS)[number] => !!m);
+  const included = new Set(ordered.map(m => m.type));
+  const missing = PRIMARY_METRICS.filter(m => !included.has(m.type));
+  return [...ordered, ...missing];
+}
+
 export interface VitalResult {
   value: string;
   unit?: string;

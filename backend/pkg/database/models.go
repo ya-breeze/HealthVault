@@ -8,6 +8,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// UserSettings holds a single opaque JSON blob of per-user preferences (e.g.
+// dashboard card order). One row per user, upserted as a whole document — see
+// UpsertUserSettings in storage_impl.go.
+type UserSettings struct {
+	models.TenantModel
+	UserID       uuid.UUID `gorm:"type:uuid;not null;uniqueIndex"`
+	SettingsJSON string    `gorm:"not null;default:'{}'"`
+}
+
 // WebhookPayload is the raw audit log of every POST received.
 type WebhookPayload struct {
 	models.TenantModel

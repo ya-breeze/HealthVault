@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	kinmodels "github.com/ya-breeze/kin-core/models"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	photostorage "github.com/ya-breeze/healthvault/pkg/storage"
+	"gorm.io/gorm"
 )
 
 // typeInfo maps URL type names to (table name, primary time column,
@@ -109,6 +111,64 @@ func meHandler(storage database.Storage) http.HandlerFunc {
 			"username":  user.Username,
 			"family_id": user.FamilyID,
 		})
+	}
+}
+
+// GetUserSettingsHandler returns the authenticated user's settings object, or
+// {} if they have never saved one — a missing row is not an error. Exported
+// for use in tests.
+func GetUserSettingsHandler(storage database.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := ClaimsFromCtx(r)
+		if claims == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		settingsJSON, err := storage.GetUserSettings(claims.UserID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				settingsJSON = "{}"
+			} else {
+				http.Error(w, "query error", http.StatusInternalServerError)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(settingsJSON)) //nolint:errcheck
+	}
+}
+
+// PutUserSettingsHandler replaces the authenticated user's settings with the
+// full JSON object in the request body — a full-document upsert, not a
+// merge. The body must be a JSON object; anything else (malformed JSON, a
+// bare array/scalar) is rejected with 400 and leaves the stored settings
+// untouched. Exported for use in tests.
+func PutUserSettingsHandler(storage database.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := ClaimsFromCtx(r)
+		if claims == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		familyID := FamilyIDFromCtx(r)
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(body, &obj); err != nil {
+			http.Error(w, "body must be a JSON object", http.StatusBadRequest)
+			return
+		}
+
+		if err := storage.UpsertUserSettings(claims.UserID, familyID, string(body)); err != nil {
+			http.Error(w, "save error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body) //nolint:errcheck
 	}
 }
 

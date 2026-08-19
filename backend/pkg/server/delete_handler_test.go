@@ -46,6 +46,8 @@ func (m *mockStorage) SummarySteps(_ uuid.UUID, _ database.TimeRange) (int, erro
 func (m *mockStorage) SummaryAvgHeartRate(_ uuid.UUID, _ database.TimeRange) (float64, error) { return 0, nil }
 func (m *mockStorage) SummarySleepSeconds(_ uuid.UUID, _ database.TimeRange) (int, error)     { return 0, nil }
 func (m *mockStorage) DB() *gorm.DB                                                           { return nil }
+func (m *mockStorage) GetUserSettings(_ uuid.UUID) (string, error)                            { return "", nil }
+func (m *mockStorage) UpsertUserSettings(_, _ uuid.UUID, _ string) error                       { return nil }
 
 // withClaims injects claims into the request context (bypassing JWT middleware for tests).
 func withClaims(r *http.Request, userID uuid.UUID) *http.Request {

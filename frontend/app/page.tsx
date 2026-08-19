@@ -1,26 +1,45 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, DATA_TYPES } from '@/lib/api';
+import { api, DATA_TYPES, UserSettings } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { PRIMARY_METRICS, extractVital, VitalResult } from '@/lib/vitals';
+import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, VitalResult } from '@/lib/vitals';
+import { useToast } from '@/components/Toast';
 import Header from '@/components/Header';
 import VitalCard from '@/components/VitalCard';
+import TapTarget from '@/components/ui/TapTarget';
 import { CameraIcon, PencilIcon, HistoryIcon } from '@/components/icons';
 
 const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type === t));
 
 export default function Dashboard() {
   const router = useRouter();
+  const { showToast } = useToast();
   const [ready, setReady] = useState(false);
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
+  const [settings, setSettings] = useState<UserSettings>({});
+  const [order, setOrder] = useState(PRIMARY_METRICS);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     api.me()
       .then(() => setReady(true))
       .catch(() => router.push('/login'));
   }, [router]);
+
+  useEffect(() => {
+    if (!ready) return;
+    api.getSettings()
+      .then(s => {
+        setSettings(s);
+        setOrder(reconcileMetricOrder(s.dashboard_order));
+      })
+      .catch(() => {
+        // Settings fetch failure just leaves the default order in place.
+      });
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -50,17 +69,69 @@ export default function Dashboard() {
       .catch(() => setNeedsAttentionCount(0));
   }, [ready]);
 
+  function moveCard(index: number, direction: -1 | 1) {
+    setOrder(prev => {
+      const target = index + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  async function handleDone() {
+    setSaving(true);
+    const next: UserSettings = { ...settings, dashboard_order: order.map(m => m.type) };
+    try {
+      await api.putSettings(next);
+      setSettings(next);
+      setEditing(false);
+    } catch {
+      showToast('Could not save the new card order. Try again.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-bg">
       <Header />
 
       <main className="max-w-4xl mx-auto px-6 py-8">
-        <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-          Vitals · last 7 days
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent">
+            Vitals · last 7 days
+          </p>
+          {editing ? (
+            <TapTarget
+              onClick={handleDone}
+              disabled={saving}
+              className="!min-h-8 !min-w-8 px-3 rounded-md border border-accent text-accent text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Done'}
+            </TapTarget>
+          ) : (
+            <TapTarget
+              onClick={() => setEditing(true)}
+              className="!min-h-8 !min-w-8 px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide"
+            >
+              Edit order
+            </TapTarget>
+          )}
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8">
-          {PRIMARY_METRICS.map(m => (
-            <VitalCard key={m.type} type={m.type} label={m.label} result={ready ? vitals[m.type] ?? null : null} />
+          {order.map((m, i) => (
+            <VitalCard
+              key={m.type}
+              type={m.type}
+              label={m.label}
+              result={ready ? vitals[m.type] ?? null : null}
+              editing={editing}
+              onMoveUp={() => moveCard(i, -1)}
+              onMoveDown={() => moveCard(i, 1)}
+              moveUpDisabled={i === 0}
+              moveDownDisabled={i === order.length - 1}
+            />
           ))}
         </div>
 

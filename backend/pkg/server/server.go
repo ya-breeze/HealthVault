@@ -87,6 +87,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(RequireAuth(jwtSecret, cookieCfg, storage.DB()))
 	api.HandleFunc("/users/me", meHandler(storage)).Methods("GET")
+	api.HandleFunc("/users/me/settings", GetUserSettingsHandler(storage)).Methods("GET")
+	api.HandleFunc("/users/me/settings", PutUserSettingsHandler(storage)).Methods("PUT")
 	// Note: /data/summary must be registered before /data/{type} to avoid
 	// gorilla/mux routing "summary" as the {type} variable.
 	api.HandleFunc("/data/summary", summaryHandler(storage)).Methods("GET")

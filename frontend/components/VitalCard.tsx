@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { DataType } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import type { VitalResult } from '@/lib/vitals';
+import TapTarget from './ui/TapTarget';
 
 function sparkPath(data: number[], w: number, h: number, pad: number) {
   const min = Math.min(...data);
@@ -16,23 +17,57 @@ function sparkPath(data: number[], w: number, h: number, pad: number) {
 
 const TREND_ARROW: Record<VitalResult['trend'], string> = { up: '↑', down: '↓', flat: '→' };
 
-export default function VitalCard({ type, label, result }: { type: DataType; label: string; result: VitalResult | null }) {
+interface VitalCardProps {
+  type: DataType;
+  label: string;
+  result: VitalResult | null;
+  // When set, the card renders move-up/move-down controls instead of
+  // navigating to the type's detail page — see the "Customizable vitals grid
+  // order" requirement's "Entering edit mode reveals reorder controls" scenario.
+  editing?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  moveUpDisabled?: boolean;
+  moveDownDisabled?: boolean;
+}
+
+export default function VitalCard({
+  type, label, result, editing, onMoveUp, onMoveDown, moveUpDisabled, moveDownDisabled,
+}: VitalCardProps) {
   const color = metricColorVar(type);
   const w = 240;
   const h = 30;
   const pad = 3;
   const spark = result && result.sparkline.length > 1 ? sparkPath(result.sparkline, w, h, pad) : null;
 
-  return (
-    <Link
-      href={`/data/${type}/`}
-      className="block bg-bg-elevated border border-border rounded-[10px] px-3.5 py-3 hover:border-accent transition-colors"
-      style={{ color }}
-    >
-      <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5 mb-2">
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
-        {label}
-      </p>
+  const inner = (
+    <>
+      <div className="flex items-center justify-between gap-1 mb-2">
+        <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+          {label}
+        </p>
+        {editing && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <TapTarget
+              onClick={onMoveUp}
+              disabled={moveUpDisabled}
+              aria-label={`Move ${label} up`}
+              className="!min-h-8 !min-w-8 flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ↑
+            </TapTarget>
+            <TapTarget
+              onClick={onMoveDown}
+              disabled={moveDownDisabled}
+              aria-label={`Move ${label} down`}
+              className="!min-h-8 !min-w-8 flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ↓
+            </TapTarget>
+          </div>
+        )}
+      </div>
       {result ? (
         <>
           <div className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums">
@@ -58,6 +93,22 @@ export default function VitalCard({ type, label, result }: { type: DataType; lab
       ) : (
         <p className="text-sm text-text-muted py-2">No data</p>
       )}
+    </>
+  );
+
+  const className = 'block bg-bg-elevated border border-border rounded-[10px] px-3.5 py-3 hover:border-accent transition-colors';
+
+  if (editing) {
+    return (
+      <div className={className} style={{ color }}>
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <Link href={`/data/${type}/`} className={className} style={{ color }}>
+      {inner}
     </Link>
   );
 }
