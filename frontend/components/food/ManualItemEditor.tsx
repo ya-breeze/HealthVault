@@ -129,13 +129,6 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
       {item.source === 'reference' ? (
         <div>
           <div className="flex gap-2 items-center">
-            <TapTarget
-              onClick={search}
-              disabled={searching || !query}
-              className="px-2 rounded text-xs bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
-            >
-              {searching ? 'Searching…' : 'Search'}
-            </TapTarget>
             <input
               type="number"
               step="any"
@@ -145,6 +138,13 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
               className="w-24 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
             <span className="text-xs text-gray-400">g</span>
+            <TapTarget
+              onClick={search}
+              disabled={searching || !query}
+              className="px-3 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+            >
+              {searching ? 'Searching…' : 'Search'}
+            </TapTarget>
           </div>
           <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
             New search terms may be sent to an external model provider for translation.
