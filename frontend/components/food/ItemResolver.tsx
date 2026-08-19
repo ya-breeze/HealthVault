@@ -138,16 +138,16 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
 
   return (
     <div className="mt-2 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
-      <div className="flex gap-2 mb-2 text-xs">
+      <div className="flex gap-4 mb-2 border-b border-amber-200 dark:border-amber-800 text-xs">
         <TapTarget
           onClick={() => setMode('search')}
-          className={tabClass(mode === 'search', 'border-amber-600 text-amber-900 dark:text-amber-200', 'border-transparent text-amber-700 dark:text-amber-300')}
+          className={tabClass(mode === 'search', 'border-amber-600 text-amber-900 dark:text-amber-200')}
         >
           Search food
         </TapTarget>
         <TapTarget
           onClick={() => setMode('manual')}
-          className={tabClass(mode === 'manual', 'border-amber-600 text-amber-900 dark:text-amber-200', 'border-transparent text-amber-700 dark:text-amber-300')}
+          className={tabClass(mode === 'manual', 'border-amber-600 text-amber-900 dark:text-amber-200')}
         >
           Enter macros
         </TapTarget>
