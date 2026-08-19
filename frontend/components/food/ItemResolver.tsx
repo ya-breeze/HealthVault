@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { api, FoodSearchResult } from '@/lib/api';
 import TapTarget from '@/components/ui/TapTarget';
+import { tabClass } from './tabClass';
 
 interface Props {
   itemName: string;
@@ -137,16 +138,20 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
 
   return (
     <div className="mt-2 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
-      <div className="flex gap-2 mb-2 text-xs">
+      <div className="flex gap-4 mb-2 border-b border-amber-200 dark:border-amber-800 text-xs" role="tablist" aria-label={`Item resolution mode for ${itemName}`}>
         <TapTarget
+          role="tab"
+          aria-selected={mode === 'search'}
           onClick={() => setMode('search')}
-          className={`px-2 rounded ${mode === 'search' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-300'}`}
+          className={tabClass(mode === 'search', 'border-amber-600 text-amber-900 dark:text-amber-200')}
         >
-          Search
+          Search food
         </TapTarget>
         <TapTarget
+          role="tab"
+          aria-selected={mode === 'manual'}
           onClick={() => setMode('manual')}
-          className={`px-2 rounded ${mode === 'manual' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-300'}`}
+          className={tabClass(mode === 'manual', 'border-amber-600 text-amber-900 dark:text-amber-200')}
         >
           Enter macros
         </TapTarget>

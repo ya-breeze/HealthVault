@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { api, FoodSearchResult, ManualMealItemInput } from '@/lib/api';
 import TapTarget from '@/components/ui/TapTarget';
+import { tabClass } from './tabClass';
 
 interface Props {
   index: number;
@@ -110,16 +111,20 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
         </TapTarget>
       </div>
 
-      <div className="flex gap-2 mb-2 text-xs">
+      <div className="flex gap-4 mb-2 border-b border-gray-200 dark:border-gray-700 text-xs" role="tablist" aria-label={`Item resolution mode for ${item.name || `item ${index + 1}`}`}>
         <TapTarget
+          role="tab"
+          aria-selected={item.source === 'reference'}
           onClick={() => update({ source: 'reference' })}
-          className={`px-2 rounded ${item.source === 'reference' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+          className={tabClass(item.source === 'reference', 'border-blue-600 text-blue-900 dark:text-blue-200')}
         >
           Search food
         </TapTarget>
         <TapTarget
+          role="tab"
+          aria-selected={item.source === 'manual'}
           onClick={() => update({ source: 'manual' })}
-          className={`px-2 rounded ${item.source === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+          className={tabClass(item.source === 'manual', 'border-blue-600 text-blue-900 dark:text-blue-200')}
         >
           Enter macros
         </TapTarget>
@@ -128,22 +133,22 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
       {item.source === 'reference' ? (
         <div>
           <div className="flex gap-2 items-center">
-            <TapTarget
-              onClick={search}
-              disabled={searching || !query}
-              className="px-2 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
-            >
-              {searching ? 'Searching…' : 'Search'}
-            </TapTarget>
             <input
               type="number"
               step="any"
               placeholder="grams"
               value={item.weight_grams ?? ''}
               onChange={e => update({ weight_grams: Number(e.target.value) })}
-              className="w-24 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
             <span className="text-xs text-gray-400">g</span>
+            <TapTarget
+              onClick={search}
+              disabled={searching || !query}
+              className="px-3 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+            >
+              {searching ? 'Searching…' : 'Search'}
+            </TapTarget>
           </div>
           <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
             New search terms may be sent to an external model provider for translation.

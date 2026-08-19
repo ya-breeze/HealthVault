@@ -59,7 +59,7 @@ test.describe('Manual meal entry', () => {
 
     await page.goto('/food/manual/');
     await page.getByPlaceholder('Food name').fill('E2E Test Snack');
-    await page.getByRole('button', { name: 'Enter macros' }).click();
+    await page.getByRole('tab', { name: 'Enter macros' }).click();
     await page.locator('label:has-text("Calories") input').fill('250');
     await page.locator('label:has-text("Protein (g)") input').fill('10');
 
@@ -75,6 +75,42 @@ test.describe('Manual meal entry', () => {
     await expect(page.getByText('250', { exact: true })).toBeVisible();
 
     await deleteMeal(request, cookies, mealId);
+  });
+
+  // fix-ambiguous-search-button: the reference-search path on this page had
+  // zero coverage before this change — the test above only exercises
+  // "Enter macros" mode. A real user reported that clicking the "Search
+  // food" mode tab (already active by default, and previously styled as
+  // the row's one solid-colored control) appeared to do nothing, while the
+  // actual submit button beside it worked. Reproduces that exact sequence —
+  // click the already-active tab first, then the submit button — with a
+  // non-ASCII (Cyrillic) query matching the report, and asserts a search
+  // actually runs from the submit button.
+  test('the reference-search path finds a food, including for a non-ASCII query', async ({ page }) => {
+    await login(page);
+
+    await page.route('**/api/food/search**', route =>
+      route.fulfill({
+        json: {
+          results: [{ source: 'usda', fdc_id: 1, name: 'Egg, quail, whole, raw', profile: { calories_per_100g: 158, protein_per_100g: 13, carbs_per_100g: 1, fat_per_100g: 11, sugar_per_100g: 1, sodium_per_100g: 0, dietary_fiber_per_100g: 0 } }],
+          translated_query: 'quail egg',
+        },
+      })
+    );
+
+    await page.goto('/food/manual/');
+    await page.getByPlaceholder('Food name').fill('Перепелиное яйцо');
+
+    // Mirrors the reported repro: clicking the already-active "Search food"
+    // tab first (a no-op) — assert no search actually ran — then the actual
+    // submit button.
+    await page.getByRole('tab', { name: 'Search food' }).click();
+    await expect(page.getByText('Searched as:')).not.toBeVisible();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+
+    await expect(page.getByText('Searched as:')).toBeVisible();
+    await expect(page.locator('strong', { hasText: 'quail egg' })).toBeVisible();
+    await expect(page.getByText(/Egg, quail, whole, raw/)).toBeVisible();
   });
 });
 
@@ -535,7 +571,7 @@ test.describe('Editing a confirmed meal', () => {
       // match" -> manual entry instead — the case that actually proves the
       // total updates from an edit.
       await page.getByRole('button', { name: 'Change match' }).click();
-      await page.getByRole('button', { name: 'Enter macros' }).click();
+      await page.getByRole('tab', { name: 'Enter macros' }).click();
       await page.locator('label:has-text("Calories") input').fill('250');
       await page.getByRole('button', { name: 'Save' }).click();
       await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
@@ -545,7 +581,7 @@ test.describe('Editing a confirmed meal', () => {
       // and a success toast must confirm the write (ui-notifications spec:
       // "Food Review Mutation Feedback").
       await page.getByRole('button', { name: '+ Add item' }).click();
-      await page.getByRole('button', { name: 'Enter macros' }).click();
+      await page.getByRole('tab', { name: 'Enter macros' }).click();
       await page.locator('label:has-text("Name") input').fill('Extra snack');
       await page.locator('label:has-text("Calories") input').fill('50');
       await page.getByRole('button', { name: 'Save' }).click();
@@ -673,7 +709,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.locator('input[type="number"]').first().fill('150');
     await page.locator('input[type="number"]').first().blur();
     await page.getByRole('button', { name: 'Change match' }).click();
-    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
     await page.getByRole('button', { name: /New Food/ }).click();
 
     await expect(page.getByText('New Food')).toBeVisible();
@@ -765,7 +801,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await page.getByRole('button', { name: '+ Add item' }).click();
-    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
 
     const result = page.getByRole('button', { name: /New Item/ });
     await result.click();
@@ -935,7 +971,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await page.getByRole('button', { name: 'Change match' }).click();
-    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
 
     await expect(page.getByText('Searched as:')).toBeVisible();
     // Scoped to <strong> — the result list below also contains "Oatmeal,
@@ -971,7 +1007,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await page.getByRole('button', { name: 'Change match' }).click();
-    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByText('Searched as:')).toBeVisible();
 
     await page.getByRole('button', { name: 'Refresh translation' }).click();
@@ -1013,7 +1049,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await page.getByRole('button', { name: 'Change match' }).click();
-    await page.getByRole('button', { name: 'Search', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByText('Searched as:')).toBeVisible();
     await expect(page.locator('strong', { hasText: 'porridge' })).toBeVisible();
 
@@ -1250,6 +1286,11 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
 // and to make canReanalyze true (Boolean(meal.photo_path)). Used by the
 // route-mocked tests below, which verify the UI's *own* success/failure
 // handling deterministically — no real backend or vision call involved.
+// Single item by default, with macro_source not 'none' — MealItemRow only
+// auto-opens its own ItemResolver when macro_source is 'none', so this keeps
+// exactly one ItemResolver mounted at a time. Tests below rely on that to
+// address its exact-'Search' submit button unambiguously; a fixture with 2+
+// 'none'-source items would need to scope that selector instead.
 function mockFoodMeal(overrides: Record<string, unknown> = {}) {
   return {
     id: 'mock-meal-id',
@@ -1386,7 +1427,7 @@ test.describe('Estimated macro source badge — mocked UI behavior (deterministi
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await page.getByRole('button', { name: 'Verify this estimate' }).click();
-    await page.getByRole('button', { name: 'Enter macros' }).click();
+    await page.getByRole('tab', { name: 'Enter macros' }).click();
     await expect(page.getByText('Save as a reusable food')).toBeVisible();
     await page.getByText('Save as a reusable food').click();
     await page.locator('label:has-text("Calories") input').fill('180');
