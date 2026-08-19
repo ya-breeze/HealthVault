@@ -62,18 +62,27 @@ export default function DataTypeClient({ type }: Props) {
 
   const { from, to, bucket } = useMemo(() => rangeForZoom(zoom), [zoom]);
 
-  // weight's Week-zoom trend line needs 14 trailing days of bucketed data to
-  // seed its EMA before the visible 7-day window starts — see
-  // chart-zoom-aggregation's "Weight trend line" requirement. Only the
-  // bucketed fetch is widened; the raw fetch (`records`) and stats row stay
-  // on the normal 7-day range regardless.
-  const isWeightWeek = dataType === 'weight' && zoom === 'week';
+  // weight's Week/Year-zoom trend line needs enough trailing bucketed history
+  // to seed its EMA before the visible window starts — see
+  // chart-zoom-aggregation's "Weight trend line" requirement. An alpha=0.25
+  // EMA needs ~14-16 periods to converge; Week's 7 daily buckets and Year's
+  // ~12-13 monthly buckets both fall short, so both get their bucketed fetch
+  // doubled. Month's 30 daily buckets already exceed it and are left
+  // untouched. Only the bucketed fetch is widened; the raw fetch (`records`)
+  // and stats row stay on the normal range regardless.
+  const needsWidenedLookback = dataType === 'weight' && (zoom === 'week' || zoom === 'year');
   const chartFrom = useMemo(() => {
-    if (!isWeightWeek) return from;
-    const widened = new Date(to);
-    widened.setDate(widened.getDate() - 14);
+    if (!needsWidenedLookback) return from;
+    const widened = new Date(from);
+    if (zoom === 'week') {
+      widened.setDate(widened.getDate() - 7);
+    } else {
+      widened.setFullYear(widened.getFullYear() - 1);
+    }
     return widened.toISOString();
-  }, [isWeightWeek, from, to]);
+  }, [needsWidenedLookback, zoom, from]);
+  const fromMs = new Date(from).getTime();
+  const toMs = new Date(to).getTime();
 
   useEffect(() => {
     setLoading(true);
@@ -120,23 +129,30 @@ export default function DataTypeClient({ type }: Props) {
       )
     : [];
 
-  const fromMs = new Date(from).getTime();
-  const toMs = new Date(to).getTime();
-
   const dayLineData = timeKey
     ? records.map(r => ({ ...r, [timeKey]: new Date(r[timeKey] as string).getTime() }))
     : records;
 
-  // For weight+week, `chartRows` holds the widened 14-day fetch used to seed
-  // the trend's EMA (see the effect above); every other chart/stat must only
-  // ever see the zoom's own visible window, so they read this slice instead.
-  const visibleChartRows = isWeightWeek ? chartRows.slice(-7) : chartRows;
+  // For weight+week/year, `chartRows` holds the widened fetch used to seed
+  // the trend's EMA (see above); every other chart/stat must only ever see
+  // the zoom's own visible window. Filtered by each row's own bucket_start
+  // against the visible range's real start date, not by array position: the
+  // backend's bucket query is a plain GROUP BY with no zero-fill for missing
+  // days (storage_impl.go's QueryAggregate), so sparse logging can return
+  // fewer rows than the widened range spans — a positional slice(-N) would
+  // then pull buckets from well outside the visible window into what's
+  // labeled and rendered as the current view.
+  const visibleMask = needsWidenedLookback
+    ? chartRows.map(r => new Date(String(r.bucket_start)).getTime() >= fromMs)
+    : chartRows.map(() => true);
+  const visibleChartRows = chartRows.filter((_, i) => visibleMask[i]);
 
   // Trend is computed from the full (possibly widened) series so the EMA has
-  // time to stabilize, then sliced down to the same visible window as
-  // everything else before being merged into bucketBandData below.
+  // time to stabilize, then filtered down to the same visible window as
+  // everything else (via the same mask, so it stays aligned with
+  // visibleChartRows by index) before being merged into bucketBandData below.
   const trendFull = dataType === 'weight' ? emaSeries(chartRows.map(r => num(r.avg)), 0.25) : [];
-  const visibleTrend = isWeightWeek ? trendFull.slice(-7) : trendFull;
+  const visibleTrend = trendFull.filter((_, i) => visibleMask[i]);
 
   const bucketBarData = visibleChartRows.map(r => ({
     label: bucketLabel(r.bucket_start, zoom),

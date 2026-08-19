@@ -29,21 +29,29 @@ so a flat series still renders a sensible band instead of a hairline-thin one.
 At Week, Month, or Year zoom, the `weight` chart SHALL additionally render a smoothed trend line,
 computed as an exponential moving average (alpha = 0.25) over the same per-bucket average values
 (`avg`) already driving that zoom level's chart. The underlying bucketed data fetched for `weight`
-at Week zoom SHALL cover at least 14 trailing days (rather than the 7-day Week zoom range) so the
-trend has stabilized before the first displayed day; only the trend values within the zoom's own
-visible range SHALL be plotted. This requirement applies to `weight` only, and does not apply at
-Day zoom.
+at Week and Year zoom SHALL be widened (to at least 14 trailing days for Week, and at least 2
+trailing years for Year) beyond that zoom's normal range, so the trend has stabilized before the
+first displayed bucket; only the trend values within the zoom's own visible range SHALL be
+plotted. Widened lookback buckets that fall outside the visible range SHALL NOT otherwise be
+rendered or included in the chart's stats. This requirement applies to `weight` only, and does not
+apply at Day zoom.
 
 #### Scenario: Trend line rendered at Week zoom
 - **WHEN** a user views `weight` at Week zoom
 - **THEN** the chart SHALL render a trend line alongside the existing averaged line and min-max
   band, computed from at least 14 days of bucketed data even though only 7 days are displayed
 
-#### Scenario: Trend line rendered at Month and Year zoom
-- **WHEN** a user views `weight` at Month or Year zoom
-- **THEN** the chart SHALL render a trend line computed from that zoom's own bucketed data range,
-  with no additional widening (the existing 30-day/~12-month ranges already exceed the 14-period
-  minimum)
+#### Scenario: Trend line rendered at Month zoom
+- **WHEN** a user views `weight` at Month zoom
+- **THEN** the chart SHALL render a trend line computed from that zoom's own 30-day bucketed data
+  range, with no additional widening (30 daily buckets already exceed the ~14-16 period minimum)
+
+#### Scenario: Trend line rendered at Year zoom
+- **WHEN** a user views `weight` at Year zoom
+- **THEN** the underlying bucketed data SHALL be widened to at least 2 trailing years (rather than
+  the zoom's normal ~1 year), since ~12-13 monthly buckets alone fall short of the ~14-16 periods
+  the EMA needs to converge, and the chart SHALL render a trend line computed from that widened
+  series but only plotted across the zoom's own ~12-13 visible monthly buckets
 
 #### Scenario: No trend line at Day zoom
 - **WHEN** a user views `weight` at Day zoom

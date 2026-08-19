@@ -24,18 +24,36 @@
 
 ## 2. Weight trend line
 
-- [x] 2.1 Add a `type === 'weight' && zoom === 'week'` branch that requests bucketed
-      (`?bucket=day`) data for a 14-day range instead of the zoom's normal 7-day range. `chartRows`
-      itself will now hold 14 days of buckets for this case — do not let that leak into the
-      existing avg-line/min-max band or X-axis labels (see 2.3); `records`/`from`/`to` (raw fetch,
-      stats row) stay on the existing 7-day range regardless
+- [x] 2.1 Add a `dataType === 'weight' && (zoom === 'week' || zoom === 'year')` branch that widens
+      the bucketed fetch (14 trailing days for Week, ~2 trailing years for Year) instead of the
+      zoom's normal range. `chartRows` itself will now hold the widened set of buckets for these
+      cases — do not let that leak into the existing avg-line/min-max band or X-axis labels (see
+      2.3); `records`/`from`/`to` (raw fetch, stats row) stay on the existing range regardless
+
+  **Correction (found during `/code-review`, see 2.3's note):** the original task list and the
+  approved spec/design only widened Week, on the stated assumption that Year's ~12-13 monthly
+  buckets "already exceed the 14-period minimum." That's arithmetically false (12-13 < 14-16), so
+  the Year-zoom trend line rendered from the unwidened implementation would never have converged —
+  it would show as a visible ramp across most/all of the Year view. Fixed by widening Year too (to
+  ~2 trailing years) and correcting spec.md/design.md's "Weight trend line" sections to match.
+
 - [x] 2.2 Add an EMA helper (`alpha = 0.25`, seeded from the first bucket in the fetched — possibly
       widened — range) that maps a bucketed series to a trend series
 - [x] 2.3 For `weight` at Week/Month/Year zoom: compute the trend series from the full (possibly
-      14-day-widened) bucketed series, then slice *both* the trend series and `bucketBandData`
-      (avg/min/max/labels) down to just the zoom's own visible range (last 7 entries for Week)
-      before rendering, so the existing avg-line/band/X-axis labels keep showing exactly the same
-      7/30/12-bucket window they did before this change
+      widened) bucketed series, then filter *both* the trend series and `bucketBandData`
+      (avg/min/max/labels) down to just the zoom's own visible range before rendering, so the
+      existing avg-line/band/X-axis labels keep showing exactly the same window they did before
+      this change.
+
+  **Correction (found during `/code-review`):** the original implementation filtered by slicing
+  the last N rows by array position (`chartRows.slice(-7)`), not by calendar date. The backend's
+  bucket query (`storage_impl.go`'s `QueryAggregate`) is a plain SQL `GROUP BY` with no zero-fill
+  for missing buckets, so a sparse logger (e.g. no weight entries in the last week) could get back
+  fewer rows than the widened range spans — a positional slice would then pull genuinely-old
+  buckets into what's labeled and rendered as the current Week/Year view. Fixed by filtering each
+  row against the visible range's real start date (`bucket_start >= from`) via a shared boolean
+  mask applied to both `chartRows` and the trend series, so they stay index-aligned regardless of
+  how sparse the underlying data is.
 - [x] 2.4 Add a `<Line>` series for the trend, distinguishable from the existing avg line (e.g. a
       different stroke color/dash), to the `weight` Week/Month/Year `ComposedChart` only
 - [x] 2.5 Confirm no trend line renders at Day zoom, and none renders for any point-in-time type

@@ -149,6 +149,52 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
     expect(ticks.length).toBeGreaterThan(0);
     expect(ticks).not.toContain('0');
   });
+
+  // Regression coverage for a bug found in code review: Year zoom's own ~12-13
+  // monthly buckets fall short of the ~14-16 periods an alpha=0.25 EMA needs to
+  // converge, so weight's trend line must widen its lookback fetch the same way
+  // Week's does — not just Week. These assert on the actual outgoing request
+  // range, since a rendered-but-unconverged trend line would still pass a mere
+  // visibility check.
+  test('weight Week-zoom bucketed fetch widens to >= 14 days', async ({ page }) => {
+    await page.goto('/data/weight/');
+    const [req] = await Promise.all([
+      page.waitForRequest(r => /\/api\/data\/weight\?.*bucket=day/.test(r.url())),
+      page.getByRole('button', { name: 'Week', exact: true }).click(),
+    ]);
+    const url = new URL(req.url());
+    const from = new Date(url.searchParams.get('from')!);
+    const to = new Date(url.searchParams.get('to')!);
+    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    expect(days).toBeGreaterThanOrEqual(14);
+  });
+
+  test('weight Year-zoom bucketed fetch widens to >= ~2 years', async ({ page }) => {
+    await page.goto('/data/weight/');
+    const [req] = await Promise.all([
+      page.waitForRequest(r => /\/api\/data\/weight\?.*bucket=month/.test(r.url())),
+      page.getByRole('button', { name: 'Year', exact: true }).click(),
+    ]);
+    const url = new URL(req.url());
+    const from = new Date(url.searchParams.get('from')!);
+    const to = new Date(url.searchParams.get('to')!);
+    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    // ~2 years, allowing slack for leap years/DST rather than pinning to 730.
+    expect(days).toBeGreaterThanOrEqual(700);
+  });
+
+  test('heart_rate Week-zoom bucketed fetch is not widened', async ({ page }) => {
+    await page.goto('/data/heart_rate/');
+    const [req] = await Promise.all([
+      page.waitForRequest(r => /\/api\/data\/heart_rate\?.*bucket=day/.test(r.url())),
+      page.getByRole('button', { name: 'Week', exact: true }).click(),
+    ]);
+    const url = new URL(req.url());
+    const from = new Date(url.searchParams.get('from')!);
+    const to = new Date(url.searchParams.get('to')!);
+    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    expect(days).toBeLessThan(8);
+  });
 });
 
 test.describe('API data endpoints', () => {
