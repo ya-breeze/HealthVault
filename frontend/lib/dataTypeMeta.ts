@@ -50,6 +50,37 @@ export const NUTRITION_MACROS = [
   { key: 'dietary_fiber_grams', label: 'Fiber' },
 ] as const;
 
+/**
+ * Y-axis domain for a point-in-time chart, computed from the values actually
+ * driving it rather than defaulting toward zero — see chart-zoom-aggregation's
+ * "Point-in-time Y-axis domain" requirement. Pads by 10% of the data range, or
+ * by 2% of the data's own magnitude when the range is zero (flat/single-point
+ * data), so a flat series still renders a visible band. Returns undefined when
+ * there's no data to derive a range from, leaving the axis at its default.
+ */
+export function computeYDomain(values: number[]): [number, number] | undefined {
+  if (values.length === 0) return undefined;
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const range = dataMax - dataMin;
+  const pad = range > 0 ? range * 0.1 : Math.max(Math.abs(dataMax), 1) * 0.02;
+  return [dataMin - pad, dataMax + pad];
+}
+
+/**
+ * Exponential moving average, alpha = 0.25 (~7-period EMA) — see
+ * chart-zoom-aggregation's "Weight trend line" requirement. Seeded from the
+ * first value so the trend starts exactly where the data starts.
+ */
+export function emaSeries(values: number[], alpha = 0.25): number[] {
+  if (values.length === 0) return [];
+  const result: number[] = [values[0]];
+  for (let i = 1; i < values.length; i++) {
+    result.push(result[i - 1] + alpha * (values[i] - result[i - 1]));
+  }
+  return result;
+}
+
 export type Zoom = 'day' | 'week' | 'month' | 'year';
 
 /** Zoom → time range + bucket, per chart-zoom-aggregation's zoom table. */
