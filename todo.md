@@ -42,3 +42,39 @@ Two different ways it could plug into HealthVault, not equally sized:
 **Recommendation if picked up:** start with (1) — it's additive, low-risk,
 and directly useful for a European user logging packaged food. Only consider
 (2) if (1) turns out insufficient in practice.
+
+## Weight chart: goal weight, BMI bands, and trend projection
+
+Deferred 2026-08-19 while scoping `weight-chart-scale-and-trend` (fixing the weight
+chart's 0-100 Y-axis bug and adding a smoothed trend line). The reference
+screenshot that prompted that change — the "Libra" weight-tracking app, which
+HealthVault already imports CSV exports from via `libra-import` — also shows a
+goal-weight line, horizontal BMI-category bands, and a dashed line projecting
+the trend forward to the goal. None of that made it into the scaling/trend
+change; each piece below is a separate, sizeable candidate.
+
+**Findings:** HealthVault has no persisted place for a goal today — there's no
+User/Family settings table, only per-metric timestamped records (see
+`backend/pkg/database/models.go`). The cleanest fit is a new metric type (e.g.
+`weight_goal`) reusing the existing per-type time-series pattern (`TYPE_META`,
+the data-API's `?bucket=`) rather than a new subsystem — "latest record wins"
+is exactly a goal's semantics. BMI bands need the user's height; `height` is
+already a logged point-in-time metric, so bands could read the latest
+`Height` record and simply not render if none exists.
+
+Candidates, roughly sized:
+
+1. **Goal weight (small–medium).** New `weight_goal` metric type, a way to
+   set/edit it in the UI, and a horizontal reference line on the weight chart.
+2. **BMI category bands (small; needs height, not goal).** WHO threshold
+   bands converted to kg via the user's latest `Height` record; hidden if no
+   height is on file.
+3. **Projected trend line to goal (small; depends on 1).** Extrapolate the
+   weight trend line's recent slope forward until it crosses the goal weight.
+4. **Trend line for other point-in-time metrics (small).** The EMA trend
+   computation added for `weight` is metric-agnostic; extending it to heart
+   rate, blood pressure, etc. is a "should we" question, not a "can we" one.
+
+**Recommendation if picked up:** start with (1), since (2) and (3) both build
+on it (BMI bands need height, not goal, but pair naturally with the same UI
+work as the goal-weight input).
