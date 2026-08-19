@@ -84,6 +84,73 @@ test.describe('Zoom control', () => {
   });
 });
 
+test.describe('Point-in-time Y-axis domain and weight trend line', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  async function yAxisTickTexts(page: Page) {
+    return page.locator('.recharts-yAxis-tick-labels text').allTextContents();
+  }
+
+  test('weight Year-zoom Y-axis does not zero-anchor', async ({ page }) => {
+    await page.goto('/data/weight/');
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    const ticks = await yAxisTickTexts(page);
+    // Seeded weight data on this stack clusters in the 70s-90s kg range, far
+    // from zero. A regression to zero-anchoring (either from an unset domain,
+    // or from the stacked-Area baseline bug this test also guards against)
+    // would put a "0" tick back on the axis.
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks).not.toContain('0');
+  });
+
+  test('heart_rate Year-zoom Y-axis does not zero-anchor', async ({ page }) => {
+    await page.goto('/data/heart_rate/');
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    const ticks = await yAxisTickTexts(page);
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks).not.toContain('0');
+  });
+
+  test('steps (cumulative) Y-axis keeps its zero baseline', async ({ page }) => {
+    await page.goto('/data/steps/');
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    const ticks = await yAxisTickTexts(page);
+    expect(ticks).toContain('0');
+  });
+
+  test('weight trend line renders at Week/Month/Year but not Day', async ({ page }) => {
+    await page.goto('/data/weight/');
+    for (const zoom of ['Week', 'Month', 'Year']) {
+      await page.getByRole('button', { name: zoom, exact: true }).click();
+      await expect(page.getByText('Trend', { exact: true })).toBeVisible();
+    }
+    await page.getByRole('button', { name: 'Day', exact: true }).click();
+    await expect(page.getByText('Trend', { exact: true })).not.toBeVisible();
+  });
+
+  test('trend line does not render for other point-in-time metrics', async ({ page }) => {
+    await page.goto('/data/heart_rate/');
+    for (const zoom of ['Week', 'Month', 'Year']) {
+      await page.getByRole('button', { name: zoom, exact: true }).click();
+      await expect(page.getByText('Trend', { exact: true })).not.toBeVisible();
+    }
+  });
+
+  test('blood_pressure Year-zoom band renders without a zero-anchored axis', async ({ page }) => {
+    await page.goto('/data/blood_pressure/');
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+    const ticks = await yAxisTickTexts(page);
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks).not.toContain('0');
+  });
+});
+
 test.describe('API data endpoints', () => {
   test('GET /api/data/steps returns array', async ({ page, request }) => {
     await login(page);
