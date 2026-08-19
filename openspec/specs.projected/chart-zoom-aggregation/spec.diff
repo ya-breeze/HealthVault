@@ -1,0 +1,31 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Regenerate with: make projected-specs
+     See openspec/specs.projected.README.md for details. -->
+
+--- openspec/specs/chart-zoom-aggregation/spec.md
++++ openspec/specs/chart-zoom-aggregation/spec.md
+@@ -131,3 +131,24 @@
+   level
+ - **THEN** the chart SHALL NOT render a trend line
+ 
++### Requirement: Chart display precision
++
++Numeric values rendered by a chart (Y-axis tick labels, tooltip values, and line/band series including the weight trend line) SHALL be rounded to that metric's established display precision before being shown to the user. Rounding SHALL apply only to the rendered/displayed value; the underlying aggregated or computed value (including averages, min/max band bounds, and the EMA-smoothed trend series) SHALL remain full precision for computation.
++
++Display precision per metric SHALL match the precision already used for that metric elsewhere in the app (the vitals-grid card and the stats row below the chart), so a metric never shows two different numbers of decimal digits in different parts of the UI.
++
++#### Scenario: Weight trend line shows one decimal
++
++- **WHEN** a user views the `weight` chart at Week, Month, or Year zoom
++- **THEN** the trend line's tooltip value and any Y-axis tick derived from it SHALL display with exactly 1 decimal digit, matching the precision already used for `weight` in the stats row
++
++#### Scenario: Whole-number metrics show no decimals
++
++- **WHEN** a user views a chart for a metric whose display precision is 0 decimals (e.g. `heart_rate`, `steps`, `oxygen_saturation`)
++- **THEN** the Y-axis ticks and tooltip values SHALL display as whole numbers with no decimal point
++
++#### Scenario: Underlying computation stays full precision
++
++- **WHEN** the chart computes an averaged point, a min/max band, or the EMA trend series for display
++- **THEN** the computation SHALL use full floating-point precision, and only the final rendered text SHALL be rounded
++
