@@ -73,8 +73,11 @@
       weight trend line. Added a `Point-in-time Y-axis domain and weight trend line` describe
       block: non-zero-anchored axis for `weight`/`heart_rate`/`blood_pressure` at Year zoom,
       zero-anchored axis retained for cumulative `steps`, trend line present for `weight` at
-      Week/Month/Year and absent at Day, trend line absent for `heart_rate`. All 27 e2e tests
-      (21 pre-existing + 6 new) pass against `hcw-wip`.
+      Week/Month/Year and absent at Day, trend line absent for `heart_rate`. Extended with 3
+      network-level tests (added during the `/code-review` fixups above) asserting the actual
+      outgoing bucketed-fetch date range: weight/Week widens to >=14 days, weight/Year widens to
+      >=~2 years, heart_rate/Week is not widened. Full suite (97 passed, 1 pre-existing unrelated
+      skip) passes against `hcw-wip`.
 - [ ] 3.4 Add a follow-up unit test for the EMA and domain-padding helpers if they're extracted
       into standalone functions — deferred; `computeYDomain`/`emaSeries` were extracted into
       `dataTypeMeta.ts` but no unit test framework is wired up for the frontend in this repo yet.
