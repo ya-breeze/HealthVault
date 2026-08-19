@@ -100,14 +100,14 @@ export default function VitalCard({
 
   if (editing) {
     return (
-      <div className={className} style={{ color }}>
+      <div className={className} style={{ color }} data-testid={`vital-card-${type}`}>
         {inner}
       </div>
     );
   }
 
   return (
-    <Link href={`/data/${type}/`} className={className} style={{ color }}>
+    <Link href={`/data/${type}/`} className={className} style={{ color }} data-testid={`vital-card-${type}`}>
       {inner}
     </Link>
   );

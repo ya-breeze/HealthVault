@@ -119,7 +119,7 @@ export default function Dashboard() {
             </TapTarget>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
           {order.map((m, i) => (
             <VitalCard
               key={m.type}

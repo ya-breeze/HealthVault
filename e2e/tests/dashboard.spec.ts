@@ -74,6 +74,65 @@ test.describe('Needs-attention indicator', () => {
   });
 });
 
+test.describe('Dashboard card reorder', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('reordering a card via Edit mode persists across reload', async ({ page }) => {
+    const grid = page.getByTestId('vitals-grid');
+
+    // Outside edit mode there are no reorder controls.
+    await expect(page.getByRole('button', { name: /move weight up/i })).not.toBeVisible();
+
+    await page.getByRole('button', { name: 'Edit order' }).click();
+
+    // Move the Weight card to the very front, regardless of its current
+    // position (this test may run after a prior run left a custom order).
+    const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
+    for (let i = 0; i < 8; i++) {
+      if (await moveWeightUp.isDisabled()) break;
+      await moveWeightUp.click();
+    }
+    await expect(moveWeightUp).toBeDisabled();
+    await expect(grid.getByTestId('vital-card-weight')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
+
+    // First card in the grid should now be Weight.
+    const firstCardBefore = grid.locator('> *').first();
+    await expect(firstCardBefore).toHaveAttribute('data-testid', 'vital-card-weight');
+
+    await page.reload();
+    const firstCardAfter = page.getByTestId('vitals-grid').locator('> *').first();
+    await expect(firstCardAfter).toHaveAttribute('data-testid', 'vital-card-weight');
+
+    // Restore the default order so this test (and others relying on a
+    // predictable grid) starts clean on the next run.
+    await page.getByRole('button', { name: 'Edit order' }).click();
+    const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
+    for (let i = 0; i < 8; i++) {
+      if (await moveWeightDown.isDisabled()) break;
+      await moveWeightDown.click();
+    }
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+
+  test('move-up is disabled on the first card and move-down on the last', async ({ page }) => {
+    await page.getByRole('button', { name: 'Edit order' }).click();
+    const grid = page.getByTestId('vitals-grid');
+    const cards = grid.locator('> *');
+    const first = cards.first();
+    const last = cards.last();
+
+    await expect(first.getByRole('button', { name: /move .* up/i })).toBeDisabled();
+    await expect(last.getByRole('button', { name: /move .* down/i })).toBeDisabled();
+
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+});
+
 test.describe('Webhook ingest + dashboard', () => {
   test('webhook POST is reflected in the steps vital card and its bucketed API response', async ({ page, request }) => {
     const ts = new Date().toISOString();
