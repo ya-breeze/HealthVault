@@ -143,18 +143,23 @@ export default function DataTypeClient({ type }: Props) {
     value: isNutrition ? num(r[`sum_${macro}`]) : num(r.sum),
   }));
 
+  // `range` is a [min, max] tuple rather than a stacked min+band pair: Recharts
+  // renders a dataKey that resolves to a tuple as a "ranged Area" positioned
+  // directly between those two values, with no stacking baseline involved. A
+  // stacked (transparent-bottom + visible-band) Area would instead anchor its
+  // baseline at the stack's absolute value origin (0), which silently pulls
+  // the Y-axis back toward zero regardless of the `domain` prop below.
   const bucketBandData = visibleChartRows.map((r, i) => ({
     label: bucketLabel(r.bucket_start, zoom),
     avg: num(r.avg),
-    min: num(r.min),
-    band: num(r.max) - num(r.min),
+    range: [num(r.min), num(r.max)] as [number, number],
     ...(dataType === 'weight' ? { trend: visibleTrend[i] } : {}),
   }));
 
   const bucketBPData = visibleChartRows.map(r => ({
     label: bucketLabel(r.bucket_start, zoom),
-    sysAvg: num(r.systolic_avg), sysMin: num(r.systolic_min), sysBand: num(r.systolic_max) - num(r.systolic_min),
-    diaAvg: num(r.diastolic_avg), diaMin: num(r.diastolic_min), diaBand: num(r.diastolic_max) - num(r.diastolic_min),
+    sysAvg: num(r.systolic_avg), sysRange: [num(r.systolic_min), num(r.systolic_max)] as [number, number],
+    diaAvg: num(r.diastolic_avg), diaRange: [num(r.diastolic_min), num(r.diastolic_max)] as [number, number],
   }));
 
   // Two flattened series driving the stats row, uniform across Day (raw
@@ -331,10 +336,8 @@ export default function DataTypeClient({ type }: Props) {
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area dataKey="sysMin" stackId="sys" stroke="none" fill="transparent" legendType="none" />
-                <Area dataKey="sysBand" stackId="sys" stroke="none" fill={color} fillOpacity={0.15} legendType="none" />
-                <Area dataKey="diaMin" stackId="dia" stroke="none" fill="transparent" legendType="none" />
-                <Area dataKey="diaBand" stackId="dia" stroke="none" fill={color} fillOpacity={0.08} legendType="none" />
+                <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" />
+                <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" />
                 <Line type="monotone" dataKey="sysAvg" stroke={color} strokeWidth={2} dot={false} name="Systolic" />
                 <Line type="monotone" dataKey="diaAvg" stroke={color} strokeDasharray="4 3" strokeWidth={2} dot={false} name="Diastolic" />
               </ComposedChart>
@@ -353,8 +356,7 @@ export default function DataTypeClient({ type }: Props) {
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <Tooltip />
                 {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
-                <Area dataKey="min" stackId="a" stroke="none" fill="transparent" legendType="none" />
-                <Area dataKey="band" stackId="a" stroke="none" fill={color} fillOpacity={0.18} legendType="none" />
+                <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" />
                 <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name="Avg" />
                 {dataType === 'weight' && (
                   <Line
