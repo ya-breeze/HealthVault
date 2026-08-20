@@ -91,6 +91,38 @@ func createEstimatedItemMeal(t *testing.T, st database.Storage, userID, familyID
 	return meal
 }
 
+// createGlossedMeal creates a pending-review meal holding one unresolved item
+// that carries both a Russian Display Name and an English Canonical Name —
+// the shape every Canonical Name test needs, and previously copied verbatim
+// into seven of them. Returns the meal and the item so callers can address
+// either by ID.
+//
+// The name pair is fixed rather than parameterized because all seven callers
+// used this one, and a fixed pair keeps the tests' assertions readable
+// ("expected the gloss cleared") without a trail of string arguments. A test
+// needing a different pair should build its own item rather than widen this.
+func createGlossedMeal(
+	t *testing.T, st database.Storage, userID, familyID uuid.UUID,
+) (database.FoodMeal, database.FoodItem) {
+	t.Helper()
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	return meal, item
+}
+
 // --- GetMeal ---
 
 func TestGetMeal_ReturnsMealWithItems(t *testing.T) {
@@ -118,21 +150,9 @@ func TestGetMeal_ReturnsMealWithItems(t *testing.T) {
 func TestGetMeal_ResponseIncludesCanonicalName(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
-	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
-	meal.ID = uuid.New()
-	meal.FamilyID = familyID
-	if err := st.DB().Create(&meal).Error; err != nil {
-		t.Fatalf("create meal: %v", err)
-	}
-	item := database.FoodItem{
-		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
-		MacroSource: database.MacroSourceNone,
-	}
-	item.ID = uuid.New()
-	item.FamilyID = familyID
-	if err := st.DB().Create(&item).Error; err != nil {
-		t.Fatalf("create item: %v", err)
-	}
+	// This one asserts on the serialized response, not on the stored row, so
+	// it never addresses the item by ID.
+	meal, _ := createGlossedMeal(t, st, userID, familyID)
 
 	h := server.NewFoodHandlers(st, nil, t.TempDir())
 	w := httptest.NewRecorder()
@@ -954,21 +974,7 @@ func TestPatchMealItem_ManualWithSaveAsCustomFoodCreatesReusableFood(t *testing.
 func TestPatchMealItem_SaveAsCustomFoodCopiesCanonicalName(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
-	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
-	meal.ID = uuid.New()
-	meal.FamilyID = familyID
-	if err := st.DB().Create(&meal).Error; err != nil {
-		t.Fatalf("create meal: %v", err)
-	}
-	item := database.FoodItem{
-		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
-		MacroSource: database.MacroSourceNone,
-	}
-	item.ID = uuid.New()
-	item.FamilyID = familyID
-	if err := st.DB().Create(&item).Error; err != nil {
-		t.Fatalf("create item: %v", err)
-	}
+	meal, item := createGlossedMeal(t, st, userID, familyID)
 
 	h := server.NewFoodHandlers(st, nil, t.TempDir())
 	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
@@ -1053,21 +1059,7 @@ func TestPatchMealItem_RenamingItemClearsCanonicalNameOnSavedCustomFood(t *testi
 func TestPatchMealItem_UnchangedNameKeepsCanonicalName(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
-	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
-	meal.ID = uuid.New()
-	meal.FamilyID = familyID
-	if err := st.DB().Create(&meal).Error; err != nil {
-		t.Fatalf("create meal: %v", err)
-	}
-	item := database.FoodItem{
-		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
-		MacroSource: database.MacroSourceNone,
-	}
-	item.ID = uuid.New()
-	item.FamilyID = familyID
-	if err := st.DB().Create(&item).Error; err != nil {
-		t.Fatalf("create item: %v", err)
-	}
+	meal, item := createGlossedMeal(t, st, userID, familyID)
 
 	h := server.NewFoodHandlers(st, nil, t.TempDir())
 	// Same name back, only the macros corrected — exactly what ItemResolver's
@@ -1108,21 +1100,7 @@ func TestPatchMealItem_UnchangedNameKeepsCanonicalName(t *testing.T) {
 func TestPatchMealItem_NameAloneDoesNotClearCanonicalName(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
-	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
-	meal.ID = uuid.New()
-	meal.FamilyID = familyID
-	if err := st.DB().Create(&meal).Error; err != nil {
-		t.Fatalf("create meal: %v", err)
-	}
-	item := database.FoodItem{
-		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
-		MacroSource: database.MacroSourceNone,
-	}
-	item.ID = uuid.New()
-	item.FamilyID = familyID
-	if err := st.DB().Create(&item).Error; err != nil {
-		t.Fatalf("create item: %v", err)
-	}
+	meal, item := createGlossedMeal(t, st, userID, familyID)
 
 	h := server.NewFoodHandlers(st, nil, t.TempDir())
 	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{"name": "Ленивые вареники"})
@@ -1170,21 +1148,7 @@ func TestPatchMealItem_RebindWithRenameClearsCanonicalName(t *testing.T) {
 	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
 	h := server.NewFoodHandlers(st, idx, t.TempDir())
 
-	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
-	meal.ID = uuid.New()
-	meal.FamilyID = familyID
-	if err := st.DB().Create(&meal).Error; err != nil {
-		t.Fatalf("create meal: %v", err)
-	}
-	item := database.FoodItem{
-		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
-		MacroSource: database.MacroSourceNone,
-	}
-	item.ID = uuid.New()
-	item.FamilyID = familyID
-	if err := st.DB().Create(&item).Error; err != nil {
-		t.Fatalf("create item: %v", err)
-	}
+	meal, item := createGlossedMeal(t, st, userID, familyID)
 
 	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
 		"fdc_id": 7, "weight_grams": 150, "name": "Chicken breast",
@@ -1218,21 +1182,7 @@ func TestPatchMealItem_RebindWithoutRenameKeepsCanonicalName(t *testing.T) {
 	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
 	h := server.NewFoodHandlers(st, idx, t.TempDir())
 
-	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
-	meal.ID = uuid.New()
-	meal.FamilyID = familyID
-	if err := st.DB().Create(&meal).Error; err != nil {
-		t.Fatalf("create meal: %v", err)
-	}
-	item := database.FoodItem{
-		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
-		MacroSource: database.MacroSourceNone,
-	}
-	item.ID = uuid.New()
-	item.FamilyID = familyID
-	if err := st.DB().Create(&item).Error; err != nil {
-		t.Fatalf("create item: %v", err)
-	}
+	meal, item := createGlossedMeal(t, st, userID, familyID)
 
 	// No "name" key at all — the rebind changes which reference food backs the
 	// item without touching how it is displayed.

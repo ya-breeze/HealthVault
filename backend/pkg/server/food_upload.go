@@ -327,7 +327,7 @@ func (h *foodHandlers) resolveItems(
 	for i, ri := range recognizedItems {
 		items[i] = newUnresolvedItem(ri, meal.ID, meal.UserID, meal.FamilyID)
 
-		candidates, exact := h.retrieveCandidates(ranked, customFoods, usageByID, ri.Name, ri.Preparation, ri.State, ri.Brand, displayLanguage)
+		candidates, exact := h.retrieveCandidates(ranked, customFoods, usageByID, ri, displayLanguage)
 		candidateSets[i] = candidates
 		exactMatch[i] = exact
 		if len(candidates) > 0 {
@@ -597,11 +597,17 @@ func (h *foodHandlers) rankedCustomFoodCandidates(
 // across every recognized item in the meal, so growing it in place via a
 // plain append could, when it has spare capacity, overwrite data written by
 // a sibling call for a different item in the same meal.
+//
+// The recognized item is passed whole rather than as its Name/Preparation/
+// State/Brand fields unpacked into four strings: they are read here only to
+// describe one item, they always travel together, and taking them apart at
+// the call site made this a positional eight-argument call in which four
+// adjacent strings had nothing but their order to tell them apart.
 func (h *foodHandlers) retrieveCandidates(
 	ranked []vision.Candidate, customFoods []database.CustomFood, usageByID map[uuid.UUID]customFoodUsage,
-	name, preparation, state, brand, displayLanguage string,
+	ri vision.Item, displayLanguage string,
 ) ([]vision.Candidate, bool) {
-	if best, ok := fuzzyCustomFoodMatch(customFoods, name, usageByID); ok {
+	if best, ok := fuzzyCustomFoodMatch(customFoods, ri.Name, usageByID); ok {
 		id := best.ID
 		return []vision.Candidate{{CustomFoodID: &id, Description: best.Name}}, true
 	}
@@ -610,8 +616,8 @@ func (h *foodHandlers) retrieveCandidates(
 		return ranked, false
 	}
 
-	if brand != "" && h.off != nil {
-		foods, offErr := h.off.Search(name, brand, off.DefaultCandidates)
+	if ri.Brand != "" && h.off != nil {
+		foods, offErr := h.off.Search(ri.Name, ri.Brand, off.DefaultCandidates)
 		if offErr == nil && len(foods) > 0 {
 			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
 			out = append(out, ranked...)
@@ -624,7 +630,7 @@ func (h *foodHandlers) retrieveCandidates(
 	}
 
 	if h.usda != nil {
-		term := usda.QueryFor(name, preparation, state)
+		term := usda.QueryFor(ri.Name, ri.Preparation, ri.State)
 		foods, usdaErr := h.usda.Search(term, usda.DefaultCandidates)
 		if usdaErr == nil {
 			out := make([]vision.Candidate, 0, len(ranked)+len(foods))

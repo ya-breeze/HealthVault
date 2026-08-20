@@ -5,13 +5,22 @@
 // openspec/changes/russian-localization/design.md decision 6 and Non-Goals.
 //
 // What is covered, precisely, so this doesn't quietly overstate itself:
-// the header/navigation, the meal review screen (ReviewClient, MealItemRow
-// and its ItemResolver panel), meal history, the custom-food catalog list,
-// and the Expert Mode toggle. Still English regardless of Display Language:
-// the dashboard, import and login screens, and the food components not on
+// the header/navigation, the dashboard (its vitals grid, meal-attention
+// line, log-food actions and secondary-metric links), the meal review screen
+// (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
+// custom-food catalog list, and the Expert Mode toggle. Still English
+// regardless of Display Language: the per-type data detail pages, the import
+// and login screens, and the food components not on
 // that path — AddItemForm, CameraCapture, ClarifyModal, CustomFoodModal,
 // DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
-// ReanalyzeControl. (AddItemForm's own chrome is English, but the
+// ReanalyzeControl.
+//
+// This list is not just a comment: the display-language spec's out-of-scope
+// paragraph defers to it by name ("the food entry/editing chrome enumerated
+// in the frontend dictionary's scope comment"), so it is the normative
+// enumeration and has to be updated in the same commit as any coverage
+// change. It was not, when the dashboard was scoped in — leaving the spec
+// pointing at a comment that contradicted it. Found in code review. (AddItemForm's own chrome is English, but the
 // ItemResolver panel it embeds is covered, so that form is partly translated
 // rather than wholly English.) Extending coverage is adding keys here plus their ru.ts
 // counterparts; nothing else has to change. Scope corrected in code review
