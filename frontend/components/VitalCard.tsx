@@ -78,7 +78,7 @@ export default function VitalCard({
         <>
           <div className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums">
             {result.value}
-            {result.unit && <span className="text-xs font-medium text-text-muted ml-1">{result.unit}</span>}
+            {result.unit && <span className="text-xs font-medium text-text-muted ml-1">{t(result.unit)}</span>}
           </div>
           <div className="font-[family-name:var(--font-data)] text-[11px] font-bold mt-0.5">
             {TREND_ARROW[result.trend]} {t('vitals.trend7d')}

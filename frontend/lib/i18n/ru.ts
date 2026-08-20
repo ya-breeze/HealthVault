@@ -65,6 +65,12 @@ const ru: Dictionary = {
   'item.weightPositiveMatched': 'У найденного блюда вес должен быть больше нуля',
   'item.deleteFailed': 'Не удалось удалить блюдо',
 
+  'unit.bpm': 'уд/мин',
+  'unit.km': 'км',
+  'unit.h': 'ч',
+  'unit.ms': 'мс',
+  'unit.kg': 'кг',
+  'unit.percent': '%',
   'unit.kcal': 'ккал',
   'unit.kcalPer100g': 'ккал/100 г',
   'unit.grams': 'г',

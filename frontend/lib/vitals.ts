@@ -1,4 +1,5 @@
 import type { DataType } from '@/lib/api';
+import type { Dictionary } from '@/lib/i18n';
 import { formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
 
 /**
@@ -46,7 +47,13 @@ export function reconcileMetricOrder(saved: string[] | undefined): typeof PRIMAR
 
 export interface VitalResult {
   value: string;
-  unit?: string;
+  // A dictionary key, not the unit text itself: this module is a pure data
+  // transform with no access to `t`, so it names the unit and VitalCard
+  // renders it. Russian writes these units in Cyrillic ("уд/мин", "км", "ч"),
+  // so passing the literal string through would leave an English fragment
+  // beside every value on an otherwise translated card — the same reason the
+  // meal macro line routes "kcal" and "g" through the dictionary.
+  unit?: keyof Dictionary;
   /** Chronological, oldest first — one point per day-bucket returned. */
   sparkline: number[];
   trend: 'up' | 'down' | 'flat';
@@ -81,27 +88,27 @@ export function extractVital(type: DataType, rows: Record<string, unknown>[]): V
     }
     case 'distance': {
       const series = rows.map(r => toDisplayUnit('distance', num(r.sum)));
-      return { value: formatMetricValue('distance', series[series.length - 1]), unit: 'km', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('distance', series[series.length - 1]), unit: 'unit.km', sparkline: series, trend: trendFrom(series) };
     }
     case 'sleep': {
       const series = rows.map(r => toDisplayUnit('sleep', num(r.sum)));
-      return { value: formatMetricValue('sleep', series[series.length - 1]), unit: 'h', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('sleep', series[series.length - 1]), unit: 'unit.h', sparkline: series, trend: trendFrom(series) };
     }
     case 'heart_rate': {
       const series = rows.map(r => num(r.avg));
-      return { value: formatMetricValue('heart_rate', series[series.length - 1]), unit: 'bpm', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('heart_rate', series[series.length - 1]), unit: 'unit.bpm', sparkline: series, trend: trendFrom(series) };
     }
     case 'heart_rate_variability': {
       const series = rows.map(r => num(r.avg));
-      return { value: formatMetricValue('heart_rate_variability', series[series.length - 1]), unit: 'ms', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('heart_rate_variability', series[series.length - 1]), unit: 'unit.ms', sparkline: series, trend: trendFrom(series) };
     }
     case 'weight': {
       const series = rows.map(r => num(r.avg));
-      return { value: formatMetricValue('weight', series[series.length - 1]), unit: 'kg', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('weight', series[series.length - 1]), unit: 'unit.kg', sparkline: series, trend: trendFrom(series) };
     }
     case 'oxygen_saturation': {
       const series = rows.map(r => num(r.avg));
-      return { value: formatMetricValue('oxygen_saturation', series[series.length - 1]), unit: '%', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('oxygen_saturation', series[series.length - 1]), unit: 'unit.percent', sparkline: series, trend: trendFrom(series) };
     }
     case 'blood_pressure': {
       const sysSeries = rows.map(r => num(r.systolic_avg));

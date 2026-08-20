@@ -95,6 +95,16 @@ const en = {
   // them "ккал", "г" and "Б/У/Ж" — so inlining them left a stray English
   // fragment mid-row on otherwise translated screens, while the resolver
   // panel immediately below already said "ккал/100 г". Found in code review.
+  // Vitals-grid units. 'kg'/'km'/'%' are international symbols, but 'bpm' and
+  // 'h'/'ms' are English abbreviations, and Russian writes the whole set in
+  // Cyrillic — so all six go through the dictionary rather than only the ones
+  // that obviously must.
+  'unit.bpm': 'bpm',
+  'unit.km': 'km',
+  'unit.h': 'h',
+  'unit.ms': 'ms',
+  'unit.kg': 'kg',
+  'unit.percent': '%',
   'unit.kcal': 'kcal',
   'unit.kcalPer100g': 'kcal/100g',
   'unit.grams': 'g',
