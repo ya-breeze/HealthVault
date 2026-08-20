@@ -53,6 +53,15 @@ async function withSettingsSave(page: Page, action: () => Promise<unknown>) {
 // everything else is still in default relative order when this runs.
 async function restoreDefaultOrder(page: Page) {
   const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
+  // Waits before asking, because isVisible() answers immediately and never
+  // retries. Callers reach here straight after switching Display Language back
+  // to English, and withSettingsSave resolves on the PUT *response* — the
+  // React re-render that relabels this button from "Изменить порядок" follows
+  // it. Asking without waiting can therefore catch the Russian label, read
+  // "no editor here", and skip the whole restore this function exists to
+  // perform. Bounded at 5s rather than the default so the genuine
+  // no-editor-open case below still returns promptly. Found in code review.
+  await editOrderBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
   // Returns early rather than clicking a Done button that isn't there: with
   // no editor open there is no save to wait for, and withSettingsSave would
   // otherwise sit out its full timeout waiting for a PUT nothing will send.
@@ -221,6 +230,14 @@ test.describe('Dashboard card reorder', () => {
       await withSettingsSave(page, () =>
         page.locator('#display-language').selectOption('en')
       );
+      // Waits for the re-render, not just the PUT: the select's value is bound
+      // to the provider's `language` state, so seeing 'en' here proves the
+      // English labels are on screen. Without it the Done lookup below — an
+      // isVisible() that does not retry — can run while the button still reads
+      // "Готово", conclude edit mode is closed, and leave it open, which in
+      // turn makes restoreDefaultOrder find no "Edit order" button and skip
+      // the restore. Found in code review.
+      await expect(page.locator('#display-language')).toHaveValue('en');
       // Leaves edit mode if it is still open, then restores the default
       // order. Awaited through to the PUT for the same reason as everywhere
       // else in this file: restoreDefaultOrder immediately re-reads settings,

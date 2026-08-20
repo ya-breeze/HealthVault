@@ -78,3 +78,45 @@ Candidates, roughly sized:
 **Recommendation if picked up:** start with (1), since (2) and (3) both build
 on it (BMI bands need height, not goal, but pair naturally with the same UI
 work as the goal-weight input).
+
+---
+
+## Short-name fuzzy matching for non-Latin catalogs
+
+`fuzzyMinNearMatchLen = 10` (backend/pkg/server/fuzzy.go) refuses any
+below-perfect custom-food name match when the shorter normalized name is
+under ten runes. That gate is deliberate and is written into the
+usda-nutrition-database spec ("A short name matches only itself"), including
+its consequence for "languages that name staples in one word".
+
+The consequence is heaviest exactly where the fuzzy match matters most.
+Russian food names are usually short — борщ (4), блины (5), молоко (6),
+гречка (6), сырники (7), вареники (8) — so near-matching is effectively
+inert for them, leaving only normalization-identical matches. And for a
+non-English Display Language neither Open Food Facts nor USDA is queried, so
+the fallback is the user's top-ranked custom foods (capped at five) or the
+macro estimate.
+
+Lowering the flat gate is not the fix: at six runes a single differing
+letter still clears the similarity threshold, which is precisely the
+"Butter"/"Batter" false positive the gate was added to stop, and a false
+positive binds unconditionally with no alternative offered.
+
+Worth exploring instead, in its own change with its own spec delta:
+
+1. **Suffix-tolerant matching for inflected languages.** Russian names vary
+   by grammatical case — молоко/молока/молоком — so a difference confined to
+   a short trailing segment of an otherwise identical name is usually the
+   same food, while Butter/Batter differs in the stem. This targets the
+   actual failure mode without loosening the stem comparison.
+2. **Edit-distance cap rather than a length gate.** Allow one edit only once
+   the name is long enough for one edit to read as a typo, which is what the
+   current gate approximates crudely.
+3. **Validate against real data first.** There is no Russian custom-food
+   corpus here to tune against; retuning blind risks trading a documented
+   false-negative for an undocumented false-positive, which is the more
+   damaging direction.
+
+Raised in code review on the russian-localization branch and deliberately
+left as specced there, since it revisits an accepted trade-off rather than
+fixing a defect.
