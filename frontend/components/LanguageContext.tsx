@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { api, UserSettings } from '@/lib/api';
 import { DICTIONARIES, LanguageCode, isSupportedLanguage } from '@/lib/i18n';
@@ -34,20 +34,7 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 // design.md decision 6.
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<LanguageCode>('en');
-  const [settings, setSettings] = useState<UserSettings>({});
   const pathname = usePathname();
-
-  // api.updateSettings only needs `settings` as a last-resort fallback (see
-  // its own doc comment) — kept in a ref, not a setLanguage dependency, so
-  // setLanguage's identity stays stable across the settings churn caused by
-  // every pathname-triggered GET below. A useCallback closing over `settings`
-  // directly would give setLanguage (and, transitively, the memoized context
-  // value further down) a new identity on every navigation even though
-  // nothing about the language actually changed — found in code review.
-  const settingsRef = useRef(settings);
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
 
   // Serializes every GET (this provider's own periodic settings load, right
   // below) and PUT (setLanguage) against this same UserSettings blob so they
@@ -94,7 +81,6 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       try {
         const s = await api.getSettings();
         if (cancelled) return;
-        setSettings(s);
         const raw = s.display_language;
         if (typeof raw === 'string' && isSupportedLanguage(raw)) {
           setLanguageState(raw);
@@ -115,15 +101,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // saving a dashboard reorder and then switching language in the same
   // session (no navigation in between, so this provider's own cache never
   // refreshed) would PUT a stale pre-reorder snapshot here and silently
-  // clobber the just-saved dashboard_order. Falls back to the cached copy
-  // (settingsRef.current) only if the refetch itself fails, matching this
-  // component's existing "a failed background load isn't fatal" stance.
-  // Queued via claim() — see the pathname effect's doc comment above for
-  // the race this closes.
+  // clobber the just-saved dashboard_order. A failed save rejects (including
+  // when the refetch inside updateSettings is what failed) and Header shows a
+  // toast; the language state is left as it was, so the control never claims a
+  // preference the server didn't store. Queued via claim() — see the pathname
+  // effect's doc comment above for the race this closes.
   const setLanguage = useCallback((code: LanguageCode): Promise<void> => {
     return claim(async () => {
-      const next = await api.updateSettings({ display_language: code }, settingsRef.current);
-      setSettings(next);
+      await api.updateSettings({ display_language: code });
       setLanguageState(code);
     });
   }, [claim]);
@@ -134,11 +119,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // setLanguage keeps its own inline claim() call instead of routing through
   // this.
   const updateSettings = useCallback((patch: Partial<UserSettings>): Promise<UserSettings> => {
-    return claim(async () => {
-      const next = await api.updateSettings(patch, settingsRef.current);
-      setSettings(next);
-      return next;
-    });
+    return claim(() => api.updateSettings(patch));
   }, [claim]);
 
   const t = useCallback(

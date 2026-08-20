@@ -82,8 +82,49 @@ func TestFuzzyCustomFoodMatch_DigitOnlyDifferenceIsNotAMatch(t *testing.T) {
 func TestFuzzyCustomFoodMatch_DigitVetoDoesNotBlockGenuineMatches(t *testing.T) {
 	usageByID := map[uuid.UUID]customFoodUsage{}
 	for _, c := range []struct{ stored, recognized string }{
-		{"Tvorog", "Tvorogh"},
-		{"Milk 2%", "milk  2%"},
+		{"Tvorog zapekanka", "Tvorog zapekanke"},
+		{"Milk 2%", "milk  2%"}, // identical after normalization
+	} {
+		food := database.CustomFood{Name: c.stored}
+		food.ID = uuid.New()
+		if _, ok := fuzzyCustomFoodMatch([]database.CustomFood{food}, c.recognized, usageByID); !ok {
+			t.Errorf("fuzzyCustomFoodMatch(%q, %q) did not match; want a match", c.stored, c.recognized)
+		}
+	}
+}
+
+// Regression for a code-review finding: fuzzyMatchThreshold is a
+// length-normalized score, so one differing character clears it in any name of
+// six runes or more — and in a short food name one letter is usually what
+// makes it a different food. Because a fuzzy hit binds unconditionally and
+// suppresses Open Food Facts and USDA for that item, "Batter" silently
+// inheriting "Butter"'s macros is a real wrong-macros outcome, not just a
+// missed suggestion. See fuzzyMinNearMatchLen.
+func TestFuzzyCustomFoodMatch_ShortNamesMustMatchExactly(t *testing.T) {
+	usageByID := map[uuid.UUID]customFoodUsage{}
+	for _, c := range []struct{ stored, recognized string }{
+		{"Butter", "Batter"},
+		{"Muffin", "Puffin"},
+		{"Pepper", "Popper"},
+		{"Borscht", "Borschk"},
+	} {
+		food := database.CustomFood{Name: c.stored}
+		food.ID = uuid.New()
+		if _, ok := fuzzyCustomFoodMatch([]database.CustomFood{food}, c.recognized, usageByID); ok {
+			t.Errorf("fuzzyCustomFoodMatch(%q, %q) matched; want no match", c.stored, c.recognized)
+		}
+	}
+}
+
+// The length gate must not cost the near-miss matching the feature exists for:
+// names long enough that a single differing character reads as a misspelling
+// still match, and short names still match themselves.
+func TestFuzzyCustomFoodMatch_LengthGateKeepsLongNearMissesAndShortExactMatches(t *testing.T) {
+	usageByID := map[uuid.UUID]customFoodUsage{}
+	for _, c := range []struct{ stored, recognized string }{
+		{"Chicken breast", "Chiken breast"}, // 14 runes, one dropped letter
+		{"Овсяная каша", "Овсяная кaша"},    // 12 runes, one substituted letter
+		{"Butter", "  butter "},             // short, but identical once normalized
 	} {
 		food := database.CustomFood{Name: c.stored}
 		food.ID = uuid.New()

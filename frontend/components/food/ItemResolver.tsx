@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { api, FoodSearchResult } from '@/lib/api';
 import TapTarget from '@/components/ui/TapTarget';
+import { useLanguage } from '@/components/LanguageContext';
 import { tabClass } from './tabClass';
 
 interface Props {
@@ -24,6 +25,7 @@ interface Props {
 // label). Reachable for any item, matched or not, until the meal is
 // confirmed — not just ones the vision model left unresolved.
 export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCustomFood }: Props) {
+  const { t } = useLanguage();
   const [mode, setMode] = useState<'search' | 'manual'>('search');
   const [query, setQuery] = useState(itemName);
   const [results, setResults] = useState<FoodSearchResult[] | null>(null);
@@ -68,7 +70,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
       }
     } catch (err) {
       if (seq === requestSeq.current) {
-        setError(err instanceof Error ? err.message : 'Search failed');
+        setError(err instanceof Error ? err.message : t('resolver.searchFailed'));
       }
     } finally {
       setSearching(false);
@@ -93,12 +95,12 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
         if (res.translated_query) {
           setTranslatedQuery(res.translated_query);
         } else {
-          setRefreshError('Could not refresh the translation — showing the previous term.');
+          setRefreshError(t('resolver.refreshTranslationEmpty'));
         }
       }
     } catch (err) {
       if (seq === requestSeq.current) {
-        setRefreshError(err instanceof Error ? err.message : 'Refresh failed');
+        setRefreshError(err instanceof Error ? err.message : t('resolver.refreshFailed'));
       }
     } finally {
       setRefreshing(false);
@@ -112,7 +114,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
     try {
       await onBind(r);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to bind food');
+      setError(err instanceof Error ? err.message : t('resolver.bindFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -123,14 +125,14 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
     setError(null);
     const name = manualName.trim();
     if (!name) {
-      setError('Name is required');
+      setError(t('resolver.nameRequired'));
       return;
     }
     setSubmitting(true);
     try {
       await onManual(name, macros, saveAsCustomFood);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save macros');
+      setError(err instanceof Error ? err.message : t('resolver.saveMacrosFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -138,14 +140,14 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
 
   return (
     <div className="mt-2 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
-      <div className="flex gap-4 mb-2 border-b border-amber-200 dark:border-amber-800 text-xs" role="tablist" aria-label={`Item resolution mode for ${itemName}`}>
+      <div className="flex gap-4 mb-2 border-b border-amber-200 dark:border-amber-800 text-xs" role="tablist" aria-label={`${t('resolver.modeLabel')} ${itemName}`}>
         <TapTarget
           role="tab"
           aria-selected={mode === 'search'}
           onClick={() => setMode('search')}
           className={tabClass(mode === 'search', 'border-amber-600 text-amber-900 dark:text-amber-200')}
         >
-          Search food
+          {t('resolver.tabSearch')}
         </TapTarget>
         <TapTarget
           role="tab"
@@ -153,7 +155,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
           onClick={() => setMode('manual')}
           className={tabClass(mode === 'manual', 'border-amber-600 text-amber-900 dark:text-amber-200')}
         >
-          Enter macros
+          {t('resolver.tabManual')}
         </TapTarget>
       </div>
 
@@ -172,22 +174,22 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
               disabled={searching}
               className="px-3 rounded-md text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
             >
-              {searching ? '…' : 'Search'}
+              {searching ? '…' : t('resolver.search')}
             </TapTarget>
           </div>
           <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-            New search terms may be sent to an external model provider for translation.
+            {t('resolver.translationNotice')}
           </p>
           {translatedQuery && (
             <div className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-300">
               <span>
-                Searched as: <strong>{translatedQuery}</strong>
+                {t('resolver.searchedAs')} <strong>{translatedQuery}</strong>
               </span>
               <TapTarget
                 onClick={refresh}
                 disabled={refreshing}
-                aria-label="Refresh translation"
-                title="Refresh translation"
+                aria-label={t('resolver.refreshTranslation')}
+                title={t('resolver.refreshTranslation')}
                 className="flex items-center justify-center disabled:opacity-50"
               >
                 {refreshing ? '…' : '🔄'}
@@ -198,7 +200,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
           {results && (
             <ul className="mt-2 max-h-64 overflow-auto divide-y divide-amber-100 dark:divide-amber-900">
               {results.length === 0 && (
-                <li className="py-2 text-xs text-gray-500 dark:text-gray-400">No matches found.</li>
+                <li className="py-2 text-xs text-gray-500 dark:text-gray-400">{t('resolver.noMatches')}</li>
               )}
               {results.map((r, i) => (
                 <li key={i}>
@@ -209,8 +211,8 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
                   >
                     {r.name}{' '}
                     <span className="text-gray-400">
-                      ({Math.round(r.profile.calories_per_100g)} kcal/100g
-                      {r.source === 'custom' ? ', your custom food' : ''})
+                      ({Math.round(r.profile.calories_per_100g)} {t('resolver.kcalPer100g')}
+                      {r.source === 'custom' ? `, ${t('resolver.yourCustomFood')}` : ''})
                     </span>
                   </TapTarget>
                 </li>
@@ -221,7 +223,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
       ) : (
         <div className="grid grid-cols-2 gap-2">
           <label className="col-span-2 text-xs text-gray-600 dark:text-gray-300">
-            Name
+            {t('resolver.name')}
             <input
               type="text"
               value={manualName}
@@ -231,13 +233,14 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
           </label>
           {(
             [
-              ['calories', 'Calories'], ['protein_grams', 'Protein (g)'], ['carbs_grams', 'Carbs (g)'],
-              ['fat_grams', 'Fat (g)'], ['sugar_grams', 'Sugar (g)'], ['sodium_grams', 'Sodium (g)'],
-              ['dietary_fiber_grams', 'Fiber (g)'],
+              ['calories', 'resolver.calories'], ['protein_grams', 'resolver.protein'],
+              ['carbs_grams', 'resolver.carbs'], ['fat_grams', 'resolver.fat'],
+              ['sugar_grams', 'resolver.sugar'], ['sodium_grams', 'resolver.sodium'],
+              ['dietary_fiber_grams', 'resolver.fiber'],
             ] as const
-          ).map(([key, label]) => (
+          ).map(([key, labelKey]) => (
             <label key={key} className="text-xs text-gray-600 dark:text-gray-300">
-              {label}
+              {t(labelKey)}
               <input
                 type="number"
                 step="any"
@@ -255,7 +258,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
                 onChange={e => setSaveAsCustomFood(e.target.checked)}
                 className="h-4 w-4"
               />
-              Save as a reusable food, so a future photo of this dish can match it automatically
+              {t('resolver.saveAsCustomFood')}
             </label>
           )}
           <TapTarget
@@ -263,7 +266,7 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
             disabled={submitting}
             className="col-span-2 mt-1 rounded-md text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
           >
-            {submitting ? 'Saving…' : 'Save'}
+            {submitting ? t('resolver.saving') : t('resolver.save')}
           </TapTarget>
         </div>
       )}

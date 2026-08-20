@@ -104,3 +104,36 @@ func digitsIn(s string) string {
 func sameDigitsIn(a, b string) bool {
 	return digitsIn(a) == digitsIn(b)
 }
+
+// fuzzyMinNearMatchLen is the shortest normalized name for which a *near*
+// match — anything scoring below 1 — is accepted at all. Below it, only names
+// that are identical after normalization (case and whitespace differences
+// alone) match.
+//
+// fuzzyMatchThreshold is a length-normalized score, so the number of
+// differing characters it tolerates grows with the name: at 6 runes it admits
+// any single-character difference (0.833), at 12 it admits two (also 0.833).
+// That scaling is backwards for short names, where one letter is usually what
+// distinguishes two different foods rather than a typo — "Butter"/"Batter",
+// "Muffin"/"Puffin" and "Pepper"/"Popper" all score 0.833 and all clear the
+// threshold today. A hit here is offered as the sole candidate with
+// unconditional-bind weight and suppresses Open Food Facts and USDA for that
+// item (see retrieveCandidates), so a false positive silently attaches the
+// wrong macros with no alternative offered, while a false negative only costs
+// the user a manual resolve — an asymmetry that argues for being strict
+// exactly where the score is least trustworthy. Ten runes is where one
+// differing character starts to read as a misspelling rather than a different
+// word ("chicken breast"/"chiken breast"). Found in code review.
+const fuzzyMinNearMatchLen = 10
+
+// nearMatchAllowed reports whether a and b are long enough for a below-perfect
+// similarity score between them to be trusted — see fuzzyMinNearMatchLen.
+// Measured on the shorter of the two normalized names, so pairing a short name
+// with a long one can't buy tolerance the short one hasn't earned.
+func nearMatchAllowed(a, b string) bool {
+	n := len([]rune(normalizeForFuzzyMatch(a)))
+	if m := len([]rune(normalizeForFuzzyMatch(b))); m < n {
+		n = m
+	}
+	return n >= fuzzyMinNearMatchLen
+}

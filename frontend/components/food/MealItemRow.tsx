@@ -5,7 +5,7 @@ import ItemResolver from './ItemResolver';
 import TapTarget from '@/components/ui/TapTarget';
 import CanonicalNameLabel from '@/components/food/CanonicalNameLabel';
 import { useLanguage } from '@/components/LanguageContext';
-import { macroSourceLabel } from '@/lib/i18n';
+import { macroSourceLabel, type Dictionary } from '@/lib/i18n';
 
 interface Props {
   mealId: string;
@@ -36,10 +36,10 @@ const SOURCE_COLOR: Record<string, string> = {
 // came from. Shown alongside the existing macro_source badge so a Czech
 // product match (real label data) is visibly different from a generic USDA
 // estimate when confirming a meal.
-function referenceSourceLabel(item: FoodItem): string | null {
-  if (item.off_code) return 'Open Food Facts';
-  if (item.fdc_id) return 'USDA';
-  if (item.custom_food_id) return 'Your custom food';
+function referenceSourceLabel(t: (key: keyof Dictionary) => string, item: FoodItem): string | null {
+  if (item.off_code) return t('item.originOff');
+  if (item.fdc_id) return t('item.originUsda');
+  if (item.custom_food_id) return t('item.originCustomFood');
   return null;
 }
 
@@ -76,14 +76,14 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
     // now rejects both. Only applies to those two sources — a manual item's
     // weight is metadata, not a scale factor, so it's not restricted here.
     if ((item.macro_source === 'reference' || item.macro_source === 'estimated') && weight <= 0) {
-      setError(`Weight must be positive for a${item.macro_source === 'estimated' ? 'n estimated' : ' matched'} item`);
+      setError(t(item.macro_source === 'estimated' ? 'item.weightPositiveEstimated' : 'item.weightPositiveMatched'));
       setWeight(item.weight_grams);
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await onUpdated(() => api.patchMealItem(mealId, item.id, { weight_grams: weight }), 'Item updated');
+      await onUpdated(() => api.patchMealItem(mealId, item.id, { weight_grams: weight }), t('item.updated'));
     } catch (err) {
       // Checks both instanceof and the explicit .name tag — see ApiError's
       // doc comment in lib/api.ts for why instanceof alone isn't trusted.
@@ -102,13 +102,13 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
         // once that actually lands; a refetch failure gets its own distinct
         // warning rather than a false claim.
         try {
-          await onUpdated(() => api.getMeal(mealId), 'Refreshed with latest change');
-          setError('This item was just changed by another edit — showing its current value.');
+          await onUpdated(() => api.getMeal(mealId), t('item.refreshed'));
+          setError(t('item.staleRefreshed'));
         } catch {
-          setError('This item was just changed by another edit, and refreshing failed — this view may be stale. Reload the page to see what changed.');
+          setError(t('item.staleRefreshFailed'));
         }
       } else {
-        setError(err instanceof Error ? err.message : 'Failed to update weight');
+        setError(err instanceof Error ? err.message : t('item.updateWeightFailed'));
         setWeight(item.weight_grams);
       }
     } finally {
@@ -122,14 +122,14 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
     // value can't be sent. Thrown here (not setError) since ItemResolver's
     // own try/catch around onBind is what surfaces it.
     if (weight <= 0) {
-      throw new Error('Weight must be positive to match a food');
+      throw new Error(t('item.weightMustBePositive'));
     }
     await onUpdated(() => api.patchMealItem(mealId, item.id, {
       fdc_id: r.fdc_id,
       custom_food_id: r.custom_food_id,
       weight_grams: weight,
       name: r.name,
-    }), 'Item updated');
+    }), t('item.updated'));
     setResolving(false);
   };
 
@@ -140,7 +140,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
   ) => {
     await onUpdated(() => api.patchMealItem(mealId, item.id, {
       manual: true, name, save_as_custom_food: saveAsCustomFood, ...macros,
-    }), 'Item updated');
+    }), t('item.updated'));
     setResolving(false);
   };
 
@@ -148,9 +148,9 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
     setDeleting(true);
     setError(null);
     try {
-      await onUpdated(() => api.deleteMealItem(mealId, item.id), 'Item removed');
+      await onUpdated(() => api.deleteMealItem(mealId, item.id), t('item.removed'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete item');
+      setError(err instanceof Error ? err.message : t('item.deleteFailed'));
       setDeleting(false);
       setConfirmingDelete(false);
     }
@@ -165,9 +165,9 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
           <span className={`inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded ${SOURCE_COLOR[item.macro_source]}`}>
             {macroSourceLabel(t, item.macro_source)}
           </span>
-          {referenceSourceLabel(item) && (
+          {referenceSourceLabel(t, item) && (
             <span className="inline-block mt-1 ml-1 text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-              {referenceSourceLabel(item)}
+              {referenceSourceLabel(t, item)}
             </span>
           )}
         </div>

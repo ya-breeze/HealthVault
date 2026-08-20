@@ -12,6 +12,28 @@ async function login(page: Page) {
   await page.waitForURL('/');
 }
 
+// Runs `action` and waits for the settings PUT it triggers to actually come
+// back from the server, rather than only for the click/selectOption that
+// starts it. Both settings writers in the app (the language switcher and the
+// dashboard-order editor) do a GET-then-PUT via api.updateSettings, so the
+// UI-level interaction resolves well before the write lands; a test that ends
+// there has its context torn down with the request still in flight, and the
+// change it thought it had made — or, in a `finally`, un-made — may never
+// reach the shared seeded account. Best-effort by design: this is only ever
+// used for cleanup, so a missing response times out quietly instead of
+// masking the assertion failure that triggered the cleanup. Found in code
+// review.
+async function withSettingsSave(page: Page, action: () => Promise<unknown>) {
+  const saved = page
+    .waitForResponse(
+      r => r.url().includes('/api/users/me/settings') && r.request().method() === 'PUT',
+      { timeout: 15_000 }
+    )
+    .catch(() => null);
+  await action().catch(() => {});
+  await saved;
+}
+
 // Shared cleanup for tests that reorder the vitals grid: pushes Weight back
 // to the last position (the default order), so a predictable grid is left
 // for later tests. Every step is best-effort and swallows its own failure —
@@ -20,15 +42,19 @@ async function login(page: Page) {
 // assertion failure that triggered the cleanup.
 async function restoreDefaultOrder(page: Page) {
   const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
-  if (await editOrderBtn.isVisible().catch(() => false)) {
-    await editOrderBtn.click().catch(() => {});
-  }
+  // Returns early rather than clicking a Done button that isn't there: with
+  // no editor open there is no save to wait for, and withSettingsSave would
+  // otherwise sit out its full timeout waiting for a PUT nothing will send.
+  if (!(await editOrderBtn.isVisible().catch(() => false))) return;
+  await editOrderBtn.click().catch(() => {});
   const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
   for (let i = 0; i < 8; i++) {
     if (await moveWeightDown.isDisabled().catch(() => true)) break;
     await moveWeightDown.click().catch(() => {});
   }
-  await page.getByRole('button', { name: 'Done' }).click().catch(() => {});
+  // handleDone (app/page.tsx) PUTs unconditionally, so this always has a
+  // response to wait for.
+  await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
 }
 
 test.describe('Dashboard', () => {
@@ -174,8 +200,14 @@ test.describe('Settings lost-update race', () => {
       await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
 
       // No navigation here — this is the exact sequence that used to revert
-      // the reorder above.
-      await page.locator('#display-language').selectOption('ru');
+      // the reorder above. Awaited through to the server's response for the
+      // same reason as the cleanup below: the reload immediately after would
+      // otherwise be free to abort the PUT in flight, failing the post-reload
+      // assertion for a reason that has nothing to do with the race under
+      // test.
+      await withSettingsSave(page, () =>
+        page.locator('#display-language').selectOption('ru')
+      );
       await expect(page.locator('#display-language')).toHaveValue('ru');
 
       await page.reload();
@@ -187,7 +219,21 @@ test.describe('Settings lost-update race', () => {
       // Restore English + default order so later tests (which assert on
       // English label text and a predictable card order) aren't affected,
       // even if an assertion above failed partway through.
-      await page.locator('#display-language').selectOption('en').catch(() => {});
+      //
+      // The restore is awaited all the way to the server's response, not just
+      // to the selectOption() that starts it: switching the language fires a
+      // GET and then a PUT (see api.updateSettings), and when the test ends
+      // Playwright closes the context and aborts whatever is still in flight.
+      // Leaving 'ru' persisted on the shared seeded account is not a
+      // this-test problem — Header labels are driven by that setting, so
+      // every later spec that names a header control by text
+      // (mobile-tap-targets.spec.ts's 'Custom Foods'/'Import'/'Logout',
+      // food.spec.ts's 'Change match'/'Load older') fails against a Russian
+      // header. workers: 1 does not help here: the leak is persisted server
+      // state, not concurrency. Found in code review.
+      await withSettingsSave(page, () =>
+        page.locator('#display-language').selectOption('en')
+      );
       await restoreDefaultOrder(page);
     }
   });

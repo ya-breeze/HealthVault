@@ -642,7 +642,8 @@ func (h *foodHandlers) retrieveCandidates(
 // fuzzyCustomFoodMatch scores every one of foods (the caller's own custom
 // foods, fetched once per meal — see resolveItems) against name (the
 // recognized item's Display Name) and returns the highest-similarity one
-// that clears fuzzyMatchThreshold and the sameDigitsIn veto (fuzzy.go), or
+// that clears fuzzyMatchThreshold, the sameDigitsIn veto, and the
+// fuzzyMinNearMatchLen length gate (all fuzzy.go), or
 // ok=false when none does (including when foods is empty). Ties are broken
 // by most-recently-used — see design.md decision 5 — using usageByID
 // (customFoodUsageByID's confirmed-meal LastUsed, not the row's own
@@ -667,6 +668,13 @@ func fuzzyCustomFoodMatch(
 		}
 		score := fuzzySimilarity(f.Name, name)
 		if score < fuzzyMatchThreshold {
+			continue
+		}
+		// Short names must match exactly (after normalization); only longer
+		// ones get the threshold's tolerance — see fuzzyMinNearMatchLen
+		// (fuzzy.go) for why the length-normalized score alone is too
+		// permissive down there.
+		if score < 1 && !nearMatchAllowed(f.Name, name) {
 			continue
 		}
 		if !found || fuzzyMatchBetter(f, score, best, bestScore, usageByID) {

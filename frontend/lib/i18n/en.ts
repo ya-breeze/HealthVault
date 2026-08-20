@@ -2,9 +2,19 @@
 // (see ru.ts) is typed against this object's keys, so a missing translation
 // is a compile error rather than a silent fallback to English at some
 // arbitrary spot in the UI. Deliberately not exhaustive on day one — see
-// openspec/changes/russian-localization/design.md decision 6 and Non-Goals:
-// navigation and the food-logging screens are covered; the rest of the app
-// still reads in English regardless of Display Language.
+// openspec/changes/russian-localization/design.md decision 6 and Non-Goals.
+//
+// What is covered, precisely, so this doesn't quietly overstate itself:
+// the header/navigation, the meal review screen (ReviewClient, MealItemRow
+// and its ItemResolver panel), meal history, the custom-food catalog list,
+// and the Expert Mode toggle. Still English regardless of Display Language:
+// the dashboard, import and login screens, and the food components not on
+// that path — AddItemForm, CameraCapture, ClarifyModal, CustomFoodModal,
+// DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
+// ReanalyzeControl. Extending coverage is adding keys here plus their ru.ts
+// counterparts; nothing else has to change. Scope corrected in code review
+// after the resolver panel turned out to be uncovered while this comment
+// claimed the food-logging screens wholesale.
 const en = {
   'header.customFoods': 'Custom Foods',
   'header.import': 'Import',
@@ -44,6 +54,55 @@ const en = {
   'item.sourceManual': 'Manual',
   'item.sourceEstimated': 'AI estimate',
   'item.sourceNone': 'Unresolved',
+  // Where a matched item's macros came from. The two reference-database
+  // names are products, not prose, so ru.ts leaves them as-is.
+  'item.originOff': 'Open Food Facts',
+  'item.originUsda': 'USDA',
+  'item.originCustomFood': 'Your custom food',
+  'item.updated': 'Item updated',
+  'item.removed': 'Item removed',
+  'item.refreshed': 'Refreshed with latest change',
+  'item.staleRefreshed': 'This item was just changed by another edit — showing its current value.',
+  'item.staleRefreshFailed':
+    'This item was just changed by another edit, and refreshing failed — this view may be stale. Reload the page to see what changed.',
+  'item.updateWeightFailed': 'Failed to update weight',
+  'item.weightMustBePositive': 'Weight must be positive to match a food',
+  'item.weightPositiveEstimated': 'Weight must be positive for an estimated item',
+  'item.weightPositiveMatched': 'Weight must be positive for a matched item',
+  'item.deleteFailed': 'Failed to delete item',
+
+  // The item-resolution panel (ItemResolver) — the review screen's most-used
+  // control, reachable for every item until the meal is confirmed.
+  'resolver.tabSearch': 'Search food',
+  'resolver.tabManual': 'Enter macros',
+  // Prefixes the item's own name to form the tablist's accessible name; kept
+  // as a prefix rather than a formatted string because `t` takes a key and
+  // returns a plain string, with no interpolation.
+  'resolver.modeLabel': 'Item resolution mode for',
+  'resolver.search': 'Search',
+  'resolver.searchFailed': 'Search failed',
+  'resolver.translationNotice': 'New search terms may be sent to an external model provider for translation.',
+  'resolver.searchedAs': 'Searched as:',
+  'resolver.refreshTranslation': 'Refresh translation',
+  'resolver.refreshTranslationEmpty': 'Could not refresh the translation — showing the previous term.',
+  'resolver.refreshFailed': 'Refresh failed',
+  'resolver.noMatches': 'No matches found.',
+  'resolver.kcalPer100g': 'kcal/100g',
+  'resolver.yourCustomFood': 'your custom food',
+  'resolver.bindFailed': 'Failed to bind food',
+  'resolver.name': 'Name',
+  'resolver.nameRequired': 'Name is required',
+  'resolver.calories': 'Calories',
+  'resolver.protein': 'Protein (g)',
+  'resolver.carbs': 'Carbs (g)',
+  'resolver.fat': 'Fat (g)',
+  'resolver.sugar': 'Sugar (g)',
+  'resolver.sodium': 'Sodium (g)',
+  'resolver.fiber': 'Fiber (g)',
+  'resolver.saveAsCustomFood': 'Save as a reusable food, so a future photo of this dish can match it automatically',
+  'resolver.save': 'Save',
+  'resolver.saving': 'Saving…',
+  'resolver.saveMacrosFailed': 'Failed to save macros',
 
   // Distinct wording from ReanalyzeControl's unrelated "Expert" input tab
   // (same page, further down) — both are legitimately called "expert"
