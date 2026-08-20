@@ -4,7 +4,7 @@
 
 --- openspec/specs/display-language/spec.md
 +++ openspec/specs/display-language/spec.md
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,129 @@
 +# display-language Specification
 +
 +## Purpose
@@ -22,12 +22,26 @@
 +SHALL be interpreted rather than assumed to be one of the languages the UI ships. Interpretation
 +SHALL compare only the primary subtag of the tag — the part before the first `-` or `_` —
 +case-insensitively and ignoring surrounding whitespace, and the *same* interpretation SHALL govern
-+both UI rendering and recognition requests. A value whose primary subtag names no shipped UI
-+language SHALL render the interface in English, and a value that is not a well-formed language tag
-+SHALL be treated as unset. Interpreting the one stored value differently in the two places is
-+specifically prohibited: it would let a user's interface render in English while recognition is
-+asked for another language and the English-vocabulary reference databases are suppressed for them,
-+a divergence nothing in the UI would reveal.
++both UI rendering and recognition requests. A value that is not a well-formed language tag SHALL be
++treated as unset, as SHALL a value whose primary subtag names a language the interface ships no
++translations for — such a value SHALL NOT reach recognition either. Interpreting the one stored
++value differently in the two places is specifically prohibited: it would let a user's interface
++render in English while recognition is asked for another language and the English-vocabulary
++reference databases are suppressed for them, a divergence nothing in the UI would reveal.
++
++Because a well-formed tag can be stored by any caller of `PUT /api/users/me/settings`, and the
++switcher offers only the languages the interface ships, restricting recognition to those same
++languages is what keeps that divergence unreachable rather than merely unlikely — there is
++otherwise no route back out of it through the UI, which would show "English" for a setting that is
++not English.
++
++#### Scenario: A language the interface does not ship is treated as unset
++
++- **WHEN** a user's stored `display_language` names a language the interface ships no translations
++  for, such as `de`
++- **THEN** the system SHALL render the interface in English *and* request English Display Names
++  from recognition, leaving reference-database matching enabled, rather than recognizing in that
++  language behind an English interface
 +
 +#### Scenario: A regional tag resolves the same way for the UI and for recognition
 +
