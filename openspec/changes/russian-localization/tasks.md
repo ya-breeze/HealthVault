@@ -1,69 +1,69 @@
 ## 1. Backend data model
 
-- [ ] 1.1 Add nullable `CanonicalName string` column to `FoodItem` and `CustomFood`
+- [x] 1.1 Add nullable `CanonicalName string` column to `FoodItem` and `CustomFood`
       (`backend/pkg/database/models_food.go`); update doc comments so `Name` is documented as the
       Display Name going forward
-- [ ] 1.2 Confirm `AutoMigrate` picks up both new columns (`backend/pkg/database/db.go`); add/adjust
+- [x] 1.2 Confirm `AutoMigrate` picks up both new columns (`backend/pkg/database/db.go`); add/adjust
       a `db_test.go` case asserting a pre-existing row reads back with an empty `CanonicalName`
 
 ## 2. Display Language setting
 
-- [ ] 2.1 Document `display_language` as a recognized (but not schema-enforced) key in the
+- [x] 2.1 Document `display_language` as a recognized (but not schema-enforced) key in the
       `UserSettings` JSON blob — no backend code change needed since it's opaque JSON; add a
       backend test asserting an arbitrary `display_language` value round-trips through
       `GET`/`PUT /api/users/me/settings` unchanged
-- [ ] 2.2 Add a small backend helper to read a user's current `display_language` (default `"en"`
+- [x] 2.2 Add a small backend helper to read a user's current `display_language` (default `"en"`
       when absent) for reuse by recognition and matching code (2.x, 4.x below)
 
 ## 3. Recognition: Display Name + Canonical Name
 
-- [ ] 3.1 Extend the vision prompt (`backend/pkg/vision/openai.go`) to accept a target language
+- [x] 3.1 Extend the vision prompt (`backend/pkg/vision/openai.go`) to accept a target language
       parameter and request `display_name` + `canonical_name` per recognized item
-- [ ] 3.2 Add a `CanonicalName string` field to `vision.Item` (`backend/pkg/vision/vision.go`,
+- [x] 3.2 Add a `CanonicalName string` field to `vision.Item` (`backend/pkg/vision/vision.go`,
       alongside the existing `Name` field, which becomes the Display Name); extend response
       parsing to populate both, leaving `CanonicalName` empty when the target language is English
       rather than duplicating `Name`
-- [ ] 3.3 Thread the caller's `display_language` (via 2.2) into the initial-analysis
+- [x] 3.3 Thread the caller's `display_language` (via 2.2) into the initial-analysis
       (`backend/pkg/server/food_upload.go`), reanalyze (`backend/pkg/server/food_reanalyze.go`),
       and clarification-round (`backend/pkg/server/food_clarify.go`) call sites
-- [ ] 3.4 Persist `DisplayName` (into `Name`) and `CanonicalName` on `FoodItem` creation
+- [x] 3.4 Persist `DisplayName` (into `Name`) and `CanonicalName` on `FoodItem` creation
       (`backend/pkg/server/food_upload.go`, `backend/pkg/server/food_item.go` — both already
       assign `item.ID = uuid.New()` explicitly since `TenantModel` has no `BeforeCreate` hook;
       follow the same pattern for the new field, no new assignment concern introduced)
-- [ ] 3.5 Backend test: non-English recognition produces distinct Display/Canonical names;
+- [x] 3.5 Backend test: non-English recognition produces distinct Display/Canonical names;
       English recognition leaves Canonical Name empty
 
 ## 4. Matching: fuzzy custom-food match + non-English skip
 
-- [ ] 4.1 Implement a small hand-rolled normalized Levenshtein-similarity function (no new
+- [x] 4.1 Implement a small hand-rolled normalized Levenshtein-similarity function (no new
       dependency — see design.md decision 5); unit-test it directly with a handful of near-miss
       string pairs
-- [ ] 4.2 Replace the exact-name custom-food match inside `retrieveCandidates`
+- [x] 4.2 Replace the exact-name custom-food match inside `retrieveCandidates`
       (`backend/pkg/server/food_upload.go`) with the fuzzy-similarity match against the threshold
       from design.md; `resolveItems`'s `exactMatch[i]` flag (same file) keeps meaning "bind
       unconditionally" — just fed by fuzzy instead of exact now. Keep
       `rankedCustomFoodCandidates` (the existing frequency/recency-ranked tier, same file) as the
       fallback when no candidate clears the threshold, unchanged
-- [ ] 4.3 Add the non-English gate inside `retrieveCandidates`: skip the Open Food Facts/USDA
+- [x] 4.3 Add the non-English gate inside `retrieveCandidates`: skip the Open Food Facts/USDA
       branches entirely when `display_language != "en"`, leaving the item's candidate set empty
       (falls through to the macro-estimate fallback in `resolveItems`) when no custom-food match
       was found either
-- [ ] 4.4 Backend tests: fuzzy match hits on a near-miss name; non-English item skips OFF/USDA
+- [x] 4.4 Backend tests: fuzzy match hits on a near-miss name; non-English item skips OFF/USDA
       querying even with a brand present; existing exact-match and frequency/recency scenarios
       from `usda-nutrition-database/spec.md` still pass
 
 ## 5. Item resolution API surface
 
-- [ ] 5.1 Reject a `canonical_name` field on `PATCH /api/food/meals/{id}/items/{item_id}` with
+- [x] 5.1 Reject a `canonical_name` field on `PATCH /api/food/meals/{id}/items/{item_id}` with
       HTTP 400 (`backend/pkg/server/food_item.go`)
-- [ ] 5.2 Ensure `canonical_name` is included (when non-empty) in `FoodItem`/`CustomFood` JSON
+- [x] 5.2 Ensure `canonical_name` is included (when non-empty) in `FoodItem`/`CustomFood` JSON
       responses — falls out automatically from the new struct field (`json:"canonical_name,omitempty"`)
       for `GetMeal`/`ConfirmMeal` (`backend/pkg/server/food_meal_detail.go`), `PatchMealItem`
       (`backend/pkg/server/food_item.go`), and `ListCustomFoods` (`backend/pkg/server/food_custom.go`);
       verify none of these hand-roll a response struct that would silently drop it
-- [ ] 5.3 When saving a correction as a new `CustomFood` (existing "save as reusable" flow), copy
+- [x] 5.3 When saving a correction as a new `CustomFood` (existing "save as reusable" flow), copy
       the originating item's `CanonicalName` onto the new `CustomFood` record
-- [ ] 5.4 Backend tests for 5.1–5.3
+- [x] 5.4 Backend tests for 5.1–5.3
 
 ## 6. Frontend: i18n scaffolding
 

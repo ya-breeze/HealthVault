@@ -75,6 +75,67 @@ func TestFoodItem_CarriesUserID(t *testing.T) {
 	}
 }
 
+// A pre-existing row (created before CanonicalName existed) reads back with
+// an empty CanonicalName rather than failing to scan or defaulting to some
+// sentinel — see openspec/specs/food-nutrition-logging "A pre-existing item
+// has no Canonical Name".
+func TestFoodItem_CanonicalNameDefaultsEmpty(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	m := newMeal(userID, familyID, time.Now().UTC())
+	if err := s.DB().Create(m).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+
+	it := database.FoodItem{
+		UserID: userID, MealID: m.ID, Name: "rice",
+		MacroSource: database.MacroSourceNone, WeightGrams: 100,
+	}
+	it.ID = uuid.New()
+	it.FamilyID = familyID
+	if err := s.DB().Create(&it).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	var got database.FoodItem
+	if err := s.DB().First(&got, "id = ?", it.ID).Error; err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if got.CanonicalName != "" {
+		t.Errorf("CanonicalName = %q, want empty", got.CanonicalName)
+	}
+}
+
+// CanonicalName round-trips through create/read like any other text column.
+func TestFoodItem_CanonicalNameRoundTrips(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	m := newMeal(userID, familyID, time.Now().UTC())
+	if err := s.DB().Create(m).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+
+	it := database.FoodItem{
+		UserID: userID, MealID: m.ID, Name: "вареники", CanonicalName: "dumplings",
+		MacroSource: database.MacroSourceNone, WeightGrams: 100,
+	}
+	it.ID = uuid.New()
+	it.FamilyID = familyID
+	if err := s.DB().Create(&it).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	var got database.FoodItem
+	if err := s.DB().First(&got, "id = ?", it.ID).Error; err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if got.CanonicalName != "dumplings" {
+		t.Errorf("CanonicalName = %q, want %q", got.CanonicalName, "dumplings")
+	}
+}
+
 // A user may legitimately log two meals at the same recorded time; unlike the
 // health metric tables there is no unique constraint on (user_id, logged_at).
 func TestFoodMeal_TwoMealsSameLoggedAt(t *testing.T) {

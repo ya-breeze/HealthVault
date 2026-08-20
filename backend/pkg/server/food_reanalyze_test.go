@@ -756,7 +756,7 @@ type gatedRecognizeClient struct {
 	result  *vision.RecognizeResult
 }
 
-func (c *gatedRecognizeClient) Recognize(context.Context, []byte, string, string) (*vision.RecognizeResult, error) {
+func (c *gatedRecognizeClient) Recognize(context.Context, []byte, string, string, string) (*vision.RecognizeResult, error) {
 	close(c.entered)
 	<-c.proceed
 	return c.result, nil
@@ -766,7 +766,7 @@ func (c *gatedRecognizeClient) EstimateWeights(context.Context, []byte, string, 
 	return &vision.WeightEstimateResult{}, nil
 }
 
-func (c *gatedRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn) (*vision.RecognizeResult, error) {
+func (c *gatedRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
 

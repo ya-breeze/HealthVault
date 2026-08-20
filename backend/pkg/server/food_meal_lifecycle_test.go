@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +109,39 @@ func TestGetMeal_ReturnsMealWithItems(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
 	if len(got.Items) != 1 {
 		t.Errorf("expected 1 item, got %d", len(got.Items))
+	}
+}
+
+// Regression: GetMeal must not hand-roll a response shape that silently
+// drops canonical_name — see openspec/specs/food-nutrition-logging "Food
+// Item and Custom Food Carry a Canonical Name".
+func TestGetMeal_ResponseIncludesCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.GetMeal(w, withClaims(mealDetailRequest(http.MethodGet, meal.ID.String()), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"canonical_name":"dumplings"`) {
+		t.Errorf("expected canonical_name in the response body, got %s", w.Body.String())
 	}
 }
 
@@ -910,6 +944,75 @@ func TestPatchMealItem_ManualWithSaveAsCustomFoodCreatesReusableFood(t *testing.
 	// item weight is 100g, so per-100g equals the supplied totals directly.
 	if cf.CaloriesPer100g != 300 || cf.ProteinPer100g != 25 || cf.CarbsPer100g != 10 {
 		t.Errorf("expected per-100g values matching the item's macros at its weight, got %+v", cf)
+	}
+}
+
+// When the item being saved as a reusable food carries a Canonical Name
+// (from non-English recognition), the new CustomFood keeps it too. See
+// openspec/specs/food-nutrition-logging "A custom food created from a
+// non-English recognition keeps its Canonical Name".
+func TestPatchMealItem_SaveAsCustomFoodCopiesCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true, "calories": 300,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "вареники").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	if cf.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName copied from the item, got %q", cf.CanonicalName)
+	}
+}
+
+// See openspec/specs/food-nutrition-logging "A canonical_name field on the
+// request is rejected": Canonical Name is not user-editable through this
+// endpoint, no matter what else the request also contains.
+func TestPatchMealItem_CanonicalNameFieldRejected(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"name": "Chicken thigh", "canonical_name": "chicken thigh",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded database.FoodItem
+	if err := st.DB().Where("id = ?", meal.Items[0].ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if reloaded.Name != "Chicken" {
+		t.Errorf("expected the item unchanged after a rejected request, got name %q", reloaded.Name)
 	}
 }
 

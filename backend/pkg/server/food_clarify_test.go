@@ -528,13 +528,13 @@ func TestClarifyMeal_VisionErrorMarksFailed(t *testing.T) {
 // round" enough for two real goroutines to land inside it.
 type slowClarifyClient struct{ delay time.Duration }
 
-func (c slowClarifyClient) Recognize(context.Context, []byte, string, string) (*vision.RecognizeResult, error) {
+func (c slowClarifyClient) Recognize(context.Context, []byte, string, string, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
 func (c slowClarifyClient) EstimateWeights(context.Context, []byte, string, []vision.WeightEstimateInput) (*vision.WeightEstimateResult, error) {
 	return &vision.WeightEstimateResult{}, nil
 }
-func (c slowClarifyClient) Clarify(_ context.Context, _ []vision.Item, _ []vision.ClarifyTurn) (*vision.RecognizeResult, error) {
+func (c slowClarifyClient) Clarify(_ context.Context, _ []vision.Item, _ []vision.ClarifyTurn, _ string) (*vision.RecognizeResult, error) {
 	time.Sleep(c.delay)
 	return &vision.RecognizeResult{Items: []vision.Item{{Name: "Sauce", WeightGrams: 30}}}, nil
 }

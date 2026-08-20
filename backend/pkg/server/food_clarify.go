@@ -134,7 +134,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	priorItems := make([]vision.Item, len(meal.Items))
 	for i, it := range meal.Items {
 		priorItems[i] = vision.Item{
-			Name: it.Name, Preparation: it.Preparation, State: it.State, Brand: it.Brand,
+			Name: it.Name, CanonicalName: it.CanonicalName, Preparation: it.Preparation, State: it.State, Brand: it.Brand,
 			WeightGrams: it.WeightGrams, Confidence: it.Confidence,
 			EstimatedProfile: estimatedProfilePtr(it),
 		}
@@ -143,7 +143,8 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)
 	defer cancel()
 
-	recognized, err := h.vision.Clarify(ctx, priorItems, history)
+	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
+	recognized, err := h.vision.Clarify(ctx, priorItems, history, displayLanguage)
 	if err == nil {
 		carryForwardEstimates(priorItems, recognized.Items)
 	}

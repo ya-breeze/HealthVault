@@ -21,12 +21,20 @@ import (
 // Preparation and State are a controlled vocabulary; an empty value means
 // the model could not tell, not that the food has none.
 type Item struct {
+	// Name is the Display Name: in the target language passed to Recognize/
+	// Clarify. See openspec/specs/display-language "Display Language Passed
+	// to Recognition".
 	Name        string  `json:"name"`
 	Preparation string  `json:"preparation,omitempty"`
 	State       string  `json:"state,omitempty"`
 	Brand       string  `json:"brand,omitempty"`
 	WeightGrams float64 `json:"weight_grams"`
 	Confidence  float64 `json:"confidence"`
+	// CanonicalName is the same food's English identity, produced by the same
+	// call as Name. Empty when the target language is English, rather than
+	// duplicating Name — see openspec/specs/food-photo-recognition "Food
+	// Recognition and Clarification Questions".
+	CanonicalName string `json:"canonical_name,omitempty"`
 	// EstimatedProfile is Recognize's own per-100g macro estimate for this
 	// item, produced in the same call as recognition — no separate model
 	// call. Nil when Recognize produced none (or an invalid one) for this
@@ -140,8 +148,12 @@ type Client interface {
 	// chicken and rice, not berries") included in the prompt for that call —
 	// used by initial upload and hint-driven reanalysis. An empty hint is the
 	// automatic upload/retry path and leaves the request unchanged from before
-	// hint support existed.
-	Recognize(ctx context.Context, image []byte, mimeType, hint string) (*RecognizeResult, error)
+	// hint support existed. displayLanguage is a BCP-47-ish code (e.g. "en",
+	// "ru") the caller's Display Name is written in; each Item's
+	// CanonicalName is additionally produced in English, left empty when
+	// displayLanguage is "en". See openspec/specs/display-language "Display
+	// Language Passed to Recognition".
+	Recognize(ctx context.Context, image []byte, mimeType, hint, displayLanguage string) (*RecognizeResult, error)
 	// EstimateWeights estimates only the expert components whose weights were
 	// omitted. Implementations must preserve ComponentIndex in their response.
 	EstimateWeights(ctx context.Context, image []byte, mimeType string, components []WeightEstimateInput) (*WeightEstimateResult, error)
@@ -150,8 +162,9 @@ type Client interface {
 	// same RecognizeResult shape — updated items, and further
 	// ClarificationQuestions if still ambiguous. See design.md "Clarification
 	// Rounds": re-sending the image every round would make image tokens the
-	// dominant cost for no additional information.
-	Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn) (*RecognizeResult, error)
+	// dominant cost for no additional information. displayLanguage has the
+	// same meaning as in Recognize.
+	Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error)
 	Select(ctx context.Context, itemCandidates []ItemCandidates) (*SelectResult, error)
 	// Translate maps a free-text food-search query, in any language or
 	// regional spelling, to the term most likely to appear in USDA

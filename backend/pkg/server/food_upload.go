@@ -192,7 +192,8 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 	if err != nil {
 		return err
 	}
-	recognized, err := h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), hint)
+	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
+	recognized, err := h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), hint, displayLanguage)
 	if err != nil {
 		return err
 	}
@@ -302,10 +303,11 @@ func (h *foodHandlers) resolveItems(
 	// identically for every recognized item in the meal (5-8 DB round-trip
 	// pairs for a full plate instead of one).
 	ranked := h.rankedCustomFoodCandidates(meal.UserID)
+	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
 
 	for i, ri := range recognizedItems {
 		item := database.FoodItem{
-			UserID: meal.UserID, MealID: meal.ID, Name: ri.Name,
+			UserID: meal.UserID, MealID: meal.ID, Name: ri.Name, CanonicalName: ri.CanonicalName,
 			Preparation: ri.Preparation, State: ri.State, Brand: ri.Brand,
 			WeightGrams: ri.WeightGrams, Confidence: ri.Confidence,
 			MacroSource: database.MacroSourceNone,
@@ -315,7 +317,7 @@ func (h *foodHandlers) resolveItems(
 		item.SetEstimatedProfile(ri.EstimatedProfile)
 		items[i] = item
 
-		candidates, exact := h.retrieveCandidates(ranked, meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand)
+		candidates, exact := h.retrieveCandidates(ranked, meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand, displayLanguage)
 		candidateSets[i] = candidates
 		exactMatch[i] = exact
 		if len(candidates) > 0 {
@@ -532,23 +534,30 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 	return out
 }
 
-// retrieveCandidates mirrors Search's precedence rule: an exact (case-
-// insensitive) custom food name match wins outright, offered as the sole
-// candidate — Open Food Facts and USDA are not additionally queried for it.
-// Otherwise, ranked (the caller's frequency/recency-ranked custom foods, see
-// rankedCustomFoodCandidates — computed once per meal by the caller, not per
-// item, since it depends only on userID) is combined with whatever Open Food
-// Facts/USDA candidates the existing brand-based routing produces: a
-// non-empty brand routes to Open Food Facts first — its candidates are used
-// if it returns any, falling back to USDA only when OFF returns none
-// (including when no OFF database is open at all). An empty brand skips OFF
-// entirely and queries USDA directly: there is no signal to safely select
-// among differently-branded OFF products for a brandless query. See
-// design.md "OFF queried only when a brand was extracted, USDA as the
-// fallback".
+// retrieveCandidates mirrors Search's precedence rule: a fuzzy-name custom
+// food match (see fuzzyMatchThreshold, design.md decision 5) wins outright,
+// offered as the sole candidate — Open Food Facts and USDA are not
+// additionally queried for it. Otherwise, ranked (the caller's
+// frequency/recency-ranked custom foods, see rankedCustomFoodCandidates —
+// computed once per meal by the caller, not per item, since it depends only
+// on userID) is combined with whatever Open Food Facts/USDA candidates the
+// existing brand-based routing produces: a non-empty brand routes to Open
+// Food Facts first — its candidates are used if it returns any, falling back
+// to USDA only when OFF returns none (including when no OFF database is open
+// at all). An empty brand skips OFF entirely and queries USDA directly:
+// there is no signal to safely select among differently-branded OFF products
+// for a brandless query. See design.md "OFF queried only when a brand was
+// extracted, USDA as the fallback".
 //
-// The bool return is true only for the exact-name custom-food short-circuit
-// — a deterministic identity match — and false for every fuzzy shortlist
+// When displayLanguage is not English, Open Food Facts and USDA are not
+// queried at all, regardless of brand — both are English-vocabulary
+// reference databases and no attempt is made to translate the Display Name
+// back to English for matching. See design.md decision 4. The fuzzy
+// custom-food match above is unaffected by language: it matches against the
+// user's own catalog, not an English-vocabulary reference database.
+//
+// The bool return is true only for the fuzzy-name custom-food short-circuit
+// — a deterministic identity match — and false for every other shortlist
 // (ranked custom food, Open Food Facts, or USDA), including when the
 // shortlist happens to contain exactly one candidate: shortlist length is not
 // a safe proxy for exactness, since a fuzzy search can also legitimately
@@ -561,15 +570,15 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 // plain append could, when it has spare capacity, overwrite data written by
 // a sibling call for a different item in the same meal.
 func (h *foodHandlers) retrieveCandidates(
-	ranked []vision.Candidate, userID uuid.UUID, name, preparation, state, brand string,
+	ranked []vision.Candidate, userID uuid.UUID, name, preparation, state, brand, displayLanguage string,
 ) ([]vision.Candidate, bool) {
-	var custom database.CustomFood
-	err := h.storage.DB().
-		Where("user_id = ? AND LOWER(name) = LOWER(?)", userID, name).
-		First(&custom).Error
-	if err == nil {
-		id := custom.ID
-		return []vision.Candidate{{CustomFoodID: &id, Description: custom.Name}}, true
+	if best, ok := h.fuzzyCustomFoodMatch(userID, name); ok {
+		id := best.ID
+		return []vision.Candidate{{CustomFoodID: &id, Description: best.Name}}, true
+	}
+
+	if displayLanguage != "" && displayLanguage != "en" {
+		return ranked, false
 	}
 
 	if brand != "" && h.off != nil {
@@ -601,6 +610,34 @@ func (h *foodHandlers) retrieveCandidates(
 	return ranked, false
 }
 
+// fuzzyCustomFoodMatch scores every one of the user's own custom foods
+// against name (the recognized item's Display Name) and returns the
+// highest-similarity one that clears fuzzyMatchThreshold, or ok=false when
+// none does (including when the user has no custom foods at all). Ties are
+// broken by most-recently-updated — see design.md decision 5. Matching runs
+// against CustomFood.Name (the Display Name), the language the user actually
+// recognizes their own catalog entries in.
+func (h *foodHandlers) fuzzyCustomFoodMatch(userID uuid.UUID, name string) (database.CustomFood, bool) {
+	var foods []database.CustomFood
+	if err := h.storage.DB().Where("user_id = ?", userID).Find(&foods).Error; err != nil || len(foods) == 0 {
+		return database.CustomFood{}, false
+	}
+
+	var best database.CustomFood
+	bestScore := -1.0
+	found := false
+	for _, f := range foods {
+		score := fuzzySimilarity(f.Name, name)
+		if score < fuzzyMatchThreshold {
+			continue
+		}
+		if !found || score > bestScore || (score == bestScore && f.UpdatedAt.After(best.UpdatedAt)) {
+			best, bestScore, found = f, score, true
+		}
+	}
+	return best, found
+}
+
 func (h *foodHandlers) profileForCandidate(userID uuid.UUID, c vision.Candidate) (database.NutrientProfile, bool) {
 	if c.CustomFoodID != nil {
 		cf, err := h.findOwnedCustomFood(*c.CustomFoodID, userID)
@@ -630,7 +667,7 @@ func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID
 	items := make([]database.FoodItem, len(recognizedItems))
 	for i, ri := range recognizedItems {
 		item := database.FoodItem{
-			UserID: userID, MealID: mealID, Name: ri.Name,
+			UserID: userID, MealID: mealID, Name: ri.Name, CanonicalName: ri.CanonicalName,
 			Preparation: ri.Preparation, State: ri.State, Brand: ri.Brand,
 			WeightGrams: ri.WeightGrams, Confidence: ri.Confidence,
 			MacroSource: database.MacroSourceNone,

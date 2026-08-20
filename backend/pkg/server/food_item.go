@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -250,8 +251,29 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	// canonical_name is not one of patchItemRequest's fields, so a plain
+	// Unmarshal into it would silently ignore a caller-supplied one instead
+	// of rejecting it — probe the raw JSON object explicitly. See
+	// openspec/specs/food-nutrition-logging "A canonical_name field on the
+	// request is rejected": Canonical Name is produced only at recognition
+	// time and is not user-editable through this endpoint.
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(body, &probe); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if _, ok := probe["canonical_name"]; ok {
+		http.Error(w, "canonical_name is not editable through this endpoint", http.StatusBadRequest)
+		return
+	}
+
 	var req patchItemRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -405,6 +427,9 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			cf.ID = uuid.New()
 			cf.FamilyID = FamilyIDFromCtx(r)
 			cfReq.applyTo(&cf)
+			// See openspec/specs/food-nutrition-logging "A custom food created
+			// from a non-English recognition keeps its Canonical Name".
+			cf.CanonicalName = item.CanonicalName
 			if err := tx.Create(&cf).Error; err != nil {
 				if isUniqueViolation(err) {
 					return &itemMutationError{status: http.StatusConflict, msg: "a custom food with this name already exists"}
