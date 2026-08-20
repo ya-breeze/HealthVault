@@ -103,9 +103,20 @@
 
 ## 10. Validation
 
-- [ ] 10.1 `make lint` / `make check` (or project equivalents) pass on both backend and frontend
-- [ ] 10.2 Manual/E2E pass: log a photo with Display Language set to Russian, confirm Display
+- [x] 10.1 `make lint` / `make check` (or project equivalents) pass on both backend and frontend —
+      `make lint` (`go vet -tags sqlite_fts5 ./...`) clean; frontend `npx tsc --noEmit` and
+      `npm run build` (static export) both clean
+- [x] 10.2 Manual/E2E pass: log a photo with Display Language set to Russian, confirm Display
       Name shows in Russian, Expert Mode reveals the English Canonical Name, and history/catalog
-      screens reflect the same
-- [ ] 10.3 Manual/E2E pass: existing English-Display-Language flow is unchanged (no Canonical
-      Name shown, reference-DB matching still runs as before)
+      screens reflect the same — done live against `hcw-wip` (real OpenAI call): uploaded
+      `e2e/tests/fixtures/meal.jpg`, answered clarification in Russian, got item
+      `name: "Гречневая каша с курицей"` / `canonical_name: "Buckwheat porridge with chicken"`;
+      confirmed via screenshot that Expert Mode reveals "По-английски: Buckwheat porridge with
+      chicken" only when toggled on; confirmed no `fdc_id`/`off_code` bound (OFF/USDA correctly
+      skipped for non-English). Found and fixed a real bug in the process: `LanguageProvider`'s
+      settings fetch only ran once on root-layout mount (while still on `/login`, unauthenticated),
+      never retrying after login — language stayed stuck on English all session. Fixed by refetching
+      on every pathname change (commit 9493a9d); re-verified fixed via screenshot.
+- [x] 10.3 Manual/E2E pass: existing English-Display-Language flow is unchanged (no Canonical
+      Name shown, reference-DB matching still runs as before) — full existing `e2e/tests/food.spec.ts`
+      suite (44 tests, unrelated to language) run against `hcw-wip`: all passed, no regressions
