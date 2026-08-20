@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, DATA_TYPES, UserSettings } from '@/lib/api';
+import { api, DATA_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
+import { useLanguage } from '@/components/LanguageContext';
 import Header from '@/components/Header';
 import VitalCard from '@/components/VitalCard';
 import TapTarget from '@/components/ui/TapTarget';
@@ -15,10 +16,16 @@ const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type
 export default function Dashboard() {
   const router = useRouter();
   const { showToast } = useToast();
+  // updateSettings queues this screen's dashboard_order PUT behind
+  // LanguageContext's own claim() — see that provider's doc comment. Both
+  // this screen and the language switcher write to the same UserSettings
+  // blob; without a shared queue, saving a reorder and then switching
+  // language (or vice versa) before the first PUT lands can silently
+  // clobber whichever save loses the race — found in code review.
+  const { updateSettings } = useLanguage();
   const [ready, setReady] = useState(false);
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
-  const [settings, setSettings] = useState<UserSettings>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [order, setOrder] = useState(PRIMARY_METRICS);
   const [editing, setEditing] = useState(false);
@@ -34,7 +41,6 @@ export default function Dashboard() {
     if (!ready) return;
     api.getSettings()
       .then(s => {
-        setSettings(s);
         setOrder(reconcileMetricOrder(s.dashboard_order));
         setSettingsLoaded(true);
       })
@@ -87,14 +93,7 @@ export default function Dashboard() {
   async function handleDone() {
     setSaving(true);
     try {
-      // api.updateSettings does a fresh read-modify-write rather than
-      // merging onto the possibly-stale cached `settings` state: this
-      // component and LanguageContext both write to the same UserSettings
-      // blob with no shared store between them — see its doc comment for the
-      // lost-update this closes (reordering here, then switching language
-      // without navigating, used to silently revert this save).
-      const next = await api.updateSettings({ dashboard_order: order.map(m => m.type) }, settings);
-      setSettings(next);
+      await updateSettings({ dashboard_order: order.map(m => m.type) });
       setEditing(false);
     } catch {
       showToast('Could not save the new card order. Try again.', 'error');

@@ -12,6 +12,15 @@ interface LanguageContextValue {
   // control in this app (see app/page.tsx's handleDone).
   setLanguage: (code: LanguageCode) => Promise<void>;
   t: (key: keyof typeof DICTIONARIES.en) => string;
+  // Queues an arbitrary UserSettings PUT behind this same provider's
+  // claim() queue — the same fresh read-modify-write api.updateSettings
+  // does for setLanguage above, just for a caller-chosen patch. Lets any
+  // other screen that writes to the shared UserSettings blob (currently
+  // app/page.tsx's dashboard-order editor) serialize its writes against
+  // setLanguage's instead of keeping an independent GET/PUT of its own —
+  // two independent read-modify-writes on the same blob can otherwise race
+  // and silently drop whichever save loses. Found in code review.
+  updateSettings: (patch: Partial<UserSettings>) => Promise<UserSettings>;
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
@@ -119,6 +128,19 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     });
   }, [claim]);
 
+  // See the context value's doc comment. Deliberately not used by
+  // setLanguage above — claim() can't be nested (claiming from inside an
+  // already-claimed operation would wait on itself and never resolve) — so
+  // setLanguage keeps its own inline claim() call instead of routing through
+  // this.
+  const updateSettings = useCallback((patch: Partial<UserSettings>): Promise<UserSettings> => {
+    return claim(async () => {
+      const next = await api.updateSettings(patch, settingsRef.current);
+      setSettings(next);
+      return next;
+    });
+  }, [claim]);
+
   const t = useCallback(
     (key: keyof typeof DICTIONARIES.en) => DICTIONARIES[language][key],
     [language]
@@ -140,7 +162,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // object literal here would give the context value a new identity on
   // every render even though language/setLanguage/t are themselves already
   // stable/unchanged.
-  const value = useMemo(() => ({ language, setLanguage, t }), [language, setLanguage, t]);
+  const value = useMemo(
+    () => ({ language, setLanguage, t, updateSettings }),
+    [language, setLanguage, t, updateSettings]
+  );
 
   return (
     <LanguageContext.Provider value={value}>

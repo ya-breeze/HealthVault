@@ -5,6 +5,7 @@ import ItemResolver from './ItemResolver';
 import TapTarget from '@/components/ui/TapTarget';
 import CanonicalNameLabel from '@/components/food/CanonicalNameLabel';
 import { useLanguage } from '@/components/LanguageContext';
+import { macroSourceLabel } from '@/lib/i18n';
 
 interface Props {
   mealId: string;
@@ -49,12 +50,6 @@ function referenceSourceLabel(item: FoodItem): string | null {
 // here anymore.
 export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Props) {
   const { t } = useLanguage();
-  const SOURCE_LABEL: Record<string, string> = {
-    reference: t('item.sourceReference'),
-    manual: t('item.sourceManual'),
-    estimated: t('item.sourceEstimated'),
-    none: t('item.sourceNone'),
-  };
   const [weight, setWeight] = useState(item.weight_grams);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -168,7 +163,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
           <p className="text-sm font-medium text-gray-900 dark:text-white break-words">{item.name}</p>
           <CanonicalNameLabel expertMode={expertMode} canonicalName={item.canonical_name} />
           <span className={`inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded ${SOURCE_COLOR[item.macro_source]}`}>
-            {SOURCE_LABEL[item.macro_source]}
+            {macroSourceLabel(t, item.macro_source)}
           </span>
           {referenceSourceLabel(item) && (
             <span className="inline-block mt-1 ml-1 text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">

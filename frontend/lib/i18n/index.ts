@@ -39,3 +39,22 @@ export function mealStatusLabel(t: (key: keyof Dictionary) => string, status: st
       return status;
   }
 }
+
+// A lookup function rather than an object literal built from `t` at each
+// call site (MealItemRow's prior shape) — matches mealStatusLabel above, and
+// avoids allocating a fresh 4-key object on every render for what's always
+// just one lookup.
+export function macroSourceLabel(t: (key: keyof Dictionary) => string, source: string): string {
+  switch (source) {
+    case 'reference':
+      return t('item.sourceReference');
+    case 'manual':
+      return t('item.sourceManual');
+    case 'estimated':
+      return t('item.sourceEstimated');
+    case 'none':
+      return t('item.sourceNone');
+    default:
+      return source;
+  }
+}

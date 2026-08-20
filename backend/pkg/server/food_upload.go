@@ -584,13 +584,14 @@ func (h *foodHandlers) rankedCustomFoodCandidates(
 // user's own catalog, not an English-vocabulary reference database.
 //
 // The bool return is true only for the fuzzy-name custom-food short-circuit
-// — a deterministic identity match — and false for every other shortlist
-// (ranked custom food, Open Food Facts, or USDA), including when the
-// shortlist happens to contain exactly one candidate: shortlist length is not
-// a safe proxy for exactness, since a fuzzy search can also legitimately
-// return a single result. The caller uses this to decide whether a selected
-// candidate binds unconditionally or is only a fallback to the item's own
-// estimate — see resolveItems and design.md decision 1.
+// — see fuzzyMatchThreshold and design.md decision 5 for why a fuzzy hit is
+// still trusted with unconditional-bind weight — and false for every other
+// shortlist (ranked custom food, Open Food Facts, or USDA), including when
+// the shortlist happens to contain exactly one candidate: shortlist length
+// is not a safe proxy for exactness, since a fuzzy search can also
+// legitimately return a single result. The caller uses this to decide
+// whether a selected candidate binds unconditionally or is only a fallback
+// to the item's own estimate — see resolveItems and design.md decision 1.
 //
 // ranked is only ever read here, never appended to in place: it is shared
 // across every recognized item in the meal, so growing it in place via a

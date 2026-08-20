@@ -12,6 +12,25 @@ async function login(page: Page) {
   await page.waitForURL('/');
 }
 
+// Shared cleanup for tests that reorder the vitals grid: pushes Weight back
+// to the last position (the default order), so a predictable grid is left
+// for later tests. Every step is best-effort and swallows its own failure —
+// used from a `finally` block, so one broken step (e.g. the page was left
+// mid-reorder by a failed assertion above it) must not hide the real
+// assertion failure that triggered the cleanup.
+async function restoreDefaultOrder(page: Page) {
+  const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
+  if (await editOrderBtn.isVisible().catch(() => false)) {
+    await editOrderBtn.click().catch(() => {});
+  }
+  const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
+  for (let i = 0; i < 8; i++) {
+    if (await moveWeightDown.isDisabled().catch(() => true)) break;
+    await moveWeightDown.click().catch(() => {});
+  }
+  await page.getByRole('button', { name: 'Done' }).click().catch(() => {});
+}
+
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
@@ -112,19 +131,8 @@ test.describe('Dashboard card reorder', () => {
       // Restore the default order so this test (and others relying on a
       // predictable grid) starts clean on the next run, even if an
       // assertion above failed partway through and left the page in an
-      // unknown state (still in edit mode, mid-reorder, etc.) — every step
-      // here is best-effort and swallows its own failure so one broken step
-      // can't hide the real assertion failure that triggered this cleanup.
-      const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
-      if (await editOrderBtn.isVisible().catch(() => false)) {
-        await editOrderBtn.click().catch(() => {});
-      }
-      const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
-      for (let i = 0; i < 8; i++) {
-        if (await moveWeightDown.isDisabled().catch(() => true)) break;
-        await moveWeightDown.click().catch(() => {});
-      }
-      await page.getByRole('button', { name: 'Done' }).click().catch(() => {});
+      // unknown state (still in edit mode, mid-reorder, etc.).
+      await restoreDefaultOrder(page);
     }
   });
 
@@ -178,20 +186,9 @@ test.describe('Settings lost-update race', () => {
     } finally {
       // Restore English + default order so later tests (which assert on
       // English label text and a predictable card order) aren't affected,
-      // even if an assertion above failed partway through — every step here
-      // is best-effort and swallows its own failure so one broken step
-      // can't hide the real assertion failure that triggered this cleanup.
+      // even if an assertion above failed partway through.
       await page.locator('#display-language').selectOption('en').catch(() => {});
-      const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
-      if (await editOrderBtn.isVisible().catch(() => false)) {
-        await editOrderBtn.click().catch(() => {});
-      }
-      const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
-      for (let i = 0; i < 8; i++) {
-        if (await moveWeightDown.isDisabled().catch(() => true)) break;
-        await moveWeightDown.click().catch(() => {});
-      }
-      await page.getByRole('button', { name: 'Done' }).click().catch(() => {});
+      await restoreDefaultOrder(page);
     }
   });
 });
