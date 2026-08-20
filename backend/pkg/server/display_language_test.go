@@ -96,7 +96,14 @@ func TestDisplayLanguage_NormalizesStoredValue(t *testing.T) {
 		// "en" primary subtag, which is what both sides read it as anyway.
 		{"over-long tag is rejected", `"en-aaaaaaaa-bbbbbbbb-cccccccc-dddddddd-eeeeeeee"`, "en"},
 		{"tag at the length ceiling is accepted", `"en-aaaaaaaa-bbbbbbbb-cccccccc"`, "en-aaaaaaaa-bbbbbbbb-cccccccc"},
-		{"three subtags are still accepted", `"zh-Hant-HK"`, "zh-Hant-HK"},
+		// A language the UI ships no dictionary for is treated as unset, not
+		// passed through — see shippedUILanguages. Storing it used to leave the
+		// user with an English interface, food names in that language, and
+		// USDA/Open Food Facts matching silently suppressed, with the switcher
+		// reading "English" and no way to clear it. Found in code review.
+		{"unshipped language is treated as unset", `"de"`, "en"},
+		{"unshipped regional tag is treated as unset", `"zh-Hant-HK"`, "en"},
+		{"unshipped language survives neither path", `"fr-FR!"`, "en"},
 		// Regression for a still later finding: counting subtags made the
 		// backend and frontend disagree about the same stored value. These
 		// extended tags are well-formed BCP-47 for Russian, and the old

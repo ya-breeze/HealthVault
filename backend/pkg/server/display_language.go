@@ -96,6 +96,35 @@ func primarySubtagOnly(lang string) string {
 // for why the shape is checked at all.
 var primarySubtag = regexp.MustCompile(`^[A-Za-z]{2,8}$`)
 
+// shippedUILanguages is the set of primary subtags this application ships a UI
+// dictionary for. It must stay in step with SUPPORTED_LANGUAGES in
+// frontend/lib/i18n/index.ts — adding a third dictionary means adding it here
+// in the same change, or that language will render in its own UI while every
+// meal is recognized in English.
+//
+// The backend knowing which languages have a *frontend* dictionary is a real
+// coupling, and it buys the one property this setting cannot do without.
+// Recognition can technically be asked for any language — the tag is just
+// interpolated into the system prompt — but the UI can only be rendered in a
+// language it ships strings for. Letting the two disagree is what produces the
+// state the display-language spec prohibits: an English interface, food names
+// in some other language, and USDA/Open Food Facts matching silently off for
+// that user because IsEnglishDisplayLanguage says the tag is not English.
+// There is no way to reach that state through the switcher, which offers only
+// shipped languages, and no way to leave it either — the switcher shows
+// "English" and selecting English changes nothing. Found in code review.
+var shippedUILanguages = map[string]bool{"en": true, "ru": true}
+
+// isShippedUILanguage reports whether a tag names a language the UI ships,
+// judged by its primary subtag alone — the same part of the tag every other
+// consumer keys on, so "ru-RU" counts as Russian exactly as resolveLanguage
+// and IsEnglishDisplayLanguage read it.
+func isShippedUILanguage(lang string) bool {
+	primary, _, _ := strings.Cut(lang, "-")
+	primary, _, _ = strings.Cut(primary, "_")
+	return shippedUILanguages[strings.ToLower(primary)]
+}
+
 // normalizeDisplayLanguage trims a stored display_language and rejects
 // anything that isn't shaped like a BCP-47 tag, falling back to the default.
 //
@@ -118,10 +147,15 @@ var primarySubtag = regexp.MustCompile(`^[A-Za-z]{2,8}$`)
 // it and the backend read English while resolveLanguage read its "ru" and
 // rendered the Russian UI. "ru-Cyrl-RU!" failed the shape check the same way.
 // Found in code review.
+// A tag naming a language the UI does not ship is treated as unset rather
+// than passed through — see shippedUILanguages.
 func normalizeDisplayLanguage(lang string) string {
 	lang = strings.TrimSpace(lang)
 	if len(lang) > maxDisplayLanguageLen || !bcp47Tag.MatchString(lang) {
-		return primarySubtagOnly(lang)
+		lang = primarySubtagOnly(lang)
+	}
+	if !isShippedUILanguage(lang) {
+		return defaultDisplayLanguage
 	}
 	return lang
 }
