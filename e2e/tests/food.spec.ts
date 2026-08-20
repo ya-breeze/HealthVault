@@ -445,6 +445,75 @@ test.describe('Meal history', () => {
     await expect(page.getByRole('button', { name: 'Load older' })).not.toBeVisible();
   });
 
+  // Regression for a bug fixed in app/food/history/page.tsx: the initial-load
+  // effect listed `t` in its dependency array (to satisfy exhaustive-deps),
+  // and `t` is useCallback(..., [language]). Switching Display Language
+  // therefore re-ran an effect whose body replaces the whole list with page 1
+  // — silently discarding every "Load older" page the user had accumulated
+  // and jumping the view back to the top, with no loading indicator to
+  // explain it. `t` is only read there to word an error message.
+  //
+  // Mocked rather than seeded: reproducing it needs more than PAGE_SIZE (50)
+  // meals, which this shared account has no reason to hold.
+  test('switching language keeps already-loaded older pages', async ({ page }) => {
+    await login(page);
+
+    const firstPage = Array.from({ length: 50 }, (_, i) => ({
+      id: `mock-recent-${i}`,
+      name: `Mock Recent Meal ${i}`,
+      logged_at: new Date(Date.now() - i * 60_000).toISOString(),
+      status: 'confirmed',
+      calories: 100, protein_grams: 10, carbs_grams: 10, fat_grams: 5,
+    }));
+    const olderPage = Array.from({ length: 3 }, (_, i) => ({
+      id: `mock-older-${i}`,
+      name: `Mock Older Meal ${i}`,
+      logged_at: new Date(Date.now() - (100 + i) * 60_000).toISOString(),
+      status: 'confirmed',
+      calories: 100, protein_grams: 10, carbs_grams: 10, fat_grams: 5,
+    }));
+
+    // A full page for the initial load, a short one for the keyset follow-up,
+    // so "Load older" appears exactly once and then hides itself.
+    await page.route('**/api/food/meals?*', route => {
+      const hasCursor = new URL(route.request().url()).searchParams.has('before');
+      return route.fulfill({ json: hasCursor ? olderPage : firstPage });
+    });
+
+    try {
+      await page.goto('/food/history/');
+      await expect(page.getByText('Mock Recent Meal 0')).toBeVisible();
+
+      await page.getByRole('button', { name: 'Load older' }).click();
+      await expect(page.getByText('Mock Older Meal 0')).toBeVisible();
+
+      await page.locator('#display-language').selectOption('ru');
+      await expect(page.locator('#display-language')).toHaveValue('ru');
+
+      // The accumulated second page is still there. Before the fix the list
+      // was replaced by page 1 alone, so this row disappeared.
+      await expect(page.getByText('Mock Older Meal 0')).toBeVisible();
+      await expect(page.getByText('Mock Recent Meal 0')).toBeVisible();
+    } finally {
+      // The language switch writes to the shared seeded account, and a
+      // leftover 'ru' turns every later spec's English header locator into a
+      // miss — see the longer note in dashboard.spec.ts. Awaited through to
+      // the server's response rather than only to selectOption: the switcher
+      // does a GET-then-PUT, and Playwright aborts whatever is still in
+      // flight when the context closes at end of test. Best-effort, so a
+      // missing response times out quietly instead of masking a real
+      // assertion failure above.
+      const restored = page
+        .waitForResponse(
+          r => r.url().includes('/api/users/me/settings') && r.request().method() === 'PUT',
+          { timeout: 15_000 }
+        )
+        .catch(() => null);
+      await page.locator('#display-language').selectOption('en').catch(() => {});
+      await restored;
+    }
+  });
+
   test('meals from two different days render under separate day headers with correct per-day totals', async ({ page }) => {
     await login(page);
     const today = new Date();

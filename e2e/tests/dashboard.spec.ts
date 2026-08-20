@@ -162,6 +162,59 @@ test.describe('Dashboard card reorder', () => {
     }
   });
 
+  // Regression for a bug fixed in app/page.tsx: the settings-load effect
+  // listed `t` in its dependency array (to satisfy exhaustive-deps), and `t`
+  // is useCallback(..., [language]), so switching Display Language re-ran the
+  // effect and overwrote `order` with the *stored* order — discarding an
+  // in-progress rearrangement. Because `editing` stays true, the user is left
+  // in edit mode looking at the reverted order, and a following Done persists
+  // it as though they had chosen it.
+  //
+  // Distinct from the "persists both" test below, which clicks Done *before*
+  // switching language and so exercises the saved-state race instead. Here
+  // Done is deliberately never clicked before the switch: the unsaved editing
+  // state is the whole point.
+  test('switching language mid-reorder keeps the unsaved order', async ({ page }) => {
+    const grid = page.getByTestId('vitals-grid');
+
+    try {
+      await page.getByRole('button', { name: 'Edit order' }).click();
+      const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
+      for (let i = 0; i < 8; i++) {
+        if (await moveWeightUp.isDisabled()) break;
+        await moveWeightUp.click();
+      }
+      await expect(grid.locator('> *').first()).toHaveAttribute('data-testid', 'vital-card-weight');
+
+      // The switcher lives in this page's own Header, so this is reachable
+      // without leaving edit mode.
+      await withSettingsSave(page, () =>
+        page.locator('#display-language').selectOption('ru')
+      );
+      await expect(page.locator('#display-language')).toHaveValue('ru');
+
+      // Still first. Before the fix this reverted to the stored order, so the
+      // first card was Steps.
+      await expect(grid.locator('> *').first()).toHaveAttribute('data-testid', 'vital-card-weight');
+      // And still in edit mode — the state the reverted order would have been
+      // saved from.
+      await expect(page.getByRole('button', { name: 'Готово' })).toBeVisible();
+    } finally {
+      await withSettingsSave(page, () =>
+        page.locator('#display-language').selectOption('en')
+      );
+      // Leaves edit mode if it is still open, then restores the default
+      // order. Awaited through to the PUT for the same reason as everywhere
+      // else in this file: restoreDefaultOrder immediately re-reads settings,
+      // and a write still in flight would race it.
+      const done = page.getByRole('button', { name: 'Done' });
+      if (await done.isVisible().catch(() => false)) {
+        await withSettingsSave(page, () => done.click());
+      }
+      await restoreDefaultOrder(page);
+    }
+  });
+
   test('move-up is disabled on the first card and move-down on the last', async ({ page }) => {
     await page.getByRole('button', { name: 'Edit order' }).click();
     const grid = page.getByTestId('vitals-grid');
