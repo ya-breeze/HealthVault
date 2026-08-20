@@ -330,6 +330,20 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		}
 		observedUpdatedAt := item.UpdatedAt
 
+		// Whether this request actually renames the item, as opposed to
+		// echoing back the name it already had. Computed once, here, because
+		// two branches below key their Canonical Name handling off it and
+		// they must agree; it has to be evaluated before the name is applied
+		// (further down) so the comparison is against the pre-rename value.
+		//
+		// Case-insensitive and whitespace-trimmed for the reason spelled out
+		// in the Manual branch: the shipped correction form pre-fills the
+		// current name and always echoes it back, so keying off presence
+		// alone would treat every macro correction as a rename, and a pure
+		// capitalization fix is not an identity change. Matches
+		// UpdateCustomFood's identical check in food_custom.go.
+		renamed := hasName && !strings.EqualFold(strings.TrimSpace(*req.Name), item.Name)
+
 		switch {
 		case req.Manual:
 			item.FdcID = nil
@@ -350,30 +364,20 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			// item's identity by hand — the AI-recognized Canonical Name no
 			// longer describes it, and carrying it forward would pair the new
 			// name with a stale, unrelated English gloss, including onto a new
-			// CustomFood via save_as_custom_food below. Scoped to Manual only:
-			// rebinding to a different reference food (below) deliberately
-			// leaves Canonical Name unchanged instead, even alongside a name
-			// change — see openspec/specs/food-nutrition-logging "Correct an
-			// already-matched item" — since Canonical Name records what
-			// recognition originally identified regardless of which reference
-			// food the item is later matched to. And a bare rename with no
-			// other field also leaves it untouched — see "Renaming an item
-			// does not require touching its macros".
+			// CustomFood via save_as_custom_food below.
 			//
-			// Conditioned on the name actually *changing*, not merely being
-			// present: the shipped UI pre-fills its manual-correction form
-			// with the item's current name and always sends it back
-			// (ItemResolver seeds manualName from itemName;
-			// MealItemRow.handleManual always passes name), so keying off
-			// presence alone wiped Canonical Name on every macro correction —
-			// including ones that left the name exactly as recognized — and
-			// made the "custom food created from a non-English recognition
-			// keeps its Canonical Name" scenario unreachable through the
-			// product. Compared case-insensitively, and against the
-			// pre-rename item.Name (the new name isn't applied until below),
-			// matching UpdateCustomFood's identical check in food_custom.go.
-			// Found in code review.
-			if hasName && !strings.EqualFold(strings.TrimSpace(*req.Name), item.Name) {
+			// The rebind branch below now applies the same rule for the same
+			// reason. What separates both of them from a *bare* rename — which
+			// deliberately keeps the Canonical Name, see "Renaming an item does
+			// not require touching its macros" — is whether the item's identity
+			// changed or only its label did. Correcting macros by hand, or
+			// picking a different reference food, replaces what the item *is*;
+			// editing the name alone is the same food relabelled, and its
+			// recognized English gloss still describes it.
+			//
+			// Conditioned on `renamed` rather than on a name merely being
+			// present — see that variable's comment above. Found in code review.
+			if renamed {
 				item.CanonicalName = ""
 			}
 		case req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil:
@@ -399,8 +403,25 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.CustomFoodID = req.CustomFoodID
 			item.OffCode = req.OffCode
 			item.ApplyProfile(profile)
-			// Canonical Name deliberately left unchanged here, even when a
-			// name is also supplied — see the Manual branch's comment above.
+			// A rebind that also renames the item replaces its identity just
+			// as a hand-supplied macro correction does, so it clears the
+			// Canonical Name for the same reason — see the Manual branch above.
+			//
+			// This previously preserved it unconditionally, on the rationale
+			// that a Canonical Name records what recognition identified rather
+			// than what the item is currently matched to. That holds for a
+			// *pure* rebind, which is why this is conditioned on `renamed` and
+			// not on the rebind itself: re-matching "вареники" to a better
+			// reference row leaves the Display Name — and so its English gloss
+			// — still accurate. It does not hold once the name changes too,
+			// and the shipped UI always sends one (MealItemRow.handleBind
+			// passes `name: r.name`), so rebinding "вареники" onto the custom
+			// food "Блины" displayed "Блины" with "English: dumplings" beneath
+			// it in Expert Mode — exactly the stale, unrelated gloss the
+			// Manual branch clears to avoid. Found in code review.
+			if renamed {
+				item.CanonicalName = ""
+			}
 		case req.WeightGrams != nil:
 			item.WeightGrams = *req.WeightGrams
 			switch item.MacroSource {

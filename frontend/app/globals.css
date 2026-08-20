@@ -50,9 +50,13 @@
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
   --color-accent: var(--accent);
-  /* --font-body-cyrillic sits second so it is only ever reached for glyphs
-     --font-body has none of — Cyrillic, in practice. See layout.tsx. */
-  --font-sans: var(--font-body), var(--font-body-cyrillic);
+  /* --font-body already carries the Cyrillic face inside it — it expands to
+     `"Barlow", Inter, Inter Fallback` — so there is deliberately nothing to
+     chain on here. The Cyrillic fallback cannot be appended at this level:
+     next/font otherwise ends that variable with a generated local(Arial) face
+     declaring no unicode-range, which claims every Cyrillic glyph before
+     anything written here is consulted. See layout.tsx. */
+  --font-sans: var(--font-body);
   --font-mono: var(--font-data);
 }
 
@@ -97,5 +101,7 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-body), var(--font-body-cyrillic), ui-sans-serif, sans-serif;
+  /* See the --font-sans note above: --font-body already ends with the
+     Cyrillic face and its metric-adjusted local backstop. */
+  font-family: var(--font-body), ui-sans-serif, sans-serif;
 }

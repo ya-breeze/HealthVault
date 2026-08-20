@@ -24,13 +24,20 @@ const defaultDisplayLanguage = "en"
 // text. "_" is accepted alongside the canonical "-" separator so this stays
 // no stricter than IsEnglishDisplayLanguage, which already splits on either.
 //
-// The subtag repetition is bounded at three because an unbounded `*` imposes
-// no length limit at all: "en" followed by a thousand "-xxxxxxxx" groups is
-// ~9 KB of perfectly tag-shaped text, and this value is interpolated verbatim
-// into the vision system prompt. Bounding the repetition caps a matching tag
-// at 35 bytes, which is the length limit — no separate check is needed — and
-// costs nothing legitimate: the longest tags anyone writes in practice
-// ("zh-Hant-HK", "sr-Latn-RS", "en-US-POSIX") are well inside it.
+// The subtag repetition is unbounded here and the length ceiling is enforced
+// separately by maxDisplayLanguageLen. An earlier version bounded the
+// repetition at three instead, using it as an implicit 35-byte cap, but that
+// conflated two unrelated jobs and broke the one rule this setting has: a tag
+// with four or more subtags after the primary — "ru-Cyrl-RU-u-nu-latn" is
+// well-formed BCP-47 and storable, since PUT /users/me/settings keeps the blob
+// verbatim — failed the shape check and normalized to "en" here, while the
+// frontend's resolveLanguage read the same value's primary subtag and rendered
+// Russian. That is precisely the split-brain the display-language spec forbids
+// ("the same interpretation SHALL govern both UI rendering and recognition
+// requests"): Russian UI, English recognition, and USDA/Open Food Facts
+// silently re-enabled for that user. Separating the length cap from the shape
+// check keeps the ceiling without inventing a subtag-count rule neither side
+// agrees on. Found in code review.
 //
 // Shape alone still cannot prove a tag names a real language — "ru-Chinese" is
 // well-formed — so this bounds how much caller-controlled text can reach the
@@ -38,7 +45,22 @@ const defaultDisplayLanguage = "en"
 // inside a fixed sentence (see vision.languageDirective), and it only ever
 // affects the recognition calls of the account that stored it. Found in code
 // review.
-var bcp47Tag = regexp.MustCompile(`^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8}){0,3}$`)
+var bcp47Tag = regexp.MustCompile(`^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8})*$`)
+
+// maxDisplayLanguageLen caps how much tag-shaped text can be interpolated into
+// the vision system prompt. Without it the regex above imposes no length limit
+// at all: "en" followed by a thousand "-xxxxxxxx" groups is ~9 KB of perfectly
+// well-formed text.
+//
+// 35 is not arbitrary — it is exactly the ceiling the old `{0,3}` bound
+// implied (an 8-byte primary subtag plus three 9-byte groups). Keeping the
+// same number is the point: dropping the subtag-count rule must not buy any
+// extra prompt budget, so this change moves the ceiling from being an
+// accident of the repetition bound to being stated outright, without raising
+// it by a single byte. Every tag anyone writes in practice is far inside it —
+// "zh-Hant-HK", "sr-Latn-RS", "en-US-POSIX" and "ru-Cyrl-RU-u-nu-latn" are
+// 20 bytes or fewer.
+const maxDisplayLanguageLen = 35
 
 // normalizeDisplayLanguage trims a stored display_language and rejects
 // anything that isn't shaped like a BCP-47 tag, falling back to the default.
@@ -56,7 +78,7 @@ var bcp47Tag = regexp.MustCompile(`^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8}){0,3}$`)
 // Found in code review.
 func normalizeDisplayLanguage(lang string) string {
 	lang = strings.TrimSpace(lang)
-	if !bcp47Tag.MatchString(lang) {
+	if len(lang) > maxDisplayLanguageLen || !bcp47Tag.MatchString(lang) {
 		return defaultDisplayLanguage
 	}
 	return lang

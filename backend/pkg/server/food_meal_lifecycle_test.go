@@ -1144,15 +1144,27 @@ func TestPatchMealItem_NameAloneDoesNotClearCanonicalName(t *testing.T) {
 	}
 }
 
-// Regression: a round-4 review "fix" (since reverted) cleared CanonicalName
-// on any rebind+rename, but openspec/specs/food-nutrition-logging's "Correct
-// an already-matched item" scenario is explicit that Canonical Name, if any,
-// is left unchanged when rebinding to a different reference food alongside a
-// name change — it records what recognition originally identified,
-// independent of which reference food the item is later matched to. (The
-// Manual branch is different: see
-// TestPatchMealItem_RenamingItemClearsCanonicalNameOnSavedCustomFood.)
-func TestPatchMealItem_RebindWithNameLeavesCanonicalNameUnchanged(t *testing.T) {
+// A rebind that also renames the item clears CanonicalName, the same as a
+// hand-supplied macro correction does.
+//
+// This assertion has flipped twice and the history is worth recording so it
+// does not flip again by accident. Round 4 changed the code to clear here;
+// that was reverted because openspec/specs/food-nutrition-logging's "Correct
+// an already-matched item" scenario said Canonical Name is left unchanged on
+// a rebind, and the code was made to match the spec. Round 12 established
+// that the spec sentence was itself the defect: the shipped UI always sends a
+// name with a rebind (MealItemRow.handleBind passes `name: r.name`), so
+// preserving produced a visibly wrong pairing — rebinding "вареники" onto the
+// custom food "Блины" rendered "Блины" above "English: dumplings" in Expert
+// Mode. The spec scenario was amended rather than the code re-reverted.
+//
+// The rule that reconciles all three cases is identity, not mechanism: a
+// rebind or a manual correction replaces what the item *is* and clears the
+// gloss when the name changes too, while a bare rename only relabels the same
+// food and keeps it (TestPatchMealItem_NameAloneDoesNotClearCanonicalName), as
+// does a rebind that leaves the name alone
+// (TestPatchMealItem_RebindWithoutRenameKeepsCanonicalName below).
+func TestPatchMealItem_RebindWithRenameClearsCanonicalName(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
 	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
@@ -1187,8 +1199,61 @@ func TestPatchMealItem_RebindWithNameLeavesCanonicalNameUnchanged(t *testing.T) 
 	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
 		t.Fatalf("reload item: %v", err)
 	}
+	if updated.CanonicalName != "" {
+		t.Errorf("expected CanonicalName cleared after rebind+rename, got %q", updated.CanonicalName)
+	}
+	if updated.Name != "Chicken breast" {
+		t.Errorf("expected the supplied name applied, got %q", updated.Name)
+	}
+}
+
+// The other half of the rule above: a rebind that does not change the item's
+// name keeps its Canonical Name, because the Display Name the gloss describes
+// is still the recognized one. Without this case the suite would pass equally
+// well if the code cleared CanonicalName on every rebind, which would lose the
+// gloss whenever a user merely re-matched an item to a better reference row.
+func TestPatchMealItem_RebindWithoutRenameKeepsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	// No "name" key at all — the rebind changes which reference food backs the
+	// item without touching how it is displayed.
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"fdc_id": 7, "weight_grams": 150,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
 	if updated.CanonicalName != "dumplings" {
-		t.Errorf("expected CanonicalName left unchanged after rebind+rename, got %q", updated.CanonicalName)
+		t.Errorf("expected CanonicalName kept when the rebind did not rename, got %q", updated.CanonicalName)
+	}
+	if updated.Name != "вареники" {
+		t.Errorf("expected the Display Name untouched, got %q", updated.Name)
 	}
 }
 
