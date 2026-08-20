@@ -92,7 +92,7 @@ export default function CustomFoodsPage() {
                 <p className="text-sm font-medium text-gray-900 dark:text-white">{f.name}</p>
                 <CanonicalNameLabel expertMode={expertMode} canonicalName={f.canonical_name} />
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {Math.round(f.calories_per_100g)} kcal/100g
+                  {Math.round(f.calories_per_100g)} {t('unit.kcalPer100g')}
                 </p>
               </div>
               <div className="flex items-center gap-3">

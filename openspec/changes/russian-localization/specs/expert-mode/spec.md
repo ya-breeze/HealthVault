@@ -10,7 +10,9 @@ off on every page load or navigation.
 
 While Expert Mode is on for a screen, every Food Item or Custom Food shown on that screen SHALL
 display its Canonical Name alongside its Display Name. While Expert Mode is off (the default),
-only the Display Name SHALL be shown.
+only the Display Name SHALL be shown. "Shown on that screen" includes names rendered in transient
+panels the screen opens, not only its persistent list — in particular the item-resolution panel's
+candidate list, which lists the user's own Custom Foods.
 
 This toggle is distinct from the `Expert` authoring mode of the reanalysis correction interface
 (see `food-photo-recognition` "Expert Component Guidance for Reanalysis"), which sits on the same
@@ -23,6 +25,14 @@ visible label SHALL state what it reveals rather than reading as an unqualified 
 - **WHEN** a user enables Expert Mode on the meal confirmation screen
 - **THEN** every recognized item on that screen SHALL show its Canonical Name alongside its
   Display Name
+
+#### Scenario: Expert Mode applies to the item-resolution panel's candidates
+
+- **WHEN** Expert Mode is on for the meal review screen, and a user opens an item's resolution panel
+  and searches, and one of the returned candidates is one of their own Custom Foods with a recorded
+  Canonical Name
+- **THEN** that candidate SHALL show its Canonical Name alongside its Display Name, the same as the
+  meal's own items on that screen
 
 #### Scenario: Expert Mode does not persist across page loads
 

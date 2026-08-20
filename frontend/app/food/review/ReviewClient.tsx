@@ -279,7 +279,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
               </p>
             )}
 
-            <AddItemForm mealId={mealId} onAdded={applyMealUpdate} />
+            <AddItemForm mealId={mealId} onAdded={applyMealUpdate} expertMode={expertMode} />
           </>
         )}
 

@@ -79,6 +79,17 @@ func TestFoodItem_CarriesUserID(t *testing.T) {
 // an empty CanonicalName rather than failing to scan or defaulting to some
 // sentinel — see openspec/specs/food-nutrition-logging "A pre-existing item
 // has no Canonical Name".
+//
+// The row is forced back to a NULL canonical_name with raw SQL after being
+// created, because creating it through the current schema is not the case
+// that could actually break: AutoMigrate adds the column to existing tables
+// without backfilling it, so a genuinely pre-change row holds NULL, whereas a
+// row written by today's code holds ''. Scanning '' into a string can never
+// fail; scanning NULL into a non-pointer string is the case worth a
+// regression test. Both the direct read and the Preload path used by the meal
+// detail endpoint are exercised, since they build different queries. Test
+// strengthened in code review after its own comment claimed a legacy row it
+// wasn't actually creating.
 func TestFoodItem_CanonicalNameDefaultsEmpty(t *testing.T) {
 	s := newTestStorage(t)
 	userID, familyID := seedUserAndFamily(t, s)
@@ -98,12 +109,36 @@ func TestFoodItem_CanonicalNameDefaultsEmpty(t *testing.T) {
 		t.Fatalf("create item: %v", err)
 	}
 
+	if err := s.DB().Exec("UPDATE food_items SET canonical_name = NULL WHERE id = ?", it.ID).Error; err != nil {
+		t.Fatalf("null out canonical_name: %v", err)
+	}
+	var nullCount int64
+	if err := s.DB().Raw(
+		"SELECT COUNT(*) FROM food_items WHERE id = ? AND canonical_name IS NULL", it.ID,
+	).Scan(&nullCount).Error; err != nil {
+		t.Fatalf("verify NULL: %v", err)
+	}
+	if nullCount != 1 {
+		t.Fatalf("test setup: canonical_name is not NULL (matched %d rows)", nullCount)
+	}
+
 	var got database.FoodItem
 	if err := s.DB().First(&got, "id = ?", it.ID).Error; err != nil {
 		t.Fatalf("read back: %v", err)
 	}
 	if got.CanonicalName != "" {
 		t.Errorf("CanonicalName = %q, want empty", got.CanonicalName)
+	}
+
+	var gotMeal database.FoodMeal
+	if err := s.DB().Preload("Items").First(&gotMeal, "id = ?", m.ID).Error; err != nil {
+		t.Fatalf("read back via Preload: %v", err)
+	}
+	if len(gotMeal.Items) != 1 {
+		t.Fatalf("preloaded items = %d, want 1", len(gotMeal.Items))
+	}
+	if gotMeal.Items[0].CanonicalName != "" {
+		t.Errorf("preloaded CanonicalName = %q, want empty", gotMeal.Items[0].CanonicalName)
 	}
 }
 

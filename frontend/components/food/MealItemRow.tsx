@@ -213,8 +213,10 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
       </div>
 
       <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        {Math.round(item.calories)} kcal · P {item.protein_grams.toFixed(1)}g · C {item.carbs_grams.toFixed(1)}g · F{' '}
-        {item.fat_grams.toFixed(1)}g
+        {Math.round(item.calories)} {t('unit.kcal')} · {t('unit.proteinShort')}{' '}
+        {item.protein_grams.toFixed(1)}{t('unit.grams')} · {t('unit.carbsShort')}{' '}
+        {item.carbs_grams.toFixed(1)}{t('unit.grams')} · {t('unit.fatShort')}{' '}
+        {item.fat_grams.toFixed(1)}{t('unit.grams')}
       </div>
 
       {!resolving && (
@@ -234,7 +236,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
         </TapTarget>
       )}
       {resolving && (
-        <ItemResolver itemName={item.name} onBind={handleBind} onManual={handleManual} allowSaveAsCustomFood />
+        <ItemResolver itemName={item.name} onBind={handleBind} onManual={handleManual} allowSaveAsCustomFood expertMode={expertMode} />
       )}
 
       {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}

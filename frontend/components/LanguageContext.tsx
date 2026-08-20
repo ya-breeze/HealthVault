@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { api, UserSettings } from '@/lib/api';
-import { DICTIONARIES, LanguageCode, isSupportedLanguage } from '@/lib/i18n';
+import { DICTIONARIES, LanguageCode, resolveLanguage } from '@/lib/i18n';
 import { useSerialQueue } from '@/lib/useSerialQueue';
 
 interface LanguageContextValue {
@@ -94,7 +94,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         // with. Falling back to 'en' here makes every load state the language,
         // so the rendered language always reflects the account that is
         // currently signed in. Found in code review.
-        setLanguageState(typeof raw === 'string' && isSupportedLanguage(raw) ? raw : 'en');
+        //
+        // resolveLanguage, not a whole-string equality check: it matches on the
+        // primary subtag the same way the backend does, so a stored regional
+        // tag can't leave the UI in English while the backend treats the same
+        // user as Russian — see its doc comment.
+        setLanguageState((typeof raw === 'string' ? resolveLanguage(raw) : null) ?? 'en');
       } catch {
         // Deliberately not reset to 'en': unlike a successful load that simply
         // has no display_language (a different account's settings, handled

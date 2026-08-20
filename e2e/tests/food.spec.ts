@@ -1742,3 +1742,60 @@ test.describe('Reanalyze with a hint', () => {
     }
   });
 });
+
+// Expert Mode (openspec/specs/expert-mode "Per-Screen Expert Mode Toggle"):
+// while on, every Food Item *and Custom Food* shown on the screen reveals its
+// Canonical Name. Mocked rather than driven end-to-end because a Canonical
+// Name is only ever written by a non-English recognition, which this suite
+// does not run (the live-upload tests use the seeded account's English
+// default). Added in code review: the resolver's own custom-food candidates
+// were being sent canonical_name over the wire and never rendering it, and
+// nothing in this suite asserted on Expert Mode's actual effect — only on the
+// toggle's tap-target size — so the gap shipped unnoticed.
+test.describe('Expert Mode — mocked UI behavior (deterministic)', () => {
+  test('reveals Canonical Names on both meal items and custom-food candidates', async ({ page }) => {
+    await login(page);
+    const meal = mockFoodMeal({
+      items: [{ ...mockFoodMeal().items[0], name: 'вареники', canonical_name: 'dumplings' }],
+    });
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: meal }) : route.continue()
+    );
+    await page.route('**/api/food/search?**', route =>
+      route.fulfill({
+        json: {
+          results: [
+            {
+              source: 'custom',
+              custom_food_id: 'custom-1',
+              name: 'блины',
+              canonical_name: 'pancakes',
+              profile: {
+                calories_per_100g: 200, protein_per_100g: 6, carbs_per_100g: 30,
+                fat_per_100g: 6, sugar_per_100g: 4, sodium_per_100g: 0,
+                dietary_fiber_per_100g: 1,
+              },
+            },
+          ],
+        },
+      })
+    );
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+
+    // Off by default (the spec's non-persistence requirement) — the item's
+    // Canonical Name is on the wire but must not be shown.
+    await expect(page.getByText('вареники')).toBeVisible();
+    await expect(page.getByText('English: dumplings')).not.toBeVisible();
+
+    await page.getByTestId('expert-mode-toggle').check();
+    await expect(page.getByText('English: dumplings')).toBeVisible();
+
+    // The regression this test exists for: the resolver panel's candidate
+    // list sits on the same screen and must honour the same toggle.
+    await page.getByRole('button', { name: 'Change match' }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page.getByText('блины')).toBeVisible();
+    await expect(page.getByText('English: pancakes')).toBeVisible();
+  });
+});

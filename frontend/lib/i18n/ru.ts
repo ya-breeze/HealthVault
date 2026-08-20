@@ -57,6 +57,14 @@ const ru: Dictionary = {
   'item.weightPositiveMatched': 'У найденного блюда вес должен быть больше нуля',
   'item.deleteFailed': 'Не удалось удалить блюдо',
 
+  'unit.kcal': 'ккал',
+  'unit.kcalPer100g': 'ккал/100 г',
+  'unit.grams': 'г',
+  // Standard Russian macro initials: белки / углеводы / жиры.
+  'unit.proteinShort': 'Б',
+  'unit.carbsShort': 'У',
+  'unit.fatShort': 'Ж',
+
   'resolver.tabSearch': 'Найти продукт',
   'resolver.tabManual': 'Ввести БЖУ',
   'resolver.modeLabel': 'Способ определения блюда:',
@@ -68,7 +76,6 @@ const ru: Dictionary = {
   'resolver.refreshTranslationEmpty': 'Не удалось обновить перевод — показан прежний вариант.',
   'resolver.refreshFailed': 'Не удалось обновить',
   'resolver.noMatches': 'Ничего не найдено.',
-  'resolver.kcalPer100g': 'ккал/100 г',
   'resolver.yourCustomFood': 'ваш продукт',
   'resolver.bindFailed': 'Не удалось привязать продукт',
   'resolver.name': 'Название',

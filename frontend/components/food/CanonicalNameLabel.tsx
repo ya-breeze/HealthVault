@@ -16,9 +16,14 @@ export default function CanonicalNameLabel({
 }) {
   const { t } = useLanguage();
   if (!expertMode || !canonicalName) return null;
+  // A block-displayed <span>, not a <p>: ItemResolver renders this inside a
+  // candidate row that is itself a <button>, whose content model is phrasing
+  // content only — a <p> there is invalid nesting the parser would restructure
+  // on hydration. `block` reproduces exactly what the <p> looked like, since
+  // Tailwind's preflight already zeroes paragraph margins.
   return (
-    <p className="text-xs text-gray-400 dark:text-gray-500 italic break-words">
+    <span className="block text-xs text-gray-400 dark:text-gray-500 italic break-words">
       {t('expertMode.canonicalNamePrefix')} {canonicalName}
-    </p>
+    </span>
   );
 }

@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { api, FoodSearchResult } from '@/lib/api';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
+import CanonicalNameLabel from './CanonicalNameLabel';
 import { tabClass } from './tabClass';
 
 interface Props {
@@ -17,6 +18,15 @@ interface Props {
   // MealItemRow), not for adding a brand-new one (AddItemForm), which POSTs
   // to an endpoint that doesn't accept this option.
   allowSaveAsCustomFood?: boolean;
+  // Threaded down from whichever screen renders this panel so custom-food
+  // search results honour Expert Mode too. The expert-mode spec says every
+  // Food Item *or Custom Food* shown on a screen reveals its Canonical Name,
+  // and this panel lists the user's own custom foods — so without this, a
+  // Russian user with Expert Mode on saw "English: …" under each meal item
+  // while the candidate list right below it showed Display Names only, even
+  // though the backend was already sending canonical_name on the wire.
+  // Found in code review.
+  expertMode?: boolean;
 }
 
 // The review UI for correcting an item's food match: search for a reference
@@ -24,7 +34,7 @@ interface Props {
 // or fall back to entering a name and macros directly (e.g. from a package
 // label). Reachable for any item, matched or not, until the meal is
 // confirmed — not just ones the vision model left unresolved.
-export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCustomFood }: Props) {
+export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCustomFood, expertMode = false }: Props) {
   const { t } = useLanguage();
   const [mode, setMode] = useState<'search' | 'manual'>('search');
   const [query, setQuery] = useState(itemName);
@@ -209,10 +219,16 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
                     disabled={submitting}
                     className="w-full flex items-center text-left text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
                   >
-                    {r.name}{' '}
-                    <span className="text-gray-400">
-                      ({Math.round(r.profile.calories_per_100g)} {t('resolver.kcalPer100g')}
-                      {r.source === 'custom' ? `, ${t('resolver.yourCustomFood')}` : ''})
+                    <span className="block min-w-0">
+                      {r.name}{' '}
+                      <span className="text-gray-400">
+                        ({Math.round(r.profile.calories_per_100g)} {t('unit.kcalPer100g')}
+                        {r.source === 'custom' ? `, ${t('resolver.yourCustomFood')}` : ''})
+                      </span>
+                      {/* Only ever renders for a 'custom' result — the backend
+                          never sets canonical_name on a USDA/Open Food Facts
+                          one, and this label renders nothing when it's absent. */}
+                      <CanonicalNameLabel expertMode={expertMode} canonicalName={r.canonical_name} />
                     </span>
                   </TapTarget>
                 </li>

@@ -16,8 +16,24 @@ export const SUPPORTED_LANGUAGES: { code: LanguageCode; label: string }[] = [
   { code: 'ru', label: 'Русский' },
 ];
 
-export function isSupportedLanguage(code: string): code is LanguageCode {
-  return code === 'en' || code === 'ru';
+// Resolves an arbitrary stored `display_language` to the dictionary to render
+// in, or null when this app ships none for it (the caller then falls back to
+// English).
+//
+// Deliberately compares only the primary subtag, case-insensitively and after
+// trimming, rather than requiring the whole string to equal 'en'/'ru'. That is
+// exactly what the backend's vision.IsEnglishDisplayLanguage does, and the two
+// must agree: `display_language` lives in an opaque, unvalidated settings blob
+// that `PUT /users/me/settings` will store verbatim, so a non-frontend caller
+// can put a regional tag like "ru-RU" in it. Under the previous whole-string
+// check that produced a split-brain session — the frontend saw an unsupported
+// value and rendered the English UI, while the backend read the same value as
+// non-English and both asked the vision model for Russian Display Names and
+// silently suppressed USDA/Open Food Facts matching for that user. Found in
+// code review.
+export function resolveLanguage(code: string): LanguageCode | null {
+  const primary = code.trim().split(/[-_]/, 1)[0].toLowerCase();
+  return primary === 'en' || primary === 'ru' ? primary : null;
 }
 
 // Shared by the review and history screens, which both render a

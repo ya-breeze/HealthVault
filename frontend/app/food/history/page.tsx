@@ -123,8 +123,10 @@ export default function FoodHistoryPage() {
             <div className="flex items-baseline justify-between mb-2 px-1">
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                {Math.round(day.totals.calories)} kcal · P {Math.round(day.totals.protein)}g · C{' '}
-                {Math.round(day.totals.carbs)}g · F {Math.round(day.totals.fat)}g
+                {Math.round(day.totals.calories)} {t('unit.kcal')} · {t('unit.proteinShort')}{' '}
+                {Math.round(day.totals.protein)}{t('unit.grams')} · {t('unit.carbsShort')}{' '}
+                {Math.round(day.totals.carbs)}{t('unit.grams')} · {t('unit.fatShort')}{' '}
+                {Math.round(day.totals.fat)}{t('unit.grams')}
               </span>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
@@ -145,7 +147,7 @@ export default function FoodHistoryPage() {
                   </div>
                   {meal.status === 'confirmed' && (
                     <span className="text-sm font-semibold text-gray-900 dark:text-white flex-shrink-0">
-                      {Math.round(meal.calories)} kcal
+                      {Math.round(meal.calories)} {t('unit.kcal')}
                     </span>
                   )}
                 </TapTarget>

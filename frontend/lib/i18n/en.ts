@@ -11,7 +11,9 @@
 // the dashboard, import and login screens, and the food components not on
 // that path — AddItemForm, CameraCapture, ClarifyModal, CustomFoodModal,
 // DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
-// ReanalyzeControl. Extending coverage is adding keys here plus their ru.ts
+// ReanalyzeControl. (AddItemForm's own chrome is English, but the
+// ItemResolver panel it embeds is covered, so that form is partly translated
+// rather than wholly English.) Extending coverage is adding keys here plus their ru.ts
 // counterparts; nothing else has to change. Scope corrected in code review
 // after the resolver panel turned out to be uncovered while this comment
 // claimed the food-logging screens wholesale.
@@ -71,6 +73,20 @@ const en = {
   'item.weightPositiveMatched': 'Weight must be positive for a matched item',
   'item.deleteFailed': 'Failed to delete item',
 
+  // Units and macro shorthand, shared by every localized screen that renders
+  // a macro line (MealItemRow, meal history, the custom-food catalog, the
+  // resolver's candidate list) instead of being hardcoded per call site.
+  // These are not language-neutral symbols the way "kg" is — Russian writes
+  // them "ккал", "г" and "Б/У/Ж" — so inlining them left a stray English
+  // fragment mid-row on otherwise translated screens, while the resolver
+  // panel immediately below already said "ккал/100 г". Found in code review.
+  'unit.kcal': 'kcal',
+  'unit.kcalPer100g': 'kcal/100g',
+  'unit.grams': 'g',
+  'unit.proteinShort': 'P',
+  'unit.carbsShort': 'C',
+  'unit.fatShort': 'F',
+
   // The item-resolution panel (ItemResolver) — the review screen's most-used
   // control, reachable for every item until the meal is confirmed.
   'resolver.tabSearch': 'Search food',
@@ -87,7 +103,6 @@ const en = {
   'resolver.refreshTranslationEmpty': 'Could not refresh the translation — showing the previous term.',
   'resolver.refreshFailed': 'Refresh failed',
   'resolver.noMatches': 'No matches found.',
-  'resolver.kcalPer100g': 'kcal/100g',
   'resolver.yourCustomFood': 'your custom food',
   'resolver.bindFailed': 'Failed to bind food',
   'resolver.name': 'Name',
