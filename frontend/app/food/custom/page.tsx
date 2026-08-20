@@ -26,7 +26,7 @@ export default function CustomFoodsPage() {
           router.push('/login');
           return;
         }
-        setError(err instanceof Error ? err.message : 'Failed to load custom foods');
+        setError(err instanceof Error ? err.message : t('customFood.loadFailed'));
       });
   };
 
@@ -47,7 +47,7 @@ export default function CustomFoodsPage() {
       await api.deleteCustomFood(id);
       setFoods(prev => (prev ? prev.filter(f => f.id !== id) : prev));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
+      setError(err instanceof Error ? err.message : t('customFood.deleteFailed'));
     } finally {
       setPendingDeleteId(null);
     }

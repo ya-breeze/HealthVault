@@ -107,12 +107,16 @@ const ru: Dictionary = {
   'history.noMeals': 'Пока нет записей.',
   'history.loadOlder': 'Загрузить ещё',
   'history.loadingMore': 'Загрузка…',
+  'history.loadFailed': 'Не удалось загрузить приёмы пищи',
+  'history.loadMoreFailed': 'Не удалось загрузить ещё',
 
   'customFood.title': 'Свои продукты',
   'customFood.addNew': '+ Добавить продукт',
   'customFood.noneYet': 'Пока нет своих продуктов.',
   'customFood.edit': 'Изменить',
   'customFood.delete': 'Удалить',
+  'customFood.loadFailed': 'Не удалось загрузить свои продукты',
+  'customFood.deleteFailed': 'Не удалось удалить',
 };
 
 export default ru;

@@ -149,12 +149,20 @@ const en = {
   'history.noMeals': 'No meals logged yet.',
   'history.loadOlder': 'Load older',
   'history.loadingMore': 'Loading…',
+  // Error fallbacks, used when a failure carries no message of its own. Found
+  // by loading the Russian pages and reading them, after the identical class
+  // of bug had been fixed in ReviewClient one round earlier and not looked for
+  // anywhere else — these two screens are on the same localized list.
+  'history.loadFailed': 'Failed to load meals',
+  'history.loadMoreFailed': 'Failed to load more meals',
 
   'customFood.title': 'Custom Foods',
   'customFood.addNew': '+ Add Custom Food',
   'customFood.noneYet': 'No custom foods yet.',
   'customFood.edit': 'Edit',
   'customFood.delete': 'Delete',
+  'customFood.loadFailed': 'Failed to load custom foods',
+  'customFood.deleteFailed': 'Delete failed',
 };
 
 export default en;

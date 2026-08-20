@@ -182,7 +182,12 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
             onBlur={commitWeight}
             className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
           />
-          <span className="text-xs text-gray-400">g</span>
+          {/* The weight input's unit suffix. Missed by twelve review rounds
+              and found by looking at the rendered Russian page: this row's
+              macro line below was localized while the unit label directly
+              beside the input above it was not, so a Russian meal showed
+              "220 g" over "396 ккал · Б 11.2г". Same key as the macro line. */}
+          <span className="text-xs text-gray-400">{t('unit.grams')}</span>
           {confirmingDelete ? (
             <div className="ml-1 flex items-center gap-1">
               <TapTarget

@@ -83,9 +83,9 @@ export default function FoodHistoryPage() {
         // therefore reliably proves there's nothing more to fetch.
         setHasMore(rows.length === PAGE_SIZE);
       })
-      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load meals'))
+      .catch(err => setError(err instanceof Error ? err.message : t('history.loadFailed')))
       .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   const loadMore = async () => {
     if (meals.length === 0) return;
@@ -97,7 +97,7 @@ export default function FoodHistoryPage() {
       setMeals(m => [...m, ...rows]);
       setHasMore(rows.length === PAGE_SIZE);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load more meals');
+      setError(err instanceof Error ? err.message : t('history.loadMoreFailed'));
     } finally {
       setLoadingMore(false);
     }
