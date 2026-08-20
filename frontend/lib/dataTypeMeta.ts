@@ -29,12 +29,16 @@ export interface TypeMeta {
  *     these are conventionally displayed (36.6°C, 5.6 mmol/L).
  *   - height (meters) gets 2 decimals — 0 or 1 decimal is too coarse for a
  *     quantity normally written as e.g. 1.75.
- *   - counts/rates/kcal/minutes/mmHg (steps, heart_rate, hrv,
- *     oxygen_saturation, blood_pressure, calories, exercise minutes,
- *     nutrition grams/kcal, respiratory_rate, resting_heart_rate,
- *     basal_metabolic_rate) get 0 decimals — already whole numbers in
- *     practice, matches the existing Math.round conventions elsewhere
- *     (vitals.ts, MacroSummary.tsx).
+ *   - counts/rates/kcal/mmHg (steps, heart_rate, hrv, oxygen_saturation,
+ *     blood_pressure, calories, nutrition grams/kcal, respiratory_rate,
+ *     resting_heart_rate, basal_metabolic_rate) get 0 decimals — already
+ *     whole numbers in practice, matches the existing Math.round
+ *     conventions elsewhere (vitals.ts, MacroSummary.tsx).
+ *   - exercise (duration_seconds, no existing display-unit convention
+ *     anywhere in this app) is shown in its raw storage unit — seconds —
+ *     same as before this change, at 0 decimals; unlike distance/sleep
+ *     below, there is no established "minutes" display elsewhere to match,
+ *     so no unit conversion is applied (see toDisplayUnit).
  */
 export const TYPE_META: Partial<Record<DataType, TypeMeta>> = {
   steps: { family: 'cumulative', decimals: 0 },
@@ -65,12 +69,34 @@ export const TYPE_META: Partial<Record<DataType, TypeMeta>> = {
 };
 
 /**
+ * Converts a raw API value (in typeRegistry's storage unit — see
+ * backend/pkg/server/api.go's typeRegistry valueCol comments, e.g. distance
+ * is stored/returned in meters, sleep in seconds) to the unit this type is
+ * actually displayed in elsewhere in the app. Most types display in their
+ * storage unit already (kg, %, bpm, ...) and pass through unchanged; only
+ * distance and sleep have an established display unit that differs from
+ * storage. Every caller that renders a distance/sleep value — the
+ * vitals-grid card (vitals.ts) and every chart element (DataTypeClient.tsx)
+ * — MUST route raw API values through this before formatMetricValue, or the
+ * two ends of the app silently disagree on units, not just decimal places.
+ */
+export function toDisplayUnit(type: DataType, raw: number): number {
+  switch (type) {
+    case 'distance': return raw / 1000; // meters -> km
+    case 'sleep': return raw / 3600; // seconds -> hours
+    default: return raw;
+  }
+}
+
+/**
  * Formats a raw metric value to its type's established display precision.
  * Uses toLocaleString (not toFixed) with a fixed fraction-digit count so
  * large values still get thousands grouping (e.g. steps "12,345") while
  * matching toFixed's rounding for everything else — this is what lets the
  * vitals-grid refactor (see extractVital in vitals.ts) reuse this helper
  * without changing steps' previously-hardcoded `.toLocaleString()` output.
+ * Callers are responsible for passing an already-display-unit value (see
+ * toDisplayUnit above) — this function only rounds, it never converts units.
  */
 export function formatMetricValue(type: DataType, value: number): string {
   const decimals = TYPE_META[type]?.decimals ?? 0;

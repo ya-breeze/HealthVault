@@ -1,5 +1,5 @@
 import type { DataType } from '@/lib/api';
-import { formatMetricValue } from '@/lib/dataTypeMeta';
+import { formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
 
 /** The 8 metrics shown as full vitals-grid cards on the dashboard, in display order. */
 export const PRIMARY_METRICS: { type: DataType; label: string }[] = [
@@ -49,11 +49,11 @@ export function extractVital(type: DataType, rows: Record<string, unknown>[]): V
       return { value: formatMetricValue('steps', series[series.length - 1]), sparkline: series, trend: trendFrom(series) };
     }
     case 'distance': {
-      const series = rows.map(r => num(r.sum) / 1000); // meters -> km
+      const series = rows.map(r => toDisplayUnit('distance', num(r.sum)));
       return { value: formatMetricValue('distance', series[series.length - 1]), unit: 'km', sparkline: series, trend: trendFrom(series) };
     }
     case 'sleep': {
-      const series = rows.map(r => num(r.sum) / 3600); // seconds -> hours
+      const series = rows.map(r => toDisplayUnit('sleep', num(r.sum)));
       return { value: formatMetricValue('sleep', series[series.length - 1]), unit: 'h', sparkline: series, trend: trendFrom(series) };
     }
     case 'heart_rate': {

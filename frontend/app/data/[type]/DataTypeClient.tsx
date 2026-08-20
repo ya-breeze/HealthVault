@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { api, DataType } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue } from '@/lib/dataTypeMeta';
+import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
 import Header from '@/components/Header';
 
 interface Props {
@@ -50,6 +50,14 @@ export default function DataTypeClient({ type }: Props) {
   // but no chart — table only, always raw.
   const hasChart = type !== 'food_meal';
   const color = metricColorVar(dataType);
+
+  // Converts a raw API value into this page's type's display unit (distance:
+  // meters -> km, sleep: seconds -> hours; everything else passes through
+  // unchanged) — see toDisplayUnit's doc comment. Every raw numeric value
+  // that reaches the chart or stats row for THIS type must go through this,
+  // not just num(), or the chart silently disagrees with the vitals-grid
+  // card's unit for the same metric (not just its rounding).
+  const numDisplay = (v: unknown) => toDisplayUnit(dataType, num(v));
 
   // Shared across every Tooltip below (raw line/bars, the min-max band, and
   // the weight trend line all use the same metric's precision) — see
@@ -145,9 +153,19 @@ export default function DataTypeClient({ type }: Props) {
       )
     : [];
 
-  const dayLineData = timeKey
-    ? records.map(r => ({ ...r, [timeKey]: new Date(r[timeKey] as string).getTime() }))
-    : records;
+  const dayLineData = records.map(r => ({
+    ...r,
+    ...(timeKey ? { [timeKey]: new Date(r[timeKey] as string).getTime() } : {}),
+    // numericKey is the raw column driving the Line's dataKey below for
+    // non-nutrition types (e.g. "meters", "duration_seconds") — convert it
+    // in place to this type's display unit so the chart doesn't show
+    // storage units that disagree with the vitals-grid card for the same
+    // metric. No-op for types whose storage unit already is the display
+    // unit (toDisplayUnit's default), so this is harmless to apply
+    // regardless of numericKey's relevance for nutrition (rendered via
+    // `macro` instead, untouched here).
+    ...(numericKey ? { [numericKey]: numDisplay(r[numericKey]) } : {}),
+  }));
 
   // For weight+week/year, `chartRows` holds the widened fetch used to seed
   // the trend's EMA (see above); every other chart/stat must only ever see
@@ -172,7 +190,7 @@ export default function DataTypeClient({ type }: Props) {
 
   const bucketBarData = visibleChartRows.map(r => ({
     label: bucketLabel(r.bucket_start, zoom),
-    value: isNutrition ? num(r[`sum_${macro}`]) : num(r.sum),
+    value: isNutrition ? num(r[`sum_${macro}`]) : numDisplay(r.sum),
   }));
 
   // `range` is a [min, max] tuple rather than a stacked min+band pair: Recharts
@@ -210,10 +228,10 @@ export default function DataTypeClient({ type }: Props) {
       return isDay ? records.map(r => num(r[macro])) : visibleChartRows.map(r => num(r[`sum_${macro}`]));
     }
     if (isDay) {
-      return numericKey ? records.map(r => num(r[numericKey])) : [];
+      return numericKey ? records.map(r => numDisplay(r[numericKey])) : [];
     }
-    return visibleChartRows.map(r => (meta?.family === 'cumulative' ? num(r.sum) : num(r.avg)));
-  }, [isBloodPressure, isNutrition, isDay, records, visibleChartRows, numericKey, macro, meta]);
+    return visibleChartRows.map(r => (meta?.family === 'cumulative' ? numDisplay(r.sum) : num(r.avg)));
+  }, [isBloodPressure, isNutrition, isDay, records, visibleChartRows, numericKey, macro, meta, numDisplay]);
 
   const primaryMaxSeries = useMemo(() => {
     // Day (raw points) and cumulative types, including nutrition (whose
@@ -417,7 +435,7 @@ export default function DataTypeClient({ type }: Props) {
             {showTotal && (
               <div>
                 <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Total</p>
-                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{stats.total.toLocaleString()}</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.total)}</p>
               </div>
             )}
           </div>
