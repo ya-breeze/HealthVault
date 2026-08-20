@@ -4,16 +4,18 @@
 
 --- openspec/specs/food-nutrition-logging/spec.md
 +++ openspec/specs/food-nutrition-logging/spec.md
-@@ -58,7 +58,7 @@
+@@ -58,7 +58,9 @@
  
  ### Requirement: Item Resolution
  
 -The system SHALL expose `PATCH /api/food/meals/{id}/items/{item_id}`, allowing the owner to bind an item to an `fdc_id`, `off_code`, or `custom_food_id`, supply macro values directly, change its weight, or correct its displayed `name`. This applies to any item regardless of its current `macro_source` — an item that is already matched is not locked once bound, since a matched-but-wrong food (e.g. the vision model guessing "dark berries" for what are actually cherries) is exactly as much a review concern as an unresolved one. When the caller supplies a `name` alongside a binding, the system SHALL store it as the item's new displayed name, so the review UI reflects what was actually confirmed rather than the original vision-model guess. When the caller supplies direct macro values for an item that carries a persisted estimated profile (`macro_source = estimated`), the system MAY additionally accept a request to save those values as a new `CustomFood` owned by the caller, using the item's current or supplied name, in the same request — so a correction the user has already typed does not require a separate visit to custom food management to become reusable.
 +The system SHALL expose `PATCH /api/food/meals/{id}/items/{item_id}`, allowing the owner to bind an item to an `fdc_id`, `off_code`, or `custom_food_id`, supply macro values directly, change its weight, or correct its displayed `name`. This applies to any item regardless of its current `macro_source` — an item that is already matched is not locked once bound, since a matched-but-wrong food (e.g. the vision model guessing "dark berries" for what are actually cherries) is exactly as much a review concern as an unresolved one. When the caller supplies a `name` alongside a binding, the system SHALL store it as the item's new displayed name (its Display Name — see `display-language` "Per-User Display Language Setting"), so the review UI reflects what was actually confirmed rather than the original vision-model guess. This endpoint SHALL NOT accept a `canonical_name` field — the Canonical Name is produced only at recognition time and is not user-editable through this endpoint. When the caller supplies direct macro values for an item that carries a persisted estimated profile (`macro_source = estimated`), the system MAY additionally accept a request to save those values as a new `CustomFood` owned by the caller, using the item's current or supplied name, in the same request — so a correction the user has already typed does not require a separate visit to custom food management to become reusable.
++
++A hand-supplied macro correction that also changes the item's `name` SHALL clear the item's Canonical Name, because such a request replaces the item's identity outright and the recognized English gloss no longer describes it — carrying it forward would pair the new Display Name with a stale, unrelated one, including onto any `CustomFood` created from the same request. The name SHALL be treated as changed only if it actually differs from the item's current name, compared case-insensitively and ignoring surrounding whitespace: a review UI that pre-fills its correction form with the current name and echoes it back unchanged is correcting macros, not renaming, and a pure capitalization fix is not an identity change. This clearing SHALL be scoped to hand-supplied macro corrections only — rebinding to a different reference food leaves the Canonical Name unchanged even alongside a `name` (see "Correct an already-matched item"), and so does a bare rename with no other field (see "Renaming an item does not require touching its macros"), since a Canonical Name records what recognition originally identified rather than what the item is currently matched to.
  
  Item resolution SHALL be permitted while the owning meal's status is `pending_review` or `confirmed`. It SHALL be rejected with HTTP 409 while the owning meal's status is `processing`, `pending_clarification`, or `failed`, since those states have no stable, reviewable item set yet.
  
-@@ -88,7 +88,7 @@
+@@ -88,7 +90,7 @@
  #### Scenario: Correct an already-matched item
  
  - **WHEN** the owner patches an item that already has `macro_source = reference` with a different `fdc_id` and a `name`
@@ -22,12 +24,22 @@
  
  #### Scenario: Binding or rescaling a reference item requires a positive weight
  
-@@ -103,18 +103,23 @@
+@@ -103,18 +105,33 @@
  #### Scenario: A correction can be saved as a reusable custom food
  
  - **WHEN** the owner patches an item carrying `macro_source = estimated` with direct macro values and requests that the correction also be saved as a custom food
 -- **THEN** the system stores the item as `macro_source = manual` with the supplied values, and additionally creates a `CustomFood` owned by the caller with the same name and per-100g values, so a later differently-worded photo of the same dish can match it (see `usda-nutrition-database` "Match Selection and Explicit Non-Match")
 +- **THEN** the system stores the item as `macro_source = manual` with the supplied values, and additionally creates a `CustomFood` owned by the caller with the same Display Name (and Canonical Name, if the item had one) and per-100g values, so a later differently-worded photo of the same dish can match it (see `usda-nutrition-database` "Match Selection and Explicit Non-Match")
++
++#### Scenario: A hand-corrected item that is also renamed loses its Canonical Name
++
++- **WHEN** the owner patches an item that carries a Canonical Name with direct macro values and a `name` that differs from the item's current name
++- **THEN** the system stores the correction and clears the item's Canonical Name, so Expert Mode does not show the new Display Name paired with the English gloss of the food it used to be — and any `CustomFood` created from the same request is likewise created without one
++
++#### Scenario: A hand-corrected item whose name is unchanged keeps its Canonical Name
++
++- **WHEN** the owner patches an item that carries a Canonical Name with direct macro values and a `name` equal to the item's current name apart from capitalization or surrounding whitespace — the case a review UI produces when it pre-fills the current name and the user edits only macros
++- **THEN** the system stores the correction and leaves the Canonical Name in place
  
  #### Scenario: Renaming an item does not require touching its macros
  
@@ -48,7 +60,7 @@
  #### Scenario: Patch an item of a confirmed meal
  
  - **WHEN** the owner patches an item belonging to a meal whose status is `confirmed`
-@@ -364,3 +369,25 @@
+@@ -364,3 +381,25 @@
  - **WHEN** a user adds an item row on the manual meal-entry form with its default (search) source selected
  - **THEN** the row's mode-selector tab and its search-submit button are visually distinguishable, and clicking the search-submit button performs a search
  

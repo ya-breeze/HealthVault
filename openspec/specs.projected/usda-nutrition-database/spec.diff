@@ -92,3 +92,27 @@
  - **THEN** the system binds the item to that custom food and scales its macros from its profile, setting `macro_source = reference`, regardless of whether the item also carries an estimated nutrient profile
  
  #### Scenario: Candidate selected from shortlist
+@@ -114,6 +138,8 @@
+ 
+ Both properties follow from precedence: a custom food shadows every USDA entry sharing its name. Without per-user name uniqueness, two custom foods called "yogurt" make the winning match arbitrary. Without update and delete, a custom food saved with a mistyped macro value permanently poisons matching for that name with no in-app way to correct it.
+ 
++Updating a custom food to a different name SHALL clear its Canonical Name, for the same reason a hand-corrected and renamed item loses one (see `food-nutrition-logging` "Item Resolution"): the recorded English gloss described the old name, and pairing it with the new one in Expert Mode would assert an identity the system never established. Names SHALL be compared case-insensitively, so a pure capitalization fix does not cost the user their Canonical Name. Unlike a meal item's PATCH, this endpoint has no rename-only mode — it is a full-resource update — so every name change here is the identity-replacing case.
++
+ #### Scenario: Custom food creation
+ - **WHEN** a user saves a custom food with a name and per-100g macro values
+ - **THEN** the system stores it scoped to that user and makes it available to subsequent searches and matching
+@@ -126,6 +152,14 @@
+ - **WHEN** the owner updates a custom food's macro values
+ - **THEN** subsequent matches use the corrected values
+ 
++#### Scenario: Renaming a custom food clears its Canonical Name
++- **WHEN** the owner updates a custom food that carries a Canonical Name, supplying a name that differs from its current one by more than capitalization
++- **THEN** the system stores the new name and clears the Canonical Name, rather than showing the new name paired with the previous name's English gloss in Expert Mode
++
++#### Scenario: Recapitalizing a custom food keeps its Canonical Name
++- **WHEN** the owner updates a custom food that carries a Canonical Name, supplying a name that differs from its current one only in capitalization
++- **THEN** the system stores the new name and leaves the Canonical Name in place, since a capitalization fix is not an identity change
++
+ #### Scenario: Delete a custom food restores USDA matching
+ - **WHEN** the owner deletes a custom food
+ - **THEN** it no longer shadows USDA entries and a later search for that name returns USDA candidates
