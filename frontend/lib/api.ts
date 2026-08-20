@@ -364,6 +364,23 @@ export const api = {
   putSettings: (settings: UserSettings) =>
     apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
 
+  // Read-modify-write: fetches the latest settings, merges patch onto them,
+  // and PUTs the result — falling back to `fallback` (the caller's own
+  // cached copy) only if the refetch itself fails. Shared by every
+  // settings-writing feature (dashboard order in app/page.tsx, Display
+  // Language in LanguageContext.tsx) so each doesn't reimplement the same
+  // "refetch immediately before writing" race-avoidance itself: without a
+  // fresh read right before the write, two features saving in the same
+  // session with no navigation in between could each PUT a stale snapshot
+  // that clobbers the other's already-saved field. Returns the merged
+  // settings that were just written, for the caller to cache.
+  updateSettings: async (patch: Partial<UserSettings>, fallback: UserSettings): Promise<UserSettings> => {
+    const current = await api.getSettings().catch(() => fallback);
+    const next: UserSettings = { ...current, ...patch };
+    await api.putSettings(next);
+    return next;
+  },
+
   data: (type: string, from?: string, to?: string, user?: string, bucket?: 'day' | 'month') => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);

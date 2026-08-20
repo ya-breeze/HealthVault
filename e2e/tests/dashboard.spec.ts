@@ -82,41 +82,50 @@ test.describe('Dashboard card reorder', () => {
   test('reordering a card via Edit mode persists across reload', async ({ page }) => {
     const grid = page.getByTestId('vitals-grid');
 
-    // Outside edit mode there are no reorder controls.
-    await expect(page.getByRole('button', { name: /move weight up/i })).not.toBeVisible();
+    try {
+      // Outside edit mode there are no reorder controls.
+      await expect(page.getByRole('button', { name: /move weight up/i })).not.toBeVisible();
 
-    await page.getByRole('button', { name: 'Edit order' }).click();
+      await page.getByRole('button', { name: 'Edit order' }).click();
 
-    // Move the Weight card to the very front, regardless of its current
-    // position (this test may run after a prior run left a custom order).
-    const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
-    for (let i = 0; i < 8; i++) {
-      if (await moveWeightUp.isDisabled()) break;
-      await moveWeightUp.click();
+      // Move the Weight card to the very front, regardless of its current
+      // position (this test may run after a prior run left a custom order).
+      const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
+      for (let i = 0; i < 8; i++) {
+        if (await moveWeightUp.isDisabled()) break;
+        await moveWeightUp.click();
+      }
+      await expect(moveWeightUp).toBeDisabled();
+      await expect(grid.getByTestId('vital-card-weight')).toBeVisible();
+
+      await page.getByRole('button', { name: 'Done' }).click();
+      await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
+
+      // First card in the grid should now be Weight.
+      const firstCardBefore = grid.locator('> *').first();
+      await expect(firstCardBefore).toHaveAttribute('data-testid', 'vital-card-weight');
+
+      await page.reload();
+      const firstCardAfter = page.getByTestId('vitals-grid').locator('> *').first();
+      await expect(firstCardAfter).toHaveAttribute('data-testid', 'vital-card-weight');
+    } finally {
+      // Restore the default order so this test (and others relying on a
+      // predictable grid) starts clean on the next run, even if an
+      // assertion above failed partway through and left the page in an
+      // unknown state (still in edit mode, mid-reorder, etc.) — every step
+      // here is best-effort and swallows its own failure so one broken step
+      // can't hide the real assertion failure that triggered this cleanup.
+      const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
+      if (await editOrderBtn.isVisible().catch(() => false)) {
+        await editOrderBtn.click().catch(() => {});
+      }
+      const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
+      for (let i = 0; i < 8; i++) {
+        if (await moveWeightDown.isDisabled().catch(() => true)) break;
+        await moveWeightDown.click().catch(() => {});
+      }
+      await page.getByRole('button', { name: 'Done' }).click().catch(() => {});
     }
-    await expect(moveWeightUp).toBeDisabled();
-    await expect(grid.getByTestId('vital-card-weight')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
-
-    // First card in the grid should now be Weight.
-    const firstCardBefore = grid.locator('> *').first();
-    await expect(firstCardBefore).toHaveAttribute('data-testid', 'vital-card-weight');
-
-    await page.reload();
-    const firstCardAfter = page.getByTestId('vitals-grid').locator('> *').first();
-    await expect(firstCardAfter).toHaveAttribute('data-testid', 'vital-card-weight');
-
-    // Restore the default order so this test (and others relying on a
-    // predictable grid) starts clean on the next run.
-    await page.getByRole('button', { name: 'Edit order' }).click();
-    const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
-    for (let i = 0; i < 8; i++) {
-      if (await moveWeightDown.isDisabled()) break;
-      await moveWeightDown.click();
-    }
-    await page.getByRole('button', { name: 'Done' }).click();
   });
 
   test('move-up is disabled on the first card and move-down on the last', async ({ page }) => {
@@ -146,36 +155,44 @@ test.describe('Settings lost-update race', () => {
   // the switcher's own cache never refreshed) used to PUT a stale
   // pre-reorder snapshot and silently clobber the just-saved dashboard_order.
   test('reordering cards then switching language in the same session persists both', async ({ page }) => {
-    await page.getByRole('button', { name: 'Edit order' }).click();
-    const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
-    for (let i = 0; i < 8; i++) {
-      if (await moveWeightUp.isDisabled()) break;
-      await moveWeightUp.click();
+    try {
+      await page.getByRole('button', { name: 'Edit order' }).click();
+      const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
+      for (let i = 0; i < 8; i++) {
+        if (await moveWeightUp.isDisabled()) break;
+        await moveWeightUp.click();
+      }
+      await page.getByRole('button', { name: 'Done' }).click();
+      await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
+
+      // No navigation here — this is the exact sequence that used to revert
+      // the reorder above.
+      await page.locator('#display-language').selectOption('ru');
+      await expect(page.locator('#display-language')).toHaveValue('ru');
+
+      await page.reload();
+
+      const firstCardAfter = page.getByTestId('vitals-grid').locator('> *').first();
+      await expect(firstCardAfter).toHaveAttribute('data-testid', 'vital-card-weight');
+      await expect(page.locator('#display-language')).toHaveValue('ru');
+    } finally {
+      // Restore English + default order so later tests (which assert on
+      // English label text and a predictable card order) aren't affected,
+      // even if an assertion above failed partway through — every step here
+      // is best-effort and swallows its own failure so one broken step
+      // can't hide the real assertion failure that triggered this cleanup.
+      await page.locator('#display-language').selectOption('en').catch(() => {});
+      const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
+      if (await editOrderBtn.isVisible().catch(() => false)) {
+        await editOrderBtn.click().catch(() => {});
+      }
+      const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
+      for (let i = 0; i < 8; i++) {
+        if (await moveWeightDown.isDisabled().catch(() => true)) break;
+        await moveWeightDown.click().catch(() => {});
+      }
+      await page.getByRole('button', { name: 'Done' }).click().catch(() => {});
     }
-    await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
-
-    // No navigation here — this is the exact sequence that used to revert
-    // the reorder above.
-    await page.locator('#display-language').selectOption('ru');
-    await expect(page.locator('#display-language')).toHaveValue('ru');
-
-    await page.reload();
-
-    const firstCardAfter = page.getByTestId('vitals-grid').locator('> *').first();
-    await expect(firstCardAfter).toHaveAttribute('data-testid', 'vital-card-weight');
-    await expect(page.locator('#display-language')).toHaveValue('ru');
-
-    // Restore English + default order so later tests (which assert on
-    // English label text and a predictable card order) aren't affected.
-    await page.locator('#display-language').selectOption('en');
-    await page.getByRole('button', { name: 'Edit order' }).click();
-    const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
-    for (let i = 0; i < 8; i++) {
-      if (await moveWeightDown.isDisabled()) break;
-      await moveWeightDown.click();
-    }
-    await page.getByRole('button', { name: 'Done' }).click();
   });
 });
 

@@ -14,6 +14,7 @@ const en = {
   'header.copyToClipboard': 'Copy to clipboard',
   'header.logout': 'Logout',
   'header.language': 'Language',
+  'header.languageChangeFailed': 'Could not save your language preference. Try again.',
 
   'status.processing': 'Analyzing…',
   'status.pending_clarification': 'Needs clarification',

@@ -1086,6 +1086,50 @@ func TestPatchMealItem_NameAloneDoesNotClearCanonicalName(t *testing.T) {
 	}
 }
 
+// Regression: round-2 review — CanonicalName was only cleared in the Manual
+// branch; rebinding to a different reference food (fdc_id/custom_food_id/
+// off_code) alongside a name change is just as much an identity change and
+// must clear a stale CanonicalName too.
+func TestPatchMealItem_RebindWithNameClearsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"fdc_id": 7, "weight_grams": 150, "name": "Chicken breast",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.CanonicalName != "" {
+		t.Errorf("expected CanonicalName cleared after rebind+rename, got %q", updated.CanonicalName)
+	}
+}
+
 // See openspec/specs/food-nutrition-logging "A canonical_name field on the
 // request is rejected": Canonical Name is not user-editable through this
 // endpoint, no matter what else the request also contains.
@@ -1110,6 +1154,25 @@ func TestPatchMealItem_CanonicalNameFieldRejected(t *testing.T) {
 	}
 	if reloaded.Name != "Chicken" {
 		t.Errorf("expected the item unchanged after a rejected request, got name %q", reloaded.Name)
+	}
+}
+
+// A case-variant key must be rejected the same as the lowercase field —
+// encoding/json's own case-insensitive struct-field matching, not manual
+// string comparison, is what closes this; see patchItemRequest.CanonicalName.
+func TestPatchMealItem_CanonicalNameFieldRejectedCaseInsensitive(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"name": "Chicken thigh", "Canonical_Name": "chicken thigh",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

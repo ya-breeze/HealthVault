@@ -30,6 +30,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // Holds setLanguage's in-flight GET+PUT, if any — see the pathname effect
   // below for why.
   const pendingWrite = useRef<Promise<unknown> | null>(null);
+  // Bumped at the start of every setLanguage write, and compared by the
+  // pathname effect before vs. after its own GET — see that effect's doc
+  // comment for the specific race this closes that awaiting pendingWrite
+  // alone does not: a write that starts (and, per pendingWrite, may even
+  // finish) *after* the effect's GET is already on the wire.
+  const writeGeneration = useRef(0);
 
   // Renders in English immediately rather than blocking the whole app
   // (including the unauthenticated /login page, where this fetch always
@@ -57,6 +63,17 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // (below) was fixed. Waiting for the pending write first guarantees this
   // GET only ever runs after that write's own state update has already
   // landed, so it reads (and reapplies) the same value, not a stale one.
+  //
+  // That await alone only covers a write already in flight *before* this
+  // GET starts, though — found in a later review round: if setLanguage's
+  // write instead starts (and, since it's typically fast, even finishes)
+  // while this GET is still on the wire, pendingWrite.current was null when
+  // checked above, so nothing was awaited, and this GET's now-stale result
+  // would still land on top of that write's already-applied state once it
+  // resolves. writeGeneration closes that: captured before the GET starts
+  // and compared after it resolves, a mismatch means some write touched
+  // language state in between, so this GET's result is discarded — that
+  // write's own state update is authoritative and already correct.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -64,9 +81,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         await pendingWrite.current.catch(() => {});
       }
       if (cancelled) return;
+      const genAtStart = writeGeneration.current;
       try {
         const s = await api.getSettings();
-        if (cancelled) return;
+        if (cancelled || writeGeneration.current !== genAtStart) return;
         setSettings(s);
         const raw = s.display_language;
         if (typeof raw === 'string' && isSupportedLanguage(raw)) {
@@ -81,25 +99,24 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     };
   }, [pathname]);
 
-  // Reads a fresh copy of settings immediately before writing, rather than
-  // merging onto the possibly-stale cached `settings` state: this provider
-  // and app/page.tsx's dashboard-order editor each keep their own
-  // independent cached UserSettings and PUT a read-modify-write built from
-  // it, with no shared store between them. Without this, saving a dashboard
-  // reorder and then switching language in the same session (no navigation
-  // in between, so this provider's own cache never refreshed) would PUT a
-  // stale pre-reorder snapshot here and silently clobber the just-saved
-  // dashboard_order. Falls back to the cached copy only if the refetch
-  // itself fails, matching this component's existing "a failed background
-  // load isn't fatal" stance.
-  // Publishes its own GET+PUT via pendingWrite so a navigation firing the
-  // effect above while this is in flight waits for it instead of racing it
-  // — see that effect's comment.
+  // Uses api.updateSettings — a fresh read-modify-write, not a merge onto
+  // the possibly-stale cached `settings` state — since this provider and
+  // app/page.tsx's dashboard-order editor each write to the same
+  // UserSettings blob with no shared store between them. Without this,
+  // saving a dashboard reorder and then switching language in the same
+  // session (no navigation in between, so this provider's own cache never
+  // refreshed) would PUT a stale pre-reorder snapshot here and silently
+  // clobber the just-saved dashboard_order. Falls back to the cached copy
+  // only if the refetch itself fails, matching this component's existing
+  // "a failed background load isn't fatal" stance.
+  // Bumps writeGeneration and publishes the write via pendingWrite so the
+  // effect above — whether already running or starting concurrently — waits
+  // for or discards in favor of this write instead of racing it; see that
+  // effect's comment.
   const setLanguage = useCallback(async (code: LanguageCode) => {
+    writeGeneration.current += 1;
     const write = (async () => {
-      const current = await api.getSettings().catch(() => settings);
-      const next: UserSettings = { ...current, display_language: code };
-      await api.putSettings(next);
+      const next = await api.updateSettings({ display_language: code }, settings);
       setSettings(next);
       setLanguageState(code);
     })();

@@ -59,10 +59,12 @@ If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
 instead of guessing. Otherwise leave clarification_questions empty.`
 
-// isEnglishDisplayLanguage reports whether displayLanguage means English —
+// IsEnglishDisplayLanguage reports whether displayLanguage means English —
 // either explicitly ("en") or by the empty-string default used throughout
-// this codebase for "no display_language setting saved yet".
-func isEnglishDisplayLanguage(displayLanguage string) bool {
+// this codebase for "no display_language setting saved yet". Exported so
+// server package callers (e.g. food_upload.go's reference-DB skip gate) share
+// this exact definition rather than re-deriving it.
+func IsEnglishDisplayLanguage(displayLanguage string) bool {
 	return displayLanguage == "" || displayLanguage == "en"
 }
 
@@ -71,7 +73,7 @@ func isEnglishDisplayLanguage(displayLanguage string) bool {
 // every Recognize/Clarify call. See openspec/changes/russian-localization/
 // design.md decision 3.
 func languageDirective(displayLanguage string) string {
-	if isEnglishDisplayLanguage(displayLanguage) {
+	if IsEnglishDisplayLanguage(displayLanguage) {
 		return "\n\nThe requested display language is English (BCP-47 \"en\"). " +
 			"Write display_name in English and leave canonical_name empty."
 	}
@@ -331,7 +333,7 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration, disp
 		return nil, fmt.Errorf("unmarshal structured content: %w", err)
 	}
 
-	isEnglish := isEnglishDisplayLanguage(displayLanguage)
+	isEnglish := IsEnglishDisplayLanguage(displayLanguage)
 	items := make([]Item, len(schemaResp.Items))
 	for i, it := range schemaResp.Items {
 		canonicalName := strings.TrimSpace(it.CanonicalName)

@@ -62,6 +62,7 @@ func (h *foodHandlers) CreateCustomFood(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	req.Name = strings.TrimSpace(req.Name)
 	c := database.CustomFood{UserID: claims.UserID}
 	c.ID = uuid.New()
 	c.FamilyID = FamilyIDFromCtx(r)
@@ -153,7 +154,13 @@ func (h *foodHandlers) UpdateCustomFood(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
+	// Trimmed once, up front, and used for both the rename check below and
+	// the stored value (via applyTo): comparing a trimmed request name
+	// against c.Name (also always stored trimmed) while leaving req.Name
+	// untrimmed would treat incidental leading/trailing whitespace as a
+	// "rename" on every no-op edit, wiping CanonicalName for nothing.
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
@@ -164,7 +171,7 @@ func (h *foodHandlers) UpdateCustomFood(w http.ResponseWriter, r *http.Request) 
 	// food_item.go's PatchMealItem), this endpoint is a full-resource PUT
 	// with no partial-rename-only mode, so every name change here is
 	// equivalent to the "manual correction" case that clears it there.
-	if strings.TrimSpace(req.Name) != c.Name {
+	if req.Name != c.Name {
 		c.CanonicalName = ""
 	}
 	req.applyTo(c)

@@ -12,6 +12,7 @@ const ru: Dictionary = {
   'header.copyToClipboard': 'Скопировать',
   'header.logout': 'Выйти',
   'header.language': 'Язык',
+  'header.languageChangeFailed': 'Не удалось сохранить язык. Попробуйте ещё раз.',
 
   'status.processing': 'Анализ…',
   'status.pending_clarification': 'Требуется уточнение',

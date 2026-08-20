@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -44,6 +43,17 @@ type patchItemRequest struct {
 	WeightGrams      *float64   `json:"weight_grams,omitempty"`
 	Name             *string    `json:"name,omitempty"`
 	SaveAsCustomFood bool       `json:"save_as_custom_food,omitempty"`
+
+	// CanonicalName is never read or applied — the field exists only so a
+	// caller-supplied canonical_name can be detected and rejected below
+	// instead of a bare Unmarshal silently discarding it. encoding/json
+	// matches a JSON object key to this field case-insensitively when there
+	// is no exact-case match on another field, so "CanonicalName" is caught
+	// the same as "canonical_name". See
+	// openspec/specs/food-nutrition-logging "A canonical_name field on the
+	// request is rejected": Canonical Name is produced only at recognition
+	// time and is not user-editable through this endpoint.
+	CanonicalName json.RawMessage `json:"canonical_name,omitempty"`
 
 	Calories          float64 `json:"calories,omitempty"`
 	ProteinGrams      float64 `json:"protein_grams,omitempty"`
@@ -251,37 +261,13 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	// canonical_name is not one of patchItemRequest's fields, so a plain
-	// Unmarshal into it would silently ignore a caller-supplied one instead
-	// of rejecting it — probe the raw JSON object explicitly. See
-	// openspec/specs/food-nutrition-logging "A canonical_name field on the
-	// request is rejected": Canonical Name is produced only at recognition
-	// time and is not user-editable through this endpoint.
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(body, &probe); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	// Matched case-insensitively: every other field on this endpoint arrives
-	// as lowercase snake_case, so a case-variant key (e.g. "CanonicalName")
-	// is not a legitimate alternate spelling a client would intentionally
-	// send — it's simply a bug that must not be allowed to bypass this
-	// rejection by accident.
-	for k := range probe {
-		if strings.EqualFold(k, "canonical_name") {
-			http.Error(w, "canonical_name is not editable through this endpoint", http.StatusBadRequest)
-			return
-		}
-	}
-
 	var req patchItemRequest
-	if err := json.Unmarshal(body, &req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if req.CanonicalName != nil {
+		http.Error(w, "canonical_name is not editable through this endpoint", http.StatusBadRequest)
 		return
 	}
 
@@ -356,10 +342,12 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			// recognition produced for the old name — carrying it forward
 			// would pair the new name with a stale, unrelated English gloss,
 			// including onto a new CustomFood via save_as_custom_food below.
-			// Scoped to this branch only: a bare rename with no other field
-			// must leave Canonical Name untouched — see
-			// openspec/specs/food-nutrition-logging "Renaming an item does
-			// not require touching its macros".
+			// Same reasoning applies below to a fdc_id/custom_food_id/off_code
+			// rebind: it too replaces the item's identity. Scoped to these two
+			// identity-changing branches only, not the bare-rename case below the
+			// switch: a rename with no other field must leave Canonical Name
+			// untouched — see openspec/specs/food-nutrition-logging "Renaming an
+			// item does not require touching its macros".
 			if hasName {
 				item.CanonicalName = ""
 			}
@@ -386,6 +374,11 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.CustomFoodID = req.CustomFoodID
 			item.OffCode = req.OffCode
 			item.ApplyProfile(profile)
+			// See the identical rationale in the Manual case above: rebinding to
+			// a different reference food is also an identity change.
+			if hasName {
+				item.CanonicalName = ""
+			}
 		case req.WeightGrams != nil:
 			item.WeightGrams = *req.WeightGrams
 			switch item.MacroSource {

@@ -300,12 +300,13 @@ func (h *foodHandlers) resolveItems(
 	exactMatch := make([]bool, len(recognizedItems))
 	itemCandidates := make([]vision.ItemCandidates, 0, len(recognizedItems))
 
-	// Computed once per meal, not per item: rankedCustomFoodCandidates and the
-	// user's custom-food catalog (for fuzzyCustomFoodMatch) each depend only
-	// on userID, so re-fetching them per item would otherwise rerun the same
-	// query identically for every recognized item in the meal (multiple extra
-	// DB round-trips for a full plate instead of one).
-	ranked := h.rankedCustomFoodCandidates(meal.UserID)
+	// Computed once per meal, not per item: usageByID, rankedCustomFoodCandidates
+	// and the user's custom-food catalog (for fuzzyCustomFoodMatch) each depend
+	// only on userID, so re-fetching them per item would otherwise rerun the
+	// same queries identically for every recognized item in the meal (multiple
+	// extra DB round-trips for a full plate instead of one).
+	usageByID := h.customFoodUsageByID(meal.UserID)
+	ranked := h.rankedCustomFoodCandidates(meal.UserID, usageByID)
 	customFoods, err := h.customFoodsForUser(meal.UserID)
 	if err != nil {
 		// Degrades to "no custom-food matching for this meal" rather than
@@ -318,18 +319,9 @@ func (h *foodHandlers) resolveItems(
 	}
 
 	for i, ri := range recognizedItems {
-		item := database.FoodItem{
-			UserID: meal.UserID, MealID: meal.ID, Name: ri.Name, CanonicalName: ri.CanonicalName,
-			Preparation: ri.Preparation, State: ri.State, Brand: ri.Brand,
-			WeightGrams: ri.WeightGrams, Confidence: ri.Confidence,
-			MacroSource: database.MacroSourceNone,
-		}
-		item.ID = uuid.New()
-		item.FamilyID = meal.FamilyID
-		item.SetEstimatedProfile(ri.EstimatedProfile)
-		items[i] = item
+		items[i] = newUnresolvedItem(ri, meal.ID, meal.UserID, meal.FamilyID)
 
-		candidates, exact := h.retrieveCandidates(ranked, customFoods, ri.Name, ri.Preparation, ri.State, ri.Brand, displayLanguage)
+		candidates, exact := h.retrieveCandidates(ranked, customFoods, usageByID, ri.Name, ri.Preparation, ri.State, ri.Brand, displayLanguage)
 		candidateSets[i] = candidates
 		exactMatch[i] = exact
 		if len(candidates) > 0 {
@@ -432,14 +424,18 @@ func usageScore(u customFoodUsage, now time.Time) float64 {
 	return float64(u.UsageCount)*frequencyWeight + recencyScore
 }
 
-// rankedCustomFoodCandidates returns the caller's own custom foods ranked by
-// usageScore, computed from their confirmed meal history only — a
-// still-pending_review meal's item already carries a custom_food_id from
-// this very matching process, so counting it here would let an unverified,
-// possibly-wrong automatic match reinforce its own future ranking before the
-// user ever confirmed it was correct. See design.md decision 2 for the exact
-// query and why the join key is meal_id, not user_id.
-func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Candidate {
+// customFoodUsageByID computes every one of the caller's custom foods' usage
+// (confirmed-meal count + most-recent use), keyed by CustomFoodID, from their
+// confirmed meal history only — a still-pending_review meal's item already
+// carries a custom_food_id from this very matching process, so counting it
+// here would let an unverified, possibly-wrong automatic match reinforce its
+// own future ranking before the user ever confirmed it was correct. See
+// design.md decision 2 for the exact query and why the join key is meal_id,
+// not user_id. Computed once per meal by resolveItems and shared by
+// rankedCustomFoodCandidates (ranking) and fuzzyCustomFoodMatch's tie-break
+// (design.md decision 5's "most-recently-used") rather than queried
+// separately by each.
+func (h *foodHandlers) customFoodUsageByID(userID uuid.UUID) map[uuid.UUID]customFoodUsage {
 	var rows []customFoodUsageRow
 	// .Table() bypasses GORM's model-level deleted_at scope (that scoping is
 	// attached to the FoodItem/FoodMeal models, not to a raw table query), so
@@ -459,21 +455,30 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 		return nil
 	}
 
-	byFood := make(map[uuid.UUID]*customFoodUsage, len(rows))
+	byFood := make(map[uuid.UUID]customFoodUsage, len(rows))
 	for _, r := range rows {
-		u, ok := byFood[r.CustomFoodID]
-		if !ok {
-			u = &customFoodUsage{CustomFoodID: r.CustomFoodID}
-			byFood[r.CustomFoodID] = u
-		}
+		u := byFood[r.CustomFoodID]
+		u.CustomFoodID = r.CustomFoodID
 		u.UsageCount++
 		if r.LoggedAt.After(u.LastUsed) {
 			u.LastUsed = r.LoggedAt
 		}
+		byFood[r.CustomFoodID] = u
 	}
-	usage := make([]customFoodUsage, 0, len(byFood))
-	for _, u := range byFood {
-		usage = append(usage, *u)
+	return byFood
+}
+
+// rankedCustomFoodCandidates returns userID's own custom foods ranked by
+// usageScore, computed from usageByID (see customFoodUsageByID).
+func (h *foodHandlers) rankedCustomFoodCandidates(
+	userID uuid.UUID, usageByID map[uuid.UUID]customFoodUsage,
+) []vision.Candidate {
+	if len(usageByID) == 0 {
+		return nil
+	}
+	usage := make([]customFoodUsage, 0, len(usageByID))
+	for _, u := range usageByID {
+		usage = append(usage, u)
 	}
 
 	// usage is built from a Go map above, so its starting order is already
@@ -582,14 +587,15 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 // plain append could, when it has spare capacity, overwrite data written by
 // a sibling call for a different item in the same meal.
 func (h *foodHandlers) retrieveCandidates(
-	ranked []vision.Candidate, customFoods []database.CustomFood, name, preparation, state, brand, displayLanguage string,
+	ranked []vision.Candidate, customFoods []database.CustomFood, usageByID map[uuid.UUID]customFoodUsage,
+	name, preparation, state, brand, displayLanguage string,
 ) ([]vision.Candidate, bool) {
-	if best, ok := fuzzyCustomFoodMatch(customFoods, name); ok {
+	if best, ok := fuzzyCustomFoodMatch(customFoods, name, usageByID); ok {
 		id := best.ID
 		return []vision.Candidate{{CustomFoodID: &id, Description: best.Name}}, true
 	}
 
-	if displayLanguage != "" && displayLanguage != "en" {
+	if !vision.IsEnglishDisplayLanguage(displayLanguage) {
 		return ranked, false
 	}
 
@@ -626,11 +632,18 @@ func (h *foodHandlers) retrieveCandidates(
 // foods, fetched once per meal — see resolveItems) against name (the
 // recognized item's Display Name) and returns the highest-similarity one
 // that clears fuzzyMatchThreshold, or ok=false when none does (including
-// when foods is empty). Ties are broken by most-recently-updated — see
-// design.md decision 5. Matching runs against CustomFood.Name (the Display
-// Name), the language the user actually recognizes their own catalog
-// entries in.
-func fuzzyCustomFoodMatch(foods []database.CustomFood, name string) (database.CustomFood, bool) {
+// when foods is empty). Ties are broken by most-recently-used — see
+// design.md decision 5 — using usageByID (customFoodUsageByID's confirmed-meal
+// LastUsed, not the row's own UpdatedAt: a food edited today but never
+// actually logged must not outrank one used almost daily whose row simply
+// hasn't been touched since creation). A food absent from usageByID (never
+// confirmed in a meal) has the zero LastUsed value, so it only wins a tie
+// against another equally-unused food. Matching runs against
+// CustomFood.Name (the Display Name), the language the user actually
+// recognizes their own catalog entries in.
+func fuzzyCustomFoodMatch(
+	foods []database.CustomFood, name string, usageByID map[uuid.UUID]customFoodUsage,
+) (database.CustomFood, bool) {
 	var best database.CustomFood
 	bestScore := -1.0
 	found := false
@@ -639,7 +652,8 @@ func fuzzyCustomFoodMatch(foods []database.CustomFood, name string) (database.Cu
 		if score < fuzzyMatchThreshold {
 			continue
 		}
-		if !found || score > bestScore || (score == bestScore && f.UpdatedAt.After(best.UpdatedAt)) {
+		if !found || score > bestScore ||
+			(score == bestScore && usageByID[f.ID].LastUsed.After(usageByID[best.ID].LastUsed)) {
 			best, bestScore, found = f, score, true
 		}
 	}
@@ -671,19 +685,30 @@ func (h *foodHandlers) profileForCandidate(userID uuid.UUID, c vision.Candidate)
 	return database.NutrientProfile{}, false
 }
 
+// newUnresolvedItem builds a FoodItem from one recognized vision.Item,
+// carrying over every recognition-time field before any candidate binding is
+// attempted. Shared by resolveItems (whose copy may be bound further right
+// after this) and unresolvedItemsFrom (the pending_clarification degraded
+// path, which never binds at all) so the two field lists can't drift apart —
+// each was previously hand-rolled independently, and this change already had
+// to add CanonicalName to both by hand.
+func newUnresolvedItem(ri vision.Item, mealID, userID, familyID uuid.UUID) database.FoodItem {
+	item := database.FoodItem{
+		UserID: userID, MealID: mealID, Name: ri.Name, CanonicalName: ri.CanonicalName,
+		Preparation: ri.Preparation, State: ri.State, Brand: ri.Brand,
+		WeightGrams: ri.WeightGrams, Confidence: ri.Confidence,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	item.SetEstimatedProfile(ri.EstimatedProfile)
+	return item
+}
+
 func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID uuid.UUID) []database.FoodItem {
 	items := make([]database.FoodItem, len(recognizedItems))
 	for i, ri := range recognizedItems {
-		item := database.FoodItem{
-			UserID: userID, MealID: mealID, Name: ri.Name, CanonicalName: ri.CanonicalName,
-			Preparation: ri.Preparation, State: ri.State, Brand: ri.Brand,
-			WeightGrams: ri.WeightGrams, Confidence: ri.Confidence,
-			MacroSource: database.MacroSourceNone,
-		}
-		item.ID = uuid.New()
-		item.FamilyID = familyID
-		item.SetEstimatedProfile(ri.EstimatedProfile)
-		items[i] = item
+		items[i] = newUnresolvedItem(ri, mealID, userID, familyID)
 	}
 	return items
 }

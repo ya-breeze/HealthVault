@@ -31,7 +31,7 @@ export default function Header() {
     try {
       await setLanguage(code);
     } catch {
-      showToast('Could not save your language preference. Try again.', 'error');
+      showToast(t('header.languageChangeFailed'), 'error');
     } finally {
       setChangingLanguage(false);
     }

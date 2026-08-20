@@ -87,16 +87,13 @@ export default function Dashboard() {
   async function handleDone() {
     setSaving(true);
     try {
-      // Reads a fresh copy of settings immediately before writing, rather
-      // than merging onto the possibly-stale cached `settings` state: this
-      // component and LanguageContext each keep their own independent
-      // cached UserSettings and PUT a read-modify-write built from it, with
-      // no shared store between them — see LanguageContext.tsx's setLanguage
-      // for the lost-update this closes (reordering here, then switching
-      // language without navigating, used to silently revert this save).
-      const current = await api.getSettings().catch(() => settings);
-      const next: UserSettings = { ...current, dashboard_order: order.map(m => m.type) };
-      await api.putSettings(next);
+      // api.updateSettings does a fresh read-modify-write rather than
+      // merging onto the possibly-stale cached `settings` state: this
+      // component and LanguageContext both write to the same UserSettings
+      // blob with no shared store between them — see its doc comment for the
+      // lost-update this closes (reordering here, then switching language
+      // without navigating, used to silently revert this save).
+      const next = await api.updateSettings({ dashboard_order: order.map(m => m.type) }, settings);
       setSettings(next);
       setEditing(false);
     } catch {
