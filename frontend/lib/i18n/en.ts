@@ -46,8 +46,13 @@ const en = {
 
   // Distinct wording from ReanalyzeControl's unrelated "Expert" input tab
   // (same page, further down) — both are legitimately called "expert"
-  // something, so the visible label spells out what this one does.
-  'expertMode.toggle': 'Expert Mode (show original name)',
+  // something, so the visible label spells out what this one does. Must not
+  // contain "name": the existing e2e suite locates the item/custom-food Name
+  // field via getByLabel('Name') / label:has-text("Name"), and this toggle's
+  // own accessible name sits on the same page — a substring match against
+  // "name" here makes both locators strict-mode-ambiguous. Found in e2e
+  // regression (food.spec.ts) after first shipping "(show original name)".
+  'expertMode.toggle': 'Expert Mode (show English translation)',
   'expertMode.canonicalNamePrefix': 'English:',
 
   'history.title': 'Meal History',

@@ -42,7 +42,7 @@ const ru: Dictionary = {
   'item.sourceEstimated': 'Оценка ИИ',
   'item.sourceNone': 'Не определено',
 
-  'expertMode.toggle': 'Режим эксперта (показать исходное имя)',
+  'expertMode.toggle': 'Режим эксперта (показать перевод на английский)',
   'expertMode.canonicalNamePrefix': 'По-английски:',
 
   'history.title': 'История приёмов пищи',
