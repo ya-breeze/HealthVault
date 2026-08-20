@@ -15,6 +15,24 @@ storage or endpoint. An absent `display_language` key SHALL be treated as Englis
 existing default before this change, so no existing user's behavior changes until they explicitly
 set a different Display Language.
 
+Because `display_language` lives in an opaque settings object that `PUT` stores verbatim, its value
+SHALL be interpreted rather than assumed to be one of the languages the UI ships. Interpretation
+SHALL compare only the primary subtag of the tag — the part before the first `-` or `_` —
+case-insensitively and ignoring surrounding whitespace, and the *same* interpretation SHALL govern
+both UI rendering and recognition requests. A value whose primary subtag names no shipped UI
+language SHALL render the interface in English, and a value that is not a well-formed language tag
+SHALL be treated as unset. Interpreting the one stored value differently in the two places is
+specifically prohibited: it would let a user's interface render in English while recognition is
+asked for another language and the English-vocabulary reference databases are suppressed for them,
+a divergence nothing in the UI would reveal.
+
+#### Scenario: A regional tag resolves the same way for the UI and for recognition
+
+- **WHEN** a user's stored `display_language` is a regional tag such as `ru-RU` rather than the bare
+  `ru` the switcher writes
+- **THEN** the system SHALL render the interface in Russian *and* request Russian Display Names from
+  recognition, rather than rendering English while recognizing in Russian
+
 #### Scenario: Setting a Display Language
 
 - **WHEN** an authenticated user sends `PUT /api/users/me/settings` with a body including
