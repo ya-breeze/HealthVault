@@ -321,21 +321,6 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		}
 		observedUpdatedAt := item.UpdatedAt
 
-		// identityChanged marks the two branches below that replace the item's
-		// identity outright (a manual correction, or rebinding to a different
-		// reference food) — as opposed to a plain weight edit, which doesn't.
-		// A name change alongside an identity change invalidates whatever
-		// Canonical Name recognition produced for the old name — carrying it
-		// forward would pair the new name with a stale, unrelated English
-		// gloss, including onto a new CustomFood via save_as_custom_food
-		// below — so both branches set this instead of separately duplicating
-		// the same clearing logic, and the actual clear happens once, after
-		// the switch. Scoped to these two branches only, not the bare-rename
-		// case below the switch: a rename with no other field must leave
-		// Canonical Name untouched — see
-		// openspec/specs/food-nutrition-logging "Renaming an item does not
-		// require touching its macros".
-		identityChanged := false
 		switch {
 		case req.Manual:
 			item.FdcID = nil
@@ -352,7 +337,22 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.SugarGrams = req.SugarGrams
 			item.SodiumGrams = req.SodiumGrams
 			item.DietaryFiberGrams = req.DietaryFiberGrams
-			identityChanged = true
+			// A manual correction alongside a name change fully replaces the
+			// item's identity by hand — the AI-recognized Canonical Name no
+			// longer describes it, and carrying it forward would pair the new
+			// name with a stale, unrelated English gloss, including onto a new
+			// CustomFood via save_as_custom_food below. Scoped to Manual only:
+			// rebinding to a different reference food (below) deliberately
+			// leaves Canonical Name unchanged instead, even alongside a name
+			// change — see openspec/specs/food-nutrition-logging "Correct an
+			// already-matched item" — since Canonical Name records what
+			// recognition originally identified regardless of which reference
+			// food the item is later matched to. And a bare rename with no
+			// other field also leaves it untouched — see "Renaming an item
+			// does not require touching its macros".
+			if hasName {
+				item.CanonicalName = ""
+			}
 		case req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil:
 			if req.WeightGrams != nil {
 				item.WeightGrams = *req.WeightGrams
@@ -376,7 +376,8 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.CustomFoodID = req.CustomFoodID
 			item.OffCode = req.OffCode
 			item.ApplyProfile(profile)
-			identityChanged = true
+			// Canonical Name deliberately left unchanged here, even when a
+			// name is also supplied — see the Manual branch's comment above.
 		case req.WeightGrams != nil:
 			item.WeightGrams = *req.WeightGrams
 			switch item.MacroSource {
@@ -395,9 +396,6 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				}
 				item.ApplyEstimatedProfile()
 			}
-		}
-		if identityChanged && hasName {
-			item.CanonicalName = ""
 		}
 
 		if req.Name != nil {

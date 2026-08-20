@@ -309,11 +309,17 @@ func (h *foodHandlers) resolveItems(
 	ranked := h.rankedCustomFoodCandidates(meal.UserID, usageByID)
 	customFoods, err := h.customFoodsForUser(meal.UserID)
 	if err != nil {
-		// Degrades to "no custom-food matching for this meal" rather than
-		// failing the whole analysis — matching this function's existing
-		// non-strict-mode posture toward a Select-call failure (see doc
-		// comment above) — but unlike that case, this one has no other
-		// signal an operator could notice, so it's logged explicitly.
+		// strict (Reanalyze only) fails the whole call on this error, the same
+		// as it does for a Select-call failure below — see this function's doc
+		// comment on strict for why Reanalyze can't tolerate a silent partial
+		// degradation. Non-strict (upload/retry/clarify) degrades instead to
+		// "no custom-food matching for this meal" rather than failing the
+		// whole analysis, matching this function's existing posture toward a
+		// Select-call failure there — but unlike that case, this one has no
+		// other signal an operator could notice, so it's logged explicitly.
+		if strict {
+			return nil, err
+		}
 		slog.Error("resolveItems: fetch custom foods", "err", err, "user_id", meal.UserID)
 		customFoods = nil
 	}
@@ -551,10 +557,14 @@ func (h *foodHandlers) rankedCustomFoodCandidates(
 	return out
 }
 
-// retrieveCandidates mirrors Search's precedence rule: a fuzzy-name custom
+// retrieveCandidates mirrors Search's *precedence* rule — a custom-food name
+// match wins outright over Open Food Facts/USDA, not additionally queried
+// for it — not its matching algorithm: Search (food.go) still does an exact,
+// case-insensitive match, per food-search-translation's "Custom Food
+// Matching Is Unaffected By Translation" (a separate, already-shipped
+// requirement this change does not touch), while here a fuzzy-name custom
 // food match (see fuzzyMatchThreshold, design.md decision 5) wins outright,
-// offered as the sole candidate — Open Food Facts and USDA are not
-// additionally queried for it. Otherwise, ranked (the caller's
+// offered as the sole candidate. Otherwise, ranked (the caller's
 // frequency/recency-ranked custom foods, see rankedCustomFoodCandidates —
 // computed once per meal by the caller, not per item, since it depends only
 // on userID) is combined with whatever Open Food Facts/USDA candidates the

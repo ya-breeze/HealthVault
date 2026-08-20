@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname } from 'next/navigation';
 import { api, UserSettings } from '@/lib/api';
 import { DICTIONARIES, LanguageCode, isSupportedLanguage } from '@/lib/i18n';
+import { useSerialQueue } from '@/lib/useSerialQueue';
 
 interface LanguageContextValue {
   language: LanguageCode;
@@ -27,15 +28,28 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<UserSettings>({});
   const pathname = usePathname();
 
-  // Holds setLanguage's in-flight GET+PUT, if any — see the pathname effect
-  // below for why.
-  const pendingWrite = useRef<Promise<unknown> | null>(null);
-  // Bumped at the start of every setLanguage write, and compared by the
-  // pathname effect before vs. after its own GET — see that effect's doc
-  // comment for the specific race this closes that awaiting pendingWrite
-  // alone does not: a write that starts (and, per pendingWrite, may even
-  // finish) *after* the effect's GET is already on the wire.
-  const writeGeneration = useRef(0);
+  // api.updateSettings only needs `settings` as a last-resort fallback (see
+  // its own doc comment) — kept in a ref, not a setLanguage dependency, so
+  // setLanguage's identity stays stable across the settings churn caused by
+  // every pathname-triggered GET below. A useCallback closing over `settings`
+  // directly would give setLanguage (and, transitively, the memoized context
+  // value further down) a new identity on every navigation even though
+  // nothing about the language actually changed — found in code review.
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  // Serializes every GET (this provider's own periodic settings load, right
+  // below) and PUT (setLanguage) against this same UserSettings blob so they
+  // can never interleave — see useSerialQueue's doc comment. This replaces a
+  // hand-rolled generation-counter+pending-write pair that needed two
+  // separate review-round fixes (a write whose PUT ultimately failed still
+  // discarded a legitimate concurrent GET's result; and the counter closed
+  // over `settings`, which defeated the context-value memoization below) —
+  // both classes of bug are structurally impossible with a strict queue
+  // instead: nothing this provider does can ever run out of issue order.
+  const { claim } = useSerialQueue();
 
   // Renders in English immediately rather than blocking the whole app
   // (including the unauthenticated /login page, where this fetch always
@@ -53,38 +67,24 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // in flight for other reasons on most pages) and matches how Header's own
   // api.me() check already re-verifies auth on every page mount.
   //
-  // Awaits any setLanguage write already in flight before issuing its own
-  // GET, rather than racing it: a client-side navigation fired right after
-  // changing the language (before that PUT has settled) would otherwise let
-  // this effect's independent read return a pre-write snapshot and silently
-  // revert the just-saved language back to its old value once it resolves,
-  // even though the PUT already succeeded server-side — found in code
-  // review after the sibling dashboard-order/language lost-update race
-  // (below) was fixed. Waiting for the pending write first guarantees this
-  // GET only ever runs after that write's own state update has already
-  // landed, so it reads (and reapplies) the same value, not a stale one.
-  //
-  // That await alone only covers a write already in flight *before* this
-  // GET starts, though — found in a later review round: if setLanguage's
-  // write instead starts (and, since it's typically fast, even finishes)
-  // while this GET is still on the wire, pendingWrite.current was null when
-  // checked above, so nothing was awaited, and this GET's now-stale result
-  // would still land on top of that write's already-applied state once it
-  // resolves. writeGeneration closes that: captured before the GET starts
-  // and compared after it resolves, a mismatch means some write touched
-  // language state in between, so this GET's result is discarded — that
-  // write's own state update is authoritative and already correct.
+  // Queued via claim() rather than fired directly: a client-side navigation
+  // right after changing the language (before that PUT has settled) would
+  // otherwise let this GET run concurrently with the write and land either
+  // before or after it unpredictably — in the worst case, a stale read
+  // resolving after the write silently reverts the just-saved language back
+  // to its old value even though the PUT already succeeded server-side.
+  // Queuing both this GET and setLanguage's PUT behind the same claim()
+  // makes that impossible: this GET only ever starts once every
+  // earlier-claimed operation (including a same-tick setLanguage write) has
+  // already fully applied its own state update, so it reads — and
+  // reapplies — that same current value, never a stale one.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      if (pendingWrite.current) {
-        await pendingWrite.current.catch(() => {});
-      }
+    claim(async () => {
       if (cancelled) return;
-      const genAtStart = writeGeneration.current;
       try {
         const s = await api.getSettings();
-        if (cancelled || writeGeneration.current !== genAtStart) return;
+        if (cancelled) return;
         setSettings(s);
         const raw = s.display_language;
         if (typeof raw === 'string' && isSupportedLanguage(raw)) {
@@ -93,11 +93,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // Stay on the English default — see doc comment above.
       }
-    })();
+    });
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, claim]);
 
   // Uses api.updateSettings — a fresh read-modify-write, not a merge onto
   // the possibly-stale cached `settings` state — since this provider and
@@ -107,28 +107,17 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // session (no navigation in between, so this provider's own cache never
   // refreshed) would PUT a stale pre-reorder snapshot here and silently
   // clobber the just-saved dashboard_order. Falls back to the cached copy
-  // only if the refetch itself fails, matching this component's existing
-  // "a failed background load isn't fatal" stance.
-  // Bumps writeGeneration and publishes the write via pendingWrite so the
-  // effect above — whether already running or starting concurrently — waits
-  // for or discards in favor of this write instead of racing it; see that
-  // effect's comment.
-  const setLanguage = useCallback(async (code: LanguageCode) => {
-    writeGeneration.current += 1;
-    const write = (async () => {
-      const next = await api.updateSettings({ display_language: code }, settings);
+  // (settingsRef.current) only if the refetch itself fails, matching this
+  // component's existing "a failed background load isn't fatal" stance.
+  // Queued via claim() — see the pathname effect's doc comment above for
+  // the race this closes.
+  const setLanguage = useCallback((code: LanguageCode): Promise<void> => {
+    return claim(async () => {
+      const next = await api.updateSettings({ display_language: code }, settingsRef.current);
       setSettings(next);
       setLanguageState(code);
-    })();
-    pendingWrite.current = write;
-    try {
-      await write;
-    } finally {
-      if (pendingWrite.current === write) {
-        pendingWrite.current = null;
-      }
-    }
-  }, [settings]);
+    });
+  }, [claim]);
 
   const t = useCallback(
     (key: keyof typeof DICTIONARIES.en) => DICTIONARIES[language][key],

@@ -474,6 +474,34 @@ func TestOpenAIClient_Translate_MalformedResponseIsReturned(t *testing.T) {
 	}
 }
 
+// Regression for a code-review finding: display_language is an unvalidated,
+// caller-supplied opaque-settings string (only the frontend's own dropdown
+// is constrained to exact "en"/"ru"), so a full BCP-47 tag like "en-US" from
+// some other caller must still be recognized as English rather than
+// silently gating out USDA/OFF matching and requesting a redundant
+// canonical_name for a functionally-English user.
+func TestIsEnglishDisplayLanguage(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"", true},
+		{"en", true},
+		{"En", true},
+		{"EN", true},
+		{"en-US", true},
+		{"en_GB", true},
+		{"ru", false},
+		{"ru-RU", false},
+		{"english", false}, // not a valid BCP-47 primary subtag match for "en"
+	}
+	for _, c := range cases {
+		if got := vision.IsEnglishDisplayLanguage(c.in); got != c.want {
+			t.Errorf("IsEnglishDisplayLanguage(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
 func mustMarshal(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)

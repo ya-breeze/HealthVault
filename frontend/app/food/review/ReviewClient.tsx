@@ -14,6 +14,7 @@ import { useLanguage } from '@/components/LanguageContext';
 import { mealStatusLabel } from '@/lib/i18n';
 import ExpertModeToggle from '@/components/food/ExpertModeToggle';
 import TapTarget from '@/components/ui/TapTarget';
+import { useSerialQueue } from '@/lib/useSerialQueue';
 
 export default function ReviewClient({ mealId }: { mealId: string }) {
   const { showToast } = useToast();
@@ -54,25 +55,21 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   // queued behind a confirmed delete is guaranteed to fail once its turn
   // comes, since its meal no longer exists — that's fallout from the user's
   // own delete, not a real failure worth an "Update failed" toast.
-  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
   const mealGoneRef = useRef(false);
 
   // Low-level "claim a slot in the mutation queue" primitive shared by
   // applyMealUpdate and queueDelete below: chains `issue` behind whatever is
-  // still outstanding, and immediately re-points queueRef.current at the
-  // result — not at a snapshot taken before `issue` settles — so anything
-  // queued *after* this call, including while `issue` is still in flight,
-  // chains behind it instead of behind something stale. The queue keeps
-  // moving even if `issue` rejects, so one failed mutation can't wedge
-  // everything queued behind it. This exact "claim the ref synchronously,
-  // don't snapshot it" mechanism has already needed fixing more than once
-  // (round 2, round 3) after being duplicated by hand — shared here so
-  // future fixes only need to happen in one place.
-  const claimSlot = useCallback(<T,>(issue: () => Promise<T>): Promise<T> => {
-    const run = queueRef.current.then(issue);
-    queueRef.current = run.catch(() => undefined);
-    return run;
-  }, []);
+  // still outstanding, and immediately re-points the queue at the result —
+  // not at a snapshot taken before `issue` settles — so anything queued
+  // *after* this call, including while `issue` is still in flight, chains
+  // behind it instead of behind something stale. The queue keeps moving
+  // even if `issue` rejects, so one failed mutation can't wedge everything
+  // queued behind it. This exact "claim the ref synchronously, don't
+  // snapshot it" mechanism has already needed fixing more than once (round
+  // 2, round 3) after being duplicated by hand — shared as useSerialQueue
+  // (also used by LanguageContext, for GET/PUT ordering) so future fixes
+  // only need to happen in one place.
+  const { claim: claimSlot, drain } = useSerialQueue();
 
   const applyMealUpdate = useCallback((issue: () => Promise<FoodMeal>, label?: string): Promise<FoodMeal> => {
     return claimSlot(issue)
@@ -94,7 +91,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   // delete leaves nothing to reconcile into `meal`. Used by
   // DeleteMealControl.
   //
-  // The returned promise also waits out `queueRef.current` *after* the
+  // The returned promise also waits out `drain()` *after* the
   // delete itself settles — success (204) or 404 (already gone, e.g.
   // deleted from another tab; both mean the meal no longer exists) — not
   // just the delete's own request. A caller that navigates away as soon as
@@ -115,10 +112,10 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     );
     return settled.then(async outcome => {
       mealGoneRef.current = true;
-      await queueRef.current;
+      await drain();
       if (!outcome.ok) throw outcome.err;
     });
-  }, [claimSlot]);
+  }, [claimSlot, drain]);
 
   const load = () => {
     setLoading(true);

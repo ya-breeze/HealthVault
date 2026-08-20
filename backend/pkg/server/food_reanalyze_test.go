@@ -648,6 +648,55 @@ func TestReanalyze_SelectErrorTreatedAsFailureNotDegradedSuccess(t *testing.T) {
 	}
 }
 
+// Regression: resolveItems's customFoodsForUser fetch (once per meal, not
+// per item) used to degrade silently on error regardless of strict, unlike
+// the analogous Select-call failure right above, which strict (Reanalyze
+// only) already treats as a hard failure. That let a transient DB error on
+// this one query silently disable custom-food matching for every item in a
+// Reanalyze call and still report 200, replacing a confirmed meal's real,
+// reviewed items with a degraded set — exactly the outcome strict mode
+// exists to prevent. Forces the failure by dropping the custom_foods table
+// so the query itself errors, without touching food_items/food_meals.
+func TestReanalyze_CustomFoodFetchErrorTreatedAsFailureNotDegradedSuccess(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 0, "")
+
+	sqlDB, err := st.DB().DB()
+	if err != nil {
+		t.Fatalf("get sql.DB: %v", err)
+	}
+	if _, err := sqlDB.Exec("DROP TABLE custom_foods"); err != nil {
+		t.Fatalf("drop custom_foods table: %v", err)
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{Items: []vision.Item{{Name: "Rice", WeightGrams: 150}}},
+	}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeHTTPRequest(meal.ID.String(), "this is rice"), userID))
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 when the custom-food fetch fails, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded database.FoodMeal
+	if err := st.DB().Preload("Items").Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if reloaded.Status != database.MealStatusConfirmed {
+		t.Errorf("expected meal status unchanged, got %s", reloaded.Status)
+	}
+	if len(reloaded.Items) != 1 || reloaded.Items[0].Name != "Original item" {
+		t.Errorf("expected original item to survive untouched, got %+v", reloaded.Items)
+	}
+	if reloaded.Calories != 400 {
+		t.Errorf("expected confirmed meal's aggregate to survive untouched, got %v", reloaded.Calories)
+	}
+}
+
 // Regression: when the vision result includes clarification questions,
 // processRecognition used to persist the item replacement/status/aggregate
 // (persistAnalysis) and the clarify_log (appendPendingQuestions) as two

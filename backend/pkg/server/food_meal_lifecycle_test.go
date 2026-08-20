@@ -1086,11 +1086,15 @@ func TestPatchMealItem_NameAloneDoesNotClearCanonicalName(t *testing.T) {
 	}
 }
 
-// Regression: round-2 review — CanonicalName was only cleared in the Manual
-// branch; rebinding to a different reference food (fdc_id/custom_food_id/
-// off_code) alongside a name change is just as much an identity change and
-// must clear a stale CanonicalName too.
-func TestPatchMealItem_RebindWithNameClearsCanonicalName(t *testing.T) {
+// Regression: a round-4 review "fix" (since reverted) cleared CanonicalName
+// on any rebind+rename, but openspec/specs/food-nutrition-logging's "Correct
+// an already-matched item" scenario is explicit that Canonical Name, if any,
+// is left unchanged when rebinding to a different reference food alongside a
+// name change — it records what recognition originally identified,
+// independent of which reference food the item is later matched to. (The
+// Manual branch is different: see
+// TestPatchMealItem_RenamingItemClearsCanonicalNameOnSavedCustomFood.)
+func TestPatchMealItem_RebindWithNameLeavesCanonicalNameUnchanged(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
 	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
@@ -1125,8 +1129,8 @@ func TestPatchMealItem_RebindWithNameClearsCanonicalName(t *testing.T) {
 	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
 		t.Fatalf("reload item: %v", err)
 	}
-	if updated.CanonicalName != "" {
-		t.Errorf("expected CanonicalName cleared after rebind+rename, got %q", updated.CanonicalName)
+	if updated.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName left unchanged after rebind+rename, got %q", updated.CanonicalName)
 	}
 }
 
