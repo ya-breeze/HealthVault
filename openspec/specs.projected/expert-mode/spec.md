@@ -19,6 +19,12 @@ While Expert Mode is on for a screen, every Food Item or Custom Food shown on th
 display its Canonical Name alongside its Display Name. While Expert Mode is off (the default),
 only the Display Name SHALL be shown.
 
+This toggle is distinct from the `Expert` authoring mode of the reanalysis correction interface
+(see `food-photo-recognition` "Expert Component Guidance for Reanalysis"), which sits on the same
+screen: that one changes what is submitted for analysis, this one only changes what an already-
+analyzed screen displays. Because both are visible at once on the review screen, the toggle's
+visible label SHALL state what it reveals rather than reading as an unqualified "Expert" control.
+
 #### Scenario: Enabling Expert Mode on the confirmation screen
 
 - **WHEN** a user enables Expert Mode on the meal confirmation screen
