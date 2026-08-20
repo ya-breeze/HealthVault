@@ -45,6 +45,13 @@ When no custom food clears the fuzzy-name match threshold, and the recognizing u
 
 When the recognizing user's Display Language is non-English, the system SHALL NOT query Open Food Facts or USDA for that item regardless of brand — both are English-vocabulary reference databases, and no attempt is made to translate the Display Name back to English for matching. An item in this case that also found no fuzzy-name or frequency/recency-ranked custom-food candidate SHALL fall through directly to the macro-estimate fallback (see `food-photo-recognition` "Macro Estimate Fallback for Unmatched Items"), the same as an item with an empty candidate shortlist for any other reason.
 
+This language gate SHALL apply only to items whose names were produced by vision recognition. Component names typed by the user through Expert Mode reanalysis SHALL be routed as English regardless of that user's Display Language, and both reference databases SHALL remain available to them. The gate exists because a *vision-generated* Display Name is, by construction, non-English text that these English-vocabulary indexes cannot match; an expert-supplied component name carries no such guarantee, since the user types it in whatever language they choose independently of the UI language they read. Applying the gate there would suppress a USDA match for an ingredient the user typed in English — "Greek yogurt" — merely because their interface is set to Russian, which the gate's own rationale does not support. The consequence to accept deliberately: a component typed in Cyrillic is submitted to the reference indexes, where it will ordinarily retrieve nothing and fall through to selection's explicit non-match.
+
+#### Scenario: Expert Mode component names reach the reference databases in any Display Language
+
+- **WHEN** a user whose Display Language is non-English submits an Expert Mode reanalysis whose typed component names are in English
+- **THEN** the system queries Open Food Facts and USDA for those components exactly as it would for a user whose Display Language is English, rather than suppressing both and falling through to the macro-estimate fallback
+
 The candidate shortlist offered for selection SHALL be accompanied by the recognized item's own name and (when extracted) brand, not offered as anonymous candidates keyed only by item index — the model comparing candidates needs to know what it is comparing them against, which matters most when several Open Food Facts candidates share the same brand and differ only in which specific product was actually photographed.
 
 #### Scenario: Custom food takes precedence
