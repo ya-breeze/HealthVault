@@ -45,6 +45,21 @@ const en = {
   'review.noItems': 'No items.',
   'review.confirmMeal': 'Confirm Meal',
   'review.confirming': 'Confirming…',
+  // Toast labels and error fallbacks raised by ReviewClient's own mutations.
+  // Every per-item toast label already arrived translated from MealItemRow,
+  // but they all funnel through applyMealUpdate, whose default label and
+  // failure toast were hardcoded — so a Russian user's failed weight edit
+  // reported itself in English on an otherwise fully Russian screen, which is
+  // exactly the moment the message most needs to be readable. Found in code
+  // review.
+  'review.saved': 'Saved',
+  'review.updateFailed': 'Update failed',
+  'review.loadFailed': 'Failed to load meal',
+  'review.analysisRetried': 'Analysis retried',
+  'review.retryFailed': 'Retry failed',
+  'review.clarificationSubmitted': 'Clarification submitted',
+  'review.mealConfirmed': 'Meal confirmed',
+  'review.confirmFailed': 'Confirm failed',
 
   'item.resolve': 'Resolve this item',
   'item.verifyEstimate': 'Verify this estimate',

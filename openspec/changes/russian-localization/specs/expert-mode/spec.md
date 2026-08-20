@@ -2,9 +2,12 @@
 
 ### Requirement: Per-Screen Expert Mode Toggle
 
-The frontend SHALL provide an Expert Mode toggle, independently available on the meal
-recognition/confirmation screen, the food history detail view, and the Custom Food catalog
-screen. Expert Mode state SHALL be held only in client-side UI state for the current screen — it
+The frontend SHALL provide an Expert Mode toggle, independently available on every screen that
+displays Food Item or Custom Food names: the meal recognition/confirmation screen and the Custom
+Food catalog screen. The food history list is deliberately not one of them — it shows meal names
+and daily totals, never an individual Food Item's name, and opening a meal from it navigates to the
+recognition/confirmation screen, which carries the toggle. Expert Mode state SHALL be held only in
+client-side UI state for the current screen — it
 SHALL NOT be persisted to `UserSettings`, a URL parameter, or any other storage, so it resets to
 off on every page load or navigation.
 
@@ -42,9 +45,9 @@ visible label SHALL state what it reveals rather than reading as an unqualified 
 
 #### Scenario: Expert Mode on one screen does not affect another
 
-- **WHEN** a user enables Expert Mode on the food history detail view
-- **THEN** the Custom Food catalog screen and the confirmation screen SHALL each independently
-  still have Expert Mode off unless separately enabled
+- **WHEN** a user enables Expert Mode on the Custom Food catalog screen
+- **THEN** the meal recognition/confirmation screen SHALL still have Expert Mode off unless
+  separately enabled there
 
 #### Scenario: An item with no recorded Canonical Name shows only its Display Name in Expert Mode
 

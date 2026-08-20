@@ -1222,6 +1222,8 @@ func TestPatchMealItem_CanonicalNameFieldRejected(t *testing.T) {
 // A case-variant key must be rejected the same as the lowercase field —
 // encoding/json's own case-insensitive struct-field matching, not manual
 // string comparison, is what closes this; see patchItemRequest.CanonicalName.
+// Note the variant here keeps the underscore: that fallback match is a fold,
+// not a general spelling match, so it is case that varies and nothing else.
 func TestPatchMealItem_CanonicalNameFieldRejectedCaseInsensitive(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
@@ -1235,6 +1237,41 @@ func TestPatchMealItem_CanonicalNameFieldRejectedCaseInsensitive(t *testing.T) {
 	h.PatchMealItem(w, withClaims(r, userID))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// The boundary of the rule above, pinned so it cannot be misread again: a
+// differently-*spelled* key such as "canonicalName" is not the documented
+// `canonical_name` field, so encoding/json's fold never matches it (the two
+// names have different lengths) and it is ignored as an unknown key like any
+// other, leaving the rest of the request to apply normally. An earlier
+// version of patchItemRequest's doc comment claimed such keys were caught
+// too; this test exists so the claim and the behavior cannot drift apart
+// again. Found in code review.
+func TestPatchMealItem_DifferentlySpelledCanonicalNameKeyIsIgnored(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"name": "Chicken thigh", "canonicalName": "chicken thigh",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded database.FoodItem
+	if err := st.DB().Where("id = ?", meal.Items[0].ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if reloaded.Name != "Chicken thigh" {
+		t.Errorf("expected the rename to apply, got name %q", reloaded.Name)
+	}
+	if reloaded.CanonicalName != "" {
+		t.Errorf("expected the unknown key to have no effect, got CanonicalName %q", reloaded.CanonicalName)
 	}
 }
 

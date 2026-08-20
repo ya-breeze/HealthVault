@@ -1,5 +1,44 @@
 ## MODIFIED Requirements
 
+### Requirement: Custom User Food Entry and Correction
+The system SHALL allow users to store custom foods with per-100g macro profiles, for example from packaged food labels, scoped to the owning user. Custom food names SHALL be unique per user, and the system SHALL provide update and delete alongside create and list.
+
+Both properties follow from precedence: a custom food shadows every USDA entry sharing its name. Without per-user name uniqueness, two custom foods called "yogurt" make the winning match arbitrary. Without update and delete, a custom food saved with a mistyped macro value permanently poisons matching for that name with no in-app way to correct it.
+
+Updating a custom food to a different name SHALL clear its Canonical Name, for the same reason a hand-corrected and renamed item loses one (see `food-nutrition-logging` "Item Resolution"): the recorded English gloss described the old name, and pairing it with the new one in Expert Mode would assert an identity the system never established. Names SHALL be compared case-insensitively, so a pure capitalization fix does not cost the user their Canonical Name. Unlike a meal item's PATCH, this endpoint has no rename-only mode — it is a full-resource update — so every name change here is the identity-replacing case.
+
+#### Scenario: Custom food creation
+- **WHEN** a user saves a custom food with a name and per-100g macro values
+- **THEN** the system stores it scoped to that user and makes it available to subsequent searches and matching
+
+#### Scenario: Duplicate custom food name rejected
+- **WHEN** a user saves a custom food whose name matches one they already own, ignoring case
+- **THEN** the system returns HTTP 409 and does not create a second entry
+
+#### Scenario: Correct a mistyped custom food
+- **WHEN** the owner updates a custom food's macro values
+- **THEN** subsequent matches use the corrected values
+
+#### Scenario: Renaming a custom food clears its Canonical Name
+- **WHEN** the owner updates a custom food that carries a Canonical Name, supplying a name that differs from its current one by more than capitalization
+- **THEN** the system stores the new name and clears the Canonical Name, rather than showing the new name paired with the previous name's English gloss in Expert Mode
+
+#### Scenario: Recapitalizing a custom food keeps its Canonical Name
+- **WHEN** the owner updates a custom food that carries a Canonical Name, supplying a name that differs from its current one only in capitalization
+- **THEN** the system stores the new name and leaves the Canonical Name in place, since a capitalization fix is not an identity change
+
+#### Scenario: Delete a custom food restores USDA matching
+- **WHEN** the owner deletes a custom food
+- **THEN** it no longer shadows USDA entries and a later search for that name returns USDA candidates
+
+#### Scenario: Cross-user custom food isolation
+- **WHEN** a user searches for foods
+- **THEN** the results include only their own custom foods and never another user's
+
+#### Scenario: Cross-user custom food mutation
+- **WHEN** a user attempts to update or delete a custom food owned by another user
+- **THEN** the system returns HTTP 404 and the record is unchanged
+
 ### Requirement: Match Selection and Explicit Non-Match
 
 The system SHALL resolve a recognized food name to a reference food by offering a retrieved candidate shortlist for selection, and SHALL record an explicit non-match rather than binding to a low-ranked candidate. Custom foods owned by the user SHALL take precedence in the shortlist over both other sources. A case-insensitive fuzzy name match against the user's custom foods — similarity at or above a fixed threshold against the item's Display Name, highest similarity wins when multiple clear the threshold — SHALL be offered as the sole candidate for that item — Open Food Facts and USDA SHALL NOT also be queried for it — though this remains a candidate offered to the same selection call as every other item, not a bypass of selection itself.

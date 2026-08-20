@@ -46,10 +46,19 @@ type patchItemRequest struct {
 
 	// CanonicalName is never read or applied — the field exists only so a
 	// caller-supplied canonical_name can be detected and rejected below
-	// instead of a bare Unmarshal silently discarding it. encoding/json
-	// matches a JSON object key to this field case-insensitively when there
-	// is no exact-case match on another field, so "CanonicalName" is caught
-	// the same as "canonical_name". See
+	// instead of a bare Unmarshal silently discarding it.
+	//
+	// encoding/json falls back to a case-insensitive key match when no field
+	// matches exactly, so "Canonical_Name" and "CANONICAL_NAME" are caught
+	// alongside "canonical_name". That fallback is a *fold*, not a general
+	// spelling match: it compares the two names character by character and
+	// they must run out together, so "CanonicalName" and "canonicalName" do
+	// not match this field and are ignored as unknown keys, the same as any
+	// other key this struct does not declare. That is the intended boundary —
+	// the requirement below is about the `canonical_name` field this API
+	// documents, and a differently-spelled key is not that field. (An earlier
+	// version of this comment claimed "CanonicalName" was caught too; it is
+	// not. Corrected in code review.) See
 	// openspec/specs/food-nutrition-logging "A canonical_name field on the
 	// request is rejected": Canonical Name is produced only at recognition
 	// time and is not user-editable through this endpoint.

@@ -75,16 +75,16 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     return claimSlot(issue)
       .then(result => {
         setMeal(result);
-        showToast(label ?? 'Saved', 'success');
+        showToast(label ?? t('review.saved'), 'success');
         return result;
       })
       .catch(err => {
         if (!mealGoneRef.current) {
-          showToast('Update failed', 'error');
+          showToast(t('review.updateFailed'), 'error');
         }
         throw err;
       });
-  }, [claimSlot, showToast]);
+  }, [claimSlot, showToast, t]);
 
   // Same ordering guarantee as applyMealUpdate above, via the shared
   // claimSlot primitive, but without a FoodMeal result to apply, since a
@@ -122,7 +122,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     setLoadError(null);
     api.getMeal(mealId)
       .then(setMeal)
-      .catch(err => setLoadError(err instanceof Error ? err.message : 'Failed to load meal'))
+      .catch(err => setLoadError(err instanceof Error ? err.message : t('review.loadFailed')))
       .finally(() => setLoading(false));
   };
 
@@ -132,25 +132,25 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     setBusy(true);
     setActionError(null);
     try {
-      await applyMealUpdate(() => api.retryMeal(mealId), 'Analysis retried');
+      await applyMealUpdate(() => api.retryMeal(mealId), t('review.analysisRetried'));
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Retry failed');
+      setActionError(err instanceof Error ? err.message : t('review.retryFailed'));
     } finally {
       setBusy(false);
     }
   };
 
   const handleClarify = async (answers: string[]) => {
-    await applyMealUpdate(() => api.clarifyMeal(mealId, answers), 'Clarification submitted');
+    await applyMealUpdate(() => api.clarifyMeal(mealId, answers), t('review.clarificationSubmitted'));
   };
 
   const handleConfirm = async () => {
     setBusy(true);
     setActionError(null);
     try {
-      await applyMealUpdate(() => api.confirmMeal(mealId), 'Meal confirmed');
+      await applyMealUpdate(() => api.confirmMeal(mealId), t('review.mealConfirmed'));
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Confirm failed');
+      setActionError(err instanceof Error ? err.message : t('review.confirmFailed'));
     } finally {
       setBusy(false);
     }

@@ -50,7 +50,9 @@
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
   --color-accent: var(--accent);
-  --font-sans: var(--font-body);
+  /* --font-body-cyrillic sits second so it is only ever reached for glyphs
+     --font-body has none of — Cyrillic, in practice. See layout.tsx. */
+  --font-sans: var(--font-body), var(--font-body-cyrillic);
   --font-mono: var(--font-data);
 }
 
@@ -95,5 +97,5 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-body), ui-sans-serif, sans-serif;
+  font-family: var(--font-body), var(--font-body-cyrillic), ui-sans-serif, sans-serif;
 }

@@ -33,7 +33,7 @@ A Food Item's English name, produced by the AI alongside the Display Name in the
 _Avoid_: English name, technical name
 
 **Expert Mode**:
-A per-screen, non-persisted view toggle (recognition/confirmation, food history, Custom Food catalog) that reveals a Food Item's Canonical Name alongside its Display Name. Strictly a *view* toggle: it changes what a screen shows and never what is stored or sent.
+A per-screen, non-persisted view toggle (recognition/confirmation and Custom Food catalog — the two screens that show individual food names; the food history list shows only meal names and links into the former) that reveals a Food Item's Canonical Name alongside its Display Name. Strictly a *view* toggle: it changes what a screen shows and never what is stored or sent.
 _Avoid_: Technical view, debug mode. Also do not shorten it to "Expert" — reanalysis already has an unrelated **Expert** authoring mode (see below), and on the review screen both are visible at once.
 
 **Expert (reanalysis mode)**:
