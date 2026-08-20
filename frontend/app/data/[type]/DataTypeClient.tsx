@@ -257,11 +257,17 @@ export default function DataTypeClient({ type }: Props) {
   // each chart, not defaulted toward zero. Cumulative types (bar charts) are
   // deliberately excluded and keep their zero-anchored default. See
   // chart-zoom-aggregation's "Point-in-time Y-axis domain" requirement.
+  // Routed through numDisplay (not num()) for the same reason the plotted
+  // series is: currently a no-op for every 'point'-family type (toDisplayUnit
+  // only converts distance/sleep, both 'cumulative'), but a code-review pass
+  // flagged that leaving these on raw num() would silently desync the axis
+  // range from the data the moment any point-family type gains a unit
+  // conversion — keeping both on the same helper closes that off structurally.
   const dayDomain = useMemo(() => {
     if (meta?.family !== 'point') return undefined;
     const values = isBloodPressure
-      ? records.flatMap(r => [num(r.systolic), num(r.diastolic)])
-      : (numericKey ? records.map(r => num(r[numericKey])) : []);
+      ? records.flatMap(r => [numDisplay(r.systolic), numDisplay(r.diastolic)])
+      : (numericKey ? records.map(r => numDisplay(r[numericKey])) : []);
     return computeYDomain(values);
   }, [meta, isBloodPressure, records, numericKey]);
 
@@ -269,9 +275,9 @@ export default function DataTypeClient({ type }: Props) {
     if (meta?.family !== 'point') return undefined;
     const values = isBloodPressure
       ? visibleChartRows.flatMap(r => [
-          num(r.systolic_min), num(r.systolic_max), num(r.diastolic_min), num(r.diastolic_max),
+          numDisplay(r.systolic_min), numDisplay(r.systolic_max), numDisplay(r.diastolic_min), numDisplay(r.diastolic_max),
         ])
-      : visibleChartRows.flatMap(r => [num(r.min), num(r.max)]);
+      : visibleChartRows.flatMap(r => [numDisplay(r.min), numDisplay(r.max)]);
     return computeYDomain(values);
   }, [meta, isBloodPressure, visibleChartRows]);
 

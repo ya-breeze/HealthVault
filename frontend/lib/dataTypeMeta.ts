@@ -95,12 +95,18 @@ export function toDisplayUnit(type: DataType, raw: number): number {
  * matching toFixed's rounding for everything else — this is what lets the
  * vitals-grid refactor (see extractVital in vitals.ts) reuse this helper
  * without changing steps' previously-hardcoded `.toLocaleString()` output.
+ * Pinned to the 'en-US' locale rather than the browser's — design.md's
+ * "Locale-aware number formatting ... out of scope, matches current
+ * behavior" non-goal means this must not introduce a locale-dependent
+ * decimal separator (e.g. ',' instead of '.') for the many types that
+ * previously used a fixed-locale toFixed(1); a code-review pass caught this
+ * regressing on the initial `toLocaleString(undefined, ...)` draft.
  * Callers are responsible for passing an already-display-unit value (see
  * toDisplayUnit above) — this function only rounds, it never converts units.
  */
 export function formatMetricValue(type: DataType, value: number): string {
   const decimals = TYPE_META[type]?.decimals ?? 0;
-  return value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
 export const NUTRITION_MACROS = [
