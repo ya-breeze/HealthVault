@@ -22,31 +22,45 @@ const barlow = Barlow({
   // *inside* this variable, because globals.css sets `--font-sans` to
   // `var(--font-body)` and never chains anything of its own after it.
   //
-  // Mechanically, next/font builds the family list as
-  //   [fontFamily, ...adjustFontFallbackFamily, ...fallbackFonts]
-  // (node_modules/next/dist/build/webpack/loaders/next-font-loader/
-  // postcss-next-font.js:110-116), so entries named here are *appended* after
-  // any generated metric-adjusted companion — they do not replace it. Here
-  // there is nothing to sit behind: a companion is only generated for a
-  // family present in next/dist/server/capsize-font-metrics.json, and Barlow
-  // is not in that table, so no "Barlow Fallback" face exists. The emitted
-  // variable is exactly `"Barlow", Inter, Inter Fallback`.
-  //
-  // "Inter Fallback" is next/font's generated companion to interCyrillic
-  // below — Inter *is* in the metrics table — and it backstops the stack
-  // while the webfonts load.
+  // "Inter Fallback" is next/font's generated metric-adjusted companion to
+  // interCyrillic below, and it backstops the stack while the webfonts load.
   //
   // Verify with: grep -o -- '--font-body:[^;}]*' .next/static/chunks/*.css
-  //
-  // This comment previously claimed the opposite of all of the above — that
-  // Barlow got a generated Arial-backed companion which swallowed Cyrillic,
-  // that `fallback` replaces rather than appends, and that
-  // `adjustFontFallback` is dead code in 16.2.9 — with a fabricated
-  // "verified by building with it set" note attached. None of it was true;
-  // `adjustFontFallback` is live and referenced across 18 files under
-  // next/dist. The arrangement below works, but it never worked for the
-  // stated reason. Corrected in code review.
   fallback: ["Inter", "Inter Fallback"],
+  // Suppresses the metric-adjusted companion next/font would otherwise
+  // generate for Barlow itself. That companion is
+  //   @font-face{font-family:Barlow Fallback;src:local("Arial");…}
+  // with **no unicode-range**, so it matches every codepoint there is,
+  // Cyrillic included — and the webpack loader inserts it *ahead* of the
+  // families named in `fallback`:
+  //   [fontFamily, ...adjustFontFallbackFamily, ...fallbackFonts]
+  // (node_modules/next/dist/build/webpack/loaders/next-font-loader/
+  // postcss-next-font.js:110-116). Russian text then resolves to Arial before
+  // Inter is ever consulted, which is the exact bug this whole arrangement
+  // exists to fix. Confirmed by building both ways:
+  //   next build            → --font-body:"Barlow", Inter, Inter Fallback
+  //   next build --webpack  → --font-body:"Barlow","Barlow Fallback",Inter,…
+  // Turbopack, this project's default, happens to replace the companion when
+  // an explicit `fallback` is given rather than prepending to it, so the bug
+  // was latent behind a build flag rather than visible. This flag removes it
+  // structurally instead of relying on which bundler ran.
+  //
+  // The cost is that Barlow keeps no metric-adjusted backstop of its own, so
+  // Latin text is backstopped by Inter Fallback, whose overrides are computed
+  // for Inter (107.12% ascent vs Barlow's 103.43%) — a small layout shift
+  // while Barlow loads. Accepted deliberately: that is already exactly what
+  // ships today under Turbopack, and Cyrillic rendering in the right typeface
+  // is what this change is for.
+  //
+  // This comment has been wrong twice, in opposite directions, before this
+  // note. It first claimed Barlow *did* get an Arial companion but that
+  // `fallback` replaced it — with a fabricated "verified by building" claim
+  // attached. It was then "corrected" to say Barlow is absent from
+  // next/dist/server/capsize-font-metrics.json so no companion exists at all;
+  // that is also false — the table keys are camelCased, and `barlow` is right
+  // there beside `inter`. Both readings were guesses at a mechanism that a
+  // two-line build would have settled. Corrected in code review.
+  adjustFontFallback: false,
 });
 
 // Cyrillic companion to Barlow, supplying the glyphs Barlow has none of.

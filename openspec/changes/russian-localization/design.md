@@ -44,10 +44,14 @@ the column itself is untouched. This is the additive, zero-migration-risk path.
 
 `CanonicalName` is empty for pre-existing rows (recognized before this change) and for any English-
 Display-Language recognition where Display Name and Canonical Name are identical — no need to
-duplicate storage when they're the same string. Expert Mode falls back to showing `Name` when
-`CanonicalName` is empty, which is correct in both cases (nothing was lost; there was nothing to
-show for a pre-existing English-only row anyway — that's the acceptable "VERY rare" English
-fallback the proposal calls out).
+duplicate storage when they're the same string. Expert Mode omits the Canonical Name sub-label
+entirely when `CanonicalName` is empty, showing the Display Name alone rather than an empty or
+placeholder field; see the expert-mode spec's "An item with no recorded Canonical Name shows only
+its Display Name in Expert Mode". That is correct in both cases (nothing was lost; there was
+nothing to show for a pre-existing English-only row anyway — that's the acceptable "VERY rare"
+English fallback the proposal calls out). This paragraph previously described it as falling back
+to *showing* `Name` in the Canonical Name position, contradicting both the spec scenario and
+`CanonicalNameLabel.tsx`, which returns null. Corrected in code review.
 
 Alternative considered: rename `Name` → `DisplayName` via a hand-written migration. Rejected —
 this project has no migration framework beyond `AutoMigrate`, and introducing one for a single
