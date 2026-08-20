@@ -652,12 +652,33 @@ func fuzzyCustomFoodMatch(
 		if score < fuzzyMatchThreshold {
 			continue
 		}
-		if !found || score > bestScore ||
-			(score == bestScore && usageByID[f.ID].LastUsed.After(usageByID[best.ID].LastUsed)) {
+		if !found || fuzzyMatchBetter(f, score, best, bestScore, usageByID) {
 			best, bestScore, found = f, score, true
 		}
 	}
 	return best, found
+}
+
+// fuzzyMatchBetter reports whether candidate f (scoring score) should
+// replace best (scoring bestScore) as the current-best fuzzy match: a higher
+// score wins outright; a tied score is broken by most-recently-used (design.md
+// decision 5); and a tie on that too — e.g. two never-logged custom foods,
+// both with a zero usageByID LastUsed — falls back to CustomFoodID, so the
+// result is deterministic across otherwise-identical requests instead of
+// depending on customFoodsForUser's unordered row return order. Mirrors
+// rankedCustomFoodCandidates's identical CustomFoodID tie-breaker.
+func fuzzyMatchBetter(
+	f database.CustomFood, score float64, best database.CustomFood, bestScore float64,
+	usageByID map[uuid.UUID]customFoodUsage,
+) bool {
+	if score != bestScore {
+		return score > bestScore
+	}
+	fLast, bLast := usageByID[f.ID].LastUsed, usageByID[best.ID].LastUsed
+	if !fLast.Equal(bLast) {
+		return fLast.After(bLast)
+	}
+	return f.ID.String() < best.ID.String()
 }
 
 func (h *foodHandlers) profileForCandidate(userID uuid.UUID, c vision.Candidate) (database.NutrientProfile, bool) {

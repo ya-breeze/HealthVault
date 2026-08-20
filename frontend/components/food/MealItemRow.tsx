@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError, FoodItem, FoodMeal, FoodSearchResult } from '@/lib/api';
 import ItemResolver from './ItemResolver';
 import TapTarget from '@/components/ui/TapTarget';
+import CanonicalNameLabel from '@/components/food/CanonicalNameLabel';
 import { useLanguage } from '@/components/LanguageContext';
 
 interface Props {
@@ -165,11 +166,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-gray-900 dark:text-white break-words">{item.name}</p>
-          {expertMode && item.canonical_name && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 italic break-words">
-              {t('expertMode.canonicalNamePrefix')} {item.canonical_name}
-            </p>
-          )}
+          <CanonicalNameLabel expertMode={expertMode} canonicalName={item.canonical_name} />
           <span className={`inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded ${SOURCE_COLOR[item.macro_source]}`}>
             {SOURCE_LABEL[item.macro_source]}
           </span>

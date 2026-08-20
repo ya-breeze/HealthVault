@@ -87,6 +87,26 @@ func TestOpenAIClient_Recognize_SetsStoreFalseAndSendsImage(t *testing.T) {
 	}
 }
 
+// Regression for a code-review finding: display_name went straight into
+// Item.Name with no TrimSpace, unlike its CanonicalName/Brand siblings on the
+// same struct literal — so incidental model whitespace could flow all the
+// way to a save-as-custom-food CustomFood.Name, later tripping
+// UpdateCustomFood's trimmed-comparison rename check as a false-positive.
+func TestOpenAIClient_Recognize_TrimsDisplayNameWhitespace(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"  chicken breast  ","canonical_name":"","preparation":"roasted","state":"cooked","weight_grams":180,"confidence":0.9}],"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{0xFF, 0xD8, 0xFF}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Name != "chicken breast" {
+		t.Fatalf("expected trimmed name %q, got %+v", "chicken breast", result.Items)
+	}
+}
+
 func TestOpenAIClient_Recognize_EstimatedProfileParsed(t *testing.T) {
 	var capturedBody map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

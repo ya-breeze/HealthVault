@@ -321,6 +321,21 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		}
 		observedUpdatedAt := item.UpdatedAt
 
+		// identityChanged marks the two branches below that replace the item's
+		// identity outright (a manual correction, or rebinding to a different
+		// reference food) — as opposed to a plain weight edit, which doesn't.
+		// A name change alongside an identity change invalidates whatever
+		// Canonical Name recognition produced for the old name — carrying it
+		// forward would pair the new name with a stale, unrelated English
+		// gloss, including onto a new CustomFood via save_as_custom_food
+		// below — so both branches set this instead of separately duplicating
+		// the same clearing logic, and the actual clear happens once, after
+		// the switch. Scoped to these two branches only, not the bare-rename
+		// case below the switch: a rename with no other field must leave
+		// Canonical Name untouched — see
+		// openspec/specs/food-nutrition-logging "Renaming an item does not
+		// require touching its macros".
+		identityChanged := false
 		switch {
 		case req.Manual:
 			item.FdcID = nil
@@ -337,20 +352,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.SugarGrams = req.SugarGrams
 			item.SodiumGrams = req.SodiumGrams
 			item.DietaryFiberGrams = req.DietaryFiberGrams
-			// A manual correction replaces the item's identity outright, so a
-			// name change alongside it invalidates whatever Canonical Name
-			// recognition produced for the old name — carrying it forward
-			// would pair the new name with a stale, unrelated English gloss,
-			// including onto a new CustomFood via save_as_custom_food below.
-			// Same reasoning applies below to a fdc_id/custom_food_id/off_code
-			// rebind: it too replaces the item's identity. Scoped to these two
-			// identity-changing branches only, not the bare-rename case below the
-			// switch: a rename with no other field must leave Canonical Name
-			// untouched — see openspec/specs/food-nutrition-logging "Renaming an
-			// item does not require touching its macros".
-			if hasName {
-				item.CanonicalName = ""
-			}
+			identityChanged = true
 		case req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil:
 			if req.WeightGrams != nil {
 				item.WeightGrams = *req.WeightGrams
@@ -374,11 +376,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.CustomFoodID = req.CustomFoodID
 			item.OffCode = req.OffCode
 			item.ApplyProfile(profile)
-			// See the identical rationale in the Manual case above: rebinding to
-			// a different reference food is also an identity change.
-			if hasName {
-				item.CanonicalName = ""
-			}
+			identityChanged = true
 		case req.WeightGrams != nil:
 			item.WeightGrams = *req.WeightGrams
 			switch item.MacroSource {
@@ -397,6 +395,9 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				}
 				item.ApplyEstimatedProfile()
 			}
+		}
+		if identityChanged && hasName {
+			item.CanonicalName = ""
 		}
 
 		if req.Name != nil {

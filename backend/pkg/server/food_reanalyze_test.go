@@ -107,6 +107,45 @@ func TestReanalyze_ExpertCanEstimateEveryWeight(t *testing.T) {
 	}
 }
 
+// Expert Mode's free-text component names are typed directly by the user,
+// independent of their display_language setting — unlike a vision-recognized
+// Display Name, they carry no language-translation problem for USDA/OFF to
+// stumble over. resolveItems's non-English gate (design.md decision 4) must
+// not apply to them: a Russian-display-language user typing an English
+// ingredient name here should still get a USDA match, not fall straight to
+// the macro-estimate fallback. Regression for a code-review finding where
+// runExpertAnalysis passed the user's actual display_language straight
+// through, incorrectly skipping USDA/OFF for this text.
+func TestReanalyze_ExpertComponentMatchesUSDADespiteNonEnglishDisplayLanguage(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 0, "")
+
+	putH := server.PutUserSettingsHandler(st)
+	w := httptest.NewRecorder()
+	putH.ServeHTTP(w, withClaims(httptest.NewRequest(http.MethodPut, "/api/users/me/settings", strings.NewReader(`{"display_language":"ru"}`)), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT settings: expected 200, got %d", w.Code)
+	}
+
+	idx := buildUSDAIndex(t, usdaFood(42, "Chicken breast", 165))
+	fake := &vision.Fake{SelectResult: &vision.SelectResult{
+		Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+	}}
+	h := server.NewFoodHandlers(st, idx, dir).WithVision(fake, 10<<20, time.Minute)
+	w2 := httptest.NewRecorder()
+	h.Reanalyze(w2, withClaims(reanalyzeJSONRequest(meal.ID.String(), `{"components":[{"name":"Chicken breast","weight_grams":180}]}`), userID))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w2.Body).Decode(&got) //nolint:errcheck
+	if len(got.Items) != 1 || got.Items[0].FdcID == nil || *got.Items[0].FdcID != 42 {
+		t.Fatalf("expected the expert component matched to the USDA candidate despite ru display_language, got %+v", got.Items)
+	}
+}
+
 func TestReanalyze_RequiresExactlyOneModeBeforeClaim(t *testing.T) {
 	cases := []string{
 		`{}`,

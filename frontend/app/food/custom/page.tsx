@@ -7,6 +7,7 @@ import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import ExpertModeToggle from '@/components/food/ExpertModeToggle';
+import CanonicalNameLabel from '@/components/food/CanonicalNameLabel';
 
 export default function CustomFoodsPage() {
   const router = useRouter();
@@ -89,11 +90,7 @@ export default function CustomFoodsPage() {
             <div key={f.id} className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-900 dark:text-white">{f.name}</p>
-                {expertMode && f.canonical_name && (
-                  <p className="text-xs text-gray-400 dark:text-gray-500 italic">
-                    {t('expertMode.canonicalNamePrefix')} {f.canonical_name}
-                  </p>
-                )}
+                <CanonicalNameLabel expertMode={expertMode} canonicalName={f.canonical_name} />
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {Math.round(f.calories_per_100g)} kcal/100g
                 </p>

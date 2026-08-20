@@ -60,12 +60,16 @@ to proceed, list one or two short clarification_questions for the user
 instead of guessing. Otherwise leave clarification_questions empty.`
 
 // IsEnglishDisplayLanguage reports whether displayLanguage means English —
-// either explicitly ("en") or by the empty-string default used throughout
+// either explicitly ("en", case-insensitively — the frontend only ever
+// writes exact lowercase "en", but display_language is an unvalidated,
+// caller-supplied opaque-settings string, so a stray "En"/"EN" from a
+// non-frontend caller must still be recognized rather than silently treated
+// as some other language) or by the empty-string default used throughout
 // this codebase for "no display_language setting saved yet". Exported so
 // server package callers (e.g. food_upload.go's reference-DB skip gate) share
 // this exact definition rather than re-deriving it.
 func IsEnglishDisplayLanguage(displayLanguage string) bool {
-	return displayLanguage == "" || displayLanguage == "en"
+	return displayLanguage == "" || strings.EqualFold(displayLanguage, "en")
 }
 
 // languageDirective tells the model what language to write display_name in
@@ -341,7 +345,7 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration, disp
 			canonicalName = ""
 		}
 		items[i] = Item{
-			Name:             it.DisplayName,
+			Name:             strings.TrimSpace(it.DisplayName),
 			CanonicalName:    canonicalName,
 			Preparation:      unknownToEmpty(it.Preparation),
 			State:            unknownToEmpty(it.State),

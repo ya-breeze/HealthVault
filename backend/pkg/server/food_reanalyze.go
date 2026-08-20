@@ -369,8 +369,22 @@ func (h *foodHandlers) runExpertAnalysis(
 		raw = result.Raw
 	}
 
-	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
-	resolved, err := h.resolveItems(ctx, meal, items, true, displayLanguage)
+	// Passes "en", not the user's actual display_language: resolveItems only
+	// consumes this to gate Open Food Facts/USDA querying (design.md decision
+	// 4), a gate whose entire rationale is that a *vision-recognized* Display
+	// Name is English-vocabulary reference-DB-unmatchable text in a non-English
+	// script. These component names are the exact opposite — typed directly by
+	// the user via the Expert Mode free-text/component input, in whatever
+	// language they chose to type, independent of their display_language
+	// setting. Gating USDA/OFF lookups on display_language here would skip
+	// reference-DB matching for an English ingredient name (e.g. "Greek
+	// yogurt") just because the user's UI happens to be set to Russian, even
+	// though the gate's own purpose has nothing to do with this text. Forcing
+	// "en" here restores full USDA/OFF matching for expert-supplied names
+	// regardless of display_language, while leaving the fuzzy custom-food
+	// match (language-agnostic already) and every other resolveItems behavior
+	// unaffected.
+	resolved, err := h.resolveItems(ctx, meal, items, true, "en")
 	if err != nil {
 		return err
 	}

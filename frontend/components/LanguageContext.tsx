@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { api, UserSettings } from '@/lib/api';
 import { DICTIONARIES, LanguageCode, isSupportedLanguage } from '@/lib/i18n';
@@ -135,8 +135,26 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     [language]
   );
 
+  // Keeps the <html lang> attribute (static "en" markup in the root layout,
+  // which has no wiring to this provider's runtime language state) in sync
+  // with the user's actual Display Language, so screen readers and browser
+  // translate/spell-check tooling treat Russian-rendered content as Russian
+  // rather than as English — the exact audience this feature targets.
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
+  // Memoized so consumers (Header, MealItemRow per item, ExpertModeToggle,
+  // ReviewClient, custom/history pages) don't all re-render on every
+  // navigation just because this provider re-renders (its own pathname
+  // effect above fires on every route change) — without this, a fresh
+  // object literal here would give the context value a new identity on
+  // every render even though language/setLanguage/t are themselves already
+  // stable/unchanged.
+  const value = useMemo(() => ({ language, setLanguage, t }), [language, setLanguage, t]);
+
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={value}>
       {children}
     </LanguageContext.Provider>
   );
