@@ -1,5 +1,6 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { api, UserSettings } from '@/lib/api';
 import { DICTIONARIES, LanguageCode, isSupportedLanguage } from '@/lib/i18n';
 
@@ -24,12 +25,23 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<LanguageCode>('en');
   const [settings, setSettings] = useState<UserSettings>({});
+  const pathname = usePathname();
 
   // Renders in English immediately rather than blocking the whole app
   // (including the unauthenticated /login page, where this fetch always
   // 401s) behind this request — the language updates in place once it
   // resolves, the same "render now, reconcile shortly after" pattern
   // app/page.tsx already uses for dashboard_order.
+  //
+  // Refetches on every pathname change, not just once on mount: this
+  // provider lives in the root layout, which the App Router keeps mounted
+  // across client-side navigations — including the redirect from /login to
+  // an authenticated page — so a mount-only fetch would run once, while
+  // still unauthenticated on /login, 401 silently, and never retry, leaving
+  // the language stuck on English for the rest of the session even after a
+  // successful login. Re-running per navigation is cheap (one GET, already
+  // in flight for other reasons on most pages) and matches how Header's own
+  // api.me() check already re-verifies auth on every page mount.
   useEffect(() => {
     api.getSettings()
       .then(s => {
@@ -42,7 +54,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {
         // Stay on the English default — see doc comment above.
       });
-  }, []);
+  }, [pathname]);
 
   const setLanguage = useCallback(async (code: LanguageCode) => {
     const next: UserSettings = { ...settings, display_language: code };
