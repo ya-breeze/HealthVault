@@ -369,7 +369,8 @@ func (h *foodHandlers) runExpertAnalysis(
 		raw = result.Raw
 	}
 
-	resolved, err := h.resolveItems(ctx, meal, items, true)
+	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
+	resolved, err := h.resolveItems(ctx, meal, items, true, displayLanguage)
 	if err != nil {
 		return err
 	}

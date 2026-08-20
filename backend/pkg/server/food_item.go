@@ -390,6 +390,12 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		if req.Name != nil {
 			if name := strings.TrimSpace(*req.Name); name != "" {
 				item.Name = name
+				// A manual name correction invalidates whatever Canonical
+				// Name recognition produced for the old name — carrying it
+				// forward would pair the new name with a stale, unrelated
+				// English gloss, including onto a new CustomFood via
+				// save_as_custom_food below.
+				item.CanonicalName = ""
 			}
 		}
 
@@ -457,6 +463,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				"macro_source":        item.MacroSource,
 				"weight_grams":        item.WeightGrams,
 				"name":                item.Name,
+				"canonical_name":      item.CanonicalName,
 				"calories":            item.Calories,
 				"protein_grams":       item.ProteinGrams,
 				"carbs_grams":         item.CarbsGrams,

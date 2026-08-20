@@ -62,7 +62,7 @@ The candidate shortlist offered for selection SHALL be accompanied by the recogn
 - **WHEN** the system offers a candidate shortlist for a recognized item to the selection call
 - **THEN** the payload includes that item's recognized Display Name and brand (when extracted), not only its candidates, so the model can compare each candidate against what was actually recognized rather than judging the shortlist in isolation
 
-#### Scenario: Candidate selected from a fuzzy-name deterministic match binds unconditionally
+#### Scenario: Candidate selected from a deterministic exact-name match binds unconditionally
 
 - **WHEN** the vision model is offered the fuzzy-name custom-food candidate shortlist for a recognized item and selects it
 - **THEN** the system binds the item to that custom food and scales its macros from its profile, setting `macro_source = reference`, regardless of whether the item also carries an estimated nutrient profile

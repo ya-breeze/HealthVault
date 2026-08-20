@@ -197,7 +197,7 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 	if err != nil {
 		return err
 	}
-	return h.processRecognition(ctx, meal, recognized, lease, strict)
+	return h.processRecognition(ctx, meal, recognized, lease, strict, displayLanguage)
 }
 
 // processRecognition persists the outcome of a Recognize or Clarify call.
@@ -217,6 +217,7 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 // through to resolveItems.
 func (h *foodHandlers) processRecognition(
 	ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult, lease time.Time, strict bool,
+	displayLanguage string,
 ) error {
 	nextRound := meal.ClarifyRound + 1
 	if len(recognized.ClarificationQuestions) > 0 && nextRound <= database.MaxClarifyRounds {
@@ -228,7 +229,7 @@ func (h *foodHandlers) processRecognition(
 		return h.persistAnalysis(meal, database.MealStatusPendingClarification, recognized.Raw, items, &clarifyLog, lease)
 	}
 
-	items, err := h.resolveItems(ctx, meal, recognized.Items, strict)
+	items, err := h.resolveItems(ctx, meal, recognized.Items, strict, displayLanguage)
 	if err != nil {
 		return err
 	}
@@ -291,19 +292,23 @@ func buildPendingQuestionsLog(existingLog string, round int, questions []string)
 // zero its aggregate) with that unresolved set and report 200, when the
 // correct outcome for a vision-provider failure is 502 with nothing changed.
 func (h *foodHandlers) resolveItems(
-	ctx context.Context, meal *database.FoodMeal, recognizedItems []vision.Item, strict bool,
+	ctx context.Context, meal *database.FoodMeal, recognizedItems []vision.Item, strict bool, displayLanguage string,
 ) ([]database.FoodItem, error) {
 	items := make([]database.FoodItem, len(recognizedItems))
 	candidateSets := make([][]vision.Candidate, len(recognizedItems))
 	exactMatch := make([]bool, len(recognizedItems))
 	itemCandidates := make([]vision.ItemCandidates, 0, len(recognizedItems))
 
-	// Computed once per meal, not per item: rankedCustomFoodCandidates depends
-	// only on userID, so its join+aggregate+sort pipeline would otherwise rerun
-	// identically for every recognized item in the meal (5-8 DB round-trip
-	// pairs for a full plate instead of one).
+	// Computed once per meal, not per item: rankedCustomFoodCandidates and the
+	// user's custom-food catalog (for fuzzyCustomFoodMatch) each depend only
+	// on userID, so re-fetching them per item would otherwise rerun the same
+	// query identically for every recognized item in the meal (multiple extra
+	// DB round-trips for a full plate instead of one).
 	ranked := h.rankedCustomFoodCandidates(meal.UserID)
-	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
+	var customFoods []database.CustomFood
+	if err := h.storage.DB().Where("user_id = ?", meal.UserID).Find(&customFoods).Error; err != nil {
+		customFoods = nil
+	}
 
 	for i, ri := range recognizedItems {
 		item := database.FoodItem{
@@ -317,7 +322,7 @@ func (h *foodHandlers) resolveItems(
 		item.SetEstimatedProfile(ri.EstimatedProfile)
 		items[i] = item
 
-		candidates, exact := h.retrieveCandidates(ranked, meal.UserID, ri.Name, ri.Preparation, ri.State, ri.Brand, displayLanguage)
+		candidates, exact := h.retrieveCandidates(ranked, customFoods, ri.Name, ri.Preparation, ri.State, ri.Brand, displayLanguage)
 		candidateSets[i] = candidates
 		exactMatch[i] = exact
 		if len(candidates) > 0 {
@@ -570,9 +575,9 @@ func (h *foodHandlers) rankedCustomFoodCandidates(userID uuid.UUID) []vision.Can
 // plain append could, when it has spare capacity, overwrite data written by
 // a sibling call for a different item in the same meal.
 func (h *foodHandlers) retrieveCandidates(
-	ranked []vision.Candidate, userID uuid.UUID, name, preparation, state, brand, displayLanguage string,
+	ranked []vision.Candidate, customFoods []database.CustomFood, name, preparation, state, brand, displayLanguage string,
 ) ([]vision.Candidate, bool) {
-	if best, ok := h.fuzzyCustomFoodMatch(userID, name); ok {
+	if best, ok := fuzzyCustomFoodMatch(customFoods, name); ok {
 		id := best.ID
 		return []vision.Candidate{{CustomFoodID: &id, Description: best.Name}}, true
 	}
@@ -610,19 +615,15 @@ func (h *foodHandlers) retrieveCandidates(
 	return ranked, false
 }
 
-// fuzzyCustomFoodMatch scores every one of the user's own custom foods
-// against name (the recognized item's Display Name) and returns the
-// highest-similarity one that clears fuzzyMatchThreshold, or ok=false when
-// none does (including when the user has no custom foods at all). Ties are
-// broken by most-recently-updated — see design.md decision 5. Matching runs
-// against CustomFood.Name (the Display Name), the language the user actually
-// recognizes their own catalog entries in.
-func (h *foodHandlers) fuzzyCustomFoodMatch(userID uuid.UUID, name string) (database.CustomFood, bool) {
-	var foods []database.CustomFood
-	if err := h.storage.DB().Where("user_id = ?", userID).Find(&foods).Error; err != nil || len(foods) == 0 {
-		return database.CustomFood{}, false
-	}
-
+// fuzzyCustomFoodMatch scores every one of foods (the caller's own custom
+// foods, fetched once per meal — see resolveItems) against name (the
+// recognized item's Display Name) and returns the highest-similarity one
+// that clears fuzzyMatchThreshold, or ok=false when none does (including
+// when foods is empty). Ties are broken by most-recently-updated — see
+// design.md decision 5. Matching runs against CustomFood.Name (the Display
+// Name), the language the user actually recognizes their own catalog
+// entries in.
+func fuzzyCustomFoodMatch(foods []database.CustomFood, name string) (database.CustomFood, bool) {
 	var best database.CustomFood
 	bestScore := -1.0
 	found := false

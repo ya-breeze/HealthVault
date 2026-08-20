@@ -56,8 +56,20 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       });
   }, [pathname]);
 
+  // Reads a fresh copy of settings immediately before writing, rather than
+  // merging onto the possibly-stale cached `settings` state: this provider
+  // and app/page.tsx's dashboard-order editor each keep their own
+  // independent cached UserSettings and PUT a read-modify-write built from
+  // it, with no shared store between them. Without this, saving a dashboard
+  // reorder and then switching language in the same session (no navigation
+  // in between, so this provider's own cache never refreshed) would PUT a
+  // stale pre-reorder snapshot here and silently clobber the just-saved
+  // dashboard_order. Falls back to the cached copy only if the refetch
+  // itself fails, matching this component's existing "a failed background
+  // load isn't fatal" stance.
   const setLanguage = useCallback(async (code: LanguageCode) => {
-    const next: UserSettings = { ...settings, display_language: code };
+    const current = await api.getSettings().catch(() => settings);
+    const next: UserSettings = { ...current, display_language: code };
     await api.putSettings(next);
     setSettings(next);
     setLanguageState(code);

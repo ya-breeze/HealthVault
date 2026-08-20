@@ -989,6 +989,57 @@ func TestPatchMealItem_SaveAsCustomFoodCopiesCanonicalName(t *testing.T) {
 	}
 }
 
+// Regression test for a bug found in code review: correcting an item's name
+// (e.g. because recognition misidentified the food) must clear the item's
+// now-stale CanonicalName, not carry it forward onto a new CustomFood paired
+// with the corrected name.
+func TestPatchMealItem_RenamingItemClearsCanonicalNameOnSavedCustomFood(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		// Misrecognized as dumplings; the user is correcting it to borscht.
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true, "calories": 300, "name": "Борщ",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.CanonicalName != "" {
+		t.Errorf("expected item CanonicalName cleared after rename, got %q", updated.CanonicalName)
+	}
+
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "Борщ").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	if cf.CanonicalName != "" {
+		t.Errorf("expected the saved CustomFood to have no stale CanonicalName after a rename, got %q", cf.CanonicalName)
+	}
+}
+
 // See openspec/specs/food-nutrition-logging "A canonical_name field on the
 // request is rejected": Canonical Name is not user-editable through this
 // endpoint, no matter what else the request also contains.

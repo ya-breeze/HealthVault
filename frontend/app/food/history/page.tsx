@@ -4,6 +4,7 @@ import { api, MealSummary } from '@/lib/api';
 import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
+import { mealStatusLabel } from '@/lib/i18n';
 
 const PAGE_SIZE = 50;
 
@@ -67,13 +68,6 @@ function groupByDay(meals: MealSummary[]): DayGroup[] {
 // direct upload flow or a hand-typed /food/review/?meal=<uuid> URL.
 export default function FoodHistoryPage() {
   const { t } = useLanguage();
-  const STATUS_LABEL: Record<string, string> = {
-    processing: t('status.processing'),
-    pending_clarification: t('status.pending_clarification'),
-    pending_review: t('status.pending_review'),
-    confirmed: t('status.confirmed'),
-    failed: t('status.failed'),
-  };
   const [meals, setMeals] = useState<MealSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -146,7 +140,7 @@ export default function FoodHistoryPage() {
                       {meal.name || t('review.mealFallbackName')}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {new Date(meal.logged_at).toLocaleString()} · {STATUS_LABEL[meal.status] ?? meal.status}
+                      {new Date(meal.logged_at).toLocaleString()} · {mealStatusLabel(t, meal.status)}
                     </p>
                   </div>
                   {meal.status === 'confirmed' && (

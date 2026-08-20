@@ -59,12 +59,19 @@ If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
 instead of guessing. Otherwise leave clarification_questions empty.`
 
+// isEnglishDisplayLanguage reports whether displayLanguage means English —
+// either explicitly ("en") or by the empty-string default used throughout
+// this codebase for "no display_language setting saved yet".
+func isEnglishDisplayLanguage(displayLanguage string) bool {
+	return displayLanguage == "" || displayLanguage == "en"
+}
+
 // languageDirective tells the model what language to write display_name in
 // and reminds it about canonical_name, appended to recognizeSystemPrompt for
 // every Recognize/Clarify call. See openspec/changes/russian-localization/
 // design.md decision 3.
 func languageDirective(displayLanguage string) string {
-	if displayLanguage == "" || displayLanguage == "en" {
+	if isEnglishDisplayLanguage(displayLanguage) {
 		return "\n\nThe requested display language is English (BCP-47 \"en\"). " +
 			"Write display_name in English and leave canonical_name empty."
 	}
@@ -324,7 +331,7 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration, disp
 		return nil, fmt.Errorf("unmarshal structured content: %w", err)
 	}
 
-	isEnglish := displayLanguage == "" || displayLanguage == "en"
+	isEnglish := isEnglishDisplayLanguage(displayLanguage)
 	items := make([]Item, len(schemaResp.Items))
 	for i, it := range schemaResp.Items {
 		canonicalName := strings.TrimSpace(it.CanonicalName)

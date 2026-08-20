@@ -19,3 +19,23 @@ export const SUPPORTED_LANGUAGES: { code: LanguageCode; label: string }[] = [
 export function isSupportedLanguage(code: string): code is LanguageCode {
   return code === 'en' || code === 'ru';
 }
+
+// Shared by the review and history screens, which both render a
+// FoodMeal.status badge — kept here instead of duplicated in each so the
+// status set can't drift between the two.
+export function mealStatusLabel(t: (key: keyof Dictionary) => string, status: string): string {
+  switch (status) {
+    case 'processing':
+      return t('status.processing');
+    case 'pending_clarification':
+      return t('status.pending_clarification');
+    case 'pending_review':
+      return t('status.pending_review');
+    case 'confirmed':
+      return t('status.confirmed');
+    case 'failed':
+      return t('status.failed');
+    default:
+      return status;
+  }
+}

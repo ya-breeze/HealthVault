@@ -11,6 +11,7 @@ import DeleteMealControl from '@/components/food/DeleteMealControl';
 import Header from '@/components/Header';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
+import { mealStatusLabel } from '@/lib/i18n';
 import ExpertModeToggle from '@/components/food/ExpertModeToggle';
 import TapTarget from '@/components/ui/TapTarget';
 
@@ -18,13 +19,6 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const { showToast } = useToast();
   const { t } = useLanguage();
   const [expertMode, setExpertMode] = useState(false);
-  const STATUS_LABEL: Record<string, string> = {
-    processing: t('status.processing'),
-    pending_clarification: t('status.pending_clarification'),
-    pending_review: t('status.pending_review'),
-    confirmed: t('status.confirmed'),
-    failed: t('status.failed'),
-  };
   const [meal, setMeal] = useState<FoodMeal | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -211,7 +205,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         )}
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-            {STATUS_LABEL[meal.status] ?? meal.status}
+            {mealStatusLabel(t, meal.status)}
           </span>
           {meal.photo_path && (
             // eslint-disable-next-line @next/next/no-img-element
