@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   LineChart, Line, BarChart, Bar, ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer,
+  Legend, ResponsiveContainer, TooltipValueType,
 } from 'recharts';
 import { api, DataType } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries } from '@/lib/dataTypeMeta';
+import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
 import Header from '@/components/Header';
 
 interface Props {
@@ -50,6 +50,30 @@ export default function DataTypeClient({ type }: Props) {
   // but no chart — table only, always raw.
   const hasChart = type !== 'food_meal';
   const color = metricColorVar(dataType);
+
+  // Converts a raw API value into this page's type's display unit (distance:
+  // meters -> km, sleep: seconds -> hours; everything else passes through
+  // unchanged) — see toDisplayUnit's doc comment. Every raw numeric value
+  // that reaches the chart or stats row for THIS type must go through this,
+  // not just num(), or the chart silently disagrees with the vitals-grid
+  // card's unit for the same metric (not just its rounding).
+  const numDisplay = (v: unknown) => toDisplayUnit(dataType, num(v));
+
+  // Shared across every Tooltip below (raw line/bars, the min-max band, and
+  // the weight trend line all use the same metric's precision) — see
+  // chart-value-rounding's "Chart display precision" requirement. Handles
+  // the min-max band's [number, number] tuple value as well as plain
+  // numbers; only the rendered text is rounded, never the underlying data.
+  const formatTooltipValue = (
+    value: TooltipValueType | undefined, name: string | number | undefined
+  ): [string, string | number] => {
+    if (value === undefined) return ['', name ?? ''];
+    if (Array.isArray(value)) {
+      return [value.map(v => formatMetricValue(dataType, Number(v))).join(' – '), name ?? ''];
+    }
+    return [formatMetricValue(dataType, Number(value)), name ?? ''];
+  };
+  const yAxisTickFormatter = (v: number) => formatMetricValue(dataType, v);
 
   const [zoom, setZoom] = useState<Zoom>('week');
   const [macro, setMacro] = useState<string>('calories');
@@ -129,9 +153,19 @@ export default function DataTypeClient({ type }: Props) {
       )
     : [];
 
-  const dayLineData = timeKey
-    ? records.map(r => ({ ...r, [timeKey]: new Date(r[timeKey] as string).getTime() }))
-    : records;
+  const dayLineData = records.map(r => ({
+    ...r,
+    ...(timeKey ? { [timeKey]: new Date(r[timeKey] as string).getTime() } : {}),
+    // numericKey is the raw column driving the Line's dataKey below for
+    // non-nutrition types (e.g. "meters", "duration_seconds") — convert it
+    // in place to this type's display unit so the chart doesn't show
+    // storage units that disagree with the vitals-grid card for the same
+    // metric. No-op for types whose storage unit already is the display
+    // unit (toDisplayUnit's default), so this is harmless to apply
+    // regardless of numericKey's relevance for nutrition (rendered via
+    // `macro` instead, untouched here).
+    ...(numericKey ? { [numericKey]: numDisplay(r[numericKey]) } : {}),
+  }));
 
   // For weight+week/year, `chartRows` holds the widened fetch used to seed
   // the trend's EMA (see above); every other chart/stat must only ever see
@@ -156,7 +190,7 @@ export default function DataTypeClient({ type }: Props) {
 
   const bucketBarData = visibleChartRows.map(r => ({
     label: bucketLabel(r.bucket_start, zoom),
-    value: isNutrition ? num(r[`sum_${macro}`]) : num(r.sum),
+    value: isNutrition ? num(r[`sum_${macro}`]) : numDisplay(r.sum),
   }));
 
   // `range` is a [min, max] tuple rather than a stacked min+band pair: Recharts
@@ -194,10 +228,10 @@ export default function DataTypeClient({ type }: Props) {
       return isDay ? records.map(r => num(r[macro])) : visibleChartRows.map(r => num(r[`sum_${macro}`]));
     }
     if (isDay) {
-      return numericKey ? records.map(r => num(r[numericKey])) : [];
+      return numericKey ? records.map(r => numDisplay(r[numericKey])) : [];
     }
-    return visibleChartRows.map(r => (meta?.family === 'cumulative' ? num(r.sum) : num(r.avg)));
-  }, [isBloodPressure, isNutrition, isDay, records, visibleChartRows, numericKey, macro, meta]);
+    return visibleChartRows.map(r => (meta?.family === 'cumulative' ? numDisplay(r.sum) : num(r.avg)));
+  }, [isBloodPressure, isNutrition, isDay, records, visibleChartRows, numericKey, macro, meta, numDisplay]);
 
   const primaryMaxSeries = useMemo(() => {
     // Day (raw points) and cumulative types, including nutrition (whose
@@ -223,11 +257,17 @@ export default function DataTypeClient({ type }: Props) {
   // each chart, not defaulted toward zero. Cumulative types (bar charts) are
   // deliberately excluded and keep their zero-anchored default. See
   // chart-zoom-aggregation's "Point-in-time Y-axis domain" requirement.
+  // Routed through numDisplay (not num()) for the same reason the plotted
+  // series is: currently a no-op for every 'point'-family type (toDisplayUnit
+  // only converts distance/sleep, both 'cumulative'), but a code-review pass
+  // flagged that leaving these on raw num() would silently desync the axis
+  // range from the data the moment any point-family type gains a unit
+  // conversion — keeping both on the same helper closes that off structurally.
   const dayDomain = useMemo(() => {
     if (meta?.family !== 'point') return undefined;
     const values = isBloodPressure
-      ? records.flatMap(r => [num(r.systolic), num(r.diastolic)])
-      : (numericKey ? records.map(r => num(r[numericKey])) : []);
+      ? records.flatMap(r => [numDisplay(r.systolic), numDisplay(r.diastolic)])
+      : (numericKey ? records.map(r => numDisplay(r[numericKey])) : []);
     return computeYDomain(values);
   }, [meta, isBloodPressure, records, numericKey]);
 
@@ -235,9 +275,9 @@ export default function DataTypeClient({ type }: Props) {
     if (meta?.family !== 'point') return undefined;
     const values = isBloodPressure
       ? visibleChartRows.flatMap(r => [
-          num(r.systolic_min), num(r.systolic_max), num(r.diastolic_min), num(r.diastolic_max),
+          numDisplay(r.systolic_min), numDisplay(r.systolic_max), numDisplay(r.diastolic_min), numDisplay(r.diastolic_max),
         ])
-      : visibleChartRows.flatMap(r => [num(r.min), num(r.max)]);
+      : visibleChartRows.flatMap(r => [numDisplay(r.min), numDisplay(r.max)]);
     return computeYDomain(values);
   }, [meta, isBloodPressure, visibleChartRows]);
 
@@ -317,8 +357,8 @@ export default function DataTypeClient({ type }: Props) {
                     tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
-                  <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} />
+                  <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line type="monotone" dataKey="systolic" stroke={color} dot strokeWidth={2} name="Systolic" />
                   <Line type="monotone" dataKey="diastolic" stroke={color} strokeDasharray="4 3" dot strokeWidth={2} name="Diastolic" />
@@ -334,8 +374,8 @@ export default function DataTypeClient({ type }: Props) {
                     tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
-                  <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} />
+                  <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
                   <Line
                     type="monotone"
                     dataKey={isNutrition ? macro : numericKey}
@@ -349,11 +389,11 @@ export default function DataTypeClient({ type }: Props) {
               <ComposedChart data={bucketBPData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <Tooltip />
+                <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
+                <Tooltip formatter={formatTooltipValue} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" />
-                <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" />
+                <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" name="Systolic range" />
+                <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" name="Diastolic range" />
                 <Line type="monotone" dataKey="sysAvg" stroke={color} strokeWidth={2} dot={false} name="Systolic" />
                 <Line type="monotone" dataKey="diaAvg" stroke={color} strokeDasharray="4 3" strokeWidth={2} dot={false} name="Diastolic" />
               </ComposedChart>
@@ -361,18 +401,18 @@ export default function DataTypeClient({ type }: Props) {
               <BarChart data={bucketBarData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <Tooltip />
+                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
+                <Tooltip formatter={formatTooltipValue} />
                 <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} />
               </BarChart>
             ) : (
               <ComposedChart data={bucketBandData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-                <Tooltip />
+                <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
+                <Tooltip formatter={formatTooltipValue} />
                 {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
-                <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" />
+                <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" name="Range" />
                 <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name="Avg" />
                 {dataType === 'weight' && (
                   <Line
@@ -392,16 +432,16 @@ export default function DataTypeClient({ type }: Props) {
           <div className="flex gap-6 mt-3 pt-3 border-t border-border">
             <div>
               <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Avg</p>
-              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{stats.avg.toFixed(1)}</p>
+              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.avg)}</p>
             </div>
             <div>
               <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Max</p>
-              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{stats.max.toFixed(1)}</p>
+              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.max)}</p>
             </div>
             {showTotal && (
               <div>
                 <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Total</p>
-                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{stats.total.toLocaleString()}</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.total)}</p>
               </div>
             )}
           </div>
