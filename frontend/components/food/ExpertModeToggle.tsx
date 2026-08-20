@@ -20,6 +20,14 @@ export default function ExpertModeToggle({ checked, onChange }: Props) {
         checked={checked}
         onChange={e => onChange(e.target.checked)}
         className="h-4 w-4"
+        // Stable, wording-independent hook for e2e tests: this toggle's
+        // accessible name is free text (see the en.ts translation's doc
+        // comment) and has already collided once with another field's
+        // getByLabel('Name') locator on the same page. A future label
+        // change should not have to worry about re-colliding with something
+        // else — tests should target this by data-testid, not by label
+        // text.
+        data-testid="expert-mode-toggle"
       />
       {t('expertMode.toggle')}
     </label>

@@ -133,6 +133,52 @@ test.describe('Dashboard card reorder', () => {
   });
 });
 
+test.describe('Settings lost-update race', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  // Regression for a lost-update race fixed in LanguageContext.tsx/page.tsx:
+  // the dashboard-order editor and the language switcher each kept an
+  // independent cached UserSettings and PUT'd a read-modify-write built from
+  // it, with no shared store between them. Saving a reorder and then
+  // switching language in the same session (no navigation in between, so
+  // the switcher's own cache never refreshed) used to PUT a stale
+  // pre-reorder snapshot and silently clobber the just-saved dashboard_order.
+  test('reordering cards then switching language in the same session persists both', async ({ page }) => {
+    await page.getByRole('button', { name: 'Edit order' }).click();
+    const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
+    for (let i = 0; i < 8; i++) {
+      if (await moveWeightUp.isDisabled()) break;
+      await moveWeightUp.click();
+    }
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
+
+    // No navigation here — this is the exact sequence that used to revert
+    // the reorder above.
+    await page.locator('#display-language').selectOption('ru');
+    await expect(page.locator('#display-language')).toHaveValue('ru');
+
+    await page.reload();
+
+    const firstCardAfter = page.getByTestId('vitals-grid').locator('> *').first();
+    await expect(firstCardAfter).toHaveAttribute('data-testid', 'vital-card-weight');
+    await expect(page.locator('#display-language')).toHaveValue('ru');
+
+    // Restore English + default order so later tests (which assert on
+    // English label text and a predictable card order) aren't affected.
+    await page.locator('#display-language').selectOption('en');
+    await page.getByRole('button', { name: 'Edit order' }).click();
+    const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
+    for (let i = 0; i < 8; i++) {
+      if (await moveWeightDown.isDisabled()) break;
+      await moveWeightDown.click();
+    }
+    await page.getByRole('button', { name: 'Done' }).click();
+  });
+});
+
 test.describe('Webhook ingest + dashboard', () => {
   test('webhook POST is reflected in the steps vital card and its bucketed API response', async ({ page, request }) => {
     const ts = new Date().toISOString();

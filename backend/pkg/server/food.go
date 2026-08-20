@@ -125,8 +125,8 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	// name (e.g. Cyrillic "Овсянка") would never match a same-name,
 	// different-case query and would incorrectly fall through to
 	// translation. Found in PR review (Codex).
-	var customFoods []database.CustomFood
-	if err := h.storage.DB().Where("user_id = ?", claims.UserID).Find(&customFoods).Error; err != nil {
+	customFoods, err := h.customFoodsForUser(claims.UserID)
+	if err != nil {
 		http.Error(w, "search error", http.StatusInternalServerError)
 		return
 	}

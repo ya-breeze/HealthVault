@@ -267,9 +267,16 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if _, ok := probe["canonical_name"]; ok {
-		http.Error(w, "canonical_name is not editable through this endpoint", http.StatusBadRequest)
-		return
+	// Matched case-insensitively: every other field on this endpoint arrives
+	// as lowercase snake_case, so a case-variant key (e.g. "CanonicalName")
+	// is not a legitimate alternate spelling a client would intentionally
+	// send — it's simply a bug that must not be allowed to bypass this
+	// rejection by accident.
+	for k := range probe {
+		if strings.EqualFold(k, "canonical_name") {
+			http.Error(w, "canonical_name is not editable through this endpoint", http.StatusBadRequest)
+			return
+		}
 	}
 
 	var req patchItemRequest
@@ -344,6 +351,18 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.SugarGrams = req.SugarGrams
 			item.SodiumGrams = req.SodiumGrams
 			item.DietaryFiberGrams = req.DietaryFiberGrams
+			// A manual correction replaces the item's identity outright, so a
+			// name change alongside it invalidates whatever Canonical Name
+			// recognition produced for the old name — carrying it forward
+			// would pair the new name with a stale, unrelated English gloss,
+			// including onto a new CustomFood via save_as_custom_food below.
+			// Scoped to this branch only: a bare rename with no other field
+			// must leave Canonical Name untouched — see
+			// openspec/specs/food-nutrition-logging "Renaming an item does
+			// not require touching its macros".
+			if hasName {
+				item.CanonicalName = ""
+			}
 		case req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil:
 			if req.WeightGrams != nil {
 				item.WeightGrams = *req.WeightGrams
@@ -390,12 +409,6 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		if req.Name != nil {
 			if name := strings.TrimSpace(*req.Name); name != "" {
 				item.Name = name
-				// A manual name correction invalidates whatever Canonical
-				// Name recognition produced for the old name — carrying it
-				// forward would pair the new name with a stale, unrelated
-				// English gloss, including onto a new CustomFood via
-				// save_as_custom_food below.
-				item.CanonicalName = ""
 			}
 		}
 

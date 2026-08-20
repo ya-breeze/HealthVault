@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { api, UserSettings } from '@/lib/api';
 import { DICTIONARIES, LanguageCode, isSupportedLanguage } from '@/lib/i18n';
@@ -27,6 +27,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<UserSettings>({});
   const pathname = usePathname();
 
+  // Holds setLanguage's in-flight GET+PUT, if any — see the pathname effect
+  // below for why.
+  const pendingWrite = useRef<Promise<unknown> | null>(null);
+
   // Renders in English immediately rather than blocking the whole app
   // (including the unauthenticated /login page, where this fetch always
   // 401s) behind this request — the language updates in place once it
@@ -42,18 +46,39 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // successful login. Re-running per navigation is cheap (one GET, already
   // in flight for other reasons on most pages) and matches how Header's own
   // api.me() check already re-verifies auth on every page mount.
+  //
+  // Awaits any setLanguage write already in flight before issuing its own
+  // GET, rather than racing it: a client-side navigation fired right after
+  // changing the language (before that PUT has settled) would otherwise let
+  // this effect's independent read return a pre-write snapshot and silently
+  // revert the just-saved language back to its old value once it resolves,
+  // even though the PUT already succeeded server-side — found in code
+  // review after the sibling dashboard-order/language lost-update race
+  // (below) was fixed. Waiting for the pending write first guarantees this
+  // GET only ever runs after that write's own state update has already
+  // landed, so it reads (and reapplies) the same value, not a stale one.
   useEffect(() => {
-    api.getSettings()
-      .then(s => {
+    let cancelled = false;
+    (async () => {
+      if (pendingWrite.current) {
+        await pendingWrite.current.catch(() => {});
+      }
+      if (cancelled) return;
+      try {
+        const s = await api.getSettings();
+        if (cancelled) return;
         setSettings(s);
         const raw = s.display_language;
         if (typeof raw === 'string' && isSupportedLanguage(raw)) {
           setLanguageState(raw);
         }
-      })
-      .catch(() => {
+      } catch {
         // Stay on the English default — see doc comment above.
-      });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   // Reads a fresh copy of settings immediately before writing, rather than
@@ -67,12 +92,25 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // dashboard_order. Falls back to the cached copy only if the refetch
   // itself fails, matching this component's existing "a failed background
   // load isn't fatal" stance.
+  // Publishes its own GET+PUT via pendingWrite so a navigation firing the
+  // effect above while this is in flight waits for it instead of racing it
+  // — see that effect's comment.
   const setLanguage = useCallback(async (code: LanguageCode) => {
-    const current = await api.getSettings().catch(() => settings);
-    const next: UserSettings = { ...current, display_language: code };
-    await api.putSettings(next);
-    setSettings(next);
-    setLanguageState(code);
+    const write = (async () => {
+      const current = await api.getSettings().catch(() => settings);
+      const next: UserSettings = { ...current, display_language: code };
+      await api.putSettings(next);
+      setSettings(next);
+      setLanguageState(code);
+    })();
+    pendingWrite.current = write;
+    try {
+      await write;
+    } finally {
+      if (pendingWrite.current === write) {
+        pendingWrite.current = null;
+      }
+    }
   }, [settings]);
 
   const t = useCallback(

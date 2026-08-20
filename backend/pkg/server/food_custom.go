@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -85,15 +86,27 @@ func (h *foodHandlers) ListCustomFoods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var foods []database.CustomFood
-	if err := h.storage.DB().Where("user_id = ?", claims.UserID).Order("name").Find(&foods).Error; err != nil {
+	foods, err := h.customFoodsForUser(claims.UserID)
+	if err != nil {
 		http.Error(w, "query error", http.StatusInternalServerError)
 		return
 	}
+	sort.Slice(foods, func(i, j int) bool { return foods[i].Name < foods[j].Name })
 	if foods == nil {
 		foods = []database.CustomFood{}
 	}
 	writeJSON(w, foods)
+}
+
+// customFoodsForUser loads every custom food owned by userID, unordered.
+// Shared by ListCustomFoods, Search (food.go), and resolveItems
+// (food_upload.go) so the same "all of a user's custom foods" query isn't
+// hand-rolled separately in each — a future scoping change (e.g. an explicit
+// soft-delete filter) only needs to be made here.
+func (h *foodHandlers) customFoodsForUser(userID uuid.UUID) ([]database.CustomFood, error) {
+	var foods []database.CustomFood
+	err := h.storage.DB().Where("user_id = ?", userID).Find(&foods).Error
+	return foods, err
 }
 
 // findOwnedCustomFood loads a custom food by ID, scoped to userID. Returns
@@ -143,6 +156,16 @@ func (h *foodHandlers) UpdateCustomFood(w http.ResponseWriter, r *http.Request) 
 	if strings.TrimSpace(req.Name) == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
+	}
+	// A renamed custom food invalidates whatever Canonical Name recognition
+	// (or a save_as_custom_food copy) produced for the old name — carrying
+	// it forward would pair the corrected name with a stale, unrelated
+	// English gloss in Expert Mode. Unlike a meal item's PATCH (see
+	// food_item.go's PatchMealItem), this endpoint is a full-resource PUT
+	// with no partial-rename-only mode, so every name change here is
+	// equivalent to the "manual correction" case that clears it there.
+	if strings.TrimSpace(req.Name) != c.Name {
+		c.CanonicalName = ""
 	}
 	req.applyTo(c)
 

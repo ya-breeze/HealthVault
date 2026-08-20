@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -305,8 +306,14 @@ func (h *foodHandlers) resolveItems(
 	// query identically for every recognized item in the meal (multiple extra
 	// DB round-trips for a full plate instead of one).
 	ranked := h.rankedCustomFoodCandidates(meal.UserID)
-	var customFoods []database.CustomFood
-	if err := h.storage.DB().Where("user_id = ?", meal.UserID).Find(&customFoods).Error; err != nil {
+	customFoods, err := h.customFoodsForUser(meal.UserID)
+	if err != nil {
+		// Degrades to "no custom-food matching for this meal" rather than
+		// failing the whole analysis — matching this function's existing
+		// non-strict-mode posture toward a Select-call failure (see doc
+		// comment above) — but unlike that case, this one has no other
+		// signal an operator could notice, so it's logged explicitly.
+		slog.Error("resolveItems: fetch custom foods", "err", err, "user_id", meal.UserID)
 		customFoods = nil
 	}
 

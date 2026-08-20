@@ -1040,6 +1040,52 @@ func TestPatchMealItem_RenamingItemClearsCanonicalNameOnSavedCustomFood(t *testi
 	}
 }
 
+// Regression: an earlier version of the fix for the sibling test above
+// (RenamingItemClearsCanonicalNameOnSavedCustomFood) cleared CanonicalName
+// for *any* name change, including a bare rename with no other field — which
+// directly violates openspec/specs/food-nutrition-logging "Renaming an item
+// does not require touching its macros": "the system updates the Display
+// Name and returns 200 without changing macro_source, any stored macro
+// value, or the item's Canonical Name."
+func TestPatchMealItem_NameAloneDoesNotClearCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{"name": "Ленивые вареники"})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.Name != "Ленивые вареники" {
+		t.Errorf("expected name updated, got %q", updated.Name)
+	}
+	if updated.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName left untouched by a bare rename, got %q", updated.CanonicalName)
+	}
+}
+
 // See openspec/specs/food-nutrition-logging "A canonical_name field on the
 // request is rejected": Canonical Name is not user-editable through this
 // endpoint, no matter what else the request also contains.
