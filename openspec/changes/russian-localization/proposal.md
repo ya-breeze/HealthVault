@@ -58,15 +58,16 @@ scope — confirmed via grep they are not rendered anywhere in the frontend UI.
 
 ## Impact
 
-- **Backend**: `FoodItem`/`CustomFood` models gain `display_name` and `canonical_name` fields
-  (in addition to or replacing the current single `name` field — see design.md); vision/recognition
-  prompt and response parsing change to request/parse both names; item-resolution logic gains a
-  language-conditional branch that skips reference-DB search; custom-food matching logic changes
-  from exact to fuzzy (needs a fuzzy-matching approach — see design.md).
+- **Backend**: `FoodItem`/`CustomFood` gain a new `canonical_name` field alongside the existing
+  `name` field, which becomes — in meaning, not in wire format — the Display Name (see design.md
+  decision 1; the JSON field stays `name`, not renamed); vision/recognition prompt and response
+  parsing change to request/parse both names; matching logic (in `usda-nutrition-database`) gains
+  a language-conditional branch that skips Open Food Facts/USDA querying, and its custom-food
+  exact-name match becomes fuzzy (needs a fuzzy-matching approach — see design.md).
 - **Frontend**: language switcher UI (writes `display_language` via the existing settings API);
   i18n scaffolding for translating static UI strings; Expert Mode toggle component reused across
-  three screens; meal history, confirmation, and catalog views read `display_name`/`canonical_name`
-  instead of a single name field.
+  three screens; meal history, confirmation, and catalog views additionally read `canonical_name`
+  alongside the existing `name` field.
 - **Dependency**: relies on the already-implemented per-user `UserSettings` store
   (`openspec/specs/user-settings/spec.md`, confirmed present and implemented on `main`) — the
   external "other stream" this change was originally waiting on has landed, so no cross-stream

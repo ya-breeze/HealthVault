@@ -19,14 +19,17 @@
 
 - [ ] 3.1 Extend the vision prompt (`backend/pkg/vision/openai.go`) to accept a target language
       parameter and request `display_name` + `canonical_name` per recognized item
-- [ ] 3.2 Extend response parsing (`backend/pkg/vision/vision.go`) to read both fields; when the
-      target language is English, leave `canonical_name` empty rather than duplicating the name
-- [ ] 3.3 Thread the caller's `display_language` (via 2.2) into the initial-analysis, reanalyze,
-      and clarification-round call sites (`backend/pkg/server/food_upload.go`,
-      `backend/pkg/server/food.go`)
+- [ ] 3.2 Add a `CanonicalName string` field to `vision.Item` (`backend/pkg/vision/vision.go`,
+      alongside the existing `Name` field, which becomes the Display Name); extend response
+      parsing to populate both, leaving `CanonicalName` empty when the target language is English
+      rather than duplicating `Name`
+- [ ] 3.3 Thread the caller's `display_language` (via 2.2) into the initial-analysis
+      (`backend/pkg/server/food_upload.go`), reanalyze (`backend/pkg/server/food_reanalyze.go`),
+      and clarification-round (`backend/pkg/server/food_clarify.go`) call sites
 - [ ] 3.4 Persist `DisplayName` (into `Name`) and `CanonicalName` on `FoodItem` creation
-      (`backend/pkg/ingest/ingest.go` pattern — remember explicit `ID`/`FamilyID` assignment,
-      `TenantModel` has no `BeforeCreate` hook)
+      (`backend/pkg/server/food_upload.go`, `backend/pkg/server/food_item.go` — both already
+      assign `item.ID = uuid.New()` explicitly since `TenantModel` has no `BeforeCreate` hook;
+      follow the same pattern for the new field, no new assignment concern introduced)
 - [ ] 3.5 Backend test: non-English recognition produces distinct Display/Canonical names;
       English recognition leaves Canonical Name empty
 
@@ -35,13 +38,16 @@
 - [ ] 4.1 Implement a small hand-rolled normalized Levenshtein-similarity function (no new
       dependency — see design.md decision 5); unit-test it directly with a handful of near-miss
       string pairs
-- [ ] 4.2 Replace the exact case-insensitive custom-food match in
-      `backend/pkg/server/food_item.go` (or wherever "Match Selection" is implemented) with the
-      fuzzy-similarity match against the threshold from design.md; keep the existing
-      frequency/recency-ranked tier as the fallback when no candidate clears the threshold
-      unchanged
-- [ ] 4.3 Add the non-English gate: skip Open Food Facts/USDA querying entirely when
-      `display_language != "en"`, falling through to the macro-estimate fallback
+- [ ] 4.2 Replace the exact-name custom-food match inside `retrieveCandidates`
+      (`backend/pkg/server/food_upload.go`) with the fuzzy-similarity match against the threshold
+      from design.md; `resolveItems`'s `exactMatch[i]` flag (same file) keeps meaning "bind
+      unconditionally" — just fed by fuzzy instead of exact now. Keep
+      `rankedCustomFoodCandidates` (the existing frequency/recency-ranked tier, same file) as the
+      fallback when no candidate clears the threshold, unchanged
+- [ ] 4.3 Add the non-English gate inside `retrieveCandidates`: skip the Open Food Facts/USDA
+      branches entirely when `display_language != "en"`, leaving the item's candidate set empty
+      (falls through to the macro-estimate fallback in `resolveItems`) when no custom-food match
+      was found either
 - [ ] 4.4 Backend tests: fuzzy match hits on a near-miss name; non-English item skips OFF/USDA
       querying even with a brand present; existing exact-match and frequency/recency scenarios
       from `usda-nutrition-database/spec.md` still pass
@@ -51,7 +57,10 @@
 - [ ] 5.1 Reject a `canonical_name` field on `PATCH /api/food/meals/{id}/items/{item_id}` with
       HTTP 400 (`backend/pkg/server/food_item.go`)
 - [ ] 5.2 Ensure `canonical_name` is included (when non-empty) in `FoodItem`/`CustomFood` JSON
-      responses used by meal detail, confirmation, and the Custom Food catalog endpoints
+      responses — falls out automatically from the new struct field (`json:"canonical_name,omitempty"`)
+      for `GetMeal`/`ConfirmMeal` (`backend/pkg/server/food_meal_detail.go`), `PatchMealItem`
+      (`backend/pkg/server/food_item.go`), and `ListCustomFoods` (`backend/pkg/server/food_custom.go`);
+      verify none of these hand-roll a response struct that would silently drop it
 - [ ] 5.3 When saving a correction as a new `CustomFood` (existing "save as reusable" flow), copy
       the originating item's `CanonicalName` onto the new `CustomFood` record
 - [ ] 5.4 Backend tests for 5.1–5.3
@@ -74,16 +83,17 @@
 
 ## 8. Frontend: Display Name / Canonical Name rendering
 
-- [ ] 8.1 Update meal confirmation screen to render `display_name` (falling back to legacy `name`
-      for pre-change API responses if needed) instead of a single name field
+- [ ] 8.1 Update meal confirmation screen to treat `name` as the Display Name (unchanged wire
+      field) and additionally render `canonical_name` under Expert Mode (see 9.x) — no API field
+      rename, `name` is already what's rendered today
 - [ ] 8.2 Update food history detail view similarly
 - [ ] 8.3 Update Custom Food catalog screen similarly
 
 ## 9. Frontend: Expert Mode toggle
 
 - [ ] 9.1 Add a reusable Expert Mode toggle component (local, non-persisted state)
-- [ ] 9.2 Wire it into the confirmation screen: show `canonical_name` alongside `display_name`
-      when on, and only when `canonical_name` is non-empty
+- [ ] 9.2 Wire it into the confirmation screen: show `canonical_name` alongside `name` (the
+      Display Name) when on, and only when `canonical_name` is non-empty
 - [ ] 9.3 Wire it into the food history detail view
 - [ ] 9.4 Wire it into the Custom Food catalog screen
 
