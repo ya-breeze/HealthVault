@@ -2,10 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
 )
@@ -15,12 +18,27 @@ import (
 const defaultDisplayLanguage = "en"
 
 // bcp47Tag matches the shape of a BCP-47 language tag: a 2-8 letter primary
-// subtag optionally followed by alphanumeric subtags. Deliberately a shape
-// check, not a registry lookup — it does not care whether the tag names a
-// real language, only that the value is a language tag rather than arbitrary
+// subtag optionally followed by up to three alphanumeric subtags. Deliberately
+// a shape check, not a registry lookup — it does not care whether the tag names
+// a real language, only that the value is a language tag rather than arbitrary
 // text. "_" is accepted alongside the canonical "-" separator so this stays
 // no stricter than IsEnglishDisplayLanguage, which already splits on either.
-var bcp47Tag = regexp.MustCompile(`^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8})*$`)
+//
+// The subtag repetition is bounded at three because an unbounded `*` imposes
+// no length limit at all: "en" followed by a thousand "-xxxxxxxx" groups is
+// ~9 KB of perfectly tag-shaped text, and this value is interpolated verbatim
+// into the vision system prompt. Bounding the repetition caps a matching tag
+// at 35 bytes, which is the length limit — no separate check is needed — and
+// costs nothing legitimate: the longest tags anyone writes in practice
+// ("zh-Hant-HK", "sr-Latn-RS", "en-US-POSIX") are well inside it.
+//
+// Shape alone still cannot prove a tag names a real language — "ru-Chinese" is
+// well-formed — so this bounds how much caller-controlled text can reach the
+// model rather than eliminating it. The remaining budget is a few short words
+// inside a fixed sentence (see vision.languageDirective), and it only ever
+// affects the recognition calls of the account that stored it. Found in code
+// review.
+var bcp47Tag = regexp.MustCompile(`^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8}){0,3}$`)
 
 // normalizeDisplayLanguage trims a stored display_language and rejects
 // anything that isn't shaped like a BCP-47 tag, falling back to the default.
@@ -51,9 +69,22 @@ func normalizeDisplayLanguage(lang string) string {
 // isn't a string, or its value isn't shaped like a language tag (see
 // normalizeDisplayLanguage) — recognition and matching always get a usable
 // language rather than having to handle absence or garbage themselves.
+//
+// A real storage failure is logged before falling back, because that fallback
+// is otherwise indistinguishable from the user having chosen English while
+// silently changing what the request does: the vision call is made with "en",
+// the meal is persisted with English Display Names and no Canonical Name, and
+// USDA/Open Food Facts matching is re-enabled for it by
+// retrieveCandidates' language gate. "No settings row yet" is the ordinary
+// case for a user who has never opened the setting, so only errors other than
+// gorm.ErrRecordNotFound are logged — the same treatment resolveItems already
+// gives its own custom-food-fetch degradation. Found in code review.
 func DisplayLanguage(storage database.Storage, userID uuid.UUID) string {
 	settingsJSON, err := storage.GetUserSettings(userID)
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.Error("DisplayLanguage: read user settings", "err", err, "user_id", userID)
+		}
 		return defaultDisplayLanguage
 	}
 	var obj map[string]any

@@ -26,9 +26,10 @@ interface LanguageContextValue {
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 // App-wide Display Language provider. Loads display_language from the
-// user's settings blob on mount, defaulting to English when unset, absent,
-// or the load itself fails — a failed background load isn't something the
-// user needs to act on (unlike a failed save, which does show a toast at
+// user's settings blob on mount, resolving to English whenever a successful
+// load doesn't name a supported language, and leaving the current language
+// alone when the load itself fails — a failed background load isn't something
+// the user needs to act on (unlike a failed save, which does show a toast at
 // its call site), and English is always a safe, working fallback. See
 // openspec/specs/display-language "Per-User Display Language Setting" and
 // design.md decision 6.
@@ -82,11 +83,26 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         const s = await api.getSettings();
         if (cancelled) return;
         const raw = s.display_language;
-        if (typeof raw === 'string' && isSupportedLanguage(raw)) {
-          setLanguageState(raw);
-        }
+        // Assigns unconditionally rather than only on a supported value: this
+        // provider lives in the root layout and Header.handleLogout leaves via
+        // router.push('/login'), a client-side navigation, so it never
+        // unmounts and `language` outlives a logout. Without the else branch,
+        // a user whose stored language is Russian could log out and the next
+        // user to log in in the same tab — one with no display_language saved
+        // — would keep the Russian UI (and a Russian <html lang>) until a hard
+        // reload, because their settings simply have nothing to overwrite it
+        // with. Falling back to 'en' here makes every load state the language,
+        // so the rendered language always reflects the account that is
+        // currently signed in. Found in code review.
+        setLanguageState(typeof raw === 'string' && isSupportedLanguage(raw) ? raw : 'en');
       } catch {
-        // Stay on the English default — see doc comment above.
+        // Deliberately not reset to 'en': unlike a successful load that simply
+        // has no display_language (a different account's settings, handled
+        // above), a failed request tells us nothing about what the account
+        // prefers. Resetting here would flip an authenticated Russian user's
+        // UI to English on any transient error, and every /login visit — where
+        // this GET always 401s — would do the same. Whatever language is
+        // currently displayed stays until a load succeeds.
       }
     });
     return () => {
