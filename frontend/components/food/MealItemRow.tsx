@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError, FoodItem, FoodMeal, FoodSearchResult } from '@/lib/api';
 import ItemResolver from './ItemResolver';
 import TapTarget from '@/components/ui/TapTarget';
+import { useLanguage } from '@/components/LanguageContext';
 
 interface Props {
   mealId: string;
@@ -11,14 +12,11 @@ interface Props {
   // applyMealUpdate doc comment for why (issue order must be commit order,
   // enforced by the parent controlling when each request actually starts).
   onUpdated: (issue: () => Promise<FoodMeal>, label?: string) => Promise<FoodMeal>;
+  // See openspec/specs/expert-mode "Per-Screen Expert Mode Toggle" — held by
+  // the parent screen, not this row, so every row on the screen reflects the
+  // same toggle state.
+  expertMode: boolean;
 }
-
-const SOURCE_LABEL: Record<string, string> = {
-  reference: 'Matched',
-  manual: 'Manual',
-  estimated: 'AI estimate',
-  none: 'Unresolved',
-};
 
 const SOURCE_COLOR: Record<string, string> = {
   reference: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -48,7 +46,14 @@ function referenceSourceLabel(item: FoodItem): string | null {
 // which the backend now accepts item mutations for (see PatchMealItem's
 // editableMealStatus guard), so there is no read-only state to represent
 // here anymore.
-export default function MealItemRow({ mealId, item, onUpdated }: Props) {
+export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Props) {
+  const { t } = useLanguage();
+  const SOURCE_LABEL: Record<string, string> = {
+    reference: t('item.sourceReference'),
+    manual: t('item.sourceManual'),
+    estimated: t('item.sourceEstimated'),
+    none: t('item.sourceNone'),
+  };
   const [weight, setWeight] = useState(item.weight_grams);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -160,6 +165,11 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-gray-900 dark:text-white break-words">{item.name}</p>
+          {expertMode && item.canonical_name && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 italic break-words">
+              {t('expertMode.canonicalNamePrefix')} {item.canonical_name}
+            </p>
+          )}
           <span className={`inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded ${SOURCE_COLOR[item.macro_source]}`}>
             {SOURCE_LABEL[item.macro_source]}
           </span>
@@ -188,20 +198,20 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
                 disabled={deleting}
                 className="px-2 rounded text-xs font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
               >
-                {deleting ? '…' : 'Confirm'}
+                {deleting ? '…' : t('item.confirm')}
               </TapTarget>
               <TapTarget
                 onClick={() => setConfirmingDelete(false)}
                 disabled={deleting}
                 className="px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
               >
-                Cancel
+                {t('item.cancel')}
               </TapTarget>
             </div>
           ) : (
             <TapTarget
               onClick={() => setConfirmingDelete(true)}
-              title="Delete item"
+              title={t('item.deleteTitle')}
               className="ml-1 flex items-center justify-center rounded text-lg leading-none text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20"
             >
               ×
@@ -225,10 +235,10 @@ export default function MealItemRow({ mealId, item, onUpdated }: Props) {
           }
         >
           {item.macro_source === 'none'
-            ? 'Resolve this item'
+            ? t('item.resolve')
             : item.macro_source === 'estimated'
-              ? 'Verify this estimate'
-              : 'Change match'}
+              ? t('item.verifyEstimate')
+              : t('item.changeMatch')}
         </TapTarget>
       )}
       {resolving && (

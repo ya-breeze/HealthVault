@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Barlow, IBM_Plex_Mono } from "next/font/google";
 import { ToastProvider } from "@/components/Toast";
+import { LanguageProvider } from "@/components/LanguageContext";
 import "./globals.css";
 
 const barlow = Barlow({
@@ -31,7 +32,9 @@ export default function RootLayout({
       className={`${barlow.variable} ${plexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ToastProvider>{children}</ToastProvider>
+        <LanguageProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

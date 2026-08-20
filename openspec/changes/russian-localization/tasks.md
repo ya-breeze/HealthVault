@@ -67,35 +67,39 @@
 
 ## 6. Frontend: i18n scaffolding
 
-- [ ] 6.1 Add `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts` string dictionaries plus a
+- [x] 6.1 Add `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts` string dictionaries plus a
       `t()` lookup function (see design.md decision 6 — no `next-intl`, no route restructuring)
-- [ ] 6.2 Add a React Context provider that loads `display_language` from
+- [x] 6.2 Add a React Context provider that loads `display_language` from
       `GET /api/users/me/settings` on mount and exposes the active dictionary + `t()`
-- [ ] 6.3 Wrap the app root (`frontend/app/layout.tsx`) with the provider
+- [x] 6.3 Wrap the app root (`frontend/app/layout.tsx`) with the provider
 
 ## 7. Frontend: language switcher
 
-- [ ] 7.1 Add a Display Language switcher control (e.g. in an existing settings/account screen)
+- [x] 7.1 Add a Display Language switcher control (e.g. in an existing settings/account screen)
       that calls `PUT /api/users/me/settings` and updates the Context provider's state immediately
-- [ ] 7.2 Translate the initial set of static UI strings covered by 6.1's dictionaries (scope:
+      — implemented as a `<select>` in `components/Header.tsx`, visible on every authenticated page
+- [x] 7.2 Translate the initial set of static UI strings covered by 6.1's dictionaries (scope:
       navigation, food-logging screens — full app-wide coverage is not required for this change,
       per design.md Non-Goals)
 
 ## 8. Frontend: Display Name / Canonical Name rendering
 
-- [ ] 8.1 Update meal confirmation screen to treat `name` as the Display Name (unchanged wire
+- [x] 8.1 Update meal confirmation screen to treat `name` as the Display Name (unchanged wire
       field) and additionally render `canonical_name` under Expert Mode (see 9.x) — no API field
       rename, `name` is already what's rendered today
-- [ ] 8.2 Update food history detail view similarly
-- [ ] 8.3 Update Custom Food catalog screen similarly
+- [x] 8.2 Update food history detail view similarly — `/food/review/?meal=<id>` (ReviewClient.tsx)
+      is the same screen/component for both the just-uploaded confirmation flow and clicking into a
+      past meal from `/food/history`; the list screen itself only shows meal-level fields (no items)
+- [x] 8.3 Update Custom Food catalog screen similarly
 
 ## 9. Frontend: Expert Mode toggle
 
-- [ ] 9.1 Add a reusable Expert Mode toggle component (local, non-persisted state)
-- [ ] 9.2 Wire it into the confirmation screen: show `canonical_name` alongside `name` (the
+- [x] 9.1 Add a reusable Expert Mode toggle component (local, non-persisted state) —
+      `components/food/ExpertModeToggle.tsx`
+- [x] 9.2 Wire it into the confirmation screen: show `canonical_name` alongside `name` (the
       Display Name) when on, and only when `canonical_name` is non-empty
-- [ ] 9.3 Wire it into the food history detail view
-- [ ] 9.4 Wire it into the Custom Food catalog screen
+- [x] 9.3 Wire it into the food history detail view — same component as 8.2/9.2, see note there
+- [x] 9.4 Wire it into the Custom Food catalog screen
 
 ## 10. Validation
 

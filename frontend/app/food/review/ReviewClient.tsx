@@ -10,18 +10,21 @@ import MacroSummary from '@/components/food/MacroSummary';
 import DeleteMealControl from '@/components/food/DeleteMealControl';
 import Header from '@/components/Header';
 import { useToast } from '@/components/Toast';
+import { useLanguage } from '@/components/LanguageContext';
+import ExpertModeToggle from '@/components/food/ExpertModeToggle';
 import TapTarget from '@/components/ui/TapTarget';
-
-const STATUS_LABEL: Record<string, string> = {
-  processing: 'Analyzing…',
-  pending_clarification: 'Needs clarification',
-  pending_review: 'Review needed',
-  confirmed: 'Confirmed',
-  failed: 'Analysis failed',
-};
 
 export default function ReviewClient({ mealId }: { mealId: string }) {
   const { showToast } = useToast();
+  const { t } = useLanguage();
+  const [expertMode, setExpertMode] = useState(false);
+  const STATUS_LABEL: Record<string, string> = {
+    processing: t('status.processing'),
+    pending_clarification: t('status.pending_clarification'),
+    pending_review: t('status.pending_review'),
+    confirmed: t('status.confirmed'),
+    failed: t('status.failed'),
+  };
   const [meal, setMeal] = useState<FoodMeal | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -166,7 +169,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Header />
-        <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">Loading…</p>
+        <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">{t('review.loading')}</p>
       </div>
     );
   }
@@ -175,7 +178,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Header />
         <div className="p-6 text-center">
-          <p className="text-sm text-red-600 dark:text-red-400">{loadError ?? 'Meal not found'}</p>
+          <p className="text-sm text-red-600 dark:text-red-400">{loadError ?? t('review.mealNotFound')}</p>
         </div>
       </div>
     );
@@ -199,7 +202,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-          {meal.name || 'Meal'}
+          {meal.name || t('review.mealFallbackName')}
         </h1>
         {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
           <div className="mb-3">
@@ -222,25 +225,25 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
         {meal.status === 'processing' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 text-center">
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Still analyzing…</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('review.stillAnalyzing')}</p>
             <TapTarget
               onClick={load}
               className="flex items-center justify-center mx-auto text-sm text-blue-600 dark:text-blue-400 hover:underline"
             >
-              Refresh
+              {t('review.refresh')}
             </TapTarget>
           </div>
         )}
 
         {meal.status === 'failed' && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6 text-center">
-            <p className="text-sm text-red-700 dark:text-red-300 mb-3">Analysis failed.</p>
+            <p className="text-sm text-red-700 dark:text-red-300 mb-3">{t('review.analysisFailed')}</p>
             <TapTarget
               onClick={handleRetry}
               disabled={busy}
               className="px-4 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
             >
-              {busy ? 'Retrying…' : 'Retry'}
+              {busy ? t('review.retrying') : t('review.retry')}
             </TapTarget>
           </div>
         )}
@@ -248,12 +251,15 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
           <>
             <MacroSummary meal={meal} />
-            <div className="mt-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 px-4">
+            <div className="mt-3 flex justify-end">
+              <ExpertModeToggle checked={expertMode} onChange={setExpertMode} />
+            </div>
+            <div className="mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 px-4">
               {items.length === 0 ? (
-                <p className="py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No items.</p>
+                <p className="py-4 text-sm text-gray-500 dark:text-gray-400 text-center">{t('review.noItems')}</p>
               ) : (
                 items.map(item => (
-                  <MealItemRow key={item.id} mealId={mealId} item={item} onUpdated={applyMealUpdate} />
+                  <MealItemRow key={item.id} mealId={mealId} item={item} onUpdated={applyMealUpdate} expertMode={expertMode} />
                 ))
               )}
             </div>
@@ -310,7 +316,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
               disabled={!canConfirm}
               className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
             >
-              {busy ? 'Confirming…' : 'Confirm Meal'}
+              {busy ? t('review.confirming') : t('review.confirmMeal')}
             </TapTarget>
           </div>
         </div>

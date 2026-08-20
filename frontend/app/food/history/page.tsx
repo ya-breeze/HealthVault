@@ -3,14 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, MealSummary } from '@/lib/api';
 import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
-
-const STATUS_LABEL: Record<string, string> = {
-  processing: 'Analyzing…',
-  pending_clarification: 'Needs clarification',
-  pending_review: 'Review needed',
-  confirmed: 'Confirmed',
-  failed: 'Analysis failed',
-};
+import { useLanguage } from '@/components/LanguageContext';
 
 const PAGE_SIZE = 50;
 
@@ -73,6 +66,14 @@ function groupByDay(meals: MealSummary[]): DayGroup[] {
 // editing. Previously there was no entry point into a meal beyond the
 // direct upload flow or a hand-typed /food/review/?meal=<uuid> URL.
 export default function FoodHistoryPage() {
+  const { t } = useLanguage();
+  const STATUS_LABEL: Record<string, string> = {
+    processing: t('status.processing'),
+    pending_clarification: t('status.pending_clarification'),
+    pending_review: t('status.pending_review'),
+    confirmed: t('status.confirmed'),
+    failed: t('status.failed'),
+  };
   const [meals, setMeals] = useState<MealSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -115,12 +116,12 @@ export default function FoodHistoryPage() {
       <Header />
 
       <main className="max-w-md mx-auto px-6 py-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Meal History</h1>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('history.title')}</h1>
 
-        {loading && <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">Loading…</p>}
+        {loading && <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">{t('review.loading')}</p>}
         {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
         {!loading && meals.length === 0 && !error && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">No meals logged yet.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">{t('history.noMeals')}</p>
         )}
 
         {dayGroups.map(day => (
@@ -142,7 +143,7 @@ export default function FoodHistoryPage() {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {meal.name || 'Meal'}
+                      {meal.name || t('review.mealFallbackName')}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {new Date(meal.logged_at).toLocaleString()} · {STATUS_LABEL[meal.status] ?? meal.status}
@@ -165,7 +166,7 @@ export default function FoodHistoryPage() {
             disabled={loadingMore}
             className="mt-4 w-full rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
           >
-            {loadingMore ? 'Loading…' : 'Load older'}
+            {loadingMore ? t('history.loadingMore') : t('history.loadOlder')}
           </TapTarget>
         )}
       </main>

@@ -5,13 +5,17 @@ import { api, CustomFood, CustomFoodInput } from '@/lib/api';
 import CustomFoodModal from '@/components/food/CustomFoodModal';
 import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
+import { useLanguage } from '@/components/LanguageContext';
+import ExpertModeToggle from '@/components/food/ExpertModeToggle';
 
 export default function CustomFoodsPage() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [foods, setFoods] = useState<CustomFood[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<CustomFood | 'new' | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [expertMode, setExpertMode] = useState(false);
 
   const load = () => {
     api.listCustomFoods()
@@ -53,22 +57,26 @@ export default function CustomFoodsPage() {
       <Header />
 
       <main className="max-w-md mx-auto px-6 py-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Custom Foods</h1>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('customFood.title')}</h1>
         <TapTarget
           onClick={() => setEditing('new')}
           className="w-full mb-4 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
         >
-          + Add Custom Food
+          {t('customFood.addNew')}
         </TapTarget>
 
         {error && <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
+        <div className="mb-2 flex justify-end">
+          <ExpertModeToggle checked={expertMode} onChange={setExpertMode} />
+        </div>
+
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
           {foods === null && (
-            <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">Loading…</p>
+            <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">{t('review.loading')}</p>
           )}
           {foods?.length === 0 && (
-            <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">No custom foods yet.</p>
+            <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">{t('customFood.noneYet')}</p>
           )}
           {foods?.map(f => (
             // NOTE: this row's name column has no min-w-0/truncate and the
@@ -81,6 +89,11 @@ export default function CustomFoodsPage() {
             <div key={f.id} className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-900 dark:text-white">{f.name}</p>
+                {expertMode && f.canonical_name && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 italic">
+                    {t('expertMode.canonicalNamePrefix')} {f.canonical_name}
+                  </p>
+                )}
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {Math.round(f.calories_per_100g)} kcal/100g
                 </p>
@@ -90,7 +103,7 @@ export default function CustomFoodsPage() {
                   onClick={() => setEditing(f)}
                   className="flex items-center text-xs text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  Edit
+                  {t('customFood.edit')}
                 </TapTarget>
                 {pendingDeleteId === f.id ? (
                   <span className="flex items-center gap-1">
@@ -98,13 +111,13 @@ export default function CustomFoodsPage() {
                       onClick={() => handleDelete(f.id)}
                       className="text-xs px-2 rounded bg-red-600 text-white hover:bg-red-700"
                     >
-                      Confirm
+                      {t('item.confirm')}
                     </TapTarget>
                     <TapTarget
                       onClick={() => setPendingDeleteId(null)}
                       className="text-xs px-2 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200"
                     >
-                      Cancel
+                      {t('item.cancel')}
                     </TapTarget>
                   </span>
                 ) : (
@@ -112,7 +125,7 @@ export default function CustomFoodsPage() {
                     onClick={() => setPendingDeleteId(f.id)}
                     className="flex items-center text-xs text-red-500 hover:text-red-700"
                   >
-                    Delete
+                    {t('customFood.delete')}
                   </TapTarget>
                 )}
               </div>

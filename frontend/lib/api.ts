@@ -156,6 +156,11 @@ export interface FoodSearchResponse {
 export interface CustomFood {
   id: string;
   name: string;
+  // English identity of the food, set when created from a non-English
+  // recognition (see the display-language capability). Empty/absent
+  // otherwise — see food-nutrition-logging "Food Item and Custom Food Carry
+  // a Canonical Name".
+  canonical_name?: string;
   calories_per_100g: number;
   protein_per_100g: number;
   carbs_per_100g: number;
@@ -176,6 +181,8 @@ export interface FoodItem {
   id: string;
   meal_id: string;
   name: string;
+  // See CustomFood.canonical_name above.
+  canonical_name?: string;
   preparation: string;
   state: string;
   brand?: string;
@@ -299,6 +306,9 @@ export interface PatchMealInput {
 // dashboard_order is its first field; other keys pass through untouched.
 export interface UserSettings {
   dashboard_order?: string[];
+  // BCP-47-ish code (e.g. "en", "ru") — see the display-language capability.
+  // Absent means English. Read/written through components/LanguageContext.tsx.
+  display_language?: string;
   [key: string]: unknown;
 }
 
