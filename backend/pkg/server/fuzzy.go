@@ -76,3 +76,31 @@ func fuzzySimilarity(a, b string) float64 {
 	}
 	return 1 - float64(levenshteinDistance(na, nb))/float64(maxLen)
 }
+
+// digitsIn returns just the digit runes of s, in order. Used by
+// sameDigitsIn below.
+func digitsIn(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// sameDigitsIn reports whether a and b carry the same digits in the same
+// order. A fuzzy custom-food match binds unconditionally (see
+// fuzzyMatchThreshold and food_upload.go's retrieveCandidates), so a
+// false positive silently attaches the wrong macros with no alternative
+// offered — and names that differ *only* in a number are exactly the case
+// plain edit distance handles worst: "Milk 2%" vs "Milk 3%" scores 0.857 and
+// "Cola 0.5l" vs "Cola 1.5l" 0.889, both comfortably over the threshold,
+// while being different foods with materially different macros. Digits in a
+// food name are near-always a defining quantity (fat percentage, volume,
+// strength), not incidental spelling, so a mismatch here vetoes the match
+// rather than merely lowering its score. Names with no digits at all are
+// unaffected (both sides yield ""). Found in code review.
+func sameDigitsIn(a, b string) bool {
+	return digitsIn(a) == digitsIn(b)
+}

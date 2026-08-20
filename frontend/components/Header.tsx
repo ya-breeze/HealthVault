@@ -99,14 +99,21 @@ export default function Header() {
             value={language}
             disabled={changingLanguage}
             onChange={e => handleLanguageChange(e.target.value as LanguageCode)}
-            className="text-sm font-medium border border-border rounded-md px-2 py-2.5 min-h-11 bg-bg text-text-muted hover:text-text disabled:opacity-60"
+            // min-h-12 (48px), matching TapTarget's minimum rather than the
+            // 44px this started at: the header is named explicitly in
+            // openspec/specs/mobile-touch-targets "Minimum Tap Target Size",
+            // and this is an interactive control in it. Not TapTarget itself —
+            // that renders a single element and a <select> owns its own
+            // options, so wrapping would put the tap target on a box around
+            // the control rather than on the control. Found in code review.
+            className="text-sm font-medium border border-border rounded-md px-2 py-2.5 min-h-12 bg-bg text-text-muted hover:text-text disabled:opacity-60"
           >
             {SUPPORTED_LANGUAGES.map(l => (
               <option key={l.code} value={l.code}>{l.label}</option>
             ))}
           </select>
           {me && (
-            <span className="font-[family-name:var(--font-data)] text-xs uppercase tracking-wide text-text-muted border border-border rounded-md px-2.5 py-2.5 min-h-11 flex items-center bg-bg">
+            <span className="font-[family-name:var(--font-data)] text-xs uppercase tracking-wide text-text-muted border border-border rounded-md px-2.5 py-2.5 min-h-12 flex items-center bg-bg">
               {me.username}
             </span>
           )}

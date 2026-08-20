@@ -144,6 +144,9 @@ export interface FoodSearchResult {
   custom_food_id?: string;
   fdc_id?: number;
   name: string;
+  // English identity of a 'custom' result whose name is non-English — see
+  // CustomFood.canonical_name below. Never set on 'usda' results.
+  canonical_name?: string;
   profile: NutrientProfile;
 }
 

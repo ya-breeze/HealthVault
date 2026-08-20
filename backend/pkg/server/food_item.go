@@ -350,7 +350,21 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			// food the item is later matched to. And a bare rename with no
 			// other field also leaves it untouched — see "Renaming an item
 			// does not require touching its macros".
-			if hasName {
+			//
+			// Conditioned on the name actually *changing*, not merely being
+			// present: the shipped UI pre-fills its manual-correction form
+			// with the item's current name and always sends it back
+			// (ItemResolver seeds manualName from itemName;
+			// MealItemRow.handleManual always passes name), so keying off
+			// presence alone wiped Canonical Name on every macro correction —
+			// including ones that left the name exactly as recognized — and
+			// made the "custom food created from a non-English recognition
+			// keeps its Canonical Name" scenario unreachable through the
+			// product. Compared case-insensitively, and against the
+			// pre-rename item.Name (the new name isn't applied until below),
+			// matching UpdateCustomFood's identical check in food_custom.go.
+			// Found in code review.
+			if hasName && !strings.EqualFold(strings.TrimSpace(*req.Name), item.Name) {
 				item.CanonicalName = ""
 			}
 		case req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil:

@@ -1,5 +1,6 @@
 'use client';
 import { useLanguage } from '@/components/LanguageContext';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   checked: boolean;
@@ -14,7 +15,17 @@ interface Props {
 export default function ExpertModeToggle({ checked, onChange }: Props) {
   const { t } = useLanguage();
   return (
-    <label className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 select-none">
+    // TapTarget as a <label>, not a bare one: this toggle ships on the review
+    // and custom-foods screens, both covered by
+    // openspec/specs/mobile-touch-targets "Minimum Tap Target Size", and a
+    // 16px checkbox inside a text-height label is far under the 48x48
+    // minimum. Clicking anywhere in a label toggles its checkbox, so sizing
+    // the label is what actually enlarges the tap target. Found in code
+    // review.
+    <TapTarget
+      as="label"
+      className="inline-flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 select-none cursor-pointer"
+    >
       <input
         type="checkbox"
         checked={checked}
@@ -30,6 +41,6 @@ export default function ExpertModeToggle({ checked, onChange }: Props) {
         data-testid="expert-mode-toggle"
       />
       {t('expertMode.toggle')}
-    </label>
+    </TapTarget>
   );
 }

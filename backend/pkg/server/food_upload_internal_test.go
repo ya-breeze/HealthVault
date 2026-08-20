@@ -54,3 +54,41 @@ func TestFuzzyCustomFoodMatch_TiedScoreBrokenByMostRecentlyUsed(t *testing.T) {
 		t.Fatalf("expected most-recently-used to win the tie ahead of the ID tie-break, got %s", got.ID)
 	}
 }
+
+// Regression for a code-review finding: a fuzzy custom-food hit is returned
+// as the sole candidate and binds unconditionally (see retrieveCandidates),
+// so a false positive attaches the wrong macros with no alternative offered.
+// Names differing only in a number — a fat percentage, a volume, a strength —
+// are exactly what plain edit distance handles worst: they score well above
+// fuzzyMatchThreshold while being materially different foods. sameDigitsIn
+// vetoes those regardless of score.
+func TestFuzzyCustomFoodMatch_DigitOnlyDifferenceIsNotAMatch(t *testing.T) {
+	usageByID := map[uuid.UUID]customFoodUsage{}
+	for _, c := range []struct{ stored, recognized string }{
+		{"Milk 2%", "Milk 3%"},
+		{"Cola 0.5l", "Cola 1.5l"},
+		{"Beer 4.5%", "Beer 6.5%"},
+	} {
+		food := database.CustomFood{Name: c.stored}
+		food.ID = uuid.New()
+		if _, ok := fuzzyCustomFoodMatch([]database.CustomFood{food}, c.recognized, usageByID); ok {
+			t.Errorf("fuzzyCustomFoodMatch(%q, %q) matched; want no match", c.stored, c.recognized)
+		}
+	}
+}
+
+// The veto above must not cost ordinary matches: names with no digits at all,
+// and names whose digits agree, still match on similarity as before.
+func TestFuzzyCustomFoodMatch_DigitVetoDoesNotBlockGenuineMatches(t *testing.T) {
+	usageByID := map[uuid.UUID]customFoodUsage{}
+	for _, c := range []struct{ stored, recognized string }{
+		{"Tvorog", "Tvorogh"},
+		{"Milk 2%", "milk  2%"},
+	} {
+		food := database.CustomFood{Name: c.stored}
+		food.ID = uuid.New()
+		if _, ok := fuzzyCustomFoodMatch([]database.CustomFood{food}, c.recognized, usageByID); !ok {
+			t.Errorf("fuzzyCustomFoodMatch(%q, %q) did not match; want a match", c.stored, c.recognized)
+		}
+	}
+}

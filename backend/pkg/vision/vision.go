@@ -24,7 +24,15 @@ type Item struct {
 	// Name is the Display Name: in the target language passed to Recognize/
 	// Clarify. See openspec/specs/display-language "Display Language Passed
 	// to Recognition".
-	Name        string  `json:"name"`
+	// Tagged display_name, not name: an Item is serialized outbound to the
+	// model (Clarify's previously_recognized_items payload), whose system
+	// prompt and response schema speak only of display_name/canonical_name.
+	// Replaying prior items under a key the instructions never mention asks
+	// the model to "update the items accordingly" using vocabulary it wasn't
+	// given — a plausible way for a clarification round to lose the language
+	// or drop the canonical name. Nothing unmarshals an Item from stored
+	// JSON, so the tag is free to match the prompt. Found in code review.
+	Name        string  `json:"display_name"`
 	Preparation string  `json:"preparation,omitempty"`
 	State       string  `json:"state,omitempty"`
 	Brand       string  `json:"brand,omitempty"`

@@ -1040,6 +1040,64 @@ func TestPatchMealItem_RenamingItemClearsCanonicalNameOnSavedCustomFood(t *testi
 	}
 }
 
+// Regression test for a bug found in code review: the CanonicalName-clearing
+// above was keyed off `name` merely being *present* in the request, but the
+// shipped UI pre-fills its manual-correction form with the item's current
+// name and always sends it back. So a plain macro correction that left the
+// name exactly as recognized still counted as a rename and wiped the item's
+// Canonical Name — which also made the "custom food created from a
+// non-English recognition keeps its Canonical Name" scenario unreachable
+// through the product, since the copy onto the new CustomFood then always
+// copied an empty string. The sibling test above deliberately omits `name`,
+// which is why it never caught this; this one sends it, as the UI does.
+func TestPatchMealItem_UnchangedNameKeepsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	// Same name back, only the macros corrected — exactly what ItemResolver's
+	// pre-filled form submits.
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true, "calories": 300, "name": "вареники",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName kept when the name did not change, got %q", updated.CanonicalName)
+	}
+
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "вареники").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	if cf.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName copied onto the saved CustomFood, got %q", cf.CanonicalName)
+	}
+}
+
 // Regression: an earlier version of the fix for the sibling test above
 // (RenamingItemClearsCanonicalNameOnSavedCustomFood) cleared CanonicalName
 // for *any* name change, including a bare rename with no other field — which
