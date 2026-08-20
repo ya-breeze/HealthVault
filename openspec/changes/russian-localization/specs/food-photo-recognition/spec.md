@@ -3,6 +3,8 @@
 ### Requirement: Food Recognition and Clarification Questions
 The system SHALL analyze the food image using OpenAI Vision and return recognized food items with estimated weights in grams, confidence scores, and any clarification questions. Each recognized item SHALL include a Display Name, produced in the caller's current Display Language (see `display-language` "Display Language Passed to Recognition"), and a Canonical Name, produced in English in the same model call. When the caller's Display Language is English, the Canonical Name SHALL be omitted (or left empty) rather than duplicating the Display Name in storage.
 
+A clarification round SHALL NOT be able to strip a Canonical Name the earlier round established. The clarify call is text-only and shares the recognition schema, so it can return an empty `canonical_name` for an item it still recognizes; where the round leaves an item's identity intact, the prior round's Canonical Name SHALL be preserved. This matters because the Canonical Name is not user-editable: once cleared it cannot be restored through the interface, leaving a single item in an otherwise glossed meal with nothing to show in Expert Mode. Preservation SHALL NOT apply when the caller's Display Language is English, where an empty Canonical Name is the required state rather than a loss.
+
 #### Scenario: Recognition with clarification questions
 - **WHEN** the vision model detects ambiguity in cooking method or portion size
 - **THEN** the model returns structured JSON containing food candidates and non-empty `clarification_questions`, and the system transitions `FoodMeal` status to `pending_clarification`
@@ -18,3 +20,7 @@ The system SHALL analyze the food image using OpenAI Vision and return recognize
 #### Scenario: Recognition in English Display Language does not duplicate the name
 - **WHEN** a user whose Display Language is English (or unset) uploads a food photo
 - **THEN** each recognized item SHALL carry a Display Name in English, and its Canonical Name SHALL be empty rather than a duplicate copy of the same English text
+
+#### Scenario: A clarification round does not strip an established Canonical Name
+- **WHEN** a user whose Display Language is `ru` answers a clarification question, and the clarify response returns the same item with an empty `canonical_name`
+- **THEN** the item SHALL keep the Canonical Name recorded by the earlier round, alongside whatever Display Name the clarification produced

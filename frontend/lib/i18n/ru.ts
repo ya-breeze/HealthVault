@@ -39,6 +39,8 @@ const ru: Dictionary = {
   'review.clarificationSubmitted': 'Уточнение отправлено',
   'review.mealConfirmed': 'Приём пищи подтверждён',
   'review.confirmFailed': 'Не удалось подтвердить',
+  'review.offAttributionPrefix': 'Данные о некоторых продуктах — из ',
+  'review.offAttributionMiddle': ', доступны по лицензии ',
 
   'item.resolve': 'Определить блюдо',
   'item.verifyEstimate': 'Проверить оценку',

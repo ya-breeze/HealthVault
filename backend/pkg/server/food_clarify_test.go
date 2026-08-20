@@ -206,7 +206,7 @@ func TestClarifyMeal_ConflictingClarifyEstimateIsDiscarded(t *testing.T) {
 // estimate across a reorder. Two prior items, each with a distinct estimate,
 // come back from Clarify in swapped order and under unrelated names
 // ("grilled chicken" / "mixed salad" share no substring either way). If
-// carryForwardEstimates matched purely by position, each item would silently
+// carryForwardPriorFields matched purely by position, each item would silently
 // inherit the *other's* estimate; the fix requires the name at a position to
 // still be plausibly the same item, so neither should resolve to
 // macro_source=estimated here (no candidate match, no carried estimate).
@@ -591,5 +591,122 @@ func TestClarifyMeal_ConcurrentDoubleSubmitOnlyOneWins(t *testing.T) {
 	}
 	if successes != 1 {
 		t.Errorf("expected exactly 1 of 2 concurrent submissions to succeed, got codes %v", codes)
+	}
+}
+
+// seedClarifyMealWithCanonicalName creates a pending_clarification meal holding
+// one item that has both a Display Name and a Canonical Name, as a non-English
+// recognition round would have persisted it, and sets the user's stored
+// display_language.
+func seedClarifyMealWithCanonicalName(
+	t *testing.T, st database.Storage, userID, familyID uuid.UUID, displayName, canonicalName, language string,
+) database.FoodMeal {
+	t.Helper()
+	putH := server.PutUserSettingsHandler(st)
+	w := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"display_language":"` + language + `"}`)
+	putH.ServeHTTP(w, withClaims(httptest.NewRequest(http.MethodPut, "/api/users/me/settings", body), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT settings: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	log, err := json.Marshal([]database.ClarifyEntry{
+		{Round: 1, Question: "Со сметаной или без?", Answer: ""},
+	})
+	if err != nil {
+		t.Fatalf("marshal clarify log: %v", err)
+	}
+	meal := database.FoodMeal{
+		UserID: userID, Status: database.MealStatusPendingClarification, LoggedAt: time.Now(),
+		ClarifyRound: 0, ClarifyLog: string(log),
+	}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: displayName, CanonicalName: canonicalName,
+		WeightGrams: 200, MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	return meal
+}
+
+// Regression for a code-review finding: canonical_name is required by the
+// clarify response schema, so the model must emit the key — but not a non-empty
+// value, and an empty one used to be persisted as-is. Since canonical_name is
+// deliberately not editable via PATCH, that permanently stripped the item's
+// English identity: a Russian user's meal would show an Expert Mode gloss for
+// every item except the one that went through clarification, with no way to
+// restore it. The prior round's Canonical Name is carried forward instead,
+// under the same identity guard the estimate carry-forward uses.
+func TestClarifyMeal_EmptyCanonicalNameKeepsThePriorRounds(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := seedClarifyMealWithCanonicalName(t, st, userID, familyID, "вареники", "dumplings", "ru")
+
+	fake := &vision.Fake{
+		// Same item, narrowed name, and no canonical_name of its own.
+		ClarifyResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "вареники с картошкой", WeightGrams: 200, Confidence: 0.8}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.ClarifyMeal(w, withClaims(clarifyRequest(meal.ID.String(), []string{"Без сметаны"}), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got.Items) != 1 {
+		t.Fatalf("expected one item, got %+v", got.Items)
+	}
+	if got.Items[0].CanonicalName != "dumplings" {
+		t.Errorf("CanonicalName = %q, want the prior round's %q", got.Items[0].CanonicalName, "dumplings")
+	}
+	if got.Items[0].Name != "вареники с картошкой" {
+		t.Errorf("Name = %q, want the clarified display name", got.Items[0].Name)
+	}
+}
+
+// The carry-forward above must not fire for an English Display Language, where
+// a Canonical Name stays empty rather than duplicating the Display Name (see
+// food-photo-recognition "Recognition in English Display Language does not
+// duplicate the name"). The only way to reach that combination — a stored
+// Canonical Name and an English Display Language — is switching language
+// between rounds, which is what this seeds.
+func TestClarifyMeal_EnglishDoesNotCarryForwardCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := seedClarifyMealWithCanonicalName(t, st, userID, familyID, "dumplings", "dumplings", "en")
+
+	fake := &vision.Fake{
+		ClarifyResult: &vision.RecognizeResult{
+			Items: []vision.Item{{Name: "dumplings", WeightGrams: 200, Confidence: 0.8}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.ClarifyMeal(w, withClaims(clarifyRequest(meal.ID.String(), []string{"No sour cream"}), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if len(got.Items) != 1 {
+		t.Fatalf("expected one item, got %+v", got.Items)
+	}
+	if got.Items[0].CanonicalName != "" {
+		t.Errorf("CanonicalName = %q, want empty for an English Display Language", got.Items[0].CanonicalName)
 	}
 }

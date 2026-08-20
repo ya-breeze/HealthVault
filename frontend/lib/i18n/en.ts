@@ -75,6 +75,19 @@ const en = {
   'review.clarificationSubmitted': 'Clarification submitted',
   'review.mealConfirmed': 'Meal confirmed',
   'review.confirmFailed': 'Confirm failed',
+  // The Open Food Facts attribution is one sentence wrapping two links, so it
+  // is split at the link boundaries: t() takes a key and returns a string,
+  // with no placeholder substitution to interpolate elements into. The link
+  // texts themselves ("Open Food Facts", "Open Database License (ODbL)") stay
+  // literal in the JSX — they are a product name and a licence name, the same
+  // reason item.originOff carries identical text in both dictionaries — and
+  // the sentence-final "." is literal too, since both languages end it the
+  // same way. Only the prose between the links is translated. This paragraph
+  // was hardcoded English on a screen the scope comment above declares
+  // covered, so a Russian user with any Open Food Facts-matched item met one
+  // English sentence mid-page. Found in code review.
+  'review.offAttributionPrefix': 'Product data for some items from ',
+  'review.offAttributionMiddle': ', available under the ',
 
   'item.resolve': 'Resolve this item',
   'item.verifyEstimate': 'Verify this estimate',

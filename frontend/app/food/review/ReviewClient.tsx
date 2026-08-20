@@ -257,7 +257,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
             {items.some(item => item.off_code) && (
               <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
-                Product data for some items from{' '}
+                {t('review.offAttributionPrefix')}
                 <a
                   href="https://world.openfoodfacts.org/"
                   target="_blank"
@@ -266,7 +266,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
                 >
                   Open Food Facts
                 </a>
-                , available under the{' '}
+                {t('review.offAttributionMiddle')}
                 <a
                   href="https://opendatacommons.org/licenses/odbl/1-0/"
                   target="_blank"
