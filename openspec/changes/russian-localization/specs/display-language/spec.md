@@ -1,0 +1,46 @@
+## ADDED Requirements
+
+### Requirement: Per-User Display Language Setting
+
+The system SHALL store the authenticated user's Display Language as a `display_language` key in
+their existing `UserSettings` JSON object (`GET`/`PUT /api/users/me/settings`), requiring no new
+storage or endpoint. An absent `display_language` key SHALL be treated as English (`en`) — the
+existing default before this change, so no existing user's behavior changes until they explicitly
+set a different Display Language.
+
+#### Scenario: Setting a Display Language
+
+- **WHEN** an authenticated user sends `PUT /api/users/me/settings` with a body including
+  `"display_language": "ru"`
+- **THEN** the system stores it as part of their settings object, and subsequent reads of
+  `GET /api/users/me/settings` include it
+
+#### Scenario: Unset Display Language defaults to English
+
+- **WHEN** an authenticated user's settings object has no `display_language` key
+- **THEN** the system SHALL treat their Display Language as English for both UI rendering and
+  recognition requests
+
+### Requirement: UI Language Switcher
+
+The frontend SHALL provide a control for the authenticated user to change their Display Language,
+which writes the new value via `PUT /api/users/me/settings` and re-renders static UI strings in
+the newly selected language without requiring a page reload.
+
+#### Scenario: Switching Display Language updates the UI immediately
+
+- **WHEN** a user selects a different Display Language from the switcher
+- **THEN** the system saves the new setting and the interface's static strings SHALL reflect the
+  new language without a full page reload
+
+### Requirement: Display Language Passed to Recognition
+
+The system SHALL include the authenticated user's current Display Language in every food-photo
+recognition request (initial analysis, reanalysis, and clarification rounds), so the vision model
+knows which language to produce the Display Name in for that call (see
+`food-photo-recognition` "Food Recognition and Clarification Questions").
+
+#### Scenario: A non-English Display Language is passed to recognition
+
+- **WHEN** a user whose Display Language is `ru` uploads a food photo
+- **THEN** the recognition request SHALL include `ru` as the target language for the Display Name
