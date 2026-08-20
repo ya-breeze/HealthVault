@@ -4,7 +4,7 @@ import { api, MealSummary } from '@/lib/api';
 import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
-import { mealStatusLabel } from '@/lib/i18n';
+import { dateLocaleFor, mealStatusLabel } from '@/lib/i18n';
 
 const PAGE_SIZE = 50;
 
@@ -30,7 +30,11 @@ interface DayGroup {
 // section or appends new sections in the correct place. Totals sum only
 // `confirmed` meals — others have no final nutrition numbers yet (see
 // food-meal-history's "Daily total sums only confirmed meals" scenario).
-function groupByDay(meals: MealSummary[]): DayGroup[] {
+// `locale` is threaded in rather than read from a hook, since this runs
+// outside the component. See dateLocaleFor: it is undefined for English, which
+// is exactly what Intl wants in order to keep honouring the browser's regional
+// date preference.
+function groupByDay(meals: MealSummary[], locale: string | undefined): DayGroup[] {
   const groups: DayGroup[] = [];
   const indexByKey = new Map<string, number>();
 
@@ -44,7 +48,7 @@ function groupByDay(meals: MealSummary[]): DayGroup[] {
       indexByKey.set(dateKey, idx);
       groups.push({
         dateKey,
-        label: d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }),
+        label: d.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' }),
         meals: [],
         totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
       });
@@ -67,7 +71,7 @@ function groupByDay(meals: MealSummary[]): DayGroup[] {
 // editing. Previously there was no entry point into a meal beyond the
 // direct upload flow or a hand-typed /food/review/?meal=<uuid> URL.
 export default function FoodHistoryPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [meals, setMeals] = useState<MealSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -103,7 +107,7 @@ export default function FoodHistoryPage() {
     }
   };
 
-  const dayGroups = groupByDay(meals);
+  const dayGroups = groupByDay(meals, dateLocaleFor(language));
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -142,7 +146,7 @@ export default function FoodHistoryPage() {
                       {meal.name || t('review.mealFallbackName')}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {new Date(meal.logged_at).toLocaleString()} · {mealStatusLabel(t, meal.status)}
+                      {new Date(meal.logged_at).toLocaleString(dateLocaleFor(language))} · {mealStatusLabel(t, meal.status)}
                     </p>
                   </div>
                   {meal.status === 'confirmed' && (

@@ -163,6 +163,62 @@ const en = {
   'customFood.delete': 'Delete',
   'customFood.loadFailed': 'Failed to load custom foods',
   'customFood.deleteFailed': 'Delete failed',
+
+  'dashboard.vitalsHeading': 'Vitals · last 7 days',
+  'dashboard.editOrder': 'Edit order',
+  'dashboard.done': 'Done',
+  'dashboard.saving': 'Saving…',
+  'dashboard.loadingOrder': 'Loading your saved order…',
+  'dashboard.orderLoadFailed': 'Could not load your saved dashboard order. Reordering is unavailable right now.',
+  'dashboard.orderSaveFailed': 'Could not save the new card order. Try again.',
+  // Four plural forms because the dictionary type is shared with ru.ts, which
+  // needs all four. English only ever selects 'one' and 'other', so the two
+  // middle entries are unreachable here and simply mirror 'other' — see
+  // pluralForm in lib/i18n/index.ts.
+  'dashboard.needsAttention.one': '{count} meal needs attention',
+  'dashboard.needsAttention.few': '{count} meals need attention',
+  'dashboard.needsAttention.many': '{count} meals need attention',
+  'dashboard.needsAttention.other': '{count} meals need attention',
+  'dashboard.logFood': 'Log food',
+  'dashboard.photo': 'Photo',
+  'dashboard.manual': 'Manual',
+  'dashboard.history': 'History',
+  'dashboard.moreData': 'More data',
+
+  'vitals.noData': 'No data',
+  'vitals.trend7d': '7d trend',
+  'vitals.moveUp': 'Move {metric} up',
+  'vitals.moveDown': 'Move {metric} down',
+
+  // One per DATA_TYPES entry. Translated rather than derived from the type id:
+  // the dashboard used to render a secondary metric's label by replacing
+  // underscores in its identifier, which can only ever produce English.
+  'metric.steps': 'Steps',
+  'metric.heart_rate': 'Heart Rate',
+  'metric.heart_rate_variability': 'HRV',
+  'metric.sleep': 'Sleep',
+  'metric.distance': 'Distance',
+  'metric.active_calories': 'Active Calories',
+  'metric.total_calories': 'Total Calories',
+  'metric.weight': 'Weight',
+  'metric.height': 'Height',
+  'metric.blood_pressure': 'Blood Pressure',
+  'metric.blood_glucose': 'Blood Glucose',
+  'metric.oxygen_saturation': 'Oxygen Sat.',
+  'metric.body_temperature': 'Body Temperature',
+  'metric.skin_temperature': 'Skin Temperature',
+  'metric.respiratory_rate': 'Respiratory Rate',
+  'metric.resting_heart_rate': 'Resting Heart Rate',
+  'metric.exercise': 'Exercise',
+  'metric.hydration': 'Hydration',
+  'metric.nutrition': 'Nutrition',
+  'metric.basal_metabolic_rate': 'Basal Metabolic Rate',
+  'metric.body_fat': 'Body Fat',
+  'metric.lean_body_mass': 'Lean Body Mass',
+  'metric.vo2_max': 'VO2 Max',
+  'metric.bone_mass': 'Bone Mass',
+  'metric.speed': 'Speed',
+  'metric.food_meal': 'Food Meal',
 };
 
 export default en;

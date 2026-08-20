@@ -13,6 +13,13 @@ it matters.
   `UserSettings` JSON blob (`GET`/`PUT /api/users/me/settings` — already implemented, no schema
   change needed).
 - Add a UI language switcher driven by that setting.
+- Localize the **dashboard** — the vitals grid and its 26 metric names, the meal-attention link,
+  the log-food actions, and the secondary-metric links — alongside the food screens. Added after
+  the Russian UI was reviewed on a running deployment and the landing page turned out to be
+  entirely English, which makes the setting look inoperative before a user reaches any translated
+  screen. Counted nouns select their plural form via the language's own plural categories (Russian
+  has four) rather than an `n === 1` test, and dates/times are formatted for the Display Language
+  instead of the browser's locale.
 - Food photo recognition SHALL request both a **Display Name** (in the user's Display Language)
   and a **Canonical Name** (English) from the AI in the same recognition call, and persist both on
   the `FoodItem`.

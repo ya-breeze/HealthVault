@@ -117,6 +117,61 @@ const ru: Dictionary = {
   'customFood.delete': 'Удалить',
   'customFood.loadFailed': 'Не удалось загрузить свои продукты',
   'customFood.deleteFailed': 'Не удалось удалить',
+
+  'dashboard.vitalsHeading': 'Показатели · за 7 дней',
+  'dashboard.editOrder': 'Изменить порядок',
+  'dashboard.done': 'Готово',
+  'dashboard.saving': 'Сохранение…',
+  'dashboard.loadingOrder': 'Загружается сохранённый порядок…',
+  'dashboard.orderLoadFailed': 'Не удалось загрузить сохранённый порядок карточек. Изменить порядок сейчас нельзя.',
+  'dashboard.orderSaveFailed': 'Не удалось сохранить новый порядок карточек. Попробуйте ещё раз.',
+  // Russian's four plural categories, selected by Intl.PluralRules:
+  // one   — 1, 21, 31…      "1 приём пищи требует проверки"
+  // few   — 2–4, 22–24…     "3 приёма пищи требуют проверки"
+  // many  — 5–20, 25–30…    "7 приёмов пищи требуют проверки"
+  // other — fractions only, unreachable for an integer count, but required by
+  //         the shared dictionary type; mirrors 'many'.
+  'dashboard.needsAttention.one': '{count} приём пищи требует проверки',
+  'dashboard.needsAttention.few': '{count} приёма пищи требуют проверки',
+  'dashboard.needsAttention.many': '{count} приёмов пищи требуют проверки',
+  'dashboard.needsAttention.other': '{count} приёмов пищи требуют проверки',
+  'dashboard.logFood': 'Записать еду',
+  'dashboard.photo': 'Фото',
+  'dashboard.manual': 'Вручную',
+  'dashboard.history': 'История',
+  'dashboard.moreData': 'Другие данные',
+
+  'vitals.noData': 'Нет данных',
+  'vitals.trend7d': 'тренд за 7 дней',
+  'vitals.moveUp': 'Переместить «{metric}» вверх',
+  'vitals.moveDown': 'Переместить «{metric}» вниз',
+
+  'metric.steps': 'Шаги',
+  'metric.heart_rate': 'Пульс',
+  'metric.heart_rate_variability': 'ВСР',
+  'metric.sleep': 'Сон',
+  'metric.distance': 'Расстояние',
+  'metric.active_calories': 'Активные калории',
+  'metric.total_calories': 'Всего калорий',
+  'metric.weight': 'Вес',
+  'metric.height': 'Рост',
+  'metric.blood_pressure': 'Давление',
+  'metric.blood_glucose': 'Глюкоза в крови',
+  'metric.oxygen_saturation': 'Сатурация',
+  'metric.body_temperature': 'Температура тела',
+  'metric.skin_temperature': 'Температура кожи',
+  'metric.respiratory_rate': 'Частота дыхания',
+  'metric.resting_heart_rate': 'Пульс в покое',
+  'metric.exercise': 'Тренировки',
+  'metric.hydration': 'Вода',
+  'metric.nutrition': 'Питание',
+  'metric.basal_metabolic_rate': 'Основной обмен',
+  'metric.body_fat': 'Жировая масса',
+  'metric.lean_body_mass': 'Мышечная масса',
+  'metric.vo2_max': 'МПК',
+  'metric.bone_mass': 'Костная масса',
+  'metric.speed': 'Скорость',
+  'metric.food_meal': 'Приёмы пищи',
 };
 
 export default ru;

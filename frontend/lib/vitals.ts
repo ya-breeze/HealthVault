@@ -1,16 +1,24 @@
 import type { DataType } from '@/lib/api';
 import { formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
 
-/** The 8 metrics shown as full vitals-grid cards on the dashboard, in display order. */
-export const PRIMARY_METRICS: { type: DataType; label: string }[] = [
-  { type: 'steps', label: 'Steps' },
-  { type: 'heart_rate', label: 'Heart Rate' },
-  { type: 'sleep', label: 'Sleep' },
-  { type: 'heart_rate_variability', label: 'HRV' },
-  { type: 'distance', label: 'Distance' },
-  { type: 'weight', label: 'Weight' },
-  { type: 'blood_pressure', label: 'Blood Pressure' },
-  { type: 'oxygen_saturation', label: 'Oxygen Sat.' },
+/**
+ * The 8 metrics shown as full vitals-grid cards on the dashboard, in display
+ * order.
+ *
+ * Type only, no label: display names now come from the `metric.<type>` keys in
+ * lib/i18n so they can be translated. Keeping an English label here as well
+ * would give each metric two names with nothing keeping them in step, and the
+ * one the dashboard actually renders would be the other one.
+ */
+export const PRIMARY_METRICS: { type: DataType }[] = [
+  { type: 'steps' },
+  { type: 'heart_rate' },
+  { type: 'sleep' },
+  { type: 'heart_rate_variability' },
+  { type: 'distance' },
+  { type: 'weight' },
+  { type: 'blood_pressure' },
+  { type: 'oxygen_saturation' },
 ];
 
 /**
