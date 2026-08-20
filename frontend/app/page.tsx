@@ -1,10 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, DATA_TYPES, UserSettings } from '@/lib/api';
+import { api, DATA_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
+import { useLanguage } from '@/components/LanguageContext';
+import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
+import { useLatest } from '@/lib/useLatest';
 import Header from '@/components/Header';
 import VitalCard from '@/components/VitalCard';
 import TapTarget from '@/components/ui/TapTarget';
@@ -15,10 +18,17 @@ const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type
 export default function Dashboard() {
   const router = useRouter();
   const { showToast } = useToast();
+  // updateSettings queues this screen's dashboard_order PUT behind
+  // LanguageContext's own claim() — see that provider's doc comment. Both
+  // this screen and the language switcher write to the same UserSettings
+  // blob; without a shared queue, saving a reorder and then switching
+  // language (or vice versa) before the first PUT lands can silently
+  // clobber whichever save loses the race — found in code review.
+  const { updateSettings, t, language } = useLanguage();
+  const tRef = useLatest(t);
   const [ready, setReady] = useState(false);
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
-  const [settings, setSettings] = useState<UserSettings>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [order, setOrder] = useState(PRIMARY_METRICS);
   const [editing, setEditing] = useState(false);
@@ -34,7 +44,6 @@ export default function Dashboard() {
     if (!ready) return;
     api.getSettings()
       .then(s => {
-        setSettings(s);
         setOrder(reconcileMetricOrder(s.dashboard_order));
         setSettingsLoaded(true);
       })
@@ -42,9 +51,15 @@ export default function Dashboard() {
         // Leave settingsLoaded false: editing/saving stays disabled rather
         // than risking a Done that overwrites real stored settings with a
         // PUT built from the (unknown) default order.
-        showToast('Could not load your saved dashboard order. Reordering is unavailable right now.', 'error');
+        showToast(tRef.current('dashboard.orderLoadFailed'), 'error');
       });
-  }, [ready, showToast]);
+    // tRef, not t: the language selector sits in this page's own Header, and
+    // this effect overwrites `order` with the stored order. Depending on `t`
+    // meant switching language while reordering cards threw away the
+    // in-progress arrangement — and because `editing` stays true, a
+    // subsequent Done would persist the reverted order as if the user had
+    // chosen it. Found in code review. See lib/useLatest.
+  }, [ready, showToast, tRef]);
 
   useEffect(() => {
     if (!ready) return;
@@ -86,13 +101,11 @@ export default function Dashboard() {
 
   async function handleDone() {
     setSaving(true);
-    const next: UserSettings = { ...settings, dashboard_order: order.map(m => m.type) };
     try {
-      await api.putSettings(next);
-      setSettings(next);
+      await updateSettings({ dashboard_order: order.map(m => m.type) });
       setEditing(false);
     } catch {
-      showToast('Could not save the new card order. Try again.', 'error');
+      showToast(t('dashboard.orderSaveFailed'), 'error');
     } finally {
       setSaving(false);
     }
@@ -105,7 +118,7 @@ export default function Dashboard() {
       <main className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-3">
           <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent">
-            Vitals · last 7 days
+            {t('dashboard.vitalsHeading')}
           </p>
           {editing ? (
             <TapTarget
@@ -113,16 +126,16 @@ export default function Dashboard() {
               disabled={saving}
               className="px-3 rounded-md border border-accent text-accent text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Done'}
+              {saving ? t('dashboard.saving') : t('dashboard.done')}
             </TapTarget>
           ) : (
             <TapTarget
               onClick={() => setEditing(true)}
               disabled={!settingsLoaded}
-              title={settingsLoaded ? undefined : 'Loading your saved order…'}
+              title={settingsLoaded ? undefined : t('dashboard.loadingOrder')}
               className="px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
-              Edit order
+              {t('dashboard.editOrder')}
             </TapTarget>
           )}
         </div>
@@ -131,7 +144,7 @@ export default function Dashboard() {
             <VitalCard
               key={m.type}
               type={m.type}
-              label={m.label}
+              label={metricLabel(t, m.type)}
               result={ready ? vitals[m.type] ?? null : null}
               editing={editing}
               onMoveUp={() => moveCard(i, -1)}
@@ -148,12 +161,20 @@ export default function Dashboard() {
             className="mb-8 flex items-center gap-2 bg-bg-elevated border border-border rounded-[10px] px-4 py-3 hover:border-accent transition-colors text-sm font-semibold text-text"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
-            {needsAttentionCount} meal{needsAttentionCount === 1 ? '' : 's'} need{needsAttentionCount === 1 ? 's' : ''} attention
+            {interpolate(
+              pluralForm(language, needsAttentionCount, {
+                one: t('dashboard.needsAttention.one'),
+                few: t('dashboard.needsAttention.few'),
+                many: t('dashboard.needsAttention.many'),
+                other: t('dashboard.needsAttention.other'),
+              }),
+              { count: needsAttentionCount },
+            )}
           </a>
         )}
 
         <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-          Log food
+          {t('dashboard.logFood')}
         </p>
         <div className="flex gap-2.5 mb-8">
           <a
@@ -161,37 +182,37 @@ export default function Dashboard() {
             className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
           >
             <CameraIcon className="w-4 h-4 text-accent" />
-            Photo
+            {t('dashboard.photo')}
           </a>
           <a
             href="/food/manual/"
             className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
           >
             <PencilIcon className="w-4 h-4 text-accent" />
-            Manual
+            {t('dashboard.manual')}
           </a>
           <a
             href="/food/history/"
             className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
           >
             <HistoryIcon className="w-4 h-4 text-accent" />
-            History
+            {t('dashboard.history')}
           </a>
         </div>
 
         <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-          More data
+          {t('dashboard.moreData')}
         </p>
         <div className="flex flex-wrap gap-2">
-          {SECONDARY_TYPES.map(t => (
+          {SECONDARY_TYPES.map(type => (
             <a
-              key={t}
-              href={`/data/${t}/`}
+              key={type}
+              href={`/data/${type}/`}
               className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-border bg-bg-elevated hover:border-accent transition-colors flex items-center gap-1.5"
-              style={{ color: metricColorVar(t) }}
+              style={{ color: metricColorVar(type) }}
             >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: metricColorVar(t) }} />
-              {t.replace(/_/g, ' ')}
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: metricColorVar(type) }} />
+              {metricLabel(t, type)}
             </a>
           ))}
         </div>

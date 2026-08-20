@@ -61,6 +61,7 @@ func (h *foodHandlers) CreateCustomFood(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	req.Name = strings.TrimSpace(req.Name)
 	c := database.CustomFood{UserID: claims.UserID}
 	c.ID = uuid.New()
 	c.FamilyID = FamilyIDFromCtx(r)
@@ -85,8 +86,8 @@ func (h *foodHandlers) ListCustomFoods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var foods []database.CustomFood
-	if err := h.storage.DB().Where("user_id = ?", claims.UserID).Order("name").Find(&foods).Error; err != nil {
+	foods, err := h.customFoodsForUser(claims.UserID)
+	if err != nil {
 		http.Error(w, "query error", http.StatusInternalServerError)
 		return
 	}
@@ -94,6 +95,21 @@ func (h *foodHandlers) ListCustomFoods(w http.ResponseWriter, r *http.Request) {
 		foods = []database.CustomFood{}
 	}
 	writeJSON(w, foods)
+}
+
+// customFoodsForUser loads every custom food owned by userID, ordered by
+// name. Shared by ListCustomFoods, Search (food.go), and resolveItems
+// (food_upload.go) so the same "all of a user's custom foods" query isn't
+// hand-rolled separately in each — a future scoping change (e.g. an explicit
+// soft-delete filter) only needs to be made here. The ordering only matters
+// to ListCustomFoods (a user-facing catalog listing); Search and
+// resolveItems re-rank or fuzzy-match over the result themselves and ignore
+// query order, so doing it here in SQL rather than sorting client-side in
+// ListCustomFoods costs them nothing.
+func (h *foodHandlers) customFoodsForUser(userID uuid.UUID) ([]database.CustomFood, error) {
+	var foods []database.CustomFood
+	err := h.storage.DB().Where("user_id = ?", userID).Order("name").Find(&foods).Error
+	return foods, err
 }
 
 // findOwnedCustomFood loads a custom food by ID, scoped to userID. Returns
@@ -140,9 +156,29 @@ func (h *foodHandlers) UpdateCustomFood(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
+	// Trimmed once, up front, and used for both the rename check below and
+	// the stored value (via applyTo): comparing a trimmed request name
+	// against c.Name (also always stored trimmed) while leaving req.Name
+	// untrimmed would treat incidental leading/trailing whitespace as a
+	// "rename" on every no-op edit, wiping CanonicalName for nothing.
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
+	}
+	// A renamed custom food invalidates whatever Canonical Name recognition
+	// (or a save_as_custom_food copy) produced for the old name — carrying
+	// it forward would pair the corrected name with a stale, unrelated
+	// English gloss in Expert Mode. Unlike a meal item's PATCH (see
+	// food_item.go's PatchMealItem), this endpoint is a full-resource PUT
+	// with no partial-rename-only mode, so every name change here is
+	// equivalent to the "manual correction" case that clears it there.
+	//
+	// Case-insensitive comparison: a pure capitalization fix ("молоко" ->
+	// "Молоко") isn't an identity change and shouldn't cost the user their
+	// Canonical Name — found in code review.
+	if !strings.EqualFold(req.Name, c.Name) {
+		c.CanonicalName = ""
 	}
 	req.applyTo(c)
 

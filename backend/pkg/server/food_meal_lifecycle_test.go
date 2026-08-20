@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +91,38 @@ func createEstimatedItemMeal(t *testing.T, st database.Storage, userID, familyID
 	return meal
 }
 
+// createGlossedMeal creates a pending-review meal holding one unresolved item
+// that carries both a Russian Display Name and an English Canonical Name —
+// the shape every Canonical Name test needs, and previously copied verbatim
+// into seven of them. Returns the meal and the item so callers can address
+// either by ID.
+//
+// The name pair is fixed rather than parameterized because all seven callers
+// used this one, and a fixed pair keeps the tests' assertions readable
+// ("expected the gloss cleared") without a trail of string arguments. A test
+// needing a different pair should build its own item rather than widen this.
+func createGlossedMeal(
+	t *testing.T, st database.Storage, userID, familyID uuid.UUID,
+) (database.FoodMeal, database.FoodItem) {
+	t.Helper()
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	return meal, item
+}
+
 // --- GetMeal ---
 
 func TestGetMeal_ReturnsMealWithItems(t *testing.T) {
@@ -108,6 +141,27 @@ func TestGetMeal_ReturnsMealWithItems(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
 	if len(got.Items) != 1 {
 		t.Errorf("expected 1 item, got %d", len(got.Items))
+	}
+}
+
+// Regression: GetMeal must not hand-roll a response shape that silently
+// drops canonical_name — see openspec/specs/food-nutrition-logging "Food
+// Item and Custom Food Carry a Canonical Name".
+func TestGetMeal_ResponseIncludesCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	// This one asserts on the serialized response, not on the stored row, so
+	// it never addresses the item by ID.
+	meal, _ := createGlossedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.GetMeal(w, withClaims(mealDetailRequest(http.MethodGet, meal.ID.String()), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"canonical_name":"dumplings"`) {
+		t.Errorf("expected canonical_name in the response body, got %s", w.Body.String())
 	}
 }
 
@@ -910,6 +964,329 @@ func TestPatchMealItem_ManualWithSaveAsCustomFoodCreatesReusableFood(t *testing.
 	// item weight is 100g, so per-100g equals the supplied totals directly.
 	if cf.CaloriesPer100g != 300 || cf.ProteinPer100g != 25 || cf.CarbsPer100g != 10 {
 		t.Errorf("expected per-100g values matching the item's macros at its weight, got %+v", cf)
+	}
+}
+
+// When the item being saved as a reusable food carries a Canonical Name
+// (from non-English recognition), the new CustomFood keeps it too. See
+// openspec/specs/food-nutrition-logging "A custom food created from a
+// non-English recognition keeps its Canonical Name".
+func TestPatchMealItem_SaveAsCustomFoodCopiesCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal, item := createGlossedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true, "calories": 300,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "вареники").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	if cf.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName copied from the item, got %q", cf.CanonicalName)
+	}
+}
+
+// Regression test for a bug found in code review: correcting an item's name
+// (e.g. because recognition misidentified the food) must clear the item's
+// now-stale CanonicalName, not carry it forward onto a new CustomFood paired
+// with the corrected name.
+func TestPatchMealItem_RenamingItemClearsCanonicalNameOnSavedCustomFood(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := database.FoodMeal{UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: time.Now()}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	item := database.FoodItem{
+		// Misrecognized as dumplings; the user is correcting it to borscht.
+		UserID: userID, MealID: meal.ID, Name: "вареники", CanonicalName: "dumplings", WeightGrams: 100,
+		MacroSource: database.MacroSourceNone,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true, "calories": 300, "name": "Борщ",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.CanonicalName != "" {
+		t.Errorf("expected item CanonicalName cleared after rename, got %q", updated.CanonicalName)
+	}
+
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "Борщ").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	if cf.CanonicalName != "" {
+		t.Errorf("expected the saved CustomFood to have no stale CanonicalName after a rename, got %q", cf.CanonicalName)
+	}
+}
+
+// Regression test for a bug found in code review: the CanonicalName-clearing
+// above was keyed off `name` merely being *present* in the request, but the
+// shipped UI pre-fills its manual-correction form with the item's current
+// name and always sends it back. So a plain macro correction that left the
+// name exactly as recognized still counted as a rename and wiped the item's
+// Canonical Name — which also made the "custom food created from a
+// non-English recognition keeps its Canonical Name" scenario unreachable
+// through the product, since the copy onto the new CustomFood then always
+// copied an empty string. The sibling test above deliberately omits `name`,
+// which is why it never caught this; this one sends it, as the UI does.
+func TestPatchMealItem_UnchangedNameKeepsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal, item := createGlossedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	// Same name back, only the macros corrected — exactly what ItemResolver's
+	// pre-filled form submits.
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"manual": true, "save_as_custom_food": true, "calories": 300, "name": "вареники",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName kept when the name did not change, got %q", updated.CanonicalName)
+	}
+
+	var cf database.CustomFood
+	if err := st.DB().Where("user_id = ? AND name = ?", userID, "вареники").First(&cf).Error; err != nil {
+		t.Fatalf("expected a CustomFood to be created, query err: %v", err)
+	}
+	if cf.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName copied onto the saved CustomFood, got %q", cf.CanonicalName)
+	}
+}
+
+// Regression: an earlier version of the fix for the sibling test above
+// (RenamingItemClearsCanonicalNameOnSavedCustomFood) cleared CanonicalName
+// for *any* name change, including a bare rename with no other field — which
+// directly violates openspec/specs/food-nutrition-logging "Renaming an item
+// does not require touching its macros": "the system updates the Display
+// Name and returns 200 without changing macro_source, any stored macro
+// value, or the item's Canonical Name."
+func TestPatchMealItem_NameAloneDoesNotClearCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal, item := createGlossedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{"name": "Ленивые вареники"})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.Name != "Ленивые вареники" {
+		t.Errorf("expected name updated, got %q", updated.Name)
+	}
+	if updated.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName left untouched by a bare rename, got %q", updated.CanonicalName)
+	}
+}
+
+// A rebind that also renames the item clears CanonicalName, the same as a
+// hand-supplied macro correction does.
+//
+// This assertion has flipped twice and the history is worth recording so it
+// does not flip again by accident. Round 4 changed the code to clear here;
+// that was reverted because openspec/specs/food-nutrition-logging's "Correct
+// an already-matched item" scenario said Canonical Name is left unchanged on
+// a rebind, and the code was made to match the spec. Round 12 established
+// that the spec sentence was itself the defect: the shipped UI always sends a
+// name with a rebind (MealItemRow.handleBind passes `name: r.name`), so
+// preserving produced a visibly wrong pairing — rebinding "вареники" onto the
+// custom food "Блины" rendered "Блины" above "English: dumplings" in Expert
+// Mode. The spec scenario was amended rather than the code re-reverted.
+//
+// The rule that reconciles all three cases is identity, not mechanism: a
+// rebind or a manual correction replaces what the item *is* and clears the
+// gloss when the name changes too, while a bare rename only relabels the same
+// food and keeps it (TestPatchMealItem_NameAloneDoesNotClearCanonicalName), as
+// does a rebind that leaves the name alone
+// (TestPatchMealItem_RebindWithoutRenameKeepsCanonicalName below).
+func TestPatchMealItem_RebindWithRenameClearsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	meal, item := createGlossedMeal(t, st, userID, familyID)
+
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"fdc_id": 7, "weight_grams": 150, "name": "Chicken breast",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.CanonicalName != "" {
+		t.Errorf("expected CanonicalName cleared after rebind+rename, got %q", updated.CanonicalName)
+	}
+	if updated.Name != "Chicken breast" {
+		t.Errorf("expected the supplied name applied, got %q", updated.Name)
+	}
+}
+
+// The other half of the rule above: a rebind that does not change the item's
+// name keeps its Canonical Name, because the Display Name the gloss describes
+// is still the recognized one. Without this case the suite would pass equally
+// well if the code cleared CanonicalName on every rebind, which would lose the
+// gloss whenever a user merely re-matched an item to a better reference row.
+func TestPatchMealItem_RebindWithoutRenameKeepsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(7, "Chicken breast", 165))
+	h := server.NewFoodHandlers(st, idx, t.TempDir())
+
+	meal, item := createGlossedMeal(t, st, userID, familyID)
+
+	// No "name" key at all — the rebind changes which reference food backs the
+	// item without touching how it is displayed.
+	r := itemPatchRequest(meal.ID.String(), item.ID.String(), map[string]any{
+		"fdc_id": 7, "weight_grams": 150,
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated database.FoodItem
+	if err := st.DB().First(&updated, "id = ?", item.ID).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if updated.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName kept when the rebind did not rename, got %q", updated.CanonicalName)
+	}
+	if updated.Name != "вареники" {
+		t.Errorf("expected the Display Name untouched, got %q", updated.Name)
+	}
+}
+
+// See openspec/specs/food-nutrition-logging "A canonical_name field on the
+// request is rejected": Canonical Name is not user-editable through this
+// endpoint, no matter what else the request also contains.
+func TestPatchMealItem_CanonicalNameFieldRejected(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"name": "Chicken thigh", "canonical_name": "chicken thigh",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded database.FoodItem
+	if err := st.DB().Where("id = ?", meal.Items[0].ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if reloaded.Name != "Chicken" {
+		t.Errorf("expected the item unchanged after a rejected request, got name %q", reloaded.Name)
+	}
+}
+
+// A case-variant key must be rejected the same as the lowercase field —
+// encoding/json's own case-insensitive struct-field matching, not manual
+// string comparison, is what closes this; see patchItemRequest.CanonicalName.
+// Note the variant here keeps the underscore: that fallback match is a fold,
+// not a general spelling match, so it is case that varies and nothing else.
+func TestPatchMealItem_CanonicalNameFieldRejectedCaseInsensitive(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"name": "Chicken thigh", "Canonical_Name": "chicken thigh",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// The boundary of the rule above, pinned so it cannot be misread again: a
+// differently-*spelled* key such as "canonicalName" is not the documented
+// `canonical_name` field, so encoding/json's fold never matches it (the two
+// names have different lengths) and it is ignored as an unknown key like any
+// other, leaving the rest of the request to apply normally. An earlier
+// version of patchItemRequest's doc comment claimed such keys were caught
+// too; this test exists so the claim and the behavior cannot drift apart
+// again. Found in code review.
+func TestPatchMealItem_DifferentlySpelledCanonicalNameKeyIsIgnored(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createUnresolvedMeal(t, st, userID, familyID)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := itemPatchRequest(meal.ID.String(), meal.Items[0].ID.String(), map[string]any{
+		"name": "Chicken thigh", "canonicalName": "chicken thigh",
+	})
+	w := httptest.NewRecorder()
+	h.PatchMealItem(w, withClaims(r, userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded database.FoodItem
+	if err := st.DB().Where("id = ?", meal.Items[0].ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload item: %v", err)
+	}
+	if reloaded.Name != "Chicken thigh" {
+		t.Errorf("expected the rename to apply, got name %q", reloaded.Name)
+	}
+	if reloaded.CanonicalName != "" {
+		t.Errorf("expected the unknown key to have no effect, got CanonicalName %q", reloaded.CanonicalName)
 	}
 }
 

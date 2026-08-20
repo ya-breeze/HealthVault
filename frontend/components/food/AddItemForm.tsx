@@ -10,12 +10,18 @@ interface Props {
   // applyMealUpdate doc comment for why (issue order must be commit order,
   // enforced by the parent controlling when each request actually starts).
   onAdded: (issue: () => Promise<FoodMeal>, label?: string) => Promise<FoodMeal>;
+  // Passed straight through to ItemResolver — this form sits on the review
+  // screen, whose Expert Mode toggle governs every custom food listed on it,
+  // including the ones in this form's own search results. This component's
+  // own chrome stays English (see lib/i18n/en.ts's scope comment); only the
+  // Canonical Name sub-labels on its results are affected.
+  expertMode?: boolean;
 }
 
 // Reuses ItemResolver's search/manual flows (see MealItemRow), pointed at
 // POST .../items instead of PATCH .../items/{item_id} — a new item has no
 // existing weight to fall back on, so this collects one directly.
-export default function AddItemForm({ mealId, onAdded }: Props) {
+export default function AddItemForm({ mealId, onAdded, expertMode = false }: Props) {
   const [open, setOpen] = useState(false);
   const [weight, setWeight] = useState(100);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +93,7 @@ export default function AddItemForm({ mealId, onAdded }: Props) {
           <span className="text-xs text-gray-400">g</span>
         </div>
       </div>
-      <ItemResolver itemName="" onBind={handleBind} onManual={handleManual} />
+      <ItemResolver itemName="" onBind={handleBind} onManual={handleManual} expertMode={expertMode} />
       {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
       <TapTarget
         onClick={() => setOpen(false)}

@@ -39,9 +39,10 @@ type EstimateWeightsCall struct {
 
 // RecognizeCall records one Recognize invocation.
 type RecognizeCall struct {
-	Image    []byte
-	MimeType string
-	Hint     string
+	Image           []byte
+	MimeType        string
+	Hint            string
+	DisplayLanguage string
 }
 
 func (f *Fake) EstimateWeights(_ context.Context, image []byte, mimeType string, components []WeightEstimateInput) (*WeightEstimateResult, error) {
@@ -57,12 +58,13 @@ func (f *Fake) EstimateWeights(_ context.Context, image []byte, mimeType string,
 
 // ClarifyCall records one Clarify invocation.
 type ClarifyCall struct {
-	PriorItems []Item
-	History    []ClarifyTurn
+	PriorItems      []Item
+	History         []ClarifyTurn
+	DisplayLanguage string
 }
 
-func (f *Fake) Recognize(_ context.Context, image []byte, mimeType, hint string) (*RecognizeResult, error) {
-	f.RecognizeCalls = append(f.RecognizeCalls, RecognizeCall{Image: image, MimeType: mimeType, Hint: hint})
+func (f *Fake) Recognize(_ context.Context, image []byte, mimeType, hint, displayLanguage string) (*RecognizeResult, error) {
+	f.RecognizeCalls = append(f.RecognizeCalls, RecognizeCall{Image: image, MimeType: mimeType, Hint: hint, DisplayLanguage: displayLanguage})
 	if f.RecognizeErr != nil {
 		return nil, f.RecognizeErr
 	}
@@ -72,8 +74,8 @@ func (f *Fake) Recognize(_ context.Context, image []byte, mimeType, hint string)
 	return &RecognizeResult{}, nil
 }
 
-func (f *Fake) Clarify(_ context.Context, priorItems []Item, history []ClarifyTurn) (*RecognizeResult, error) {
-	f.ClarifyCalls = append(f.ClarifyCalls, ClarifyCall{PriorItems: priorItems, History: history})
+func (f *Fake) Clarify(_ context.Context, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error) {
+	f.ClarifyCalls = append(f.ClarifyCalls, ClarifyCall{PriorItems: priorItems, History: history, DisplayLanguage: displayLanguage})
 	if f.ClarifyErr != nil {
 		return nil, f.ClarifyErr
 	}

@@ -75,7 +75,15 @@ type FoodItem struct {
 	models.TenantModel
 	UserID uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
 	MealID uuid.UUID `gorm:"type:uuid;not null;index" json:"meal_id"`
-	Name   string    `gorm:"not null" json:"name"`
+	// Name is the Display Name: shown to the user, in their Display Language
+	// at the time of recognition. See openspec/specs/display-language.
+	Name string `gorm:"not null" json:"name"`
+	// CanonicalName is the English identity of the food, produced by the same
+	// recognition call as Name when the user's Display Language is not
+	// English. Empty for items recognized in English or created before this
+	// change — see openspec/specs/food-nutrition-logging "Food Item and
+	// Custom Food Carry a Canonical Name".
+	CanonicalName string `gorm:"type:text" json:"canonical_name,omitempty"`
 
 	// Preparation and State feed the retrieval query alongside Name. SR Legacy
 	// encodes both as trailing description qualifiers ("...cooked, roasted"), so
@@ -216,6 +224,11 @@ type CustomFood struct {
 	models.TenantModel
 	UserID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_custom_food_user_name" json:"user_id"`
 	Name   string    `gorm:"not null;uniqueIndex:idx_custom_food_user_name" json:"name"`
+	// CanonicalName mirrors FoodItem.CanonicalName: the English identity,
+	// copied from the originating item when a correction is saved as a
+	// reusable custom food (see food_item.go). Empty when the originating
+	// item had none.
+	CanonicalName string `gorm:"type:text" json:"canonical_name,omitempty"`
 
 	CaloriesPer100g     float64 `gorm:"not null" json:"calories_per_100g"`
 	ProteinPer100g      float64 `gorm:"not null" json:"protein_per_100g"`

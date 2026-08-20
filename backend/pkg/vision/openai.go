@@ -29,8 +29,12 @@ when the photo shows clearly separate components: distinct piles on a plate,
 or separate foods placed next to each other (e.g. a portion of rice, a piece
 of grilled protein, and a side salad plated apart).
 
-For each item, estimate its name, preparation, state, brand, weight in
-grams, and your confidence (0-1).
+For each item, estimate its display_name, canonical_name, preparation, state,
+brand, weight in grams, and your confidence (0-1). display_name is the food's
+name written in the requested display language (see instructions appended
+below). canonical_name is the same food's standard name in English — leave it
+empty only when the display language is itself English, since duplicating an
+identical English string in both fields wastes nothing but is unnecessary.
 
 preparation must be one of: raw, boiled, steamed, roasted, baked, grilled,
 fried, breaded_fried, braised, unknown.
@@ -54,6 +58,42 @@ null only if you genuinely cannot make any reasonable estimate for that item.
 If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
 instead of guessing. Otherwise leave clarification_questions empty.`
+
+// IsEnglishDisplayLanguage reports whether displayLanguage means English —
+// either explicitly (a "en" primary subtag, case-insensitively — the
+// frontend only ever writes exact lowercase "en", but display_language is an
+// unvalidated, caller-supplied opaque-settings string, so a stray "En"/"EN",
+// or a full BCP-47 tag like "en-US" from a non-frontend caller, must still
+// be recognized rather than silently treated as some other language) or by
+// the empty-string default used throughout this codebase for "no
+// display_language setting saved yet". Only the primary subtag (the part
+// before the first "-" or "_") is compared, matching how BCP-47 tags are
+// structured, rather than requiring the full string to equal "en" outright.
+// Exported so server package callers (e.g. food_upload.go's reference-DB
+// skip gate) share this exact definition rather than re-deriving it.
+func IsEnglishDisplayLanguage(displayLanguage string) bool {
+	if displayLanguage == "" {
+		return true
+	}
+	primary := displayLanguage
+	if i := strings.IndexAny(displayLanguage, "-_"); i >= 0 {
+		primary = displayLanguage[:i]
+	}
+	return strings.EqualFold(primary, "en")
+}
+
+// languageDirective tells the model what language to write display_name in
+// and reminds it about canonical_name, appended to recognizeSystemPrompt for
+// every Recognize/Clarify call. See openspec/changes/russian-localization/
+// design.md decision 3.
+func languageDirective(displayLanguage string) string {
+	if IsEnglishDisplayLanguage(displayLanguage) {
+		return "\n\nThe requested display language is English (BCP-47 \"en\"). " +
+			"Write display_name in English and leave canonical_name empty."
+	}
+	return "\n\nThe requested display language is BCP-47 \"" + displayLanguage + "\". " +
+		"Write display_name in that language, and canonical_name as the same food's standard English name."
+}
 
 // OpenAIClient is the production vision.Client, backed by OpenAI's Chat
 // Completions API with structured outputs (response_format: json_schema).
@@ -154,7 +194,8 @@ var recognizeJSONSchema = map[string]any{
 			"items": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name":              map[string]any{"type": "string"},
+					"display_name":      map[string]any{"type": "string"},
+					"canonical_name":    map[string]any{"type": "string"},
 					"preparation":       map[string]any{"type": "string", "enum": preparationEnum},
 					"state":             map[string]any{"type": "string", "enum": stateEnum},
 					"brand":             map[string]any{"type": "string"},
@@ -163,7 +204,8 @@ var recognizeJSONSchema = map[string]any{
 					"estimated_profile": estimatedProfileSchema,
 				},
 				"required": []string{
-					"name", "preparation", "state", "brand", "weight_grams", "confidence", "estimated_profile",
+					"display_name", "canonical_name", "preparation", "state", "brand", "weight_grams",
+					"confidence", "estimated_profile",
 				},
 				"additionalProperties": false,
 			},
@@ -194,7 +236,8 @@ type recognizeSchemaEstimatedProfile struct {
 }
 
 type recognizeSchemaItem struct {
-	Name             string                           `json:"name"`
+	DisplayName      string                           `json:"display_name"`
+	CanonicalName    string                           `json:"canonical_name"`
 	Preparation      string                           `json:"preparation"`
 	State            string                           `json:"state"`
 	Brand            string                           `json:"brand"`
@@ -291,17 +334,29 @@ func (c *OpenAIClient) call(ctx context.Context, messages []chatMessage, schemaN
 	return &parsed, latency, nil
 }
 
-func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration) (*RecognizeResult, error) {
+// toRecognizeResult converts the model's structured response to a
+// RecognizeResult. displayLanguage decides whether CanonicalName is kept:
+// when the target language is English, any canonical_name the model returned
+// is discarded rather than trusted to actually be empty — see
+// openspec/specs/food-photo-recognition "Recognition in English Display
+// Language does not duplicate the name".
+func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration, displayLanguage string) (*RecognizeResult, error) {
 	var schemaResp recognizeSchemaResponse
 	content := resp.Choices[0].Message.Content
 	if err := json.Unmarshal([]byte(content), &schemaResp); err != nil {
 		return nil, fmt.Errorf("unmarshal structured content: %w", err)
 	}
 
+	isEnglish := IsEnglishDisplayLanguage(displayLanguage)
 	items := make([]Item, len(schemaResp.Items))
 	for i, it := range schemaResp.Items {
+		canonicalName := strings.TrimSpace(it.CanonicalName)
+		if isEnglish {
+			canonicalName = ""
+		}
 		items[i] = Item{
-			Name:             it.Name,
+			Name:             strings.TrimSpace(it.DisplayName),
+			CanonicalName:    canonicalName,
 			Preparation:      unknownToEmpty(it.Preparation),
 			State:            unknownToEmpty(it.State),
 			Brand:            strings.TrimSpace(it.Brand),
@@ -323,15 +378,15 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration) (*Re
 }
 
 // Recognize sends the photo and asks the model to identify its foods. See
-// Client.Recognize for hint's meaning.
-func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hint string) (*RecognizeResult, error) {
+// Client.Recognize for hint's and displayLanguage's meaning.
+func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hint, displayLanguage string) (*RecognizeResult, error) {
 	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(image)
 	promptText := "Identify the foods in this photo."
 	if hint != "" {
 		promptText += "\n\nThe user has supplied this correction — take it into account: " + hint
 	}
 	messages := []chatMessage{
-		{Role: "system", Content: recognizeSystemPrompt},
+		{Role: "system", Content: recognizeSystemPrompt + languageDirective(displayLanguage)},
 		{Role: "user", Content: []map[string]any{
 			{"type": "text", "text": promptText},
 			{"type": "image_url", "image_url": map[string]string{"url": dataURL}},
@@ -341,7 +396,7 @@ func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hi
 	if err != nil {
 		return nil, err
 	}
-	return toRecognizeResult(resp, latency)
+	return toRecognizeResult(resp, latency, displayLanguage)
 }
 
 var weightEstimateJSONSchema = map[string]any{
@@ -404,8 +459,9 @@ func (c *OpenAIClient) EstimateWeights(ctx context.Context, image []byte, mimeTy
 }
 
 // Clarify is text-only: it replays the items recognized so far and the full
-// question/answer history, without re-sending the photo.
-func (c *OpenAIClient) Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn) (*RecognizeResult, error) {
+// question/answer history, without re-sending the photo. See
+// Client.Clarify for displayLanguage's meaning.
+func (c *OpenAIClient) Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error) {
 	contextPayload := map[string]any{
 		"previously_recognized_items": priorItems,
 		"question_answer_history":     history,
@@ -416,7 +472,7 @@ func (c *OpenAIClient) Clarify(ctx context.Context, priorItems []Item, history [
 	}
 
 	messages := []chatMessage{
-		{Role: "system", Content: recognizeSystemPrompt},
+		{Role: "system", Content: recognizeSystemPrompt + languageDirective(displayLanguage)},
 		{Role: "user", Content: "Here is what was previously recognized and the clarification " +
 			"answers given so far. Update the items accordingly, or ask further " +
 			"clarification_questions if still unsure:\n" + string(contextJSON)},
@@ -425,7 +481,7 @@ func (c *OpenAIClient) Clarify(ctx context.Context, priorItems []Item, history [
 	if err != nil {
 		return nil, err
 	}
-	return toRecognizeResult(resp, latency)
+	return toRecognizeResult(resp, latency, displayLanguage)
 }
 
 var selectJSONSchema = map[string]any{

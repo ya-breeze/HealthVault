@@ -67,6 +67,33 @@ func TestUserSettings_RoundTripsThroughPutAndGet(t *testing.T) {
 	}
 }
 
+// display_language is just another key in the opaque settings blob — no
+// schema change needed for it to round-trip. See
+// openspec/specs/display-language "Per-User Display Language Setting".
+func TestUserSettings_DisplayLanguageRoundTrips(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	putH := server.PutUserSettingsHandler(st)
+	body := `{"display_language":"ru"}`
+	w := httptest.NewRecorder()
+	putH.ServeHTTP(w, withClaims(httptest.NewRequest(http.MethodPut, "/api/users/me/settings", bytes.NewBufferString(body)), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	getH := server.GetUserSettingsHandler(st)
+	w2 := httptest.NewRecorder()
+	getH.ServeHTTP(w2, withClaims(httptest.NewRequest(http.MethodGet, "/api/users/me/settings", nil), userID))
+	var got map[string]any
+	if err := json.Unmarshal(w2.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["display_language"] != "ru" {
+		t.Errorf("display_language = %v, want ru", got["display_language"])
+	}
+}
+
 func TestUserSettings_PutOverwritesPreviousValue(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)

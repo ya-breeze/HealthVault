@@ -124,6 +124,116 @@ func TestUpdateCustomFood_Success(t *testing.T) {
 	}
 }
 
+// Regression: round-2 review — the rename-detection comparison used a
+// trimmed request name against an untrimmed c.Name, so a PUT resubmitting
+// the exact same name with only incidental leading/trailing whitespace was
+// treated as a rename and wiped CanonicalName for no reason.
+func TestUpdateCustomFood_WhitespaceOnlyNameChangeKeepsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	c := database.CustomFood{UserID: userID, Name: "Творог", CanonicalName: "cottage cheese", CaloriesPer100g: 100}
+	c.ID = uuid.New()
+	c.FamilyID = familyID
+	if err := st.DB().Create(&c).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := withIDVar(withClaims(httptest.NewRequest(http.MethodPut, "/api/food/custom/"+c.ID.String(),
+		customFoodBody("  Творог  ", 110)), userID), c.ID.String())
+	w := httptest.NewRecorder()
+	h.UpdateCustomFood(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var updated database.CustomFood
+	if err := st.DB().First(&updated, "id = ?", c.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if updated.Name != "Творог" {
+		t.Errorf("expected name stored trimmed, got %q", updated.Name)
+	}
+	if updated.CanonicalName != "cottage cheese" {
+		t.Errorf("expected CanonicalName kept when only whitespace changed, got %q", updated.CanonicalName)
+	}
+}
+
+// The positive half of the clear-on-rename rule
+// (openspec/specs/usda-nutrition-database "Custom User Food Entry and
+// Correction"): a genuine rename drops the Canonical Name, because the
+// recorded English gloss described the old name and Expert Mode would
+// otherwise pair the new name with it. Only the negative cases were covered
+// before, so a regression that simply never cleared — or that compared with
+// == instead of EqualFold and cleared on a capitalization fix — passed the
+// suite in both directions. Found in code review.
+func TestUpdateCustomFood_RenameClearsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	c := database.CustomFood{UserID: userID, Name: "Творог", CanonicalName: "cottage cheese", CaloriesPer100g: 100}
+	c.ID = uuid.New()
+	c.FamilyID = familyID
+	if err := st.DB().Create(&c).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := withIDVar(withClaims(httptest.NewRequest(http.MethodPut, "/api/food/custom/"+c.ID.String(),
+		customFoodBody("Сырники", 220)), userID), c.ID.String())
+	w := httptest.NewRecorder()
+	h.UpdateCustomFood(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var updated database.CustomFood
+	if err := st.DB().First(&updated, "id = ?", c.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if updated.Name != "Сырники" {
+		t.Errorf("expected the new name stored, got %q", updated.Name)
+	}
+	if updated.CanonicalName != "" {
+		t.Errorf("expected CanonicalName cleared on rename, got %q", updated.CanonicalName)
+	}
+}
+
+// A capitalization fix is not an identity change and must not cost the user
+// their Canonical Name — the EqualFold half of the same rule.
+func TestUpdateCustomFood_CaseOnlyRenameKeepsCanonicalName(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	c := database.CustomFood{UserID: userID, Name: "молоко", CanonicalName: "milk", CaloriesPer100g: 60}
+	c.ID = uuid.New()
+	c.FamilyID = familyID
+	if err := st.DB().Create(&c).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := withIDVar(withClaims(httptest.NewRequest(http.MethodPut, "/api/food/custom/"+c.ID.String(),
+		customFoodBody("Молоко", 62)), userID), c.ID.String())
+	w := httptest.NewRecorder()
+	h.UpdateCustomFood(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var updated database.CustomFood
+	if err := st.DB().First(&updated, "id = ?", c.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if updated.Name != "Молоко" {
+		t.Errorf("expected the recapitalized name stored, got %q", updated.Name)
+	}
+	if updated.CanonicalName != "milk" {
+		t.Errorf("expected CanonicalName kept on a case-only rename, got %q", updated.CanonicalName)
+	}
+}
+
 func TestUpdateCustomFood_CrossUserReturns404(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)

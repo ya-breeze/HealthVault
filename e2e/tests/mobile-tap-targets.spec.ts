@@ -124,6 +124,23 @@ test.describe('Mobile tap targets — header and toast', () => {
     await assertMinTapTarget(page.getByRole('link', { name: 'Custom Foods' }), 'header Custom Foods link');
     await assertMinTapTarget(page.getByRole('link', { name: 'Import' }), 'header Import link');
     await assertMinTapTarget(page.getByRole('button', { name: 'Logout' }), 'header Logout button');
+    // Added with the Display Language switcher: the existing assertions above
+    // enumerate header controls by name, so a newly added one is not covered
+    // until it is named here — this one shipped at 44px. See
+    // openspec/specs/mobile-touch-targets "Header and toast controls meet the
+    // minimum".
+    await assertMinTapTarget(page.locator('#display-language'), 'header language select');
+  });
+
+  test('the Expert Mode toggle meets the 48px minimum', async ({ page }) => {
+    await login(page);
+    await page.goto('/food/custom/');
+    // The checkbox itself stays visually small; the label around it is the
+    // clickable surface and is what has to meet the minimum.
+    await assertMinTapTarget(
+      page.locator('label:has([data-testid="expert-mode-toggle"])'),
+      'Expert Mode toggle'
+    );
   });
 
   test('toast dismiss control meets the 48px minimum', async ({ page }) => {

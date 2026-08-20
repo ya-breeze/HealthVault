@@ -470,7 +470,7 @@ func TestCreateMeal_UnconfiguredVisionMarksFailed(t *testing.T) {
 // a vision call that outruns HCW_VISION_TIMEOUT.
 type slowRecognizeClient struct{}
 
-func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string, _ string) (*vision.RecognizeResult, error) {
+func (slowRecognizeClient) Recognize(ctx context.Context, _ []byte, _ string, _ string, _ string) (*vision.RecognizeResult, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
@@ -479,7 +479,7 @@ func (slowRecognizeClient) EstimateWeights(context.Context, []byte, string, []vi
 	return &vision.WeightEstimateResult{}, nil
 }
 
-func (slowRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn) (*vision.RecognizeResult, error) {
+func (slowRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
 
@@ -905,6 +905,86 @@ func TestCreateMeal_ExactNameMatchWinsOverPlausibleEstimate(t *testing.T) {
 	// 165 kcal/100g * 1.8 = 297, the custom food's numbers, not the estimate's.
 	if item.Calories < 296.9 || item.Calories > 297.1 {
 		t.Errorf("expected calories from the exact-match custom food (~297), not the estimate, got %v", item.Calories)
+	}
+}
+
+// A near-miss recognized name (not byte-identical, but close) still fuzzy-
+// matches a saved custom food and wins unconditionally over a plausible
+// competing estimate — the exact-match precedence rule now applies to any
+// match that clears the fuzzy-similarity threshold. See
+// openspec/changes/russian-localization/design.md decision 5.
+func TestCreateMeal_FuzzyNearMissNameMatchesCustomFood(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	custom := database.CustomFood{UserID: userID, Name: "Chicken breast", CaloriesPer100g: 165, ProteinPer100g: 31}
+	custom.ID = uuid.New()
+	custom.FamilyID = familyID
+	if err := st.DB().Create(&custom).Error; err != nil {
+		t.Fatalf("create custom food: %v", err)
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "Chiken breast", WeightGrams: 180, Confidence: 0.9, // one dropped letter
+				EstimatedProfile: &database.NutrientProfile{CaloriesPer100g: 150, ProteinPer100g: 28},
+			}},
+		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.MacroSource != database.MacroSourceReference || item.CustomFoodID == nil || *item.CustomFoodID != custom.ID {
+		t.Fatalf("expected the fuzzy-matched custom food to win regardless of a plausible competing estimate, got %+v", item)
+	}
+}
+
+// When the recognizing user's Display Language is non-English, Open Food
+// Facts and USDA are never queried, even when the recognized item carries a
+// brand — see openspec/specs/usda-nutrition-database "A non-English Display
+// Language skips Open Food Facts and USDA entirely".
+func TestCreateMeal_NonEnglishDisplayLanguageSkipsUSDA(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(100, "Vareniki", 200))
+
+	putH := server.PutUserSettingsHandler(st)
+	w := httptest.NewRecorder()
+	putH.ServeHTTP(w, withClaims(httptest.NewRequest(http.MethodPut, "/api/users/me/settings", strings.NewReader(`{"display_language":"ru"}`)), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT settings: expected 200, got %d", w.Code)
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "вареники", CanonicalName: "dumplings", WeightGrams: 180, Confidence: 0.9,
+			}},
+		},
+	}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w2 := httptest.NewRecorder()
+	h.CreateMeal(w2, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w2.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.FdcID != nil {
+		t.Errorf("expected no USDA candidate offered for a non-English item, got fdc_id %v", *item.FdcID)
+	}
+	if len(fake.SelectCalls) != 0 {
+		t.Errorf("expected Select never called (empty candidate shortlist), got %d calls", len(fake.SelectCalls))
+	}
+	if item.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName persisted on the item, got %q", item.CanonicalName)
 	}
 }
 

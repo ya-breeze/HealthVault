@@ -10,7 +10,7 @@ import (
 
 func TestUnconfigured_RecognizeReturnsErrNotConfigured(t *testing.T) {
 	var c vision.Unconfigured
-	_, err := c.Recognize(context.Background(), []byte{1, 2, 3}, "image/jpeg", "")
+	_, err := c.Recognize(context.Background(), []byte{1, 2, 3}, "image/jpeg", "", "en")
 	if !errors.Is(err, vision.ErrNotConfigured) {
 		t.Errorf("err = %v, want ErrNotConfigured", err)
 	}
@@ -26,7 +26,7 @@ func TestUnconfigured_SelectReturnsErrNotConfigured(t *testing.T) {
 
 func TestFake_ZeroValueSucceedsWithEmptyResults(t *testing.T) {
 	f := &vision.Fake{}
-	rr, err := f.Recognize(context.Background(), nil, "image/jpeg", "")
+	rr, err := f.Recognize(context.Background(), nil, "image/jpeg", "", "en")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestFake_ZeroValueSucceedsWithEmptyResults(t *testing.T) {
 func TestFake_RecordsCalls(t *testing.T) {
 	f := &vision.Fake{}
 	image := []byte{0xFF, 0xD8}
-	if _, err := f.Recognize(context.Background(), image, "image/jpeg", "chicken not berries"); err != nil {
+	if _, err := f.Recognize(context.Background(), image, "image/jpeg", "chicken not berries", "ru"); err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
 	if len(f.RecognizeCalls) != 1 || f.RecognizeCalls[0].MimeType != "image/jpeg" {
@@ -54,6 +54,9 @@ func TestFake_RecordsCalls(t *testing.T) {
 	}
 	if f.RecognizeCalls[0].Hint != "chicken not berries" {
 		t.Errorf("Hint = %q, want %q", f.RecognizeCalls[0].Hint, "chicken not berries")
+	}
+	if f.RecognizeCalls[0].DisplayLanguage != "ru" {
+		t.Errorf("DisplayLanguage = %q, want %q", f.RecognizeCalls[0].DisplayLanguage, "ru")
 	}
 
 	ic := []vision.ItemCandidates{{ItemIndex: 0, Candidates: []vision.Candidate{{Description: "x"}}}}
@@ -69,7 +72,7 @@ func TestFake_ReturnsConfiguredErrors(t *testing.T) {
 	wantErr := errors.New("boom")
 	f := &vision.Fake{RecognizeErr: wantErr, SelectErr: wantErr}
 
-	if _, err := f.Recognize(context.Background(), nil, "", ""); !errors.Is(err, wantErr) {
+	if _, err := f.Recognize(context.Background(), nil, "", "", ""); !errors.Is(err, wantErr) {
 		t.Errorf("Recognize err = %v, want %v", err, wantErr)
 	}
 	if _, err := f.Select(context.Background(), nil); !errors.Is(err, wantErr) {

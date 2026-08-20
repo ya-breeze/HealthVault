@@ -79,11 +79,18 @@ func (h *foodHandlers) WithOFF(offIndex *off.Index) *foodHandlers {
 // FoodSearchResult is one candidate returned by GET /api/food/search: either
 // the user's own custom food or a USDA reference food.
 type FoodSearchResult struct {
-	Source       string                   `json:"source"` // "custom" or "usda"
-	CustomFoodID *uuid.UUID               `json:"custom_food_id,omitempty"`
-	FdcID        *int64                   `json:"fdc_id,omitempty"`
-	Name         string                   `json:"name"`
-	Profile      database.NutrientProfile `json:"profile"`
+	Source       string     `json:"source"` // "custom" or "usda"
+	CustomFoodID *uuid.UUID `json:"custom_food_id,omitempty"`
+	FdcID        *int64     `json:"fdc_id,omitempty"`
+	Name         string     `json:"name"`
+	// CanonicalName is the English identity of a "custom" result whose
+	// Display Name is non-English — see openspec/specs/food-nutrition-logging
+	// "Food Item and Custom Food Carry a Canonical Name", which requires it in
+	// any response already carrying the record's name. Always empty for "usda"
+	// results: a USDA description is already the food's English identity, so
+	// there is no second name to carry. Found in code review.
+	CanonicalName string                   `json:"canonical_name,omitempty"`
+	Profile       database.NutrientProfile `json:"profile"`
 }
 
 // FoodSearchResponse is the body of GET /api/food/search.
@@ -125,8 +132,8 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	// name (e.g. Cyrillic "Овсянка") would never match a same-name,
 	// different-case query and would incorrectly fall through to
 	// translation. Found in PR review (Codex).
-	var customFoods []database.CustomFood
-	if err := h.storage.DB().Where("user_id = ?", claims.UserID).Find(&customFoods).Error; err != nil {
+	customFoods, err := h.customFoodsForUser(claims.UserID)
+	if err != nil {
 		http.Error(w, "search error", http.StatusInternalServerError)
 		return
 	}
@@ -134,10 +141,11 @@ func (h *foodHandlers) Search(w http.ResponseWriter, r *http.Request) {
 		if strings.EqualFold(custom.Name, name) {
 			id := custom.ID
 			writeJSON(w, FoodSearchResponse{Results: []FoodSearchResult{{
-				Source:       "custom",
-				CustomFoodID: &id,
-				Name:         custom.Name,
-				Profile:      custom.Profile(),
+				Source:        "custom",
+				CustomFoodID:  &id,
+				Name:          custom.Name,
+				CanonicalName: custom.CanonicalName,
+				Profile:       custom.Profile(),
 			}}})
 			return
 		}

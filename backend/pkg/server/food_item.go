@@ -44,6 +44,26 @@ type patchItemRequest struct {
 	Name             *string    `json:"name,omitempty"`
 	SaveAsCustomFood bool       `json:"save_as_custom_food,omitempty"`
 
+	// CanonicalName is never read or applied — the field exists only so a
+	// caller-supplied canonical_name can be detected and rejected below
+	// instead of a bare Unmarshal silently discarding it.
+	//
+	// encoding/json falls back to a case-insensitive key match when no field
+	// matches exactly, so "Canonical_Name" and "CANONICAL_NAME" are caught
+	// alongside "canonical_name". That fallback is a *fold*, not a general
+	// spelling match: it compares the two names character by character and
+	// they must run out together, so "CanonicalName" and "canonicalName" do
+	// not match this field and are ignored as unknown keys, the same as any
+	// other key this struct does not declare. That is the intended boundary —
+	// the requirement below is about the `canonical_name` field this API
+	// documents, and a differently-spelled key is not that field. (An earlier
+	// version of this comment claimed "CanonicalName" was caught too; it is
+	// not. Corrected in code review.) See
+	// openspec/specs/food-nutrition-logging "A canonical_name field on the
+	// request is rejected": Canonical Name is produced only at recognition
+	// time and is not user-editable through this endpoint.
+	CanonicalName json.RawMessage `json:"canonical_name,omitempty"`
+
 	Calories          float64 `json:"calories,omitempty"`
 	ProteinGrams      float64 `json:"protein_grams,omitempty"`
 	CarbsGrams        float64 `json:"carbs_grams,omitempty"`
@@ -255,6 +275,10 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	if req.CanonicalName != nil {
+		http.Error(w, "canonical_name is not editable through this endpoint", http.StatusBadRequest)
+		return
+	}
 
 	// A name that's empty or whitespace-only carries nothing to apply — treat
 	// it as absent here so it can't alone satisfy "something to update" and
@@ -306,6 +330,20 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		}
 		observedUpdatedAt := item.UpdatedAt
 
+		// Whether this request actually renames the item, as opposed to
+		// echoing back the name it already had. Computed once, here, because
+		// two branches below key their Canonical Name handling off it and
+		// they must agree; it has to be evaluated before the name is applied
+		// (further down) so the comparison is against the pre-rename value.
+		//
+		// Case-insensitive and whitespace-trimmed for the reason spelled out
+		// in the Manual branch: the shipped correction form pre-fills the
+		// current name and always echoes it back, so keying off presence
+		// alone would treat every macro correction as a rename, and a pure
+		// capitalization fix is not an identity change. Matches
+		// UpdateCustomFood's identical check in food_custom.go.
+		renamed := hasName && !strings.EqualFold(strings.TrimSpace(*req.Name), item.Name)
+
 		switch {
 		case req.Manual:
 			item.FdcID = nil
@@ -322,6 +360,26 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.SugarGrams = req.SugarGrams
 			item.SodiumGrams = req.SodiumGrams
 			item.DietaryFiberGrams = req.DietaryFiberGrams
+			// A manual correction alongside a name change fully replaces the
+			// item's identity by hand — the AI-recognized Canonical Name no
+			// longer describes it, and carrying it forward would pair the new
+			// name with a stale, unrelated English gloss, including onto a new
+			// CustomFood via save_as_custom_food below.
+			//
+			// The rebind branch below now applies the same rule for the same
+			// reason. What separates both of them from a *bare* rename — which
+			// deliberately keeps the Canonical Name, see "Renaming an item does
+			// not require touching its macros" — is whether the item's identity
+			// changed or only its label did. Correcting macros by hand, or
+			// picking a different reference food, replaces what the item *is*;
+			// editing the name alone is the same food relabelled, and its
+			// recognized English gloss still describes it.
+			//
+			// Conditioned on `renamed` rather than on a name merely being
+			// present — see that variable's comment above. Found in code review.
+			if renamed {
+				item.CanonicalName = ""
+			}
 		case req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil:
 			if req.WeightGrams != nil {
 				item.WeightGrams = *req.WeightGrams
@@ -345,6 +403,25 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.CustomFoodID = req.CustomFoodID
 			item.OffCode = req.OffCode
 			item.ApplyProfile(profile)
+			// A rebind that also renames the item replaces its identity just
+			// as a hand-supplied macro correction does, so it clears the
+			// Canonical Name for the same reason — see the Manual branch above.
+			//
+			// This previously preserved it unconditionally, on the rationale
+			// that a Canonical Name records what recognition identified rather
+			// than what the item is currently matched to. That holds for a
+			// *pure* rebind, which is why this is conditioned on `renamed` and
+			// not on the rebind itself: re-matching "вареники" to a better
+			// reference row leaves the Display Name — and so its English gloss
+			// — still accurate. It does not hold once the name changes too,
+			// and the shipped UI always sends one (MealItemRow.handleBind
+			// passes `name: r.name`), so rebinding "вареники" onto the custom
+			// food "Блины" displayed "Блины" with "English: dumplings" beneath
+			// it in Expert Mode — exactly the stale, unrelated gloss the
+			// Manual branch clears to avoid. Found in code review.
+			if renamed {
+				item.CanonicalName = ""
+			}
 		case req.WeightGrams != nil:
 			item.WeightGrams = *req.WeightGrams
 			switch item.MacroSource {
@@ -405,6 +482,9 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			cf.ID = uuid.New()
 			cf.FamilyID = FamilyIDFromCtx(r)
 			cfReq.applyTo(&cf)
+			// See openspec/specs/food-nutrition-logging "A custom food created
+			// from a non-English recognition keeps its Canonical Name".
+			cf.CanonicalName = item.CanonicalName
 			if err := tx.Create(&cf).Error; err != nil {
 				if isUniqueViolation(err) {
 					return &itemMutationError{status: http.StatusConflict, msg: "a custom food with this name already exists"}
@@ -432,6 +512,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				"macro_source":        item.MacroSource,
 				"weight_grams":        item.WeightGrams,
 				"name":                item.Name,
+				"canonical_name":      item.CanonicalName,
 				"calories":            item.Calories,
 				"protein_grams":       item.ProteinGrams,
 				"carbs_grams":         item.CarbsGrams,

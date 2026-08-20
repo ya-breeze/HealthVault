@@ -10,18 +10,16 @@ import MacroSummary from '@/components/food/MacroSummary';
 import DeleteMealControl from '@/components/food/DeleteMealControl';
 import Header from '@/components/Header';
 import { useToast } from '@/components/Toast';
+import { useLanguage } from '@/components/LanguageContext';
+import { mealStatusLabel } from '@/lib/i18n';
+import ExpertModeToggle from '@/components/food/ExpertModeToggle';
 import TapTarget from '@/components/ui/TapTarget';
-
-const STATUS_LABEL: Record<string, string> = {
-  processing: 'Analyzing…',
-  pending_clarification: 'Needs clarification',
-  pending_review: 'Review needed',
-  confirmed: 'Confirmed',
-  failed: 'Analysis failed',
-};
+import { useSerialQueue } from '@/lib/useSerialQueue';
 
 export default function ReviewClient({ mealId }: { mealId: string }) {
   const { showToast } = useToast();
+  const { t } = useLanguage();
+  const [expertMode, setExpertMode] = useState(false);
   const [meal, setMeal] = useState<FoodMeal | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -57,47 +55,43 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   // queued behind a confirmed delete is guaranteed to fail once its turn
   // comes, since its meal no longer exists — that's fallout from the user's
   // own delete, not a real failure worth an "Update failed" toast.
-  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
   const mealGoneRef = useRef(false);
 
   // Low-level "claim a slot in the mutation queue" primitive shared by
   // applyMealUpdate and queueDelete below: chains `issue` behind whatever is
-  // still outstanding, and immediately re-points queueRef.current at the
-  // result — not at a snapshot taken before `issue` settles — so anything
-  // queued *after* this call, including while `issue` is still in flight,
-  // chains behind it instead of behind something stale. The queue keeps
-  // moving even if `issue` rejects, so one failed mutation can't wedge
-  // everything queued behind it. This exact "claim the ref synchronously,
-  // don't snapshot it" mechanism has already needed fixing more than once
-  // (round 2, round 3) after being duplicated by hand — shared here so
-  // future fixes only need to happen in one place.
-  const claimSlot = useCallback(<T,>(issue: () => Promise<T>): Promise<T> => {
-    const run = queueRef.current.then(issue);
-    queueRef.current = run.catch(() => undefined);
-    return run;
-  }, []);
+  // still outstanding, and immediately re-points the queue at the result —
+  // not at a snapshot taken before `issue` settles — so anything queued
+  // *after* this call, including while `issue` is still in flight, chains
+  // behind it instead of behind something stale. The queue keeps moving
+  // even if `issue` rejects, so one failed mutation can't wedge everything
+  // queued behind it. This exact "claim the ref synchronously, don't
+  // snapshot it" mechanism has already needed fixing more than once (round
+  // 2, round 3) after being duplicated by hand — shared as useSerialQueue
+  // (also used by LanguageContext, for GET/PUT ordering) so future fixes
+  // only need to happen in one place.
+  const { claim: claimSlot, drain } = useSerialQueue();
 
   const applyMealUpdate = useCallback((issue: () => Promise<FoodMeal>, label?: string): Promise<FoodMeal> => {
     return claimSlot(issue)
       .then(result => {
         setMeal(result);
-        showToast(label ?? 'Saved', 'success');
+        showToast(label ?? t('review.saved'), 'success');
         return result;
       })
       .catch(err => {
         if (!mealGoneRef.current) {
-          showToast('Update failed', 'error');
+          showToast(t('review.updateFailed'), 'error');
         }
         throw err;
       });
-  }, [claimSlot, showToast]);
+  }, [claimSlot, showToast, t]);
 
   // Same ordering guarantee as applyMealUpdate above, via the shared
   // claimSlot primitive, but without a FoodMeal result to apply, since a
   // delete leaves nothing to reconcile into `meal`. Used by
   // DeleteMealControl.
   //
-  // The returned promise also waits out `queueRef.current` *after* the
+  // The returned promise also waits out `drain()` *after* the
   // delete itself settles — success (204) or 404 (already gone, e.g.
   // deleted from another tab; both mean the meal no longer exists) — not
   // just the delete's own request. A caller that navigates away as soon as
@@ -118,17 +112,17 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     );
     return settled.then(async outcome => {
       mealGoneRef.current = true;
-      await queueRef.current;
+      await drain();
       if (!outcome.ok) throw outcome.err;
     });
-  }, [claimSlot]);
+  }, [claimSlot, drain]);
 
   const load = () => {
     setLoading(true);
     setLoadError(null);
     api.getMeal(mealId)
       .then(setMeal)
-      .catch(err => setLoadError(err instanceof Error ? err.message : 'Failed to load meal'))
+      .catch(err => setLoadError(err instanceof Error ? err.message : t('review.loadFailed')))
       .finally(() => setLoading(false));
   };
 
@@ -138,25 +132,25 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     setBusy(true);
     setActionError(null);
     try {
-      await applyMealUpdate(() => api.retryMeal(mealId), 'Analysis retried');
+      await applyMealUpdate(() => api.retryMeal(mealId), t('review.analysisRetried'));
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Retry failed');
+      setActionError(err instanceof Error ? err.message : t('review.retryFailed'));
     } finally {
       setBusy(false);
     }
   };
 
   const handleClarify = async (answers: string[]) => {
-    await applyMealUpdate(() => api.clarifyMeal(mealId, answers), 'Clarification submitted');
+    await applyMealUpdate(() => api.clarifyMeal(mealId, answers), t('review.clarificationSubmitted'));
   };
 
   const handleConfirm = async () => {
     setBusy(true);
     setActionError(null);
     try {
-      await applyMealUpdate(() => api.confirmMeal(mealId), 'Meal confirmed');
+      await applyMealUpdate(() => api.confirmMeal(mealId), t('review.mealConfirmed'));
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Confirm failed');
+      setActionError(err instanceof Error ? err.message : t('review.confirmFailed'));
     } finally {
       setBusy(false);
     }
@@ -166,7 +160,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Header />
-        <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">Loading…</p>
+        <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">{t('review.loading')}</p>
       </div>
     );
   }
@@ -175,7 +169,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Header />
         <div className="p-6 text-center">
-          <p className="text-sm text-red-600 dark:text-red-400">{loadError ?? 'Meal not found'}</p>
+          <p className="text-sm text-red-600 dark:text-red-400">{loadError ?? t('review.mealNotFound')}</p>
         </div>
       </div>
     );
@@ -199,7 +193,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-          {meal.name || 'Meal'}
+          {meal.name || t('review.mealFallbackName')}
         </h1>
         {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
           <div className="mb-3">
@@ -208,7 +202,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         )}
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-            {STATUS_LABEL[meal.status] ?? meal.status}
+            {mealStatusLabel(t, meal.status)}
           </span>
           {meal.photo_path && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -222,25 +216,25 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
         {meal.status === 'processing' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 text-center">
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Still analyzing…</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('review.stillAnalyzing')}</p>
             <TapTarget
               onClick={load}
               className="flex items-center justify-center mx-auto text-sm text-blue-600 dark:text-blue-400 hover:underline"
             >
-              Refresh
+              {t('review.refresh')}
             </TapTarget>
           </div>
         )}
 
         {meal.status === 'failed' && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6 text-center">
-            <p className="text-sm text-red-700 dark:text-red-300 mb-3">Analysis failed.</p>
+            <p className="text-sm text-red-700 dark:text-red-300 mb-3">{t('review.analysisFailed')}</p>
             <TapTarget
               onClick={handleRetry}
               disabled={busy}
               className="px-4 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
             >
-              {busy ? 'Retrying…' : 'Retry'}
+              {busy ? t('review.retrying') : t('review.retry')}
             </TapTarget>
           </div>
         )}
@@ -248,19 +242,22 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
           <>
             <MacroSummary meal={meal} />
-            <div className="mt-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 px-4">
+            <div className="mt-3 flex justify-end">
+              <ExpertModeToggle checked={expertMode} onChange={setExpertMode} />
+            </div>
+            <div className="mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 px-4">
               {items.length === 0 ? (
-                <p className="py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No items.</p>
+                <p className="py-4 text-sm text-gray-500 dark:text-gray-400 text-center">{t('review.noItems')}</p>
               ) : (
                 items.map(item => (
-                  <MealItemRow key={item.id} mealId={mealId} item={item} onUpdated={applyMealUpdate} />
+                  <MealItemRow key={item.id} mealId={mealId} item={item} onUpdated={applyMealUpdate} expertMode={expertMode} />
                 ))
               )}
             </div>
 
             {items.some(item => item.off_code) && (
               <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
-                Product data for some items from{' '}
+                {t('review.offAttributionPrefix')}
                 <a
                   href="https://world.openfoodfacts.org/"
                   target="_blank"
@@ -269,7 +266,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
                 >
                   Open Food Facts
                 </a>
-                , available under the{' '}
+                {t('review.offAttributionMiddle')}
                 <a
                   href="https://opendatacommons.org/licenses/odbl/1-0/"
                   target="_blank"
@@ -282,7 +279,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
               </p>
             )}
 
-            <AddItemForm mealId={mealId} onAdded={applyMealUpdate} />
+            <AddItemForm mealId={mealId} onAdded={applyMealUpdate} expertMode={expertMode} />
           </>
         )}
 
@@ -310,7 +307,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
               disabled={!canConfirm}
               className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
             >
-              {busy ? 'Confirming…' : 'Confirm Meal'}
+              {busy ? t('review.confirming') : t('review.confirmMeal')}
             </TapTarget>
           </div>
         </div>

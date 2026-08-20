@@ -144,6 +144,9 @@ export interface FoodSearchResult {
   custom_food_id?: string;
   fdc_id?: number;
   name: string;
+  // English identity of a 'custom' result whose name is non-English — see
+  // CustomFood.canonical_name below. Never set on 'usda' results.
+  canonical_name?: string;
   profile: NutrientProfile;
 }
 
@@ -156,6 +159,11 @@ export interface FoodSearchResponse {
 export interface CustomFood {
   id: string;
   name: string;
+  // English identity of the food, set when created from a non-English
+  // recognition (see the display-language capability). Empty/absent
+  // otherwise — see food-nutrition-logging "Food Item and Custom Food Carry
+  // a Canonical Name".
+  canonical_name?: string;
   calories_per_100g: number;
   protein_per_100g: number;
   carbs_per_100g: number;
@@ -176,6 +184,8 @@ export interface FoodItem {
   id: string;
   meal_id: string;
   name: string;
+  // See CustomFood.canonical_name above.
+  canonical_name?: string;
   preparation: string;
   state: string;
   brand?: string;
@@ -299,6 +309,9 @@ export interface PatchMealInput {
 // dashboard_order is its first field; other keys pass through untouched.
 export interface UserSettings {
   dashboard_order?: string[];
+  // BCP-47-ish code (e.g. "en", "ru") — see the display-language capability.
+  // Absent means English. Read/written through components/LanguageContext.tsx.
+  display_language?: string;
   [key: string]: unknown;
 }
 
@@ -353,6 +366,35 @@ export const api = {
   getSettings: () => apiFetch<UserSettings>('/users/me/settings'),
   putSettings: (settings: UserSettings) =>
     apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+
+  // Read-modify-write: fetches the latest settings, merges patch onto them,
+  // and PUTs the result. Shared by every settings-writing feature (dashboard
+  // order in app/page.tsx, Display Language in LanguageContext.tsx) so each
+  // doesn't reimplement the same "refetch immediately before writing"
+  // race-avoidance itself: without a fresh read right before the write, two
+  // features saving in the same session with no navigation in between could
+  // each PUT a stale snapshot that clobbers the other's already-saved field.
+  // Returns the merged settings that were just written.
+  //
+  // No caller keeps a cached copy of the blob any more — this function's own
+  // refetch is the only read that matters before a write, so a second,
+  // longer-lived copy in a component would only be another way to go stale.
+  //
+  // A failed refetch aborts the write rather than falling back to a cached
+  // copy. PUT /users/me/settings is a whole-document upsert, not a merge, so
+  // proceeding from a stale or empty snapshot is exactly the clobbering this
+  // function exists to prevent: if the caller's cache is still its initial
+  // `{}` (LanguageProvider's mount GET 401'd on /login and the user changed
+  // language before any later GET succeeded), the fallback path would PUT
+  // `{"display_language":"ru"}` and silently erase dashboard_order and every
+  // other key in the blob. Rejecting instead surfaces a toast at the call
+  // site and leaves the stored document untouched. Found in code review.
+  updateSettings: async (patch: Partial<UserSettings>): Promise<UserSettings> => {
+    const current = await api.getSettings();
+    const next: UserSettings = { ...current, ...patch };
+    await api.putSettings(next);
+    return next;
+  },
 
   data: (type: string, from?: string, to?: string, user?: string, bucket?: 'day' | 'month') => {
     const params = new URLSearchParams();

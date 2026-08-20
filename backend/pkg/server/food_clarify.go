@@ -134,7 +134,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	priorItems := make([]vision.Item, len(meal.Items))
 	for i, it := range meal.Items {
 		priorItems[i] = vision.Item{
-			Name: it.Name, Preparation: it.Preparation, State: it.State, Brand: it.Brand,
+			Name: it.Name, CanonicalName: it.CanonicalName, Preparation: it.Preparation, State: it.State, Brand: it.Brand,
 			WeightGrams: it.WeightGrams, Confidence: it.Confidence,
 			EstimatedProfile: estimatedProfilePtr(it),
 		}
@@ -143,9 +143,10 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)
 	defer cancel()
 
-	recognized, err := h.vision.Clarify(ctx, priorItems, history)
+	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
+	recognized, err := h.vision.Clarify(ctx, priorItems, history, displayLanguage)
 	if err == nil {
-		carryForwardEstimates(priorItems, recognized.Items)
+		carryForwardPriorFields(priorItems, recognized.Items, displayLanguage)
 	}
 	if err != nil {
 		applied, failErr := h.failMeal(meal, lease)
@@ -158,7 +159,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applied := true
-	if err := h.processRecognition(ctx, meal, recognized, lease, false); err != nil {
+	if err := h.processRecognition(ctx, meal, recognized, lease, false, displayLanguage); err != nil {
 		var failErr error
 		applied, failErr = h.failMeal(meal, lease)
 		if failErr != nil {
@@ -170,7 +171,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	writeReloadedMeal(w, result, reloadErr, http.StatusOK)
 }
 
-// carryForwardEstimates overwrites every recognized item's EstimatedProfile
+// carryForwardPriorFields overwrites every recognized item's EstimatedProfile
 // with the corresponding prior item's persisted estimate, positionally,
 // discarding whatever (if anything) Clarify itself returned for
 // estimated_profile first. Clarify shares Recognize's prompt/schema even
@@ -191,18 +192,41 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 // "Fried rice") can still misattribute; that residual gap needs the model to
 // echo back an explicit prior-item index, which is a larger schema/prompt
 // change tracked separately rather than solved here.
-func carryForwardEstimates(priorItems, recognizedItems []vision.Item) {
+//
+// Under the same identity guard it also restores a Canonical Name the clarify
+// response dropped. The schema marks canonical_name required, so the model
+// must emit the key — but nothing makes it emit a non-empty value, and an
+// empty one is stored as-is by processRecognition, permanently losing the
+// item's English identity: canonical_name is deliberately not editable via
+// PATCH, so a Russian user would be left with one item in a meal whose Expert
+// Mode shows no gloss and no way to restore it. That is the same defensiveness
+// the estimate carry-forward exists to provide, keyed on the same
+// already-established item identity. Found in code review.
+//
+// The restore is skipped entirely for an English Display Language, where a
+// Canonical Name must stay empty rather than duplicate the Display Name (see
+// vision.toRecognizeResult and food-photo-recognition "Recognition in English
+// Display Language does not duplicate the name"). It is unreachable in a
+// wholly English meal anyway — prior items have no Canonical Name to carry —
+// but a user who switches Display Language to English between rounds does have
+// one stored, and carrying it forward there would write exactly the duplicate
+// that requirement forbids.
+func carryForwardPriorFields(priorItems, recognizedItems []vision.Item, displayLanguage string) {
 	for i := range recognizedItems {
 		recognizedItems[i].EstimatedProfile = nil
 	}
 	if len(priorItems) != len(recognizedItems) {
 		return
 	}
+	keepCanonicalNames := !vision.IsEnglishDisplayLanguage(displayLanguage)
 	for i := range recognizedItems {
 		if !namesLikelySameItem(priorItems[i].Name, recognizedItems[i].Name) {
 			continue
 		}
 		recognizedItems[i].EstimatedProfile = priorItems[i].EstimatedProfile
+		if keepCanonicalNames && recognizedItems[i].CanonicalName == "" {
+			recognizedItems[i].CanonicalName = priorItems[i].CanonicalName
+		}
 	}
 }
 

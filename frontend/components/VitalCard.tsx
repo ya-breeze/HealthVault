@@ -3,6 +3,8 @@ import Link from 'next/link';
 import type { DataType } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import type { VitalResult } from '@/lib/vitals';
+import { useLanguage } from './LanguageContext';
+import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
 
 function sparkPath(data: number[], w: number, h: number, pad: number) {
@@ -34,6 +36,7 @@ interface VitalCardProps {
 export default function VitalCard({
   type, label, result, editing, onMoveUp, onMoveDown, moveUpDisabled, moveDownDisabled,
 }: VitalCardProps) {
+  const { t } = useLanguage();
   const color = metricColorVar(type);
   const w = 240;
   const h = 30;
@@ -56,7 +59,7 @@ export default function VitalCard({
           <TapTarget
             onClick={onMoveUp}
             disabled={moveUpDisabled}
-            aria-label={`Move ${label} up`}
+            aria-label={interpolate(t('vitals.moveUp'), { metric: label })}
             className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
           >
             ↑
@@ -64,7 +67,7 @@ export default function VitalCard({
           <TapTarget
             onClick={onMoveDown}
             disabled={moveDownDisabled}
-            aria-label={`Move ${label} down`}
+            aria-label={interpolate(t('vitals.moveDown'), { metric: label })}
             className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
           >
             ↓
@@ -75,10 +78,10 @@ export default function VitalCard({
         <>
           <div className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums">
             {result.value}
-            {result.unit && <span className="text-xs font-medium text-text-muted ml-1">{result.unit}</span>}
+            {result.unit && <span className="text-xs font-medium text-text-muted ml-1">{t(result.unit)}</span>}
           </div>
           <div className="font-[family-name:var(--font-data)] text-[11px] font-bold mt-0.5">
-            {TREND_ARROW[result.trend]} 7d trend
+            {TREND_ARROW[result.trend]} {t('vitals.trend7d')}
           </div>
           {spark && (
             <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full h-[30px] mt-2 block">
@@ -94,7 +97,7 @@ export default function VitalCard({
           )}
         </>
       ) : (
-        <p className="text-sm text-text-muted py-2">No data</p>
+        <p className="text-sm text-text-muted py-2">{t('vitals.noData')}</p>
       )}
     </>
   );

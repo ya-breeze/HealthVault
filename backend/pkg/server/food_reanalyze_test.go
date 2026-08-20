@@ -107,6 +107,45 @@ func TestReanalyze_ExpertCanEstimateEveryWeight(t *testing.T) {
 	}
 }
 
+// Expert Mode's free-text component names are typed directly by the user,
+// independent of their display_language setting — unlike a vision-recognized
+// Display Name, they carry no language-translation problem for USDA/OFF to
+// stumble over. resolveItems's non-English gate (design.md decision 4) must
+// not apply to them: a Russian-display-language user typing an English
+// ingredient name here should still get a USDA match, not fall straight to
+// the macro-estimate fallback. Regression for a code-review finding where
+// runExpertAnalysis passed the user's actual display_language straight
+// through, incorrectly skipping USDA/OFF for this text.
+func TestReanalyze_ExpertComponentMatchesUSDADespiteNonEnglishDisplayLanguage(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 0, "")
+
+	putH := server.PutUserSettingsHandler(st)
+	w := httptest.NewRecorder()
+	putH.ServeHTTP(w, withClaims(httptest.NewRequest(http.MethodPut, "/api/users/me/settings", strings.NewReader(`{"display_language":"ru"}`)), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT settings: expected 200, got %d", w.Code)
+	}
+
+	idx := buildUSDAIndex(t, usdaFood(42, "Chicken breast", 165))
+	fake := &vision.Fake{SelectResult: &vision.SelectResult{
+		Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+	}}
+	h := server.NewFoodHandlers(st, idx, dir).WithVision(fake, 10<<20, time.Minute)
+	w2 := httptest.NewRecorder()
+	h.Reanalyze(w2, withClaims(reanalyzeJSONRequest(meal.ID.String(), `{"components":[{"name":"Chicken breast","weight_grams":180}]}`), userID))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w2.Body).Decode(&got) //nolint:errcheck
+	if len(got.Items) != 1 || got.Items[0].FdcID == nil || *got.Items[0].FdcID != 42 {
+		t.Fatalf("expected the expert component matched to the USDA candidate despite ru display_language, got %+v", got.Items)
+	}
+}
+
 func TestReanalyze_RequiresExactlyOneModeBeforeClaim(t *testing.T) {
 	cases := []string{
 		`{}`,
@@ -609,6 +648,55 @@ func TestReanalyze_SelectErrorTreatedAsFailureNotDegradedSuccess(t *testing.T) {
 	}
 }
 
+// Regression: resolveItems's customFoodsForUser fetch (once per meal, not
+// per item) used to degrade silently on error regardless of strict, unlike
+// the analogous Select-call failure right above, which strict (Reanalyze
+// only) already treats as a hard failure. That let a transient DB error on
+// this one query silently disable custom-food matching for every item in a
+// Reanalyze call and still report 200, replacing a confirmed meal's real,
+// reviewed items with a degraded set — exactly the outcome strict mode
+// exists to prevent. Forces the failure by dropping the custom_foods table
+// so the query itself errors, without touching food_items/food_meals.
+func TestReanalyze_CustomFoodFetchErrorTreatedAsFailureNotDegradedSuccess(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	dir := t.TempDir()
+	meal := createReanalyzeMeal(t, st, dir, userID, familyID, database.MealStatusConfirmed, 0, "")
+
+	sqlDB, err := st.DB().DB()
+	if err != nil {
+		t.Fatalf("get sql.DB: %v", err)
+	}
+	if _, err := sqlDB.Exec("DROP TABLE custom_foods"); err != nil {
+		t.Fatalf("drop custom_foods table: %v", err)
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{Items: []vision.Item{{Name: "Rice", WeightGrams: 150}}},
+	}
+	h := server.NewFoodHandlers(st, nil, dir).WithVision(fake, 10<<20, time.Minute)
+
+	w := httptest.NewRecorder()
+	h.Reanalyze(w, withClaims(reanalyzeHTTPRequest(meal.ID.String(), "this is rice"), userID))
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 when the custom-food fetch fails, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded database.FoodMeal
+	if err := st.DB().Preload("Items").Where("id = ?", meal.ID).First(&reloaded).Error; err != nil {
+		t.Fatalf("reload meal: %v", err)
+	}
+	if reloaded.Status != database.MealStatusConfirmed {
+		t.Errorf("expected meal status unchanged, got %s", reloaded.Status)
+	}
+	if len(reloaded.Items) != 1 || reloaded.Items[0].Name != "Original item" {
+		t.Errorf("expected original item to survive untouched, got %+v", reloaded.Items)
+	}
+	if reloaded.Calories != 400 {
+		t.Errorf("expected confirmed meal's aggregate to survive untouched, got %v", reloaded.Calories)
+	}
+}
+
 // Regression: when the vision result includes clarification questions,
 // processRecognition used to persist the item replacement/status/aggregate
 // (persistAnalysis) and the clarify_log (appendPendingQuestions) as two
@@ -756,7 +844,7 @@ type gatedRecognizeClient struct {
 	result  *vision.RecognizeResult
 }
 
-func (c *gatedRecognizeClient) Recognize(context.Context, []byte, string, string) (*vision.RecognizeResult, error) {
+func (c *gatedRecognizeClient) Recognize(context.Context, []byte, string, string, string) (*vision.RecognizeResult, error) {
 	close(c.entered)
 	<-c.proceed
 	return c.result, nil
@@ -766,7 +854,7 @@ func (c *gatedRecognizeClient) EstimateWeights(context.Context, []byte, string, 
 	return &vision.WeightEstimateResult{}, nil
 }
 
-func (c *gatedRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn) (*vision.RecognizeResult, error) {
+func (c *gatedRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
 

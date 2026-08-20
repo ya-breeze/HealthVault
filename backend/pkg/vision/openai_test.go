@@ -45,10 +45,10 @@ func TestOpenAIClient_Recognize_SetsStoreFalseAndSendsImage(t *testing.T) {
 			t.Fatalf("decode request body: %v", err)
 		}
 		w.Write([]byte(chatResponse(t, //nolint:errcheck
-			`{"items":[{"name":"chicken breast","preparation":"roasted","state":"cooked","weight_grams":180,"confidence":0.9}],"clarification_questions":[]}`)))
+			`{"items":[{"display_name":"chicken breast","canonical_name":"","preparation":"roasted","state":"cooked","weight_grams":180,"confidence":0.9}],"clarification_questions":[]}`)))
 	})
 
-	result, err := c.Recognize(context.Background(), []byte{0xFF, 0xD8, 0xFF}, "image/jpeg", "")
+	result, err := c.Recognize(context.Background(), []byte{0xFF, 0xD8, 0xFF}, "image/jpeg", "", "en")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -87,6 +87,26 @@ func TestOpenAIClient_Recognize_SetsStoreFalseAndSendsImage(t *testing.T) {
 	}
 }
 
+// Regression for a code-review finding: display_name went straight into
+// Item.Name with no TrimSpace, unlike its CanonicalName/Brand siblings on the
+// same struct literal — so incidental model whitespace could flow all the
+// way to a save-as-custom-food CustomFood.Name, later tripping
+// UpdateCustomFood's trimmed-comparison rename check as a false-positive.
+func TestOpenAIClient_Recognize_TrimsDisplayNameWhitespace(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"  chicken breast  ","canonical_name":"","preparation":"roasted","state":"cooked","weight_grams":180,"confidence":0.9}],"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{0xFF, 0xD8, 0xFF}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Name != "chicken breast" {
+		t.Fatalf("expected trimmed name %q, got %+v", "chicken breast", result.Items)
+	}
+}
+
 func TestOpenAIClient_Recognize_EstimatedProfileParsed(t *testing.T) {
 	var capturedBody map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -94,14 +114,14 @@ func TestOpenAIClient_Recognize_EstimatedProfileParsed(t *testing.T) {
 			t.Fatalf("decode request body: %v", err)
 		}
 		w.Write([]byte(chatResponse(t, //nolint:errcheck
-			`{"items":[{"name":"Mexican vegetable mix","preparation":"unknown","state":"unknown",`+
+			`{"items":[{"display_name":"Mexican vegetable mix","canonical_name":"","preparation":"unknown","state":"unknown",`+
 				`"weight_grams":200,"confidence":0.6,`+
 				`"estimated_profile":{"calories_per_100g":90,"protein_per_100g":3,"carbs_per_100g":15,`+
 				`"fat_per_100g":2,"sugar_per_100g":4,"sodium_per_100g":0.3,"dietary_fiber_per_100g":3}}],`+
 				`"clarification_questions":[]}`)))
 	})
 
-	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -138,11 +158,11 @@ func TestOpenAIClient_Recognize_EstimatedProfileParsed(t *testing.T) {
 func TestOpenAIClient_Recognize_NullEstimatedProfileParsedAsNil(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(chatResponse(t, //nolint:errcheck
-			`{"items":[{"name":"unidentifiable item","preparation":"unknown","state":"unknown",`+
+			`{"items":[{"display_name":"unidentifiable item","canonical_name":"","preparation":"unknown","state":"unknown",`+
 				`"weight_grams":50,"confidence":0.2,"estimated_profile":null}],"clarification_questions":[]}`)))
 	})
 
-	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -154,10 +174,10 @@ func TestOpenAIClient_Recognize_NullEstimatedProfileParsedAsNil(t *testing.T) {
 func TestOpenAIClient_Recognize_UnknownMapsToEmptyString(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(chatResponse(t, //nolint:errcheck
-			`{"items":[{"name":"mystery sauce","preparation":"unknown","state":"unknown","weight_grams":30,"confidence":0.4}],"clarification_questions":[]}`)))
+			`{"items":[{"display_name":"mystery sauce","canonical_name":"","preparation":"unknown","state":"unknown","weight_grams":30,"confidence":0.4}],"clarification_questions":[]}`)))
 	})
 
-	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -173,7 +193,7 @@ func TestOpenAIClient_Recognize_ClarificationQuestions(t *testing.T) {
 			`{"items":[],"clarification_questions":["Is this dish spicy?"]}`)))
 	})
 
-	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -187,10 +207,10 @@ func TestOpenAIClient_Recognize_HintIncludedAlongsideImage(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
 		w.Write([]byte(chatResponse(t,                //nolint:errcheck
-			`{"items":[{"name":"chicken breast","preparation":"roasted","state":"cooked","weight_grams":180,"confidence":0.9}],"clarification_questions":[]}`)))
+			`{"items":[{"display_name":"chicken breast","canonical_name":"","preparation":"roasted","state":"cooked","weight_grams":180,"confidence":0.9}],"clarification_questions":[]}`)))
 	})
 
-	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "this is chicken and rice, not berries")
+	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "this is chicken and rice, not berries", "en")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -214,7 +234,7 @@ func TestOpenAIClient_Recognize_NoHintUnchangedPrompt(t *testing.T) {
 		w.Write([]byte(chatResponse(t, `{"items":[],"clarification_questions":[]}`))) //nolint:errcheck
 	})
 
-	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
@@ -228,17 +248,54 @@ func TestOpenAIClient_Recognize_NoHintUnchangedPrompt(t *testing.T) {
 	}
 }
 
+func TestOpenAIClient_Recognize_NonEnglishKeepsDisplayAndCanonicalNames(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
+		w.Write([]byte(chatResponse(t,                //nolint:errcheck
+			`{"items":[{"display_name":"вареники","canonical_name":"dumplings","preparation":"boiled","state":"cooked","weight_grams":150,"confidence":0.8}],"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "ru")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	if result.Items[0].Name != "вареники" || result.Items[0].CanonicalName != "dumplings" {
+		t.Errorf("expected distinct display/canonical names, got %+v", result.Items[0])
+	}
+
+	b, _ := json.Marshal(capturedBody)
+	if !strings.Contains(string(b), `\"ru\"`) {
+		t.Errorf("expected the target language code in the request, got %s", b)
+	}
+}
+
+func TestOpenAIClient_Recognize_EnglishDropsCanonicalNameEvenIfModelReturnsOne(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"dumplings","canonical_name":"dumplings","preparation":"boiled","state":"cooked","weight_grams":150,"confidence":0.8}],"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	if result.Items[0].Name != "dumplings" || result.Items[0].CanonicalName != "" {
+		t.Errorf("expected empty CanonicalName for English, got %+v", result.Items[0])
+	}
+}
+
 func TestOpenAIClient_Clarify_SendsNoImageContent(t *testing.T) {
 	var capturedBody map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
 		w.Write([]byte(chatResponse(t,                //nolint:errcheck
-			`{"items":[{"name":"sauce","preparation":"unknown","state":"unknown","weight_grams":30,"confidence":0.6}],"clarification_questions":[]}`)))
+			`{"items":[{"display_name":"sauce","canonical_name":"","preparation":"unknown","state":"unknown","weight_grams":30,"confidence":0.6}],"clarification_questions":[]}`)))
 	})
 
 	_, err := c.Clarify(context.Background(),
 		[]vision.Item{{Name: "sauce", WeightGrams: 30}},
-		[]vision.ClarifyTurn{{Question: "Cream or tomato based?", Answer: "Tomato-based"}})
+		[]vision.ClarifyTurn{{Question: "Cream or tomato based?", Answer: "Tomato-based"}}, "en")
 	if err != nil {
 		t.Fatalf("Clarify: %v", err)
 	}
@@ -342,7 +399,7 @@ func TestOpenAIClient_APIErrorIsReturned(t *testing.T) {
 		w.Write([]byte(`{"error":{"message":"invalid api key"}}`)) //nolint:errcheck
 	})
 
-	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "")
+	_, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
 	if err == nil {
 		t.Fatal("expected an error for a 401 response")
 	}
@@ -355,7 +412,7 @@ func TestOpenAIClient_ContextCancellationReturnsError(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := c.Recognize(ctx, []byte{1}, "image/jpeg", "")
+	_, err := c.Recognize(ctx, []byte{1}, "image/jpeg", "", "en")
 	if err == nil {
 		t.Fatal("expected an error for a cancelled context")
 	}
@@ -414,6 +471,34 @@ func TestOpenAIClient_Translate_MalformedResponseIsReturned(t *testing.T) {
 	_, err := c.Translate(context.Background(), "porridge")
 	if err == nil {
 		t.Fatal("expected an error for malformed structured content")
+	}
+}
+
+// Regression for a code-review finding: display_language is an unvalidated,
+// caller-supplied opaque-settings string (only the frontend's own dropdown
+// is constrained to exact "en"/"ru"), so a full BCP-47 tag like "en-US" from
+// some other caller must still be recognized as English rather than
+// silently gating out USDA/OFF matching and requesting a redundant
+// canonical_name for a functionally-English user.
+func TestIsEnglishDisplayLanguage(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"", true},
+		{"en", true},
+		{"En", true},
+		{"EN", true},
+		{"en-US", true},
+		{"en_GB", true},
+		{"ru", false},
+		{"ru-RU", false},
+		{"english", false}, // not a valid BCP-47 primary subtag match for "en"
+	}
+	for _, c := range cases {
+		if got := vision.IsEnglishDisplayLanguage(c.in); got != c.want {
+			t.Errorf("IsEnglishDisplayLanguage(%q) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }
 
