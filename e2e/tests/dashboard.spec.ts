@@ -34,12 +34,23 @@ async function withSettingsSave(page: Page, action: () => Promise<unknown>) {
   await saved;
 }
 
-// Shared cleanup for tests that reorder the vitals grid: pushes Weight back
-// to the last position (the default order), so a predictable grid is left
-// for later tests. Every step is best-effort and swallows its own failure —
-// used from a `finally` block, so one broken step (e.g. the page was left
-// mid-reorder by a failed assertion above it) must not hide the real
-// assertion failure that triggered the cleanup.
+// Shared cleanup for tests that reorder the vitals grid: puts Weight back
+// where PRIMARY_METRICS has it, so a predictable grid is left for later tests.
+// Every step is best-effort and swallows its own failure — used from a
+// `finally` block, so one broken step (e.g. the page was left mid-reorder by a
+// failed assertion above it) must not hide the real assertion failure that
+// triggered the cleanup.
+//
+// Weight is only moved back to *last* by pressing down, which is not the
+// default: PRIMARY_METRICS (frontend/lib/vitals.ts) puts weight 6th of 8, with
+// blood_pressure and oxygen_saturation after it. Hence the two ups below. This
+// used to stop at the bottom while its name and comment both promised the
+// default order — harmless only because no test yet asserts the seeded grid
+// order, and actively misleading to the first one that does. Found in code
+// review.
+//
+// Correct because Weight is the only card any test in this file moves, so
+// everything else is still in default relative order when this runs.
 async function restoreDefaultOrder(page: Page) {
   const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
   // Returns early rather than clicking a Done button that isn't there: with
@@ -51,6 +62,13 @@ async function restoreDefaultOrder(page: Page) {
   for (let i = 0; i < 8; i++) {
     if (await moveWeightDown.isDisabled().catch(() => true)) break;
     await moveWeightDown.click().catch(() => {});
+  }
+  // Now last; lift it back over oxygen_saturation and blood_pressure into its
+  // default 6th slot.
+  const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
+  for (let i = 0; i < 2; i++) {
+    if (await moveWeightUp.isDisabled().catch(() => true)) break;
+    await moveWeightUp.click().catch(() => {});
   }
   // handleDone (app/page.tsx) PUTs unconditionally, so this always has a
   // response to wait for.

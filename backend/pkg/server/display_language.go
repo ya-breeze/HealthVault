@@ -62,6 +62,40 @@ var bcp47Tag = regexp.MustCompile(`^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8})*$`)
 // 20 bytes or fewer.
 const maxDisplayLanguageLen = 35
 
+// primarySubtagOnly is the reduction applied to a stored value this file will
+// not pass through verbatim. It extracts the same thing the frontend's
+// resolveLanguage extracts — the text before the first "-" or "_", after
+// trimming — and keeps it only if that is itself a well-formed primary subtag.
+//
+// Reducing rather than jumping straight to defaultDisplayLanguage is what
+// keeps the two sides from disagreeing. Both the frontend and
+// vision.IsEnglishDisplayLanguage decide what language a stored value means by
+// reading its primary subtag and nothing else, so discarding a value whose
+// primary subtag is perfectly legible re-creates the split-brain twice already
+// found here: the frontend renders Russian from "ru-…" while this function
+// hands the backend "en", which asks the model for English Display Names and
+// silently re-enables USDA/Open Food Facts matching for that user. Length and
+// shape violations live in the rest of the tag, never in the primary subtag,
+// so there is no reason for the language itself to be a casualty of them.
+//
+// The prompt budget survives intact: the result is at most 8 letters, which is
+// far below maxDisplayLanguageLen — the reduction is strictly more bounded
+// than the verbatim path it replaces, not a relaxation of it. Casing is left
+// as stored, matching the verbatim path; every consumer compares primary
+// subtags case-insensitively.
+func primarySubtagOnly(lang string) string {
+	primary, _, _ := strings.Cut(lang, "-")
+	primary, _, _ = strings.Cut(primary, "_")
+	if !primarySubtag.MatchString(primary) {
+		return defaultDisplayLanguage
+	}
+	return primary
+}
+
+// primarySubtag is bcp47Tag's first component on its own — see that variable
+// for why the shape is checked at all.
+var primarySubtag = regexp.MustCompile(`^[A-Za-z]{2,8}$`)
+
 // normalizeDisplayLanguage trims a stored display_language and rejects
 // anything that isn't shaped like a BCP-47 tag, falling back to the default.
 //
@@ -76,10 +110,18 @@ const maxDisplayLanguageLen = 35
 // matching off for that user with no diagnostic anywhere. Normalizing once
 // here, at the single read boundary every caller goes through, closes both.
 // Found in code review.
+//
+// A value that fails either check is reduced to its primary subtag rather than
+// replaced with the default — see primarySubtagOnly. Falling back to "en"
+// outright was the third instance of the same split-brain bug in this file:
+// "ru-Cyrl-RU-u-nu-latn-x-private-abcde" is 36 bytes, so the ceiling rejected
+// it and the backend read English while resolveLanguage read its "ru" and
+// rendered the Russian UI. "ru-Cyrl-RU!" failed the shape check the same way.
+// Found in code review.
 func normalizeDisplayLanguage(lang string) string {
 	lang = strings.TrimSpace(lang)
 	if len(lang) > maxDisplayLanguageLen || !bcp47Tag.MatchString(lang) {
-		return defaultDisplayLanguage
+		return primarySubtagOnly(lang)
 	}
 	return lang
 }
