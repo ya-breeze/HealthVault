@@ -5,6 +5,7 @@ import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import { dateLocaleFor, mealStatusLabel } from '@/lib/i18n';
+import { useLatest } from '@/lib/useLatest';
 
 const PAGE_SIZE = 50;
 
@@ -78,6 +79,14 @@ export default function FoodHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
 
+  // Read through a ref, deliberately not listed as a dependency: `t` changes
+  // identity on every language switch, and this effect replaces the whole
+  // meal list with page 1. Depending on it meant switching language mid-browse
+  // silently discarded every "Load older" page the user had accumulated and
+  // jumped the view back to the top, with no loading indicator to explain it.
+  // Found in code review. See lib/useLatest.
+  const tRef = useLatest(t);
+
   useEffect(() => {
     api.listMeals({ limit: PAGE_SIZE })
       .then(rows => {
@@ -87,9 +96,9 @@ export default function FoodHistoryPage() {
         // therefore reliably proves there's nothing more to fetch.
         setHasMore(rows.length === PAGE_SIZE);
       })
-      .catch(err => setError(err instanceof Error ? err.message : t('history.loadFailed')))
+      .catch(err => setError(err instanceof Error ? err.message : tRef.current('history.loadFailed')))
       .finally(() => setLoading(false));
-  }, [t]);
+  }, [tRef]);
 
   const loadMore = async () => {
     if (meals.length === 0) return;

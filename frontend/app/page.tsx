@@ -7,6 +7,7 @@ import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, VitalResult } from
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
+import { useLatest } from '@/lib/useLatest';
 import Header from '@/components/Header';
 import VitalCard from '@/components/VitalCard';
 import TapTarget from '@/components/ui/TapTarget';
@@ -24,6 +25,7 @@ export default function Dashboard() {
   // language (or vice versa) before the first PUT lands can silently
   // clobber whichever save loses the race — found in code review.
   const { updateSettings, t, language } = useLanguage();
+  const tRef = useLatest(t);
   const [ready, setReady] = useState(false);
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
@@ -49,9 +51,15 @@ export default function Dashboard() {
         // Leave settingsLoaded false: editing/saving stays disabled rather
         // than risking a Done that overwrites real stored settings with a
         // PUT built from the (unknown) default order.
-        showToast(t('dashboard.orderLoadFailed'), 'error');
+        showToast(tRef.current('dashboard.orderLoadFailed'), 'error');
       });
-  }, [ready, showToast, t]);
+    // tRef, not t: the language selector sits in this page's own Header, and
+    // this effect overwrites `order` with the stored order. Depending on `t`
+    // meant switching language while reordering cards threw away the
+    // in-progress arrangement — and because `editing` stays true, a
+    // subsequent Done would persist the reverted order as if the user had
+    // chosen it. Found in code review. See lib/useLatest.
+  }, [ready, showToast, tRef]);
 
   useEffect(() => {
     if (!ready) return;

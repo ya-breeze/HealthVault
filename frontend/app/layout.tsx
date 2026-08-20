@@ -17,36 +17,35 @@ const barlow = Barlow({
   // Russian glyphs land on a designed webface instead of whatever the OS
   // happens to provide. Found in code review.
   subsets: ["latin"],
-  // This `fallback` is what actually lets interCyrillic below be reached, and
-  // without it the whole arrangement is inert. Left to itself, next/font
-  // appends a generated face to the variable — `--font-body` becomes
-  // `"Barlow", "Barlow Fallback"` — and that face is `src: local(Arial)` with
-  // *no* unicode-range, so it claims every glyph Barlow itself lacks. Arial
-  // ships full Cyrillic on Windows and macOS, so Russian text stopped there
-  // and Inter was never consulted, no matter what came after it in
-  // globals.css. Supplying `fallback` replaces that generated entry rather
-  // than appending to it, which is what gets Inter ahead of the Arial catch-all.
+  // This `fallback` is what puts interCyrillic into the body stack, and
+  // without it the whole arrangement is inert: the families have to appear
+  // *inside* this variable, because globals.css sets `--font-sans` to
+  // `var(--font-body)` and never chains anything of its own after it.
   //
-  // The families are named literally because they have to appear *inside*
-  // this variable; chaining them after `var(--font-body)` in globals.css is
-  // too late, since "Barlow Fallback" is already inside it. "Inter Fallback"
-  // is next/font's generated companion to interCyrillic below — verified
-  // present in the built CSS, and it is what backstops the stack while the
-  // webfonts load.
+  // Mechanically, next/font builds the family list as
+  //   [fontFamily, ...adjustFontFallbackFamily, ...fallbackFonts]
+  // (node_modules/next/dist/build/webpack/loaders/next-font-loader/
+  // postcss-next-font.js:110-116), so entries named here are *appended* after
+  // any generated metric-adjusted companion — they do not replace it. Here
+  // there is nothing to sit behind: a companion is only generated for a
+  // family present in next/dist/server/capsize-font-metrics.json, and Barlow
+  // is not in that table, so no "Barlow Fallback" face exists. The emitted
+  // variable is exactly `"Barlow", Inter, Inter Fallback`.
   //
-  // Note that `adjustFontFallback: false` does *not* work here, despite being
-  // the documented switch for this and still being declared in next/font's
-  // .d.ts: nothing under next/dist references it in 16.2.9, so it is accepted
-  // and silently ignored. Verified by building with it set and finding
-  // "Barlow Fallback" still in the emitted variable.
+  // "Inter Fallback" is next/font's generated companion to interCyrillic
+  // below — Inter *is* in the metrics table — and it backstops the stack
+  // while the webfonts load.
   //
-  // One cost is accepted deliberately: Barlow's generated face carried its
-  // metric overrides (size-adjust 96.68%), which reduce layout shift while
-  // Barlow downloads. Latin text now backstops to "Inter Fallback" during
-  // that window instead — also Arial-based, but adjusted to Inter's metrics
-  // (107.12%). Swap-window metrics are therefore ~10% off Barlow's rather
-  // than matched to it, which is a smaller defect than Russian text rendering
-  // in Arial permanently. Found in code review.
+  // Verify with: grep -o -- '--font-body:[^;}]*' .next/static/chunks/*.css
+  //
+  // This comment previously claimed the opposite of all of the above — that
+  // Barlow got a generated Arial-backed companion which swallowed Cyrillic,
+  // that `fallback` replaces rather than appends, and that
+  // `adjustFontFallback` is dead code in 16.2.9 — with a fabricated
+  // "verified by building with it set" note attached. None of it was true;
+  // `adjustFontFallback` is live and referenced across 18 files under
+  // next/dist. The arrangement below works, but it never worked for the
+  // stated reason. Corrected in code review.
   fallback: ["Inter", "Inter Fallback"],
 });
 
