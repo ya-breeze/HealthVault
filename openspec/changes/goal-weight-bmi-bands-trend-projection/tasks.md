@@ -151,7 +151,10 @@
       the goal on the far side (still classified as reached, not "not on track"), and a case where
       the user's lifetime-earliest raw weight sits on the opposite side of the goal from the current
       30-day window (e.g. old weight 60kg, current flat trend 90kg, goal 75kg) — must display "Not
-      on track", not falsely report "You've reached your goal weight"
+      on track", not falsely report "You've reached your goal weight"; and a case where
+      `windowStartEma == goal` exactly but `latestEma` has since diverged away from goal — must
+      display "Not on track" (per design.md's undefined-direction fallthrough), not falsely report
+      "You've reached your goal weight"
 
 ## 9. E2E
 

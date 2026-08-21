@@ -119,11 +119,16 @@ slope, intercept = ordinary least-squares fit of (day_offset, ema_value) over th
   flip the determination: `direction = sign(goal − windowStartEma)`, where `windowStartEma` is the
   EMA value at the oldest `day_offset` in the 30-day window (`latestEma` is the value at the
   newest). If the latest EMA value has already reached or passed the goal in that direction
-  (`latestEma <= goal` when `direction` is downward, `latestEma >= goal` when upward, or
-  `windowStartEma == goal` — already at goal at the start of the window), the system SHALL display
-  "You've reached your goal weight" instead of running the direction check below, and SHALL NOT
-  render a projection line. This is a distinct third state from "on track" and "not on track," not
-  a variant of either.
+  (`latestEma <= goal` when `direction` is downward, `latestEma >= goal` when upward), the system
+  SHALL display "You've reached your goal weight" instead of running the direction check below, and
+  SHALL NOT render a projection line. This is a distinct third state from "on track" and "not on
+  track," not a variant of either.
+  When `windowStartEma == goal` exactly, `direction` is undefined (sign of zero). The system SHALL
+  treat this as "already reached" only if `latestEma == goal` too (still flat at goal); otherwise —
+  the window started exactly at goal but has since moved off it — the system SHALL fall through to
+  the direction check below, which decides on-track/not-on-track from the regression's own slope
+  and current position rather than from `windowStartEma`. This avoids reporting "reached" for a
+  user who started the 30-day window at their goal but has since drifted away from it.
 - **Direction check**: otherwise, if the slope doesn't move toward the goal (flat, or moving
   away), or the projected crossing date is beyond the 12-month horizon — render no line, and "Not
   on track at your current trend." This is a deliberate refusal to extrapolate: an unconditional
