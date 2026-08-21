@@ -1,0 +1,88 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Regenerate with: make projected-specs
+     See openspec/specs.projected.README.md for details. -->
+
+--- openspec/specs/data-api/spec.md
++++ openspec/specs/data-api/spec.md
+@@ -16,9 +16,9 @@
+ ---
+ 
+ ### Requirement: Generic data query endpoint
+-The system SHALL expose `GET /api/data/{type}` (requires authentication) where `{type}` is one of the 26 registered types. The endpoint SHALL return a JSON array of all records for the resolved user within the requested time range.
++The system SHALL expose `GET /api/data/{type}` (requires authentication) where `{type}` is one of the 27 registered types. The endpoint SHALL return a JSON array of all records for the resolved user within the requested time range.
+ 
+-Supported types: `steps`, `heart_rate`, `heart_rate_variability`, `sleep`, `distance`, `active_calories`, `total_calories`, `weight`, `height`, `blood_pressure`, `blood_glucose`, `oxygen_saturation`, `body_temperature`, `skin_temperature`, `respiratory_rate`, `resting_heart_rate`, `exercise`, `hydration`, `nutrition`, `basal_metabolic_rate`, `body_fat`, `lean_body_mass`, `vo2_max`, `bone_mass`, `speed`, `food_meal`.
++Supported types: `steps`, `heart_rate`, `heart_rate_variability`, `sleep`, `distance`, `active_calories`, `total_calories`, `weight`, `height`, `weight_goal`, `blood_pressure`, `blood_glucose`, `oxygen_saturation`, `body_temperature`, `skin_temperature`, `respiratory_rate`, `resting_heart_rate`, `exercise`, `hydration`, `nutrition`, `basal_metabolic_rate`, `body_fat`, `lean_body_mass`, `vo2_max`, `bone_mass`, `speed`, `food_meal`.
+ 
+ `food_meal` is anchored on `logged_at` and returns meal rows with their aggregate macros but **without** their nested items; the item breakdown is available from `GET /api/food/meals/{id}`. Consumers SHALL NOT sum `food_meal` and `nutrition` together, as they are independent producers of nutrient facts with no shared deduplication key.
+ 
+@@ -37,6 +37,10 @@
+ - **WHEN** an authenticated user calls `GET /api/data/steps`
+ - **THEN** the system SHALL return HTTP 200 with a JSON array of step records for that user in the default time range
+ 
++#### Scenario: Query goal weight through the generic registry
++- **WHEN** an authenticated user calls `GET /api/data/weight_goal`
++- **THEN** the system SHALL return HTTP 200 with a JSON array of that user's goal-weight records in the time range, in the same shape as `GET /api/data/weight`
++
+ #### Scenario: Query meals through the generic registry
+ - **WHEN** an authenticated user calls `GET /api/data/food_meal`
+ - **THEN** the system SHALL return HTTP 200 with a JSON array of that user's meals in the time range, each with its aggregate macros and without nested items
+@@ -78,8 +82,8 @@
+ - **THEN** the system SHALL return HTTP 400
+ 
+ #### Scenario: Omitting bucket preserves existing behavior
+-- **WHEN** a request omits `?bucket=`
+-- **THEN** the system SHALL return raw records exactly as it did before this capability was added
++- **WHEN** a request to a registered type omits `?bucket=`
++- **THEN** the system SHALL return the existing raw-record response, unaffected by the bucketing feature
+ 
+ ### Requirement: Time range parameters
+ All data query endpoints (`/api/data/{type}` and `/api/data/summary`) SHALL accept `?from=` and `?to=` query parameters in RFC3339 format. If `from` is absent or unparseable, it SHALL default to 7 days before the current UTC time. If `to` is absent or unparseable, it SHALL default to the current UTC time.
+@@ -174,3 +178,47 @@
+ - **WHEN** an authenticated user requests a meal, custom food, or calibration sample owned by a different user
+ - **THEN** the system SHALL return HTTP 404 and SHALL NOT disclose whether the record exists
+ 
++### Requirement: Manual record write endpoint
++The system SHALL expose `POST /api/data/{type}` (requires authentication), allowlisted to exactly
++three types: `weight`, `height`, `weight_goal`. Every other registered type SHALL continue to
++reject POST.
++
++The request body SHALL be `{"value": <float64>, "time": "<RFC3339, optional>"}`. `time` SHALL
++default to the current time when omitted. A missing or non-numeric `value` SHALL return HTTP 400.
++On success the system SHALL return HTTP 201 with the created record in the same JSON shape
++`GET /api/data/{type}` returns for a single row.
++
++Records created through this endpoint SHALL NOT require or carry a `source_payload_id` (see
++`data-model`'s "Health metric types" requirement).
++
++A write to `weight_goal` (or a write to any allowlisted type at an explicitly duplicate `time`)
++SHALL rely on the type's existing unique `(user_id, time)` constraint rather than a separate
++upsert path — no new conflict-resolution logic is introduced by this endpoint.
++
++#### Scenario: Write an allowlisted type
++- **WHEN** an authenticated user calls `POST /api/data/weight_goal` with `{"value": 70.0}`
++- **THEN** the system SHALL return HTTP 201 with the created record, `kilograms: 70.0`, and a
++  `time` defaulted to now
++
++#### Scenario: Write with explicit time
++- **WHEN** an authenticated user calls `POST /api/data/height` with `{"value": 1.75, "time": "2026-01-01T00:00:00Z"}`
++- **THEN** the system SHALL return HTTP 201 with a record whose `time` is exactly
++  `2026-01-01T00:00:00Z`
++
++#### Scenario: Write rejected for a non-allowlisted type
++- **WHEN** an authenticated user calls `POST /api/data/steps` with any body
++- **THEN** the system SHALL return HTTP 403 and SHALL NOT create a record
++
++#### Scenario: Write rejected for a multi-column type
++- **WHEN** an authenticated user calls `POST /api/data/blood_pressure` with any body
++- **THEN** the system SHALL return HTTP 403 and SHALL NOT create a record
++
++#### Scenario: Missing value rejected
++- **WHEN** an authenticated user calls `POST /api/data/weight` with a body that omits `value` or
++  where `value` is not numeric
++- **THEN** the system SHALL return HTTP 400 and SHALL NOT create a record
++
++#### Scenario: Unauthenticated write rejected
++- **WHEN** a request to `POST /api/data/weight` carries no valid token
++- **THEN** the system SHALL return HTTP 401
++

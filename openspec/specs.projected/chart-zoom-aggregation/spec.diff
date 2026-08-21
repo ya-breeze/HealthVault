@@ -1,0 +1,110 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Regenerate with: make projected-specs
+     See openspec/specs.projected.README.md for details. -->
+
+--- openspec/specs/chart-zoom-aggregation/spec.md
++++ openspec/specs/chart-zoom-aggregation/spec.md
+@@ -152,3 +152,103 @@
+ - **WHEN** the chart computes an averaged point, a min/max band, or the EMA trend series for display
+ - **THEN** the computation SHALL use full floating-point precision, and only the final rendered text SHALL be rounded
+ 
++### Requirement: BMI reference bands on the weight chart
++When the user has at least one `height` record, the `weight` chart SHALL render four WHO BMI
++category reference bands — `<18.5`, `18.5-25`, `25-30`, `>=30` — converted from BMI to kilograms
++using the user's latest `height` record (`kg = bmi * heightMeters^2`). The bands SHALL be clipped
++to the chart's existing Y-domain and SHALL NOT themselves expand or otherwise influence that
++domain. The chart SHALL also display a BMI readout (value to one decimal place, plus the category
++name) computed from the latest raw `weight` record and the latest `height` record — not from the
++EMA-smoothed trend value. Both the bands and the readout SHALL be governed by the same "does a
++`height` record exist" condition, and SHALL both be absent when it does not.
++
++#### Scenario: Bands and readout render when height is on file
++- **WHEN** a user with at least one `height` record views the `weight` chart
++- **THEN** the chart SHALL render all 4 BMI bands clipped to the existing Y-domain, and SHALL show
++  a BMI readout (1 decimal place + category name) computed from the latest raw weight and height
++
++#### Scenario: Bands and readout absent when no height is on file
++- **WHEN** a user with no `height` record views the `weight` chart
++- **THEN** the chart SHALL NOT render BMI bands and SHALL NOT show a BMI readout
++
++#### Scenario: Bands never expand the Y-domain
++- **WHEN** the BMI bands' kg range (e.g. spanning roughly BMI 15-35) is wider than the chart's
++  actual weight data range
++- **THEN** the Y-domain SHALL remain governed by the existing weight-data domain computation, and
++  the bands SHALL be visually clipped at the domain's edges rather than widening it
++
++### Requirement: Goal weight reference line
++When the user has at least one `weight_goal` record, the `weight` chart SHALL render a reference
++line at the latest `weight_goal` value, at every zoom level. Unlike BMI bands, this value SHALL be
++included in the Y-domain computation, so the domain always expands to include the goal line even
++if that flattens the visible range of the user's actual weight data.
++
++#### Scenario: Goal line renders and expands the domain
++- **WHEN** a user has a `weight_goal` record whose value lies outside their recent weight data's
++  own range
++- **THEN** the chart SHALL render a reference line at the goal value, and the Y-domain SHALL expand
++  to include it
++
++#### Scenario: No goal line when no goal is set
++- **WHEN** a user has no `weight_goal` record
++- **THEN** the chart SHALL NOT render a goal reference line, and the Y-domain SHALL be computed as
++  it was before this requirement existed
++
++### Requirement: Weight trend projection
++When the user has at least one `weight_goal` record, the `weight` chart SHALL compute a trend
++projection: an ordinary least-squares regression of `(day_offset, ema_value)` over the last 30
++calendar days of the existing EMA series, independent of the chart's currently selected zoom
++level. The projection SHALL determine the date the regression line crosses the latest
++`weight_goal` value, if any, within a 12-month horizon.
++
++Minimum data: if the user has fewer than 5 `weight` records, or the span between their earliest
++and latest `weight` record is under 14 days, the system SHALL display "Not enough data to project
++yet" and SHALL NOT render a projection line.
++
++Given sufficient data: if the regression slope does not move toward the goal (flat or diverging),
++or the computed crossing date falls beyond the 12-month horizon, the system SHALL display "Not on
++track at your current trend" and SHALL NOT render a projection line. Otherwise the system SHALL
++render a dashed projection line from the current EMA value to the computed crossing point, and
++SHALL display the crossing date as ETA text.
++
++The dashed projection line itself SHALL render only at Month and Year zoom (not Day or Week — a
++7-day window cannot show a months-away crossing point). The ETA text (or the "not enough data" /
++"not on track" message, whichever applies) SHALL render at every zoom level, so switching zoom
++never hides the answer.
++
++#### Scenario: Not enough data
++- **WHEN** a user has fewer than 5 `weight` records, or their records span fewer than 14 days
++- **THEN** the chart SHALL display "Not enough data to project yet" and SHALL NOT render a
++  projection line, at any zoom level
++
++#### Scenario: On-track projection at Month/Year zoom
++- **WHEN** a user has sufficient weight history, a `weight_goal` set, and a 30-day EMA trend moving
++  toward the goal with a crossing date within 12 months, viewed at Month or Year zoom
++- **THEN** the chart SHALL render a dashed projection line to the computed crossing point and
++  SHALL display the crossing date as ETA text
++
++#### Scenario: On-track projection at Day/Week zoom shows text only
++- **WHEN** the same on-track projection as above is viewed at Day or Week zoom
++- **THEN** the chart SHALL NOT render the dashed projection line, but SHALL still display the ETA
++  text
++
++#### Scenario: Wrong-direction or flat trend
++- **WHEN** a user's 30-day EMA trend is flat or moving away from their `weight_goal`
++- **THEN** the chart SHALL display "Not on track at your current trend" and SHALL NOT render a
++  projection line
++
++#### Scenario: Crossing beyond the horizon
++- **WHEN** a user's trend moves toward their goal but the computed crossing date is more than 12
++  months out
++- **THEN** the chart SHALL display "Not on track at your current trend" and SHALL NOT render a
++  projection line
++
++#### Scenario: Projection is independent of zoom selection
++- **WHEN** a user switches zoom level between Week, Month, and Year
++- **THEN** the regression window (last 30 calendar days of EMA data) and the resulting crossing
++  date SHALL NOT change
++
++#### Scenario: No projection without a goal
++- **WHEN** a user has no `weight_goal` record
++- **THEN** the chart SHALL NOT compute or render a projection line or ETA text
++

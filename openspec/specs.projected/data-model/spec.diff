@@ -1,0 +1,50 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Regenerate with: make projected-specs
+     See openspec/specs.projected.README.md for details. -->
+
+--- openspec/specs/data-model/spec.md
++++ openspec/specs/data-model/spec.md
+@@ -5,7 +5,7 @@
+ ### Requirement: Health metric types
+ The system SHALL persist health data in typed tables. Each table SHALL belong to a family (via `family_id`) and be associated with a user (via `user_id`).
+ 
+-Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`, `FoodSearchTranslation`), which have no upstream payload and are specified separately under "Food logging tables".
++Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`, `FoodSearchTranslation`), which have no upstream payload and are specified separately under "Food logging tables". It also does NOT apply to any point-in-time record created through the manual write endpoint (`POST /api/data/{type}` — see `data-api`), regardless of type: a manually-entered `weight`, `height`, or `weight_goal` record has no upstream webhook or import payload either, and SHALL NOT require or synthesize a `source_payload_id`.
+ 
+ Types are grouped into three categories based on their temporal shape:
+ 
+@@ -30,6 +30,7 @@
+ | HeartRateVariability | `rmssd_millis`     | float64 ms             |
+ | Weight               | `kilograms`        | float64                |
+ | Height               | `meters`           | float64                |
++| WeightGoal           | `kilograms`        | float64                |
+ | BloodGlucose         | `mmol_per_liter`   | float64                |
+ | OxygenSaturation     | `percentage`       | float64                |
+ | BodyTemperature      | `celsius`          | float64                |
+@@ -42,6 +43,11 @@
+ | BoneMass             | `kilograms`        | float64                |
+ | Speed                | `meters_per_second`| float64                |
+ 
++`WeightGoal` differs from every other point-in-time type in this table in one respect: it is never
++ingested from a webhook or import. Every row is created through the manual write endpoint. "Latest
++record wins" (the most recent `time` is the user's current goal) falls out of ordinary
++latest-record-by-time queries — no separate "current goal" field or table exists.
++
+ **Multi-value point-in-time types** — single `time` field, unique on `(user_id, time)`, multiple measurement fields:
+ 
+ | Type            | Fields                                                              |
+@@ -61,6 +67,14 @@
+ - **WHEN** a user-authored food logging record is created
+ - **THEN** the system SHALL persist it with the correct `user_id` and `family_id` and SHALL NOT require or synthesize a `source_payload_id`
+ 
++#### Scenario: Manually-written record stored without payload lineage
++- **WHEN** a `weight`, `height`, or `weight_goal` record is created through the manual write endpoint rather than ingested
++- **THEN** the system SHALL persist it with the correct `user_id` and `family_id` and SHALL NOT require or synthesize a `source_payload_id`
++
++#### Scenario: Goal weight latest-record-wins
++- **WHEN** a user has more than one `weight_goal` record
++- **THEN** the system's current-goal reads (chart goal line, BMI/goal consumers) SHALL use the record with the most recent `time`
++
+ ### Requirement: Exercise record
+ The system SHALL store exercise sessions with required fields `start_time`, `end_time`, `duration_seconds`, and `exercise_type` (string). Optional fields SHALL be nullable: `distance_meters`, `steps`, `avg_cadence_spm`, `max_cadence_spm`, `stride_length_m`. The unique constraint SHALL be on `(user_id, start_time)`.
+ 
