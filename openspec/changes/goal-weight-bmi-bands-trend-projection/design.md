@@ -83,7 +83,13 @@ so there's no way for one to render while the other silently doesn't.
 Unlike BMI bands, the goal `ReferenceLine`'s value **is** included when computing the chart's
 Y-domain (reusing `computeYDomain` from `dataTypeMeta.ts`, called with the goal value folded into
 the same min/max input the existing EMA/raw-data domain computation already uses). This is a
-one-line change in the value set fed to the existing domain function, not a new domain algorithm.
+one-line change in the value set fed to the existing domain function, not a new domain algorithm —
+but it is **one such change in two places**, not one: `DataTypeClient.tsx` already computes two
+independent domains selected by zoom (`dayDomain` for Day zoom's `LineChart`, `bandDomain` for the
+Week/Month/Year `ComposedChart`), so the goal value must be folded into both, and the
+`ReferenceLine`/BMI-band `ReferenceArea`s must be added to both chart branches. "Renders at every
+zoom level" (goal line and BMI bands alike) is only true if both branches carry the overlay —
+covering just one leaves the other zoom tier silently missing it.
 
 ### Trend projection: least-squares over a fixed 30-day EMA window, 12-month horizon
 
@@ -112,6 +118,14 @@ slope, intercept = ordinary least-squares fit of (day_offset, ema_value) over th
   and Year zoom (a 7-day Week view has no room to show a months-out crossing point), but the ETA
   text renders at every zoom level including Day/Week, so switching zoom never hides the answer to
   the question the feature exists to answer.
+- **The 30-day EMA window needs its own fetch, independent of the active zoom's bucket**: today,
+  `DataTypeClient.tsx` only fetches daily-bucketed weight data for Week and Month zoom (Day zoom
+  fetches no bucketed data at all — `chartRows` is empty — and Year zoom's bucket is monthly, not
+  daily). Since the ETA text must render at every zoom level, the projection cannot rely on
+  whatever bucketed data a given zoom already happens to have loaded. The weight page adds one more
+  dedicated fetch — a 30+-day daily-bucketed range, independent of `zoom`/`bucket` — purely to feed
+  the regression, alongside the existing per-zoom chart fetch and the goal/height fetches from
+  tasks 5.5 and 6.1.
 - Rejected: a two-point slope (last two weigh-ins) — swings the ETA by months between individual
   weigh-ins even after EMA smoothing, which is worse than the 30-day window's stability.
 

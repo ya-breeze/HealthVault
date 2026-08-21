@@ -34,8 +34,10 @@
 ## 3. Frontend: `weight_goal` registry + i18n
 
 - [ ] 3.1 Add `"weight_goal"` to `DATA_TYPES` in `frontend/lib/api.ts`
-- [ ] 3.2 Add a `TYPE_META` entry in `frontend/lib/dataTypeMeta.ts` (label, unit `kg`,
-      point-in-time)
+- [ ] 3.2 Add a `TYPE_META` entry in `frontend/lib/dataTypeMeta.ts` (`{ family: 'point', decimals:
+      1 }`, matching the `Weight`/`Height` entries — `TYPE_META` carries no `label`/`unit` field;
+      the display label comes from a new `metric.weight_goal` key in `frontend/lib/i18n/en.ts` and
+      `ru.ts`, task 3.3)
 - [ ] 3.3 Add `weight_goal` labels to `frontend/lib/i18n/en.ts` and `ru.ts`
 - [ ] 3.4 Add `--c-weight_goal` CSS var (light + dark) to `frontend/app/globals.css`, following the
       existing `--c-weight` pattern
@@ -57,7 +59,9 @@
 - [ ] 5.1 Add a pure function in `dataTypeMeta.ts` converting the 3 WHO BMI band edges (18.5, 25,
       30) to kg given a height in meters (`kg = bmi * heightMeters^2`)
 - [ ] 5.2 Render the 4 resulting bands as `ReferenceArea`s on the `weight` chart, clipped to the
-      existing Y-domain (bands never expand it — see design.md), rendered at every zoom level
+      existing Y-domain (bands never expand it — see design.md), rendered at every zoom level —
+      `DataTypeClient.tsx` has two chart branches selected by zoom (the Day-zoom `LineChart` and
+      the Week/Month/Year `ComposedChart`), so the bands must be added to both, not just one
 - [ ] 5.3 Add a pure `classifyBmi(bmi): category` function in `dataTypeMeta.ts` (lower-inclusive
       boundaries: `[18.5,25)` Normal, `[25,30)` Overweight, `[30,∞)` Obese, else Underweight — see
       design.md) and use it for the BMI readout (1 decimal + category name) computed from latest
@@ -70,12 +74,23 @@
 ## 6. Frontend: goal line
 
 - [ ] 6.1 Fetch the latest `weight_goal` record when `dataType === 'weight'`
-- [ ] 6.2 Render a `ReferenceLine` at the goal value
-- [ ] 6.3 Fold the goal value into the value set passed to `computeYDomain` so the Y-domain always
-      expands to include it (see design.md; this is the accepted trade-off)
+- [ ] 6.2 Render a `ReferenceLine` at the goal value, in both of `DataTypeClient.tsx`'s chart
+      branches (Day-zoom `LineChart` and Week/Month/Year `ComposedChart`) — the line must render at
+      every zoom level, per the requirement, so neither branch can be skipped
+- [ ] 6.3 Fold the goal value into the value set passed to `computeYDomain` for **both** existing
+      domain computations — `dayDomain` (feeds the Day-zoom `LineChart`) and `bandDomain` (feeds
+      the Week/Month/Year `ComposedChart`) — so the Y-domain always expands to include the goal at
+      every zoom, not just the zoom tier touched first (see design.md; this is the accepted
+      trade-off)
 
 ## 7. Frontend: trend projection
 
+- [ ] 7.0 `DataTypeClient.tsx` fetches a dedicated 30+-day daily-bucketed `weight` range for the
+      regression, independent of the active zoom's own bucket fetch — Day zoom fetches no bucketed
+      data today, Week zoom's widened lookback only reaches 14 days, and Year zoom's bucket is
+      monthly, so none of the three can feed a 30-daily-point EMA window on their own; only Month
+      zoom's fetch happens to already cover it. Since the ETA text must render at every zoom level
+      (7.5), this fetch cannot be conditional on which zoom is active.
 - [ ] 7.1 Add a pure least-squares regression function over `(day_offset, ema_value)` pairs
 - [ ] 7.2 Add a pure function selecting the last 30 calendar days of the existing EMA series,
       independent of the active zoom
