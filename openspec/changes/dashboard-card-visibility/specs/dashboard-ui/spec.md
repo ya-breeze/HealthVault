@@ -24,12 +24,12 @@ The dashboard SHALL replace the 3-card summary and separate "Browse Data" grid w
 
 The dashboard vitals grid SHALL support a per-user, persisted custom display order AND per-card visibility for its cards. Users SHALL enter an explicit Edit/Customize mode to change order or visibility; outside that mode, the grid SHALL render only the visible cards, in the user's saved order (or the default order, all visible, if none is saved), with no visible reorder or visibility controls.
 
-#### Scenario: Default order and visibility for a user who has not customized
+#### Scenario: Default order for a user who has not customized
 
 - **WHEN** a user who has never saved a custom order/visibility loads the dashboard
 - **THEN** the vitals grid SHALL render all metrics in the application's default order, none hidden
 
-#### Scenario: Entering edit mode reveals reorder and visibility controls
+#### Scenario: Entering edit mode reveals reorder controls
 
 - **WHEN** a user clicks the dashboard's Edit/Customize control
 - **THEN** each vitals-grid card SHALL show move-up, move-down, and a show/hide control, the move-up control SHALL be disabled on the first card, the move-down control SHALL be disabled on the last card, and cards currently hidden SHALL still be shown (visually distinguished as hidden) so they can be found and re-shown
@@ -54,7 +54,7 @@ The dashboard vitals grid SHALL support a per-user, persisted custom display ord
 - **WHEN** a user in edit mode moves a card and then clicks Done
 - **THEN** the system SHALL persist the new order (and each card's visibility) for that user and exit edit mode, and the grid SHALL immediately reflect the new order and visibility
 
-#### Scenario: Saved order and visibility persist across sessions
+#### Scenario: Saved order persists across sessions
 
 - **WHEN** a user who previously saved a custom order/visibility loads the dashboard again (including from a different browser/device)
 - **THEN** the vitals grid SHALL render in their saved order, showing only their visible cards
