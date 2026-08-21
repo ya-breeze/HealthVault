@@ -51,8 +51,13 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // Renders in English immediately rather than blocking the whole app
   // (including the unauthenticated /login page, where this fetch always
   // 401s) behind this request — the language updates in place once it
-  // resolves, the same "render now, reconcile shortly after" pattern
-  // app/page.tsx already uses for dashboard_order.
+  // resolves.
+  //
+  // Note app/page.tsx deliberately does the *opposite* for dashboard_order:
+  // it withholds the vitals grid until its settings load resolves. The two
+  // are not inconsistent — showing English text a moment early is harmless
+  // and self-correcting, whereas showing a card the user chose to hide
+  // cannot be taken back once seen.
   //
   // Refetches on every pathname change, not just once on mount: this
   // provider lives in the root layout, which the App Router keeps mounted

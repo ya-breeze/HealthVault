@@ -199,6 +199,7 @@ export default function Dashboard() {
                 moveDownDisabled={i === order.length - 1}
                 hidden={m.hidden}
                 onToggleHidden={() => toggleHidden(i)}
+                controlsDisabled={saving}
               />
             ))}
           </div>

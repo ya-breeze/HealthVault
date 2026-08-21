@@ -38,11 +38,18 @@ interface VitalCardProps {
   // rendered here (dimmed) only so they can be found and shown again.
   hidden?: boolean;
   onToggleHidden?: () => void;
+  // Set while the Done save is in flight. handleDone closes over the `order`
+  // of the render that created it, so an edit made mid-save is never
+  // persisted, yet the grid re-renders from the newer local state on success
+  // — leaving the screen disagreeing with the server until a reload. Locking
+  // the controls for the duration is what keeps the two in step. Found in
+  // code review.
+  controlsDisabled?: boolean;
 }
 
 export default function VitalCard({
   type, label, result, editing, onMoveUp, onMoveDown, moveUpDisabled, moveDownDisabled,
-  hidden, onToggleHidden,
+  hidden, onToggleHidden, controlsDisabled,
 }: VitalCardProps) {
   const { t } = useLanguage();
   const color = metricColorVar(type);
@@ -80,7 +87,7 @@ export default function VitalCard({
         <div className="flex flex-wrap items-center justify-end gap-1.5 mb-2">
           <TapTarget
             onClick={onMoveUp}
-            disabled={moveUpDisabled}
+            disabled={moveUpDisabled || controlsDisabled}
             aria-label={interpolate(t('vitals.moveUp'), { metric: label })}
             className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
           >
@@ -88,7 +95,7 @@ export default function VitalCard({
           </TapTarget>
           <TapTarget
             onClick={onMoveDown}
-            disabled={moveDownDisabled}
+            disabled={moveDownDisabled || controlsDisabled}
             aria-label={interpolate(t('vitals.moveDown'), { metric: label })}
             className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
           >
@@ -96,12 +103,13 @@ export default function VitalCard({
           </TapTarget>
           <TapTarget
             onClick={onToggleHidden}
+            disabled={controlsDisabled}
             aria-label={interpolate(t(hidden ? 'dashboard.showCard' : 'dashboard.hideCard'), { metric: label })}
             data-testid={`vital-card-${type}-visibility`}
             // No aria-pressed: the label is an action ("Hide Sleep" / "Show
             // Sleep") and already carries the state, so a pressed flag on top
             // of it would read as contradictory ("Show Sleep, pressed").
-            className="flex items-center justify-center rounded-md border border-border bg-bg text-text"
+            className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
           >
             {hidden ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
           </TapTarget>

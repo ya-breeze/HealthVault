@@ -285,24 +285,35 @@ async function restoreAllVisible(page: Page) {
   // Edit mode is identified by Done being on screen, not by Customize being
   // enabled: a disabled Customize is ambiguous between "still loading" and
   // "load failed", and neither means we are editing.
-  if (!(await doneBtn.isVisible().catch(() => false))) {
-    // Fast path: outside edit mode the grid renders only visible cards, so a
-    // full complement of 8 means there is nothing to restore and no settings
-    // PUT is needed. Gated on being outside edit mode — while editing, every
-    // card renders regardless of visibility, so the count is always 8 and
-    // this check would short-circuit while cards are still hidden.
-    if ((await page.getByTestId('vitals-grid').locator('> *').count().catch(() => -1)) === 8) {
-      return;
-    }
+  const enteredEditMode = !(await doneBtn.isVisible().catch(() => false));
+  if (enteredEditMode) {
     await customizeBtn.click().catch(() => {});
   }
+
   // Edit mode renders hidden cards too, so their toggles are reachable here.
+  // Counting hidden cards directly — rather than checking the read-only grid
+  // for a full complement — keeps this independent of how many primary
+  // metrics there are. An earlier version compared against a hardcoded 8, so
+  // adding a 9th metric would have made a run with exactly one card hidden
+  // look complete and turned this cleanup into a silent no-op.
+  //
   // Bounded loop rather than while(count): a toggle that fails to clear would
   // otherwise spin forever inside a cleanup.
   const hiddenToggles = page.locator('[data-hidden="true"] [data-testid$="-visibility"]');
-  for (let i = 0; i < 10; i++) {
+  let restored = 0;
+  for (let i = 0; i < 20; i++) {
     if ((await hiddenToggles.count().catch(() => 0)) === 0) break;
     await hiddenToggles.first().click().catch(() => {});
+    restored++;
+  }
+
+  if (restored === 0 && enteredEditMode) {
+    // Nothing was hidden and we opened the editor purely to look. Leave via a
+    // navigation instead of Done: handleDone PUTs unconditionally, so clicking
+    // it here would write settings on every single test just to confirm there
+    // was nothing to fix.
+    await page.goto('/').catch(() => {});
+    return;
   }
   if (await doneBtn.isVisible().catch(() => false)) {
     await withSettingsSave(page, () => doneBtn.click());
@@ -403,6 +414,29 @@ test.describe('Dashboard card visibility', () => {
     } finally {
       await restoreAllVisible(page);
     }
+  });
+
+  test('settings saved in the pre-visibility shape still load', async ({ page }) => {
+    // The bare-string shape is what every account written before this feature
+    // holds, so it is the path a real user takes on their first load after
+    // deploy — and, until this test, the only spec scenario asserted by
+    // nothing (the frontend has no unit-test runner). Served via a route mock
+    // rather than by writing it, because the app can no longer produce it.
+    await page.route('**/api/users/me/settings', route => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ json: { dashboard_order: ['weight', 'steps'] } });
+    });
+    await page.goto('/');
+
+    const grid = page.getByTestId('vitals-grid');
+    // Named entries keep their saved order and are treated as visible...
+    await expect(grid.locator('> *').nth(0)).toHaveAttribute('data-testid', 'vital-card-weight');
+    await expect(grid.locator('> *').nth(1)).toHaveAttribute('data-testid', 'vital-card-steps');
+    // ...and the metrics the old shape never mentioned are appended, visible,
+    // rather than being dropped or defaulting to hidden.
+    await expect(grid.locator('> *')).toHaveCount(8);
+    await expect(grid.getByTestId('vital-card-sleep')).toBeVisible();
+    await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
   });
 
   test('no card is rendered until the saved visibility is known', async ({ page }) => {
