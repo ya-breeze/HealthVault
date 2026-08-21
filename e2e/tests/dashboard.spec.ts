@@ -87,6 +87,10 @@ async function restoreDefaultOrder(page: Page) {
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    // Repair any hidden card leaked by a failed visibility test before
+    // asserting on grid contents: every test below assumes the full grid, and
+    // a leaked hidden card fails them for reasons unrelated to what they test.
+    await restoreAllVisible(page);
   });
 
   test('shows the vitals grid with all 8 primary metrics', async ({ page }) => {
@@ -149,6 +153,10 @@ test.describe('Needs-attention indicator', () => {
 test.describe('Dashboard card reorder', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    // Repair any hidden card leaked by a failed visibility test before
+    // asserting on grid contents: every test below assumes the full grid, and
+    // a leaked hidden card fails them for reasons unrelated to what they test.
+    await restoreAllVisible(page);
   });
 
   test('reordering a card via Edit mode persists across reload', async ({ page }) => {
@@ -287,7 +295,20 @@ async function restoreAllVisible(page: Page) {
   // "load failed", and neither means we are editing.
   const enteredEditMode = !(await doneBtn.isVisible().catch(() => false));
   if (enteredEditMode) {
-    await customizeBtn.click().catch(() => {});
+    // Guarded, and with a short timeout. On the settings-load-failure path
+    // Customize renders permanently disabled, so the wait above burns its full
+    // 10s and an unguarded click would then block on actionability until the
+    // 30s test timeout — killing the run in beforeEach instead of letting the
+    // .catch() fall through.
+    if (!(await customizeBtn.isEnabled().catch(() => false))) return;
+    await customizeBtn.click({ timeout: 5_000 }).catch(() => {});
+    // Wait for the editor to actually commit before counting below. click()
+    // resolves once the event is dispatched, not once React has re-rendered,
+    // and count() does not retry — so querying straight after the click can
+    // read zero toggles, break the loop on iteration 0, and take the
+    // "nothing was hidden" early return. That is the same silent-no-op this
+    // helper has now been bitten by twice.
+    await expect(doneBtn).toBeVisible({ timeout: 5_000 }).catch(() => {});
   }
 
   // Edit mode renders hidden cards too, so their toggles are reachable here.
@@ -337,7 +358,12 @@ test.describe('Dashboard card visibility', () => {
 
     try {
       // Outside edit mode there is no visibility control, same as the reorder
-      // arrows.
+      // arrows. Anchored on the card being present first: the load gate means
+      // nothing renders until the settings GET resolves (and beforeEach may
+      // have just navigated), so a bare not.toBeVisible() here would pass
+      // against an empty page and would still pass if the toggle leaked into
+      // read-only mode.
+      await expect(grid.getByTestId('vital-card-sleep')).toBeVisible();
       await expect(page.getByTestId('vital-card-sleep-visibility')).not.toBeVisible();
 
       await page.getByRole('button', { name: 'Customize' }).click();
@@ -480,6 +506,10 @@ test.describe('Dashboard card visibility', () => {
 test.describe('Settings lost-update race', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    // Repair any hidden card leaked by a failed visibility test before
+    // asserting on grid contents: every test below assumes the full grid, and
+    // a leaked hidden card fails them for reasons unrelated to what they test.
+    await restoreAllVisible(page);
   });
 
   // Regression for a lost-update race fixed in LanguageContext.tsx/page.tsx:
@@ -559,6 +589,10 @@ test.describe('Webhook ingest + dashboard', () => {
     expect(resp.status()).toBe(204);
 
     await login(page);
+    // Repair any hidden card leaked by a failed visibility test before
+    // asserting on grid contents: every test below assumes the full grid, and
+    // a leaked hidden card fails them for reasons unrelated to what they test.
+    await restoreAllVisible(page);
     await expect(page.getByText('Steps', { exact: true })).toBeVisible();
 
     // The dashboard's vitals grid fetches ?bucket=day — confirm today's bucket
