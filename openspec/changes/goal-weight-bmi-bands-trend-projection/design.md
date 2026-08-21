@@ -101,11 +101,21 @@ slope, intercept = ordinary least-squares fit of (day_offset, ema_value) over th
 
 - **Minimum data**: fewer than 5 weight records, or a span under 14 days between the earliest and
   latest record — render "Not enough data to project yet," no line, no ETA.
-- **Direction check**: if the slope doesn't move toward the goal (flat, or moving away), or the
-  projected crossing date is beyond the 12-month horizon — render no line, and "Not on track at
-  your current trend." This is a deliberate refusal to extrapolate: an unconditional projection
-  either produces a 6-year line (useless) or, for a wrong-direction trend, simply never crosses
-  the goal at all, which needs to say so rather than draw nothing with no explanation.
+- **Already-at-goal check runs before the direction check**: a flat EMA doesn't always mean
+  failure — a user who has reached their goal and is now maintaining it also has a flat trend.
+  Direction is established from the user's earliest and latest raw `weight` records (already read
+  for the minimum-data gate above): `direction = sign(goal − earliestWeight)`. If the latest EMA
+  value has already reached or passed the goal in that direction (`latestEma <= goal` when
+  `direction` is downward, `latestEma >= goal` when upward, or `earliestWeight == goal` — already
+  at goal from the start of the recorded history), the system SHALL display "You've reached your
+  goal weight" instead of running the direction check below, and SHALL NOT render a projection
+  line. This is a distinct third state from "on track" and "not on track," not a variant of
+  either.
+- **Direction check**: otherwise, if the slope doesn't move toward the goal (flat, or moving
+  away), or the projected crossing date is beyond the 12-month horizon — render no line, and "Not
+  on track at your current trend." This is a deliberate refusal to extrapolate: an unconditional
+  projection either produces a 6-year line (useless) or, for a wrong-direction trend, simply never
+  crosses the goal at all, which needs to say so rather than draw nothing with no explanation.
 - **Horizon is a fixed day count, not calendar-month arithmetic**: "12 months" = 365 days from the
   most recent day in the 30-day EMA window (the regression's last `day_offset`). A crossing at
   `day_offset <= 365` from that point is within the horizon; beyond it is not. Pinning this as a
@@ -118,6 +128,19 @@ slope, intercept = ordinary least-squares fit of (day_offset, ema_value) over th
   and Year zoom (a 7-day Week view has no room to show a months-out crossing point), but the ETA
   text renders at every zoom level including Day/Week, so switching zoom never hides the answer to
   the question the feature exists to answer.
+- **The projection line needs synthetic future X-axis positions**: `bucketBandData` (feeding the
+  Week/Month/Year `ComposedChart`) is built solely from `visibleChartRows` — real historical/
+  current buckets — and its `XAxis` is categorical (`dataKey="label"`), so a crossing point up to
+  365 days out has no plot position on today's array. The weight page extends `bucketBandData`
+  with synthetic future-dated rows spanning from the last real bucket through the crossing date
+  (capped at the 365-day horizon when there is no crossing to show, so the line's rightmost point
+  always has somewhere to land), at the same bucket granularity the active zoom already uses
+  (daily labels at Month zoom, monthly labels at Year zoom, reusing `bucketLabel`'s existing
+  formatting extrapolated forward), populated only in a new `projection` field — `avg`/`range`/
+  `trend` are left undefined on synthetic rows so the existing series don't extend into them.
+  Month zoom's visible X-range is allowed to grow beyond its normal ~30-day window to fit the
+  crossing point; this extends the already-accepted "goal line can flatten the data" trade-off
+  (proposal.md's "Known trade-off" section) to the X-axis rather than introducing a new one.
 - **The 30-day EMA window needs its own fetch, independent of the active zoom's bucket**: today,
   `DataTypeClient.tsx` only fetches daily-bucketed weight data for Week and Month zoom (Day zoom
   fetches no bucketed data at all — `chartRows` is empty — and Year zoom's bucket is monthly, not

@@ -100,8 +100,20 @@
       flat/diverging/beyond the 365-day horizon (fixed day count from the regression window's most
       recent day, not calendar-month arithmetic — see design.md) → no line, "Not on track at your
       current trend"
-- [ ] 7.5 Render the dashed projection `Line` only at Month/Year zoom; render the ETA text (or the
-      "not enough data" / "not on track" message) at every zoom level
+- [ ] 7.4a Add a pure "already at goal" check that runs before 7.4's direction check: direction =
+      `sign(goal - earliestWeight)` from the earliest/latest raw `weight` records already read for
+      the minimum-data gate (7.3); if the latest EMA has reached or passed the goal in that
+      direction, use "You've reached your goal weight" instead of routing a flat/at-goal trend
+      through 7.4's "Not on track" message — see design.md
+- [ ] 7.4b Extend `bucketBandData` with synthetic future-dated rows (populated only in a new
+      `projection` field; `avg`/`range`/`trend` left undefined) spanning from the last real bucket
+      to the computed crossing date, capped at the 365-day horizon — at the active zoom's bucket
+      granularity (daily at Month, monthly at Year) — so the dashed line has X-axis positions to
+      plot on the categorical axis. Confirm Month zoom's visible X-range is allowed to expand
+      beyond its normal ~30-day window to fit the crossing point — see design.md
+- [ ] 7.5 Render the dashed projection `Line` only at Month/Year zoom, using the extended data from
+      7.4b; render the ETA text (or the "not enough data" / "not on track" / "you've reached your
+      goal" message) at every zoom level
 - [ ] 7.6 Confirm the projection line/text never render at all when no `weight_goal` is set
 
 ## 8. Testing: Vitest setup + unit coverage
@@ -122,6 +134,10 @@
       suppressed with zero `height` records, both present with one — independent of the E2E
       coverage in 9.2, per IDEA_FORGE_PLAN.md's testing section calling this out as a pure-function
       case impractical to seed reliably through a browser
+- [ ] 8.8 Unit tests for the "already at goal" check (task 7.4a): flat trend with latest EMA at the
+      goal (displays "You've reached your goal weight", not "Not on track"), flat trend with latest
+      EMA still far from the goal (displays "Not on track" as before), and latest EMA already past
+      the goal on the far side (still classified as reached, not "not on track")
 
 ## 9. E2E
 

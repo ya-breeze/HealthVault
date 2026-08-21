@@ -43,8 +43,10 @@ populate.
 - **Dashed trend projection**: least-squares regression over the last 30 days of the existing EMA
   series (fixed, independent of the selected zoom), projected to a 12-month horizon. Requires ≥5
   weight records spanning ≥14 days, else "Not enough data to project yet." Flat, diverging, or
-  crossing beyond the horizon renders no line plus "Not on track at your current trend" — a
-  wrong-direction trend never silently produces a plausible-looking line. Bands and the goal line
+  crossing beyond the horizon renders no line plus "Not on track at your current trend" — unless
+  the goal has already been reached, in which case it shows "You've reached your goal weight"
+  instead, so a user maintaining their goal isn't told they're failing. A wrong-direction trend
+  never silently produces a plausible-looking line. Bands and the goal line
   render at every zoom; the projection line itself renders only at Month/Year zoom (a 7-day window
   can't show a months-away crossing), but the ETA text renders at every zoom so no zoom hides the
   answer.
