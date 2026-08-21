@@ -70,20 +70,14 @@ export default function VitalCard({
         // in a 2-column mobile grid, so they get the width to themselves.
         //
         // flex-wrap because there are three of them now: 3 × 48px plus gaps
-        // exceeds a mobile grid cell's inner width (~123px at 360px viewport),
+        // exceeds a mobile grid cell's inner width (~121px at 360px viewport),
         // so without wrapping the third control would overflow the card.
+        //
+        // The show/hide toggle comes last precisely because of that wrap: at
+        // mobile width the row breaks after two controls, and putting the
+        // toggle first split the ↑/↓ pair across two lines. Last, it takes the
+        // orphaned second line itself and the arrows stay together.
         <div className="flex flex-wrap items-center justify-end gap-1.5 mb-2">
-          <TapTarget
-            onClick={onToggleHidden}
-            aria-label={interpolate(t(hidden ? 'dashboard.showCard' : 'dashboard.hideCard'), { metric: label })}
-            data-testid={`vital-card-${type}-visibility`}
-            // No aria-pressed: the label is an action ("Hide Sleep" / "Show
-            // Sleep") and already carries the state, so a pressed flag on top
-            // of it would read as contradictory ("Show Sleep, pressed").
-            className="flex items-center justify-center rounded-md border border-border bg-bg text-text"
-          >
-            {hidden ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-          </TapTarget>
           <TapTarget
             onClick={onMoveUp}
             disabled={moveUpDisabled}
@@ -99,6 +93,17 @@ export default function VitalCard({
             className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
           >
             ↓
+          </TapTarget>
+          <TapTarget
+            onClick={onToggleHidden}
+            aria-label={interpolate(t(hidden ? 'dashboard.showCard' : 'dashboard.hideCard'), { metric: label })}
+            data-testid={`vital-card-${type}-visibility`}
+            // No aria-pressed: the label is an action ("Hide Sleep" / "Show
+            // Sleep") and already carries the state, so a pressed flag on top
+            // of it would read as contradictory ("Show Sleep, pressed").
+            className="flex items-center justify-center rounded-md border border-border bg-bg text-text"
+          >
+            {hidden ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
           </TapTarget>
         </div>
       )}
