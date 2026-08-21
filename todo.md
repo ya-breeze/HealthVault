@@ -37,16 +37,23 @@ candidates 1-3.
 
 ### Phase 3 — User profile (age/sex/activity level) + Nutrition Target
 
-New: a **Nutrition Target** (daily calories + protein/carb/fat grams) computed
-via the full Mifflin-St Jeor BMR formula × an activity-level multiplier, using
-**Goal Weight from Phase 2 — not the user's latest measured weight** — as the
-formula's weight input (ADR-003; deliberate, so targets don't drift as
-measured weight changes on its own). Requires three new static profile fields
-that don't exist anywhere yet: age (or birthdate), sex, and activity level.
-Still undecided, deferred to this phase's own `opsx:propose`: activity-level
-tier count and multipliers (a simple 3-tier scheme vs. the standard 5-tier
-Harris-Benedict-style multipliers). Must ship after Phase 2 — it has a hard
-dependency on `weight_goal` existing, unlike its other inputs.
+New: a **Nutrition Target** (daily calories + protein/carb/fat grams), split
+between two weight inputs (ADR-003, revised after review 2026-08-21): calories
+come from the full Mifflin-St Jeor BMR formula × an activity-level multiplier,
+using the user's **latest measured weight** (BMR is a function of actual body
+mass — computing it from Goal Weight instead would understate real energy
+needs and risk an unsafely aggressive deficit). **Protein** specifically is a
+g/kg rate applied to **Goal Weight from Phase 2** — sized to the body being
+worked toward, per standard practice. Carb/fat targets fill whatever's left of
+the calorie budget. Requires three new static profile fields that don't exist
+anywhere yet: age (or birthdate), sex, and activity level. Still undecided,
+deferred to this phase's own `opsx:propose`: activity-level tier count and
+multipliers (simple 3-tier vs. standard 5-tier Harris-Benedict-style), and
+what the protein target (and any recommendation text built on it) should show
+when no `weight_goal` is set yet. The calorie/carb/fat targets no longer have
+a hard dependency on Phase 2 — only the protein target does — but Phase 3 is
+still sequenced after Phase 2 so a goal is normally in place before Phase 4
+needs it.
 
 ### Phase 4 — Food dashboard Cards + LLM recommendations/chat
 

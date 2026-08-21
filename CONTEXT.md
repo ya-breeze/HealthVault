@@ -61,7 +61,7 @@ The user's target body weight, stored as its own metric (latest-record-wins), di
 _Avoid_: Target weight, ideal weight (informal use only)
 
 **Nutrition Target**:
-A user's daily calorie/protein/carb/fat goal, computed from Goal Weight, age, sex, and activity level via the Mifflin-St Jeor formula. What food intake is compared against on Food Cards.
+A user's daily calorie/protein/carb/fat goal. Calories come from the Mifflin-St Jeor formula using the user's measured weight, height, age, sex, and activity level; protein is a rate applied to Goal Weight instead, since protein is sized to the body being worked toward, not the current one. What food intake is compared against on Food Cards.
 _Avoid_: Goal (ambiguous with Goal Weight), macro goal
 
 **Healthiness Label**:
