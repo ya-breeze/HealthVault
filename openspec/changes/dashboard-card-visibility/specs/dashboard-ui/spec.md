@@ -1,0 +1,50 @@
+## MODIFIED Requirements
+
+### Requirement: Customizable vitals grid order and visibility
+
+The dashboard vitals grid SHALL support a per-user, persisted custom display order AND per-card visibility for its cards. Users SHALL enter an explicit Edit/Customize mode to change order or visibility; outside that mode, the grid SHALL render only the visible cards, in the user's saved order (or the default order, all visible, if none is saved), with no visible reorder or visibility controls.
+
+#### Scenario: Default order and visibility for a user who has not customized
+
+- **WHEN** a user who has never saved a custom order/visibility loads the dashboard
+- **THEN** the vitals grid SHALL render all metrics in the application's default order, none hidden
+
+#### Scenario: Entering edit mode reveals reorder and visibility controls
+
+- **WHEN** a user clicks the dashboard's Edit/Customize control
+- **THEN** each vitals-grid card SHALL show move-up, move-down, and a show/hide control, the move-up control SHALL be disabled on the first card, the move-down control SHALL be disabled on the last card, and cards currently hidden SHALL still be shown (visually distinguished as hidden) so they can be found and re-shown
+
+#### Scenario: Hiding a card
+
+- **WHEN** a user in edit mode toggles a visible card's show/hide control to hidden, and clicks Done
+- **THEN** the system SHALL persist that card as hidden while keeping its position in the saved order, and the read-only grid SHALL no longer render that card
+
+#### Scenario: Re-showing a hidden card restores its position
+
+- **WHEN** a user in edit mode toggles a previously-hidden card back to visible, and clicks Done
+- **THEN** the read-only grid SHALL render that card again in the same position it held before it was hidden, not appended at the end
+
+#### Scenario: Hiding every card shows a placeholder
+
+- **WHEN** a user hides every card in the vitals grid and clicks Done
+- **THEN** the system SHALL persist the all-hidden state without error, and the read-only grid SHALL render a placeholder message instead of an empty grid
+
+#### Scenario: Reordering and saving
+
+- **WHEN** a user in edit mode moves a card and then clicks Done
+- **THEN** the system SHALL persist the new order (and each card's visibility) for that user and exit edit mode, and the grid SHALL immediately reflect the new order and visibility
+
+#### Scenario: Saved order and visibility persist across sessions
+
+- **WHEN** a user who previously saved a custom order/visibility loads the dashboard again (including from a different browser/device)
+- **THEN** the vitals grid SHALL render in their saved order, showing only their visible cards
+
+#### Scenario: Saved order tolerates the default metric set changing
+
+- **WHEN** a user's saved order references a metric no longer in the default set, or the default set has gained a metric absent from their saved order
+- **THEN** the system SHALL render only currently-valid metrics in the user's saved relative order and visibility, and SHALL append any metric missing from their saved order at the end as visible, without erroring
+
+#### Scenario: Saved order in the pre-visibility shape still loads
+
+- **WHEN** a user's saved settings still hold the earlier plain list-of-types shape (no per-entry visibility) from before this capability existed
+- **THEN** the system SHALL treat every entry in that saved order as visible and render it exactly as it did before, without erroring
