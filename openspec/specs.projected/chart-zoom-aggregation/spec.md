@@ -226,9 +226,16 @@ Minimum data: if the user has fewer than 5 `weight` records, or the span between
 and latest `weight` record is under 14 days, the system SHALL display "Not enough data to project
 yet" and SHALL NOT render a projection line.
 
-Given sufficient data: if the regression slope does not move toward the goal (flat or diverging),
-or the computed crossing date falls beyond the 12-month horizon, the system SHALL display "Not on
-track at your current trend" and SHALL NOT render a projection line. The 12-month horizon SHALL be
+Already at goal: if the latest EMA value has already reached or passed the goal weight — direction
+determined by comparing the user's earliest and latest raw `weight` records to the goal — the
+system SHALL display "You've reached your goal weight" and SHALL NOT render a projection line.
+This check takes precedence over the flat/diverging check below, since a flat trend at the goal is
+success, not failure.
+
+Given sufficient data, and the goal not already reached: if the regression slope does not move
+toward the goal (flat or diverging), or the computed crossing date falls beyond the 12-month
+horizon, the system SHALL display "Not on track at your current trend" and SHALL NOT render a
+projection line. The 12-month horizon SHALL be
 a fixed 365-day count from the most recent day in the 30-day regression window (not calendar-month
 arithmetic): a crossing at or before day 365 from that point is within the horizon, and a crossing
 after day 365 is beyond it. Otherwise the system SHALL render a dashed projection line from the
@@ -256,9 +263,17 @@ never hides the answer.
   text
 
 #### Scenario: Wrong-direction or flat trend
-- **WHEN** a user's 30-day EMA trend is flat or moving away from their `weight_goal`
+- **WHEN** a user's 30-day EMA trend is flat or moving away from their `weight_goal`, and they have
+  not already reached it
 - **THEN** the chart SHALL display "Not on track at your current trend" and SHALL NOT render a
   projection line
+
+#### Scenario: Already at goal weight
+- **WHEN** a user's latest EMA value has already reached or passed their `weight_goal` value (per
+  the direction determined from their earliest and latest raw `weight` records), regardless of
+  whether their 30-day trend is currently flat, diverging, or still moving toward the goal
+- **THEN** the chart SHALL display "You've reached your goal weight" and SHALL NOT render a
+  projection line, instead of "Not on track at your current trend"
 
 #### Scenario: Crossing beyond the horizon
 - **WHEN** a user's trend moves toward their goal but the computed crossing date is more than 365
