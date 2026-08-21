@@ -29,7 +29,7 @@ The vitals grid's order today lives entirely in the frontend, keyed off `PRIMARY
 - If an entry is `{ type, hidden }` (new shape), use as-is.
 - Behavior for unknown/removed types and metrics missing from the saved order is unchanged from today (dropped / appended visible, respectively) — this is exactly today's `reconcileMetricOrder` behavior, just extended to carry `hidden` through.
 
-This makes the change backward-read-compatible: a user who saves the new shape, then (hypothetically) loads an older frontend build, still gets a valid — if all-visible — order, because the old build's `.map(m => m.type)` write would simply drop the `hidden` flags rather than crash.
+This makes the change **forward**-read-compatible (new build reads old data losslessly). It is *not* symmetric: the reverse direction degrades. Today's `reconcileMetricOrder` does `typeof t === 'string' ? byType.get(t) : undefined`, so an older build handed the new object-shaped entries resolves every entry to `undefined`, ends up with an empty `ordered`, and falls through to returning `PRIMARY_METRICS` in **default** order — the user's custom order is silently ignored (not crashed). Worse, if that user then opens edit mode and clicks Done on the old build, it persists `string[]` of the default order, permanently discarding their saved arrangement. See "Migration Plan" for what this means for rollback.
 
 **UI**: add an eye/eye-off icon button next to each card's existing move-up/move-down controls in edit mode (`frontend/app/page.tsx`'s edit-mode card row). Toggling it flips that entry's `hidden` in local `order` state, mirroring how `moveCard()` already mutates local `order` before Done persists it. Hidden cards still render in edit mode (dimmed, so the user can find and re-show them) but are filtered out of the read-only (non-editing) grid.
 
@@ -45,4 +45,6 @@ This makes the change backward-read-compatible: a user who saves the new shape, 
 
 ## Migration Plan
 
-No deploy-order dependency: the frontend change is self-contained (new interpretation of an already-generic JSON key), and the backend `user-settings` capability needs no change at all. Ship as a single frontend deploy; no rollback concerns beyond a normal frontend revert (a reverted frontend build reads the new-shape entries via the same tolerant reconciliation, since `hidden` is simply ignored by old code doing `.dashboard_order` string comparisons — degrades to "everything visible," not a crash).
+No deploy-order dependency: the frontend change is self-contained (new interpretation of an already-generic JSON key), and the backend `user-settings` capability needs no change at all. Ship as a single frontend deploy.
+
+**Rollback is lossy, not free.** Reverting the frontend after any user has saved the new shape leaves that user on the default grid order (see the asymmetry noted under "Migration" above), and a Done click on the reverted build overwrites their saved arrangement for good. That is an acceptable cost at this scale — one user, eight cards, a customization that takes seconds to redo — but it should be a deliberate choice, not a surprise. If a revert is ever needed after real use, the honest options are: accept the loss and re-customize, or restore the `dashboard_order` key from a settings backup.

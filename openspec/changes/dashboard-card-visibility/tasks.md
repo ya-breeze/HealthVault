@@ -3,6 +3,7 @@
 - [ ] 1.1 Define the new saved-entry type `{ type: DataType; hidden: boolean }` alongside `PRIMARY_METRICS`.
 - [ ] 1.2 Extend `reconcileMetricOrder()` to accept `(string | { type: string; hidden: boolean })[] | undefined`, normalizing plain-string entries (old shape) to `{ type, hidden: false }`, and passing `{ type, hidden }` entries through as-is; keep existing drop-unknown / append-missing-as-visible behavior.
 - [ ] 1.3 Update `reconcileMetricOrder()`'s return type and all its callers/types accordingly.
+- [ ] 1.4 Widen `UserSettings.dashboard_order` in `frontend/lib/api.ts` (currently `string[]`) to accept both shapes — `(string | { type: string; hidden: boolean })[]` on read — and update its doc comment, which currently describes the key as a plain list of types.
 
 ## 2. Dashboard page state and persistence (`frontend/app/page.tsx`)
 
@@ -20,7 +21,8 @@
 
 ## 4. Localization
 
-- [ ] 4.1 Add new i18n keys for: the show/hide toggle's accessible label (shown/hidden state), and the all-hidden placeholder message — for every language `frontend/lib/i18n` currently supports, not just English.
+- [ ] 4.1 Add new i18n keys for: the show/hide toggle's accessible label (shown/hidden state), and the all-hidden placeholder message — in both `frontend/lib/i18n/en.ts` and `ru.ts` (`Dictionary = typeof en` and `DICTIONARIES: Record<LanguageCode, Dictionary>` make a missing `ru` key a compile error, so this is enforced, not optional).
+- [ ] 4.2 Retitle the edit-mode entry control: `dashboard.editOrder` currently reads "Edit order" / "Изменить порядок", but the mode now also controls visibility. Rename the key (e.g. `dashboard.customize`) and reword both translations so the label matches what the mode does.
 
 ## 5. Tests
 
