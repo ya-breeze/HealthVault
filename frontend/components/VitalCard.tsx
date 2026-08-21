@@ -6,6 +6,7 @@ import type { VitalResult } from '@/lib/vitals';
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
+import { EyeIcon, EyeOffIcon } from './icons';
 
 function sparkPath(data: number[], w: number, h: number, pad: number) {
   const min = Math.min(...data);
@@ -23,18 +24,25 @@ interface VitalCardProps {
   type: DataType;
   label: string;
   result: VitalResult | null;
-  // When set, the card renders move-up/move-down controls instead of
-  // navigating to the type's detail page — see the "Customizable vitals grid
-  // order" requirement's "Entering edit mode reveals reorder controls" scenario.
+  // When set, the card renders move-up/move-down and show/hide controls
+  // instead of navigating to the type's detail page — see the "Customizable
+  // vitals grid order and visibility" requirement's "Entering edit mode
+  // reveals reorder and visibility controls" scenario.
   editing?: boolean;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   moveUpDisabled?: boolean;
   moveDownDisabled?: boolean;
+  // Whether the user has hidden this card. Only ever true while `editing`:
+  // hidden cards are filtered out of the read-only grid by the dashboard, and
+  // rendered here (dimmed) only so they can be found and shown again.
+  hidden?: boolean;
+  onToggleHidden?: () => void;
 }
 
 export default function VitalCard({
   type, label, result, editing, onMoveUp, onMoveDown, moveUpDisabled, moveDownDisabled,
+  hidden, onToggleHidden,
 }: VitalCardProps) {
   const { t } = useLanguage();
   const color = metricColorVar(type);
@@ -43,9 +51,14 @@ export default function VitalCard({
   const pad = 3;
   const spark = result && result.sparkline.length > 1 ? sparkPath(result.sparkline, w, h, pad) : null;
 
+  // Fades a hidden card's label and readings in edit mode so it's obvious at a
+  // glance which cards won't show on the dashboard. Applied per-section rather
+  // than to the whole card, so the show/hide control itself stays legible.
+  const dim = editing && hidden ? ' opacity-40' : '';
+
   const inner = (
     <>
-      <div className="flex items-center justify-between gap-1 mb-2">
+      <div className={`flex items-center justify-between gap-1 mb-2${dim}`}>
         <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
           {label}
@@ -55,7 +68,22 @@ export default function VitalCard({
         // Own row, not squeezed beside the label: at full 48px (TapTarget's
         // enforced minimum tap target) two buttons don't fit next to a label
         // in a 2-column mobile grid, so they get the width to themselves.
-        <div className="flex items-center justify-end gap-1.5 mb-2">
+        //
+        // flex-wrap because there are three of them now: 3 × 48px plus gaps
+        // exceeds a mobile grid cell's inner width (~123px at 360px viewport),
+        // so without wrapping the third control would overflow the card.
+        <div className="flex flex-wrap items-center justify-end gap-1.5 mb-2">
+          <TapTarget
+            onClick={onToggleHidden}
+            aria-label={interpolate(t(hidden ? 'dashboard.showCard' : 'dashboard.hideCard'), { metric: label })}
+            data-testid={`vital-card-${type}-visibility`}
+            // No aria-pressed: the label is an action ("Hide Sleep" / "Show
+            // Sleep") and already carries the state, so a pressed flag on top
+            // of it would read as contradictory ("Show Sleep, pressed").
+            className="flex items-center justify-center rounded-md border border-border bg-bg text-text"
+          >
+            {hidden ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+          </TapTarget>
           <TapTarget
             onClick={onMoveUp}
             disabled={moveUpDisabled}
@@ -75,7 +103,7 @@ export default function VitalCard({
         </div>
       )}
       {result ? (
-        <>
+        <div className={dim || undefined}>
           <div className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums">
             {result.value}
             {result.unit && <span className="text-xs font-medium text-text-muted ml-1">{t(result.unit)}</span>}
@@ -95,9 +123,9 @@ export default function VitalCard({
               <circle cx={spark.last[0].toFixed(1)} cy={spark.last[1].toFixed(1)} r={2.6} fill={color} />
             </svg>
           )}
-        </>
+        </div>
       ) : (
-        <p className="text-sm text-text-muted py-2">{t('vitals.noData')}</p>
+        <p className={`text-sm text-text-muted py-2${dim}`}>{t('vitals.noData')}</p>
       )}
     </>
   );
@@ -109,7 +137,15 @@ export default function VitalCard({
   };
 
   if (editing) {
-    return <div {...commonProps}>{inner}</div>;
+    // `data-hidden` gives e2e a styling-independent way to assert the state;
+    // the dimming itself is applied inside `inner` (see `dim`), so that the
+    // controls stay at full opacity — fading the button that un-hides the
+    // card would work against the reason it's still rendered at all.
+    return (
+      <div {...commonProps} data-hidden={hidden ? 'true' : 'false'}>
+        {inner}
+      </div>
+    );
   }
 
   return (

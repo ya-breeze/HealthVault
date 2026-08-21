@@ -52,21 +52,21 @@ async function withSettingsSave(page: Page, action: () => Promise<unknown>) {
 // Correct because Weight is the only card any test in this file moves, so
 // everything else is still in default relative order when this runs.
 async function restoreDefaultOrder(page: Page) {
-  const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
+  const customizeBtn = page.getByRole('button', { name: 'Customize' });
   // Waits before asking, because isVisible() answers immediately and never
   // retries. Callers reach here straight after switching Display Language back
   // to English, and withSettingsSave resolves on the PUT *response* — the
-  // React re-render that relabels this button from "Изменить порядок" follows
+  // React re-render that relabels this button from "Настроить" follows
   // it. Asking without waiting can therefore catch the Russian label, read
   // "no editor here", and skip the whole restore this function exists to
   // perform. Bounded at 5s rather than the default so the genuine
   // no-editor-open case below still returns promptly. Found in code review.
-  await editOrderBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
+  await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
   // Returns early rather than clicking a Done button that isn't there: with
   // no editor open there is no save to wait for, and withSettingsSave would
   // otherwise sit out its full timeout waiting for a PUT nothing will send.
-  if (!(await editOrderBtn.isVisible().catch(() => false))) return;
-  await editOrderBtn.click().catch(() => {});
+  if (!(await customizeBtn.isVisible().catch(() => false))) return;
+  await customizeBtn.click().catch(() => {});
   const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
   for (let i = 0; i < 8; i++) {
     if (await moveWeightDown.isDisabled().catch(() => true)) break;
@@ -158,7 +158,7 @@ test.describe('Dashboard card reorder', () => {
       // Outside edit mode there are no reorder controls.
       await expect(page.getByRole('button', { name: /move weight up/i })).not.toBeVisible();
 
-      await page.getByRole('button', { name: 'Edit order' }).click();
+      await page.getByRole('button', { name: 'Customize' }).click();
 
       // Move the Weight card to the very front, regardless of its current
       // position (this test may run after a prior run left a custom order).
@@ -171,7 +171,7 @@ test.describe('Dashboard card reorder', () => {
       await expect(grid.getByTestId('vital-card-weight')).toBeVisible();
 
       await page.getByRole('button', { name: 'Done' }).click();
-      await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Customize' })).toBeVisible();
 
       // First card in the grid should now be Weight.
       const firstCardBefore = grid.locator('> *').first();
@@ -205,7 +205,7 @@ test.describe('Dashboard card reorder', () => {
     const grid = page.getByTestId('vitals-grid');
 
     try {
-      await page.getByRole('button', { name: 'Edit order' }).click();
+      await page.getByRole('button', { name: 'Customize' }).click();
       const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
       for (let i = 0; i < 8; i++) {
         if (await moveWeightUp.isDisabled()) break;
@@ -235,7 +235,7 @@ test.describe('Dashboard card reorder', () => {
       // English labels are on screen. Without it the Done lookup below — an
       // isVisible() that does not retry — can run while the button still reads
       // "Готово", conclude edit mode is closed, and leave it open, which in
-      // turn makes restoreDefaultOrder find no "Edit order" button and skip
+      // turn makes restoreDefaultOrder find no "Customize" button and skip
       // the restore. Found in code review.
       await expect(page.locator('#display-language')).toHaveValue('en');
       // Leaves edit mode if it is still open, then restores the default
@@ -251,7 +251,7 @@ test.describe('Dashboard card reorder', () => {
   });
 
   test('move-up is disabled on the first card and move-down on the last', async ({ page }) => {
-    await page.getByRole('button', { name: 'Edit order' }).click();
+    await page.getByRole('button', { name: 'Customize' }).click();
     const grid = page.getByTestId('vitals-grid');
     const cards = grid.locator('> *');
     const first = cards.first();
@@ -261,6 +261,116 @@ test.describe('Dashboard card reorder', () => {
     await expect(last.getByRole('button', { name: /move .* down/i })).toBeDisabled();
 
     await page.getByRole('button', { name: 'Done' }).click();
+  });
+});
+
+// Shared cleanup for the visibility tests: un-hides every card that is
+// currently hidden and saves. Like restoreDefaultOrder, every step is
+// best-effort — it runs from `finally`, so a failure here must not mask the
+// assertion that triggered it. Hidden cards leak across tests worse than a
+// custom order does: a card hidden by a failed test is simply absent from the
+// grid for every later test that looks for it.
+async function restoreAllVisible(page: Page) {
+  const customizeBtn = page.getByRole('button', { name: 'Customize' });
+  await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
+  if (await customizeBtn.isVisible().catch(() => false)) {
+    await customizeBtn.click().catch(() => {});
+  }
+  // Edit mode renders hidden cards too, so their toggles are reachable here.
+  // Bounded loop rather than while(count): a toggle that fails to clear would
+  // otherwise spin forever inside a cleanup.
+  const hiddenToggles = page.locator('[data-hidden="true"] [data-testid$="-visibility"]');
+  for (let i = 0; i < 10; i++) {
+    if ((await hiddenToggles.count().catch(() => 0)) === 0) break;
+    await hiddenToggles.first().click().catch(() => {});
+  }
+  const done = page.getByRole('button', { name: 'Done' });
+  if (await done.isVisible().catch(() => false)) {
+    await withSettingsSave(page, () => done.click());
+  }
+}
+
+test.describe('Dashboard card visibility', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('hiding a card removes it from the grid and persists across reload', async ({ page }) => {
+    const grid = page.getByTestId('vitals-grid');
+
+    try {
+      // Outside edit mode there is no visibility control, same as the reorder
+      // arrows.
+      await expect(page.getByTestId('vital-card-sleep-visibility')).not.toBeVisible();
+
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await page.getByTestId('vital-card-sleep-visibility').click();
+      // Still on screen while editing — dimmed, and flagged for assertions —
+      // so it can be found and shown again.
+      await expect(grid.getByTestId('vital-card-sleep')).toHaveAttribute('data-hidden', 'true');
+
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(grid.getByTestId('vital-card-sleep')).toHaveCount(0);
+      // Only Sleep went; the rest of the grid is untouched.
+      await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+
+      await page.reload();
+      await expect(page.getByTestId('vitals-grid').getByTestId('vital-card-sleep')).toHaveCount(0);
+    } finally {
+      await restoreAllVisible(page);
+    }
+  });
+
+  test('re-showing a hidden card restores its position rather than appending it', async ({ page }) => {
+    const grid = page.getByTestId('vitals-grid');
+
+    try {
+      await page.getByRole('button', { name: 'Customize' }).click();
+      // Whichever card is second right now — read from the DOM rather than
+      // assumed, since a previous test may have left a custom order.
+      const secondTestId = await grid.locator('> *').nth(1).getAttribute('data-testid');
+      expect(secondTestId).toBeTruthy();
+
+      await page.getByTestId(`${secondTestId}-visibility`).click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(grid.getByTestId(secondTestId!)).toHaveCount(0);
+
+      // Show it again.
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await page.getByTestId(`${secondTestId}-visibility`).click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+
+      // Back in slot 2, not appended to the end — the whole point of storing
+      // `hidden` inline with the order instead of as a separate list.
+      await expect(grid.locator('> *').nth(1)).toHaveAttribute('data-testid', secondTestId!);
+    } finally {
+      await restoreAllVisible(page);
+    }
+  });
+
+  test('hiding every card shows a placeholder instead of an empty grid', async ({ page }) => {
+    try {
+      await page.getByRole('button', { name: 'Customize' }).click();
+
+      // Hide all 8. Each toggle stays in the DOM while editing, so this can
+      // walk them by index.
+      const toggles = page.locator('[data-testid$="-visibility"]');
+      const count = await toggles.count();
+      expect(count).toBe(8);
+      for (let i = 0; i < count; i++) {
+        await toggles.nth(i).click();
+      }
+
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+
+      // Hiding the last card is allowed; the grid is replaced by a message.
+      await expect(page.getByTestId('vitals-grid')).toHaveCount(0);
+      await expect(page.getByTestId('vitals-grid-empty')).toBeVisible();
+      // And the way back is still on screen.
+      await expect(page.getByRole('button', { name: 'Customize' })).toBeVisible();
+    } finally {
+      await restoreAllVisible(page);
+    }
   });
 });
 
@@ -278,14 +388,14 @@ test.describe('Settings lost-update race', () => {
   // pre-reorder snapshot and silently clobber the just-saved dashboard_order.
   test('reordering cards then switching language in the same session persists both', async ({ page }) => {
     try {
-      await page.getByRole('button', { name: 'Edit order' }).click();
+      await page.getByRole('button', { name: 'Customize' }).click();
       const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
       for (let i = 0; i < 8; i++) {
         if (await moveWeightUp.isDisabled()) break;
         await moveWeightUp.click();
       }
       await page.getByRole('button', { name: 'Done' }).click();
-      await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Customize' })).toBeVisible();
 
       // No navigation here — this is the exact sequence that used to revert
       // the reorder above. Awaited through to the server's response for the

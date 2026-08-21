@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, DATA_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, VitalResult } from '@/lib/vitals';
+import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, DashboardCardPref, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
@@ -30,7 +30,8 @@ export default function Dashboard() {
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [order, setOrder] = useState(PRIMARY_METRICS);
+  // Every card visible, in default order, until the stored settings load.
+  const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -99,10 +100,16 @@ export default function Dashboard() {
     });
   }
 
+  const allHidden = order.every(m => m.hidden);
+
+  function toggleHidden(index: number) {
+    setOrder(prev => prev.map((m, i) => (i === index ? { ...m, hidden: !m.hidden } : m)));
+  }
+
   async function handleDone() {
     setSaving(true);
     try {
-      await updateSettings({ dashboard_order: order.map(m => m.type) });
+      await updateSettings({ dashboard_order: order.map(m => ({ type: m.type, hidden: m.hidden })) });
       setEditing(false);
     } catch {
       showToast(t('dashboard.orderSaveFailed'), 'error');
@@ -135,25 +142,37 @@ export default function Dashboard() {
               title={settingsLoaded ? undefined : t('dashboard.loadingOrder')}
               className="px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
-              {t('dashboard.editOrder')}
+              {t('dashboard.customize')}
             </TapTarget>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
-          {order.map((m, i) => (
-            <VitalCard
-              key={m.type}
-              type={m.type}
-              label={metricLabel(t, m.type)}
-              result={ready ? vitals[m.type] ?? null : null}
-              editing={editing}
-              onMoveUp={() => moveCard(i, -1)}
-              onMoveDown={() => moveCard(i, 1)}
-              moveUpDisabled={i === 0}
-              moveDownDisabled={i === order.length - 1}
-            />
-          ))}
-        </div>
+        {/* Edit mode renders every card, including hidden ones, so they can be
+            found and shown again; the read-only grid renders only the visible
+            ones. Move controls are indexed against the full `order` either way,
+            so hiding a card never shifts what a neighbour's arrow does. */}
+        {allHidden && !editing ? (
+          <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
+            {t('dashboard.allCardsHidden')}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
+            {order.map((m, i) => (editing || !m.hidden) && (
+              <VitalCard
+                key={m.type}
+                type={m.type}
+                label={metricLabel(t, m.type)}
+                result={ready ? vitals[m.type] ?? null : null}
+                editing={editing}
+                onMoveUp={() => moveCard(i, -1)}
+                onMoveDown={() => moveCard(i, 1)}
+                moveUpDisabled={i === 0}
+                moveDownDisabled={i === order.length - 1}
+                hidden={m.hidden}
+                onToggleHidden={() => toggleHidden(i)}
+              />
+            ))}
+          </div>
+        )}
 
         {needsAttentionCount > 0 && (
           <a

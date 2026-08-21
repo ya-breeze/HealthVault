@@ -308,7 +308,12 @@ export interface PatchMealInput {
 // Opaque per-user preferences blob (see the user-settings capability).
 // dashboard_order is its first field; other keys pass through untouched.
 export interface UserSettings {
-  dashboard_order?: string[];
+  // The vitals-grid arrangement: which cards, in what order, and which are
+  // hidden. Two shapes are readable — `{ type, hidden }` is what's written
+  // today, while a bare string is the pre-visibility shape saved before
+  // per-card show/hide existed. lib/vitals.ts#reconcileMetricOrder normalizes
+  // both; nothing else should read this key raw.
+  dashboard_order?: (string | { type: string; hidden: boolean })[];
   // BCP-47-ish code (e.g. "en", "ru") — see the display-language capability.
   // Absent means English. Read/written through components/LanguageContext.tsx.
   display_language?: string;

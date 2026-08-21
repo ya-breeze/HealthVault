@@ -203,12 +203,19 @@ const en = {
   'customFood.deleteFailed': 'Delete failed',
 
   'dashboard.vitalsHeading': 'Vitals · last 7 days',
-  'dashboard.editOrder': 'Edit order',
+  // The edit mode covers both order and per-card visibility, so the control
+  // that enters it is named for the mode, not for reordering alone. The
+  // *.order* keys below keep their names but speak of "layout" for the same
+  // reason.
+  'dashboard.customize': 'Customize',
   'dashboard.done': 'Done',
   'dashboard.saving': 'Saving…',
-  'dashboard.loadingOrder': 'Loading your saved order…',
-  'dashboard.orderLoadFailed': 'Could not load your saved dashboard order. Reordering is unavailable right now.',
-  'dashboard.orderSaveFailed': 'Could not save the new card order. Try again.',
+  'dashboard.loadingOrder': 'Loading your saved layout…',
+  'dashboard.orderLoadFailed': 'Could not load your saved dashboard layout. Customizing is unavailable right now.',
+  'dashboard.orderSaveFailed': 'Could not save your dashboard layout. Try again.',
+  'dashboard.hideCard': 'Hide {metric}',
+  'dashboard.showCard': 'Show {metric}',
+  'dashboard.allCardsHidden': 'All cards are hidden. Tap Customize to show some again.',
   // Four plural forms because the dictionary type is shared with ru.ts, which
   // needs all four. English only ever selects 'one' and 'other', so the two
   // middle entries are unreachable here and simply mirror 'other' — see
