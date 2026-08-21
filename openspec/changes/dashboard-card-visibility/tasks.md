@@ -31,4 +31,4 @@
 
 ## 6. Manual verification against WIP
 
-- [ ] 6.1 Deploy branch to the HealthVault WIP stack per CLAUDE.md's dry-run/E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review.
+- [x] 6.1 Deploy branch to the HealthVault WIP stack per CLAUDE.md's dry-run/E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review. **Done:** deployed to `hcw-wip` (`class: wip`, http://192.168.1.54:8892); `dashboard.spec.ts` 15/15 pass and the full suite is 108 passed / 1 skipped / 0 failed. Also checked at a 360px viewport that the now-three-control edit row doesn't overflow a grid cell (`scrollWidth === clientWidth === 149`).
