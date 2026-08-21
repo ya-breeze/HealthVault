@@ -3,6 +3,72 @@
 Informal notes, not OpenSpec changes yet. Promote an item to an OpenSpec change
 (`opsx:propose`) when someone decides to actually pick it up.
 
+## Dashboard customization + food-tracking initiative (phases 2-4)
+
+Grilled 2026-08-21 (`/mattpocock-skills:grill-with-docs`) starting from "let users
+show/hide dashboard elements, and add food-related elements." That decomposed into
+4 sequential, independently-shippable OpenSpec changes; full context, the domain
+vocabulary, and 4 ADRs recording the architectural decisions below are in
+[PR #27](https://github.com/ya-breeze/HealthVault/pull/27) (`CONTEXT.md`'s new
+Dashboard/Nutrition-targets sections, `docs/adr/ADR-001..004`, all `Status:
+Proposed`).
+
+**Phase 1 — Dashboard card hide/show** is *not* backlog: it's fully specified and
+ready for its own `opsx:propose` now (see ADR-001). It extends the existing
+`PRIMARY_METRICS`/`dashboard_order` card-registry pattern with a per-Card
+show/hide toggle in the existing Edit/Done mode, scoped to the 8 vitals-grid
+Cards only (not the needs-attention banner / Log Food row / More Data row).
+Phases 2-4 below depend on it existing (they add new Card types to the same
+registry) but are otherwise only scoped at the boundary level — each still
+needs its own detailed grilling/proposal when picked up.
+
+### Phase 2 — Goal weight + BMI bands + trend projection
+
+Realizes the "Weight chart: goal weight, BMI bands, and trend projection"
+backlog item further down this file — see that section for the full sizing
+research. The one thing decided since that research (ADR-002): **Goal Weight
+is a new metric type (`weight_goal`, latest-record-wins)**, not a
+`UserSettings` field, specifically so goal history isn't lost the way a
+JSON-blob overwrite would lose it, and so Phase 3's targets can read "the
+goal at the time" consistently. BMI bands (WHO thresholds, from the latest
+`Height` record) and the trend projection (extrapolating the existing weight
+EMA trend line to the goal) are otherwise unchanged from that section's
+candidates 1-3.
+
+### Phase 3 — User profile (age/sex/activity level) + Nutrition Target
+
+New: a **Nutrition Target** (daily calories + protein/carb/fat grams) computed
+via the full Mifflin-St Jeor BMR formula × an activity-level multiplier, using
+**Goal Weight from Phase 2 — not the user's latest measured weight** — as the
+formula's weight input (ADR-003; deliberate, so targets don't drift as
+measured weight changes on its own). Requires three new static profile fields
+that don't exist anywhere yet: age (or birthdate), sex, and activity level.
+Still undecided, deferred to this phase's own `opsx:propose`: activity-level
+tier count and multipliers (a simple 3-tier scheme vs. the standard 5-tier
+Harris-Benedict-style multipliers). Must ship after Phase 2 — it has a hard
+dependency on `weight_goal` existing, unlike its other inputs.
+
+### Phase 4 — Food dashboard Cards + LLM recommendations/chat
+
+Two new Food Cards (per ADR-001's registry, defaulting to visible):
+
+- **Card A** — today's calories/macros vs. the Phase-3 Nutrition Target.
+- **Card B** (single merged Card, not two) — a **Healthiness Label** (Good /
+  Fair / Needs attention, rolling 7-day window) plus 1-2 short recommendation
+  lines under it. The label itself is a **deterministic heuristic** over
+  already-logged `FoodMeal` macro/sugar/sodium fields — explicitly *not*
+  LLM-judged (ADR-004), so it stays free, fast, and reproducible on every
+  dashboard load regardless of entry source (photo/manual/barcode).
+
+LLM involvement is downstream of the label, not the label itself: (1) an
+automatic once-daily cached call that generates/refines the recommendation
+text, (2) a user-triggered "get advice" button for an on-demand refresh, and
+(3) a small chat affordance for follow-up/clarifying questions about the
+user's nutrition. Still undecided: exact heuristic thresholds (macro-share
+ranges, sugar/sodium cutoffs), and the chat's persistence model (ongoing
+thread vs. ephemeral per session) — both deferred to this phase's own
+`opsx:propose`. Depends on Phase 3's Nutrition Target existing.
+
 ## Open Food Facts (European product database)
 
 Investigated 2026-08-08: is there a European equivalent of the USDA FoodData
@@ -44,6 +110,12 @@ and directly useful for a European user logging packaged food. Only consider
 (2) if (1) turns out insufficient in practice.
 
 ## Weight chart: goal weight, BMI bands, and trend projection
+
+> **Update (2026-08-21):** candidates 1-3 below are now scoped as **Phase 2** of
+> the dashboard/food-tracking initiative at the top of this file, with the
+> goal-weight storage question below resolved by ADR-002 (new metric type, not
+> a `UserSettings` field). Candidate 4 (trend lines for other metrics) is not
+> part of that phase and remains an open, separate idea.
 
 Deferred 2026-08-19 while scoping `weight-chart-scale-and-trend` (fixing the weight
 chart's 0-100 Y-axis bug and adding a smoothed trend line). The reference
