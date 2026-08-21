@@ -135,6 +135,7 @@ const ru: Dictionary = {
   'dashboard.orderSaveFailed': 'Не удалось сохранить настройки панели. Попробуйте ещё раз.',
   'dashboard.hideCard': 'Скрыть: {metric}',
   'dashboard.showCard': 'Показать: {metric}',
+  'dashboard.retryLoad': 'Повторить',
   'dashboard.allCardsHidden': 'Все карточки скрыты. Нажмите «Настроить», чтобы вернуть их.',
   // Russian's four plural categories, selected by Intl.PluralRules:
   // one   — 1, 21, 31…      "1 приём пищи требует проверки"

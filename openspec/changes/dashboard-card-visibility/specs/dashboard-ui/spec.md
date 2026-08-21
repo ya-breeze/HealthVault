@@ -69,6 +69,11 @@ The dashboard vitals grid SHALL support a per-user, persisted custom display ord
 - **WHEN** a user's saved order and visibility have not yet loaded, or failed to load
 - **THEN** the dashboard SHALL render a loading or error placeholder in place of the vitals grid, and SHALL NOT render any card until the saved visibility is known, so that cards the user hid are never briefly (or, on failure, indefinitely) shown
 
+#### Scenario: A failed settings load is recoverable without a page reload
+
+- **WHEN** the saved order and visibility failed to load and the user activates the placeholder's retry control
+- **THEN** the system SHALL re-attempt the load, and on success SHALL render the vitals grid in the user's saved order and visibility with the customize control re-enabled
+
 #### Scenario: Saved order in the pre-visibility shape still loads
 
 - **WHEN** a user's saved settings still hold the earlier plain list-of-types shape (no per-entry visibility) from before this capability existed

@@ -215,6 +215,7 @@ const en = {
   'dashboard.orderSaveFailed': 'Could not save your dashboard layout. Try again.',
   'dashboard.hideCard': 'Hide {metric}',
   'dashboard.showCard': 'Show {metric}',
+  'dashboard.retryLoad': 'Try again',
   'dashboard.allCardsHidden': 'All cards are hidden. Tap Customize to show some again.',
   // Four plural forms because the dictionary type is shared with ru.ts, which
   // needs all four. English only ever selects 'one' and 'other', so the two

@@ -36,6 +36,11 @@ export default function Dashboard() {
   // if the GET fails. Found in code review.
   const [settingsStatus, setSettingsStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const settingsLoaded = settingsStatus === 'loaded';
+  // Bumped by the error placeholder's Try again control to re-run the load
+  // effect. Without it a single transient 500 leaves the dashboard showing an
+  // error paragraph instead of the vitals grid for the rest of the session,
+  // with no in-page way back. Found in code review.
+  const [settingsAttempt, setSettingsAttempt] = useState(0);
   const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,6 +53,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!ready) return;
+    setSettingsStatus('loading');
     api.getSettings()
       .then(s => {
         setOrder(reconcileMetricOrder(s.dashboard_order));
@@ -68,7 +74,7 @@ export default function Dashboard() {
     // in-progress arrangement — and because `editing` stays true, a
     // subsequent Done would persist the reverted order as if the user had
     // chosen it. Found in code review. See lib/useLatest.
-  }, [ready, showToast, tRef]);
+  }, [ready, showToast, tRef, settingsAttempt]);
 
   useEffect(() => {
     if (!ready) return;
@@ -147,7 +153,7 @@ export default function Dashboard() {
             <TapTarget
               onClick={() => setEditing(true)}
               disabled={!settingsLoaded}
-              title={settingsLoaded ? undefined : t('dashboard.loadingOrder')}
+              title={settingsLoaded ? undefined : t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
               className="px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
               {t('dashboard.customize')}
@@ -159,12 +165,21 @@ export default function Dashboard() {
             ones. Move controls are indexed against the full `order` either way,
             so hiding a card never shifts what a neighbour's arrow does. */}
         {!settingsLoaded ? (
-          <p
-            className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3"
+          <div
+            className="mb-8 flex flex-wrap items-center justify-between gap-2 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3"
             data-testid={settingsStatus === 'error' ? 'vitals-grid-error' : 'vitals-grid-loading'}
           >
-            {t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
-          </p>
+            <p>{t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}</p>
+            {settingsStatus === 'error' && (
+              <TapTarget
+                onClick={() => setSettingsAttempt(n => n + 1)}
+                data-testid="vitals-grid-retry"
+                className="px-3 rounded-md border border-accent text-accent text-[11px] font-bold uppercase tracking-wide"
+              >
+                {t('dashboard.retryLoad')}
+              </TapTarget>
+            )}
+          </div>
         ) : allHidden && !editing ? (
           <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
             {t('dashboard.allCardsHidden')}

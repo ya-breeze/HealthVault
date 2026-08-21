@@ -272,12 +272,20 @@ test.describe('Dashboard card reorder', () => {
 // grid for every later test that looks for it.
 async function restoreAllVisible(page: Page) {
   const customizeBtn = page.getByRole('button', { name: 'Customize' });
-  // Enabled, not merely visible: the button renders disabled until the saved
-  // settings load, and clicking it in that window would just time out.
-  await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
-  const outsideEditMode = await customizeBtn.isEnabled().catch(() => false);
+  const doneBtn = page.getByRole('button', { name: 'Done' });
 
-  if (outsideEditMode) {
+  // Wait for the settings load to settle before deciding anything. Until it
+  // does, Customize renders *disabled* and the grid isn't rendered at all, so
+  // a one-shot isEnabled()/count() here reads the loading state, concludes
+  // there is nothing to restore, and turns this whole helper into a silent
+  // no-op — which is exactly what it exists to prevent. `expect` retries;
+  // `isEnabled()` does not.
+  await expect(customizeBtn.or(doneBtn)).toBeEnabled({ timeout: 10_000 }).catch(() => {});
+
+  // Edit mode is identified by Done being on screen, not by Customize being
+  // enabled: a disabled Customize is ambiguous between "still loading" and
+  // "load failed", and neither means we are editing.
+  if (!(await doneBtn.isVisible().catch(() => false))) {
     // Fast path: outside edit mode the grid renders only visible cards, so a
     // full complement of 8 means there is nothing to restore and no settings
     // PUT is needed. Gated on being outside edit mode — while editing, every
@@ -296,9 +304,8 @@ async function restoreAllVisible(page: Page) {
     if ((await hiddenToggles.count().catch(() => 0)) === 0) break;
     await hiddenToggles.first().click().catch(() => {});
   }
-  const done = page.getByRole('button', { name: 'Done' });
-  if (await done.isVisible().catch(() => false)) {
-    await withSettingsSave(page, () => done.click());
+  if (await doneBtn.isVisible().catch(() => false)) {
+    await withSettingsSave(page, () => doneBtn.click());
   }
 }
 
@@ -334,7 +341,13 @@ test.describe('Dashboard card visibility', () => {
       await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
 
       await page.reload();
-      await expect(page.getByTestId('vitals-grid').getByTestId('vital-card-sleep')).toHaveCount(0);
+      // Anchor on a card that should be there first. The grid is not rendered
+      // at all until the settings GET resolves, so a bare toHaveCount(0)
+      // straight after reload passes against the not-yet-rendered grid — it
+      // would still pass if the server had dropped the `hidden` flag entirely.
+      const reloadedGrid = page.getByTestId('vitals-grid');
+      await expect(reloadedGrid.getByTestId('vital-card-steps')).toBeVisible();
+      await expect(reloadedGrid.getByTestId('vital-card-sleep')).toHaveCount(0);
     } finally {
       await restoreAllVisible(page);
     }
@@ -418,6 +431,15 @@ test.describe('Dashboard card visibility', () => {
     await expect(page.getByTestId('vitals-grid-error')).toBeVisible();
     await expect(page.getByTestId('vital-card-steps')).toHaveCount(0);
     await expect(page.getByTestId('vitals-grid')).toHaveCount(0);
+
+    // The failure is recoverable in-page: drop the mock and retry, rather
+    // than leaving the dashboard stuck on an error paragraph for the whole
+    // session with no way back but a manual reload.
+    await page.unroute('**/api/users/me/settings');
+    await page.getByTestId('vitals-grid-retry').click();
+    await expect(page.getByTestId('vitals-grid').getByTestId('vital-card-steps')).toBeVisible();
+    await expect(page.getByTestId('vitals-grid-error')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Customize' })).toBeEnabled();
   });
 });
 
