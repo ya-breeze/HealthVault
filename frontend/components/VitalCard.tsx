@@ -27,7 +27,7 @@ interface VitalCardProps {
   // When set, the card renders move-up/move-down and show/hide controls
   // instead of navigating to the type's detail page — see the "Customizable
   // vitals grid order and visibility" requirement's "Entering edit mode
-  // reveals reorder and visibility controls" scenario.
+  // reveals reorder controls" scenario.
   editing?: boolean;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
