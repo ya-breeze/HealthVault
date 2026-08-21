@@ -172,5 +172,39 @@ implementation, Vitest suite, e2e extension, and doc/ADR edits described in the 
 captured as `tasks.md` in the OpenSpec change, ready to execute once the spec is approved.
 
 ### Task 3: Write up what was found
-- [ ] Leave a short written summary of findings, limitations, and suggested next steps
-- [ ] Mark completed
+- [x] Leave a short written summary of findings, limitations, and suggested next steps
+- [x] Mark completed
+
+**Summary (2026-08-21):**
+
+Findings:
+- The sizing correction in the Overview holds up: this phase's true scope is a new allowlisted
+  write path plus the `weight_goal` metric type, not just chart overlays, because no metric type
+  in HealthVault had a POST route before this change.
+- The ADR-002/ADR-003 contradiction identified in Task 1 is real and is fixed as part of this
+  change's proposal rather than left for later, since ADR-002 is still `Status: Proposed`.
+- Spec-first workflow (this repo's `CLAUDE.md`) blocks implementation until a human approves the
+  spec-only PR — that gate was respected: Task 2 delivered OpenSpec artifacts only
+  (`proposal.md`, `design.md`, `tasks.md`, spec deltas for `data-model`, `data-api`,
+  `chart-zoom-aggregation`, `mcp-server`) and opened PR
+  [ya-breeze/HealthVault#28](https://github.com/ya-breeze/HealthVault/pull/28), with no
+  implementation code written.
+
+Limitations:
+- PR #28 is still open with zero reviews as of this writing — implementation (the 6-section
+  `tasks.md` checklist: backend registry, write path, frontend registry/i18n, Add-record form,
+  BMI bands, goal line/projection, plus Vitest, e2e, and doc/ADR edits) cannot start until a human
+  explicitly approves the spec, per the mandatory spec-first rule. This loop cannot grant that
+  approval on the user's behalf.
+- No code, tests, or deployment has been produced or validated yet — everything so far is design
+  artifacts.
+
+Suggested next steps:
+1. User reviews and approves/comments on PR #28.
+2. On approval, run `opsx:apply` against `openspec/changes/goal-weight-bmi-bands-trend-projection/`
+   to execute `tasks.md` section by section (backend registry → write path → frontend registry →
+   Add-record form → BMI bands → goal line/projection → Vitest → e2e → docs/ADRs).
+3. Deploy to the project's WIP/dogfood stack per `CLAUDE.md`'s stack-class rules and validate with
+   Playwright before requesting `/code-review`.
+4. Archive the OpenSpec change and regenerate `openspec/specs.projected/` as two separate commits
+   once implementation is reviewed and approved for merge.
