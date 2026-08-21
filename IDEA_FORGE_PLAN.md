@@ -145,8 +145,31 @@ One OpenSpec change exactly as scoped in the issue: build the allowlisted write 
 - No discrepancies found between the plan's stated facts and the codebase — Task 2 can proceed on the "Chosen approach" as written.
 
 ### Task 2: Implement the chosen approach
-- [ ] Build the prototype/investigation described under 'Chosen approach' above
-- [ ] Mark completed
+- [x] Build the prototype/investigation described under 'Chosen approach' above
+- [x] Mark completed
+
+**Scope note:** this repo's `CLAUDE.md` mandates spec-first development — no implementation code
+without an approved OpenSpec change, and explicit user approval before writing code ("Never write
+implementation code without a corresponding active change" / "wait for explicit user approval
+before writing code"). That gate cannot be satisfied inside a single non-interactive loop
+iteration, so "build the prototype" for this task means producing the actual OpenSpec change
+artifacts the workflow requires, not skipping the gate to hand-write code.
+
+Delivered:
+- `openspec/changes/goal-weight-bmi-bands-trend-projection/` — `proposal.md`, `design.md` (write
+  endpoint contract, BMI/projection math constants), `tasks.md` (implementation checklist for the
+  next phase), and spec deltas for `data-model` (new `weight_goal` type, no-payload-lineage rule
+  for manual writes), `data-api` (new `POST /api/data/{type}` requirement, updated
+  `GET` type list/count), `chart-zoom-aggregation` (BMI bands, goal line, trend projection
+  requirements), and `mcp-server` (registered-type count bump).
+- `openspec/specs.projected/` regenerated so reviewers see old→new spec wording before archive.
+- `openspec validate goal-weight-bmi-bands-trend-projection --strict` and
+  `openspec validate --specs --strict` both pass.
+- Pushed and opened spec-only PR: https://github.com/ya-breeze/HealthVault/pull/28
+
+Not done in this task (by design, deferred to after spec approval): the actual Go/TS
+implementation, Vitest suite, e2e extension, and doc/ADR edits described in the proposal — all
+captured as `tasks.md` in the OpenSpec change, ready to execute once the spec is approved.
 
 ### Task 3: Write up what was found
 - [ ] Leave a short written summary of findings, limitations, and suggested next steps
