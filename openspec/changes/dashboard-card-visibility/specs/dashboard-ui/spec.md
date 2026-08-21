@@ -1,4 +1,24 @@
+## RENAMED Requirements
+
+- FROM: `### Requirement: Customizable vitals grid order`
+- TO: `### Requirement: Customizable vitals grid order and visibility`
+
 ## MODIFIED Requirements
+
+### Requirement: Dashboard vitals grid
+The dashboard SHALL replace the 3-card summary and separate "Browse Data" grid with a single vitals grid covering the 8 primary metrics: `steps`, `heart_rate`, `sleep`, `heart_rate_variability`, `distance`, `weight`, `blood_pressure`, `oxygen_saturation`. Each card SHALL show the metric's current value, a 7-day sparkline, and a trend indicator, and SHALL link to that metric's data page. Which of those 8 cards actually render is governed by the "Customizable vitals grid order and visibility" requirement.
+
+#### Scenario: Vitals grid renders all 8 primary metrics
+- **WHEN** an authenticated user with data in all 8 primary metrics, who has hidden none of them, loads the dashboard
+- **THEN** the system SHALL render 8 vital cards, one per metric, each showing a current value and a sparkline
+
+#### Scenario: Vital card links to its data page
+- **WHEN** a user clicks a vital card
+- **THEN** the system SHALL navigate to that metric's `/data/{type}` page
+
+#### Scenario: Missing data for a metric
+- **WHEN** the resolved user has no records for one of the 8 primary metrics in the last 7 days
+- **THEN** that metric's card SHALL indicate no data rather than rendering an empty or broken sparkline
 
 ### Requirement: Customizable vitals grid order and visibility
 
@@ -43,6 +63,11 @@ The dashboard vitals grid SHALL support a per-user, persisted custom display ord
 
 - **WHEN** a user's saved order references a metric no longer in the default set, or the default set has gained a metric absent from their saved order
 - **THEN** the system SHALL render only currently-valid metrics in the user's saved relative order and visibility, and SHALL append any metric missing from their saved order at the end as visible, without erroring
+
+#### Scenario: Hidden cards are never revealed before the saved settings load
+
+- **WHEN** a user's saved order and visibility have not yet loaded, or failed to load
+- **THEN** the dashboard SHALL render a loading or error placeholder in place of the vitals grid, and SHALL NOT render any card until the saved visibility is known, so that cards the user hid are never briefly (or, on failure, indefinitely) shown
 
 #### Scenario: Saved order in the pre-visibility shape still loads
 

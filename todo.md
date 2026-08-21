@@ -13,14 +13,15 @@ vocabulary, and 4 ADRs recording the architectural decisions below are in
 Dashboard/Nutrition-targets sections, `docs/adr/ADR-001..004`, all `Status:
 Proposed`).
 
-**Phase 1 — Dashboard card hide/show** is *not* backlog: it's fully specified and
-ready for its own `opsx:propose` now (see ADR-001). It extends the existing
+**Phase 1 — Dashboard card hide/show** is **done** — shipped by the
+`dashboard-card-visibility` change (see ADR-001 and the archived change under
+`openspec/changes/archive/`). It extended the existing
 `PRIMARY_METRICS`/`dashboard_order` card-registry pattern with a per-Card
 show/hide toggle in the existing Edit/Done mode, scoped to the 8 vitals-grid
 Cards only (not the needs-attention banner / Log Food row / More Data row).
-Phases 2-4 below depend on it existing (they add new Card types to the same
-registry) but are otherwise only scoped at the boundary level — each still
-needs its own detailed grilling/proposal when picked up.
+Phases 2-4 below build on it (they add new Card types to the same registry)
+but are only scoped at the boundary level — each still needs its own detailed
+grilling/proposal when picked up.
 
 ### Phase 2 — Goal weight + BMI bands + trend projection
 

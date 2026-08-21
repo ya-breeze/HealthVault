@@ -272,8 +272,20 @@ test.describe('Dashboard card reorder', () => {
 // grid for every later test that looks for it.
 async function restoreAllVisible(page: Page) {
   const customizeBtn = page.getByRole('button', { name: 'Customize' });
+  // Enabled, not merely visible: the button renders disabled until the saved
+  // settings load, and clicking it in that window would just time out.
   await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
-  if (await customizeBtn.isVisible().catch(() => false)) {
+  const outsideEditMode = await customizeBtn.isEnabled().catch(() => false);
+
+  if (outsideEditMode) {
+    // Fast path: outside edit mode the grid renders only visible cards, so a
+    // full complement of 8 means there is nothing to restore and no settings
+    // PUT is needed. Gated on being outside edit mode — while editing, every
+    // card renders regardless of visibility, so the count is always 8 and
+    // this check would short-circuit while cards are still hidden.
+    if ((await page.getByTestId('vitals-grid').locator('> *').count().catch(() => -1)) === 8) {
+      return;
+    }
     await customizeBtn.click().catch(() => {});
   }
   // Edit mode renders hidden cards too, so their toggles are reachable here.
@@ -293,6 +305,13 @@ async function restoreAllVisible(page: Page) {
 test.describe('Dashboard card visibility', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    // Normalize before, not only after. Every test below toggles visibility
+    // relative to the current state, so a card left hidden by an earlier
+    // failure (cleanup is best-effort, and `retries` re-runs on a mutated
+    // account) would otherwise invert the toggle and fail every subsequent
+    // run with a misleading message. The sibling reorder test guards the same
+    // way by moving Weight to the front "regardless of its current position".
+    await restoreAllVisible(page);
   });
 
   test('hiding a card removes it from the grid and persists across reload', async ({ page }) => {

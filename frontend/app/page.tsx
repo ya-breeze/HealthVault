@@ -29,8 +29,13 @@ export default function Dashboard() {
   const [ready, setReady] = useState(false);
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
-  // Every card visible, in default order, until the stored settings load.
+  // 'loading' until the saved order/visibility arrives. The grid is not
+  // rendered at all until then — `order` starts as every-card-visible
+  // defaults, so rendering it early would flash cards the user has hidden
+  // onto the screen on every single load, and leave them there permanently
+  // if the GET fails. Found in code review.
+  const [settingsStatus, setSettingsStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const settingsLoaded = settingsStatus === 'loaded';
   const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -46,12 +51,15 @@ export default function Dashboard() {
     api.getSettings()
       .then(s => {
         setOrder(reconcileMetricOrder(s.dashboard_order));
-        setSettingsLoaded(true);
+        setSettingsStatus('loaded');
       })
       .catch(() => {
-        // Leave settingsLoaded false: editing/saving stays disabled rather
-        // than risking a Done that overwrites real stored settings with a
-        // PUT built from the (unknown) default order.
+        // Not 'loaded': editing/saving stays disabled rather than risking a
+        // Done that overwrites real stored settings with a PUT built from the
+        // (unknown) default order. The grid stays unrendered too — we cannot
+        // tell which cards the user hid, and showing all of them would expose
+        // exactly what they chose to hide.
+        setSettingsStatus('error');
         showToast(tRef.current('dashboard.orderLoadFailed'), 'error');
       });
     // tRef, not t: the language selector sits in this page's own Header, and
@@ -150,7 +158,14 @@ export default function Dashboard() {
             found and shown again; the read-only grid renders only the visible
             ones. Move controls are indexed against the full `order` either way,
             so hiding a card never shifts what a neighbour's arrow does. */}
-        {allHidden && !editing ? (
+        {!settingsLoaded ? (
+          <p
+            className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3"
+            data-testid={settingsStatus === 'error' ? 'vitals-grid-error' : 'vitals-grid-loading'}
+          >
+            {t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
+          </p>
+        ) : allHidden && !editing ? (
           <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
             {t('dashboard.allCardsHidden')}
           </p>
