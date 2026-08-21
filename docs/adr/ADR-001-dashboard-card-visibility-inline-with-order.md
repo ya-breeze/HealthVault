@@ -1,7 +1,7 @@
 # ADR-001: Dashboard Card Visibility Stored Inline With Order
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
