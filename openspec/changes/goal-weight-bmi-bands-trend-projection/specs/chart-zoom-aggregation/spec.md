@@ -161,3 +161,20 @@ never hides the answer.
 #### Scenario: No projection without a goal
 - **WHEN** a user has no `weight_goal` record
 - **THEN** the chart SHALL NOT compute or render a projection line or ETA text
+
+## MODIFIED Requirements
+
+### Requirement: Point-in-time type aggregation
+For point-in-time types (`heart_rate`, `heart_rate_variability`, `weight`, `height`, `weight_goal`, `blood_pressure`, `blood_glucose`, `oxygen_saturation`, `body_temperature`, `skin_temperature`, `respiratory_rate`, `resting_heart_rate`, `vo2_max`, `body_fat`, `lean_body_mass`, `bone_mass`, `speed`, `basal_metabolic_rate`), the chart SHALL render as follows:
+- **Day**: raw records plotted as a line.
+- **Week, Month, or Year**: a line of per-bucket averages (per-day for Week/Month, per-month for Year), with a shaded band spanning each bucket's minimum to maximum value.
+
+`weight_goal`'s own `/data/weight_goal` page follows this same rule like any other point-in-time type; this is separate from the goal reference line rendered on the `weight` chart (see "Goal weight reference line" above).
+
+#### Scenario: Week view shows an averaged line with a band
+- **WHEN** a user views `heart_rate` at Week zoom
+- **THEN** the chart SHALL plot one averaged point per day connected as a line, with a shaded region behind it spanning each day's min–max range
+
+#### Scenario: Year view does not plot raw records
+- **WHEN** a user views `heart_rate` at Year zoom
+- **THEN** the chart SHALL plot one averaged point per month with a min–max band, and SHALL NOT request or render the underlying raw records for the year

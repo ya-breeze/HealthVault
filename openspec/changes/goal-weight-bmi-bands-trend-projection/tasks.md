@@ -18,10 +18,12 @@
 
 - [ ] 2.1 Add `POST /api/data/{type}` route in `backend/pkg/server/server.go` (registered before
       the existing `GET`/`DELETE` on the same path, same auth middleware)
-- [ ] 2.2 Implement the handler per design.md's contract: allowlist check (`weight`, `height`,
-      `weight_goal` only, else 403), parse `{value, time?}` body, default `time` to now, validate
-      `value` is numeric, present, and strictly positive (else 400), insert, return 201 with the
-      created row in the same shape a GET returns
+- [ ] 2.2 Implement the handler per design.md's contract: two-step type check — unregistered type
+      (not in `typeRegistry`) → 404, matching `GET`/`DELETE`'s existing unknown-type behavior;
+      registered but not in the write allowlist (`weight`, `height`, `weight_goal` only) → 403 —
+      then parse `{value, time?}` body, default `time` to now, validate `value` is numeric,
+      present, and strictly positive (else 400), insert, return 201 with the created row in the
+      same shape a GET returns
 - [ ] 2.3 Handle a write whose `(user_id, time)` collides with an existing row for that type (only
       reachable via an explicit duplicate `time`, since an omitted `time` always defaults to now):
       catch the existing unique `(user_id, time)` constraint violation and return 409, rather than
