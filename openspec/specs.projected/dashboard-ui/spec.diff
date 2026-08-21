@@ -17,7 +17,7 @@
  - **THEN** the system SHALL render 8 vital cards, one per metric, each showing a current value and a sparkline
  
  #### Scenario: Vital card links to its data page
-@@ -71,32 +71,57 @@
+@@ -71,32 +71,62 @@
  - **WHEN** a user clicks the needs-attention indicator
  - **THEN** the system navigates to `/food/history/`
  
@@ -78,6 +78,11 @@
 +
 +- **WHEN** a user's saved order and visibility have not yet loaded, or failed to load
 +- **THEN** the dashboard SHALL render a loading or error placeholder in place of the vitals grid, and SHALL NOT render any card until the saved visibility is known, so that cards the user hid are never briefly (or, on failure, indefinitely) shown
++
++#### Scenario: A failed settings load is recoverable without a page reload
++
++- **WHEN** the saved order and visibility failed to load and the user activates the placeholder's retry control
++- **THEN** the system SHALL re-attempt the load, and on success SHALL render the vitals grid in the user's saved order and visibility with the customize control re-enabled
 +
 +#### Scenario: Saved order in the pre-visibility shape still loads
 +
