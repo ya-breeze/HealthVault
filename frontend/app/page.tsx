@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, DATA_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, VitalResult } from '@/lib/vitals';
+import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, DashboardCardPref, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
@@ -29,8 +29,19 @@ export default function Dashboard() {
   const [ready, setReady] = useState(false);
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [order, setOrder] = useState(PRIMARY_METRICS);
+  // 'loading' until the saved order/visibility arrives. The grid is not
+  // rendered at all until then — `order` starts as every-card-visible
+  // defaults, so rendering it early would flash cards the user has hidden
+  // onto the screen on every single load, and leave them there permanently
+  // if the GET fails. Found in code review.
+  const [settingsStatus, setSettingsStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const settingsLoaded = settingsStatus === 'loaded';
+  // Bumped by the error placeholder's Try again control to re-run the load
+  // effect. Without it a single transient 500 leaves the dashboard showing an
+  // error paragraph instead of the vitals grid for the rest of the session,
+  // with no in-page way back. Found in code review.
+  const [settingsAttempt, setSettingsAttempt] = useState(0);
+  const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -42,15 +53,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!ready) return;
+    setSettingsStatus('loading');
     api.getSettings()
       .then(s => {
         setOrder(reconcileMetricOrder(s.dashboard_order));
-        setSettingsLoaded(true);
+        setSettingsStatus('loaded');
       })
       .catch(() => {
-        // Leave settingsLoaded false: editing/saving stays disabled rather
-        // than risking a Done that overwrites real stored settings with a
-        // PUT built from the (unknown) default order.
+        // Not 'loaded': editing/saving stays disabled rather than risking a
+        // Done that overwrites real stored settings with a PUT built from the
+        // (unknown) default order. The grid stays unrendered too — we cannot
+        // tell which cards the user hid, and showing all of them would expose
+        // exactly what they chose to hide.
+        setSettingsStatus('error');
         showToast(tRef.current('dashboard.orderLoadFailed'), 'error');
       });
     // tRef, not t: the language selector sits in this page's own Header, and
@@ -59,7 +74,7 @@ export default function Dashboard() {
     // in-progress arrangement — and because `editing` stays true, a
     // subsequent Done would persist the reverted order as if the user had
     // chosen it. Found in code review. See lib/useLatest.
-  }, [ready, showToast, tRef]);
+  }, [ready, showToast, tRef, settingsAttempt]);
 
   useEffect(() => {
     if (!ready) return;
@@ -99,10 +114,16 @@ export default function Dashboard() {
     });
   }
 
+  const allHidden = order.every(m => m.hidden);
+
+  function toggleHidden(index: number) {
+    setOrder(prev => prev.map((m, i) => (i === index ? { ...m, hidden: !m.hidden } : m)));
+  }
+
   async function handleDone() {
     setSaving(true);
     try {
-      await updateSettings({ dashboard_order: order.map(m => m.type) });
+      await updateSettings({ dashboard_order: order.map(m => ({ type: m.type, hidden: m.hidden })) });
       setEditing(false);
     } catch {
       showToast(t('dashboard.orderSaveFailed'), 'error');
@@ -132,28 +153,57 @@ export default function Dashboard() {
             <TapTarget
               onClick={() => setEditing(true)}
               disabled={!settingsLoaded}
-              title={settingsLoaded ? undefined : t('dashboard.loadingOrder')}
+              title={settingsLoaded ? undefined : t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
               className="px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
-              {t('dashboard.editOrder')}
+              {t('dashboard.customize')}
             </TapTarget>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
-          {order.map((m, i) => (
-            <VitalCard
-              key={m.type}
-              type={m.type}
-              label={metricLabel(t, m.type)}
-              result={ready ? vitals[m.type] ?? null : null}
-              editing={editing}
-              onMoveUp={() => moveCard(i, -1)}
-              onMoveDown={() => moveCard(i, 1)}
-              moveUpDisabled={i === 0}
-              moveDownDisabled={i === order.length - 1}
-            />
-          ))}
-        </div>
+        {/* Edit mode renders every card, including hidden ones, so they can be
+            found and shown again; the read-only grid renders only the visible
+            ones. Move controls are indexed against the full `order` either way,
+            so hiding a card never shifts what a neighbour's arrow does. */}
+        {!settingsLoaded ? (
+          <div
+            className="mb-8 flex flex-wrap items-center justify-between gap-2 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3"
+            data-testid={settingsStatus === 'error' ? 'vitals-grid-error' : 'vitals-grid-loading'}
+          >
+            <p>{t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}</p>
+            {settingsStatus === 'error' && (
+              <TapTarget
+                onClick={() => setSettingsAttempt(n => n + 1)}
+                data-testid="vitals-grid-retry"
+                className="px-3 rounded-md border border-accent text-accent text-[11px] font-bold uppercase tracking-wide"
+              >
+                {t('dashboard.retryLoad')}
+              </TapTarget>
+            )}
+          </div>
+        ) : allHidden && !editing ? (
+          <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
+            {t('dashboard.allCardsHidden')}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
+            {order.map((m, i) => (editing || !m.hidden) && (
+              <VitalCard
+                key={m.type}
+                type={m.type}
+                label={metricLabel(t, m.type)}
+                result={ready ? vitals[m.type] ?? null : null}
+                editing={editing}
+                onMoveUp={() => moveCard(i, -1)}
+                onMoveDown={() => moveCard(i, 1)}
+                moveUpDisabled={i === 0}
+                moveDownDisabled={i === order.length - 1}
+                hidden={m.hidden}
+                onToggleHidden={() => toggleHidden(i)}
+                controlsDisabled={saving}
+              />
+            ))}
+          </div>
+        )}
 
         {needsAttentionCount > 0 && (
           <a

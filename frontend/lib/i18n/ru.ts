@@ -127,12 +127,16 @@ const ru: Dictionary = {
   'customFood.deleteFailed': 'Не удалось удалить',
 
   'dashboard.vitalsHeading': 'Показатели · за 7 дней',
-  'dashboard.editOrder': 'Изменить порядок',
+  'dashboard.customize': 'Настроить',
   'dashboard.done': 'Готово',
   'dashboard.saving': 'Сохранение…',
-  'dashboard.loadingOrder': 'Загружается сохранённый порядок…',
-  'dashboard.orderLoadFailed': 'Не удалось загрузить сохранённый порядок карточек. Изменить порядок сейчас нельзя.',
-  'dashboard.orderSaveFailed': 'Не удалось сохранить новый порядок карточек. Попробуйте ещё раз.',
+  'dashboard.loadingOrder': 'Загружаются сохранённые настройки…',
+  'dashboard.orderLoadFailed': 'Не удалось загрузить сохранённые настройки панели. Настроить её сейчас нельзя.',
+  'dashboard.orderSaveFailed': 'Не удалось сохранить настройки панели. Попробуйте ещё раз.',
+  'dashboard.hideCard': 'Скрыть: {metric}',
+  'dashboard.showCard': 'Показать: {metric}',
+  'dashboard.retryLoad': 'Повторить',
+  'dashboard.allCardsHidden': 'Все карточки скрыты. Нажмите «Настроить», чтобы вернуть их.',
   // Russian's four plural categories, selected by Intl.PluralRules:
   // one   — 1, 21, 31…      "1 приём пищи требует проверки"
   // few   — 2–4, 22–24…     "3 приёма пищи требуют проверки"

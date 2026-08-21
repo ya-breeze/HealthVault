@@ -23,25 +23,62 @@ export const PRIMARY_METRICS: { type: DataType }[] = [
 ];
 
 /**
+ * One vitals-grid card as the user has arranged it: which metric, and whether
+ * they've hidden it. `hidden` cards keep their position in this list so that
+ * re-showing one restores it where it was rather than appending it at the end.
+ */
+export interface DashboardCardPref {
+  type: DataType;
+  hidden: boolean;
+}
+
+/**
+ * A single entry as it may appear in the stored `dashboard_order` setting.
+ * The plain string is the pre-visibility shape: before per-card show/hide
+ * existed the setting was just a list of metric types. Both shapes are read
+ * (see reconcileMetricOrder); only the object shape is written.
+ */
+export type StoredCardPref = string | { type?: unknown; hidden?: unknown };
+
+/**
  * Reconciles a saved dashboard_order (from user settings) against
  * PRIMARY_METRICS: known types are reordered to match the saved order,
  * unknown/removed types are dropped, and any current metric missing from the
- * saved order is appended at the end. Returns PRIMARY_METRICS unchanged when
- * there's no saved order yet (default order for a user who hasn't customized).
+ * saved order is appended at the end, visible. Returns every PRIMARY_METRIC
+ * visible in default order when there's no saved order yet (a user who hasn't
+ * customized).
+ *
+ * Accepts both stored shapes. A plain-string entry is the pre-visibility
+ * shape and normalizes to `{ type, hidden: false }`, so a user who saved an
+ * order before show/hide existed keeps that order with nothing hidden. Note
+ * this tolerance is one-way: an older build reading the object shape resolves
+ * every entry to undefined and silently falls back to the default order (see
+ * the change's design.md — rollback is lossy).
  */
-export function reconcileMetricOrder(saved: string[] | undefined): typeof PRIMARY_METRICS {
-  if (!Array.isArray(saved) || saved.length === 0) return PRIMARY_METRICS;
-  const byType = new Map(PRIMARY_METRICS.map(m => [m.type as string, m]));
+export function reconcileMetricOrder(saved: StoredCardPref[] | undefined): DashboardCardPref[] {
+  const defaults = (): DashboardCardPref[] => PRIMARY_METRICS.map(m => ({ type: m.type, hidden: false }));
+  if (!Array.isArray(saved) || saved.length === 0) return defaults();
+
+  const known = new Set<string>(PRIMARY_METRICS.map(m => m.type as string));
   const seen = new Set<string>();
-  const ordered: typeof PRIMARY_METRICS = [];
-  for (const t of saved) {
-    const m = typeof t === 'string' ? byType.get(t) : undefined;
-    if (m && !seen.has(m.type)) {
-      seen.add(m.type);
-      ordered.push(m);
+  const ordered: DashboardCardPref[] = [];
+  for (const entry of saved) {
+    // Unwrap either shape into a type + hidden pair, ignoring anything that
+    // isn't one of them — a malformed settings blob must not break the grid.
+    let type: unknown;
+    let hidden = false;
+    if (typeof entry === 'string') {
+      type = entry;
+    } else if (entry && typeof entry === 'object') {
+      type = entry.type;
+      hidden = entry.hidden === true;
     }
+    if (typeof type !== 'string' || !known.has(type) || seen.has(type)) continue;
+    seen.add(type);
+    ordered.push({ type: type as DataType, hidden });
   }
-  const missing = PRIMARY_METRICS.filter(m => !seen.has(m.type));
+
+  const missing = PRIMARY_METRICS.filter(m => !seen.has(m.type)).map(m => ({ type: m.type, hidden: false }));
   return [...ordered, ...missing];
 }
 

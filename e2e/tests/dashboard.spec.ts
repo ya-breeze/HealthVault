@@ -52,21 +52,21 @@ async function withSettingsSave(page: Page, action: () => Promise<unknown>) {
 // Correct because Weight is the only card any test in this file moves, so
 // everything else is still in default relative order when this runs.
 async function restoreDefaultOrder(page: Page) {
-  const editOrderBtn = page.getByRole('button', { name: 'Edit order' });
+  const customizeBtn = page.getByRole('button', { name: 'Customize' });
   // Waits before asking, because isVisible() answers immediately and never
   // retries. Callers reach here straight after switching Display Language back
   // to English, and withSettingsSave resolves on the PUT *response* — the
-  // React re-render that relabels this button from "Изменить порядок" follows
+  // React re-render that relabels this button from "Настроить" follows
   // it. Asking without waiting can therefore catch the Russian label, read
   // "no editor here", and skip the whole restore this function exists to
   // perform. Bounded at 5s rather than the default so the genuine
   // no-editor-open case below still returns promptly. Found in code review.
-  await editOrderBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
+  await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
   // Returns early rather than clicking a Done button that isn't there: with
   // no editor open there is no save to wait for, and withSettingsSave would
   // otherwise sit out its full timeout waiting for a PUT nothing will send.
-  if (!(await editOrderBtn.isVisible().catch(() => false))) return;
-  await editOrderBtn.click().catch(() => {});
+  if (!(await customizeBtn.isVisible().catch(() => false))) return;
+  await customizeBtn.click().catch(() => {});
   const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
   for (let i = 0; i < 8; i++) {
     if (await moveWeightDown.isDisabled().catch(() => true)) break;
@@ -87,6 +87,10 @@ async function restoreDefaultOrder(page: Page) {
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    // Repair any hidden card leaked by a failed visibility test before
+    // asserting on grid contents: every test below assumes the full grid, and
+    // a leaked hidden card fails them for reasons unrelated to what they test.
+    await restoreAllVisible(page);
   });
 
   test('shows the vitals grid with all 8 primary metrics', async ({ page }) => {
@@ -149,6 +153,10 @@ test.describe('Needs-attention indicator', () => {
 test.describe('Dashboard card reorder', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    // Repair any hidden card leaked by a failed visibility test before
+    // asserting on grid contents: every test below assumes the full grid, and
+    // a leaked hidden card fails them for reasons unrelated to what they test.
+    await restoreAllVisible(page);
   });
 
   test('reordering a card via Edit mode persists across reload', async ({ page }) => {
@@ -158,7 +166,7 @@ test.describe('Dashboard card reorder', () => {
       // Outside edit mode there are no reorder controls.
       await expect(page.getByRole('button', { name: /move weight up/i })).not.toBeVisible();
 
-      await page.getByRole('button', { name: 'Edit order' }).click();
+      await page.getByRole('button', { name: 'Customize' }).click();
 
       // Move the Weight card to the very front, regardless of its current
       // position (this test may run after a prior run left a custom order).
@@ -171,7 +179,7 @@ test.describe('Dashboard card reorder', () => {
       await expect(grid.getByTestId('vital-card-weight')).toBeVisible();
 
       await page.getByRole('button', { name: 'Done' }).click();
-      await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Customize' })).toBeVisible();
 
       // First card in the grid should now be Weight.
       const firstCardBefore = grid.locator('> *').first();
@@ -205,7 +213,7 @@ test.describe('Dashboard card reorder', () => {
     const grid = page.getByTestId('vitals-grid');
 
     try {
-      await page.getByRole('button', { name: 'Edit order' }).click();
+      await page.getByRole('button', { name: 'Customize' }).click();
       const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
       for (let i = 0; i < 8; i++) {
         if (await moveWeightUp.isDisabled()) break;
@@ -235,7 +243,7 @@ test.describe('Dashboard card reorder', () => {
       // English labels are on screen. Without it the Done lookup below — an
       // isVisible() that does not retry — can run while the button still reads
       // "Готово", conclude edit mode is closed, and leave it open, which in
-      // turn makes restoreDefaultOrder find no "Edit order" button and skip
+      // turn makes restoreDefaultOrder find no "Customize" button and skip
       // the restore. Found in code review.
       await expect(page.locator('#display-language')).toHaveValue('en');
       // Leaves edit mode if it is still open, then restores the default
@@ -251,7 +259,7 @@ test.describe('Dashboard card reorder', () => {
   });
 
   test('move-up is disabled on the first card and move-down on the last', async ({ page }) => {
-    await page.getByRole('button', { name: 'Edit order' }).click();
+    await page.getByRole('button', { name: 'Customize' }).click();
     const grid = page.getByTestId('vitals-grid');
     const cards = grid.locator('> *');
     const first = cards.first();
@@ -264,9 +272,244 @@ test.describe('Dashboard card reorder', () => {
   });
 });
 
+// Shared cleanup for the visibility tests: un-hides every card that is
+// currently hidden and saves. Like restoreDefaultOrder, every step is
+// best-effort — it runs from `finally`, so a failure here must not mask the
+// assertion that triggered it. Hidden cards leak across tests worse than a
+// custom order does: a card hidden by a failed test is simply absent from the
+// grid for every later test that looks for it.
+async function restoreAllVisible(page: Page) {
+  const customizeBtn = page.getByRole('button', { name: 'Customize' });
+  const doneBtn = page.getByRole('button', { name: 'Done' });
+
+  // Wait for the settings load to settle before deciding anything. Until it
+  // does, Customize renders *disabled* and the grid isn't rendered at all, so
+  // a one-shot isEnabled()/count() here reads the loading state, concludes
+  // there is nothing to restore, and turns this whole helper into a silent
+  // no-op — which is exactly what it exists to prevent. `expect` retries;
+  // `isEnabled()` does not.
+  await expect(customizeBtn.or(doneBtn)).toBeEnabled({ timeout: 10_000 }).catch(() => {});
+
+  // Edit mode is identified by Done being on screen, not by Customize being
+  // enabled: a disabled Customize is ambiguous between "still loading" and
+  // "load failed", and neither means we are editing.
+  const enteredEditMode = !(await doneBtn.isVisible().catch(() => false));
+  if (enteredEditMode) {
+    // Guarded, and with a short timeout. On the settings-load-failure path
+    // Customize renders permanently disabled, so the wait above burns its full
+    // 10s and an unguarded click would then block on actionability until the
+    // 30s test timeout — killing the run in beforeEach instead of letting the
+    // .catch() fall through.
+    if (!(await customizeBtn.isEnabled().catch(() => false))) return;
+    await customizeBtn.click({ timeout: 5_000 }).catch(() => {});
+    // Wait for the editor to actually commit before counting below. click()
+    // resolves once the event is dispatched, not once React has re-rendered,
+    // and count() does not retry — so querying straight after the click can
+    // read zero toggles, break the loop on iteration 0, and take the
+    // "nothing was hidden" early return. That is the same silent-no-op this
+    // helper has now been bitten by twice.
+    await expect(doneBtn).toBeVisible({ timeout: 5_000 }).catch(() => {});
+  }
+
+  // Edit mode renders hidden cards too, so their toggles are reachable here.
+  // Counting hidden cards directly — rather than checking the read-only grid
+  // for a full complement — keeps this independent of how many primary
+  // metrics there are. An earlier version compared against a hardcoded 8, so
+  // adding a 9th metric would have made a run with exactly one card hidden
+  // look complete and turned this cleanup into a silent no-op.
+  //
+  // Bounded loop rather than while(count): a toggle that fails to clear would
+  // otherwise spin forever inside a cleanup.
+  const hiddenToggles = page.locator('[data-hidden="true"] [data-testid$="-visibility"]');
+  let restored = 0;
+  for (let i = 0; i < 20; i++) {
+    if ((await hiddenToggles.count().catch(() => 0)) === 0) break;
+    await hiddenToggles.first().click().catch(() => {});
+    restored++;
+  }
+
+  if (restored === 0 && enteredEditMode) {
+    // Nothing was hidden and we opened the editor purely to look. Leave via a
+    // navigation instead of Done: handleDone PUTs unconditionally, so clicking
+    // it here would write settings on every single test just to confirm there
+    // was nothing to fix.
+    await page.goto('/').catch(() => {});
+    return;
+  }
+  if (await doneBtn.isVisible().catch(() => false)) {
+    await withSettingsSave(page, () => doneBtn.click());
+  }
+}
+
+test.describe('Dashboard card visibility', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    // Normalize before, not only after. Every test below toggles visibility
+    // relative to the current state, so a card left hidden by an earlier
+    // failure (cleanup is best-effort, and `retries` re-runs on a mutated
+    // account) would otherwise invert the toggle and fail every subsequent
+    // run with a misleading message. The sibling reorder test guards the same
+    // way by moving Weight to the front "regardless of its current position".
+    await restoreAllVisible(page);
+  });
+
+  test('hiding a card removes it from the grid and persists across reload', async ({ page }) => {
+    const grid = page.getByTestId('vitals-grid');
+
+    try {
+      // Outside edit mode there is no visibility control, same as the reorder
+      // arrows. Anchored on the card being present first: the load gate means
+      // nothing renders until the settings GET resolves (and beforeEach may
+      // have just navigated), so a bare not.toBeVisible() here would pass
+      // against an empty page and would still pass if the toggle leaked into
+      // read-only mode.
+      await expect(grid.getByTestId('vital-card-sleep')).toBeVisible();
+      await expect(page.getByTestId('vital-card-sleep-visibility')).not.toBeVisible();
+
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await page.getByTestId('vital-card-sleep-visibility').click();
+      // Still on screen while editing — dimmed, and flagged for assertions —
+      // so it can be found and shown again.
+      await expect(grid.getByTestId('vital-card-sleep')).toHaveAttribute('data-hidden', 'true');
+
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(grid.getByTestId('vital-card-sleep')).toHaveCount(0);
+      // Only Sleep went; the rest of the grid is untouched.
+      await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+
+      await page.reload();
+      // Anchor on a card that should be there first. The grid is not rendered
+      // at all until the settings GET resolves, so a bare toHaveCount(0)
+      // straight after reload passes against the not-yet-rendered grid — it
+      // would still pass if the server had dropped the `hidden` flag entirely.
+      const reloadedGrid = page.getByTestId('vitals-grid');
+      await expect(reloadedGrid.getByTestId('vital-card-steps')).toBeVisible();
+      await expect(reloadedGrid.getByTestId('vital-card-sleep')).toHaveCount(0);
+    } finally {
+      await restoreAllVisible(page);
+    }
+  });
+
+  test('re-showing a hidden card restores its position rather than appending it', async ({ page }) => {
+    const grid = page.getByTestId('vitals-grid');
+
+    try {
+      await page.getByRole('button', { name: 'Customize' }).click();
+      // Whichever card is second right now — read from the DOM rather than
+      // assumed, since a previous test may have left a custom order.
+      const secondTestId = await grid.locator('> *').nth(1).getAttribute('data-testid');
+      expect(secondTestId).toBeTruthy();
+
+      await page.getByTestId(`${secondTestId}-visibility`).click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(grid.getByTestId(secondTestId!)).toHaveCount(0);
+
+      // Show it again.
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await page.getByTestId(`${secondTestId}-visibility`).click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+
+      // Back in slot 2, not appended to the end — the whole point of storing
+      // `hidden` inline with the order instead of as a separate list.
+      await expect(grid.locator('> *').nth(1)).toHaveAttribute('data-testid', secondTestId!);
+    } finally {
+      await restoreAllVisible(page);
+    }
+  });
+
+  test('hiding every card shows a placeholder instead of an empty grid', async ({ page }) => {
+    try {
+      await page.getByRole('button', { name: 'Customize' }).click();
+
+      // Hide all 8. Each toggle stays in the DOM while editing, so this can
+      // walk them by index.
+      const toggles = page.locator('[data-testid$="-visibility"]');
+      const count = await toggles.count();
+      expect(count).toBe(8);
+      for (let i = 0; i < count; i++) {
+        await toggles.nth(i).click();
+      }
+
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+
+      // Hiding the last card is allowed; the grid is replaced by a message.
+      await expect(page.getByTestId('vitals-grid')).toHaveCount(0);
+      await expect(page.getByTestId('vitals-grid-empty')).toBeVisible();
+      // And the way back is still on screen.
+      await expect(page.getByRole('button', { name: 'Customize' })).toBeVisible();
+    } finally {
+      await restoreAllVisible(page);
+    }
+  });
+
+  test('settings saved in the pre-visibility shape still load', async ({ page }) => {
+    // The bare-string shape is what every account written before this feature
+    // holds, so it is the path a real user takes on their first load after
+    // deploy — and, until this test, the only spec scenario asserted by
+    // nothing (the frontend has no unit-test runner). Served via a route mock
+    // rather than by writing it, because the app can no longer produce it.
+    await page.route('**/api/users/me/settings', route => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ json: { dashboard_order: ['weight', 'steps'] } });
+    });
+    await page.goto('/');
+
+    const grid = page.getByTestId('vitals-grid');
+    // Named entries keep their saved order and are treated as visible...
+    await expect(grid.locator('> *').nth(0)).toHaveAttribute('data-testid', 'vital-card-weight');
+    await expect(grid.locator('> *').nth(1)).toHaveAttribute('data-testid', 'vital-card-steps');
+    // ...and the metrics the old shape never mentioned are appended, visible,
+    // rather than being dropped or defaulting to hidden.
+    await expect(grid.locator('> *')).toHaveCount(8);
+    await expect(grid.getByTestId('vital-card-sleep')).toBeVisible();
+    await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
+  });
+
+  test('no card is rendered until the saved visibility is known', async ({ page }) => {
+    // Hold the settings GET open, then fail it. `order` defaults to
+    // every-card-visible, so a grid rendered before this resolves would show
+    // cards the user hid — briefly on a slow load, and for the whole session
+    // on a failure, with Customize disabled and no way to re-hide them.
+    let release: () => void = () => {};
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/users/me/settings', async route => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await held;
+      await route.fulfill({ status: 500, json: { error: 'boom' } });
+    });
+
+    await page.goto('/');
+
+    // While in flight: a placeholder holds the slot, and no card exists.
+    await expect(page.getByTestId('vitals-grid-loading')).toBeVisible();
+    await expect(page.getByTestId('vital-card-steps')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Customize' })).toBeDisabled();
+
+    release();
+
+    // After failure: still no cards, and the placeholder says so.
+    await expect(page.getByTestId('vitals-grid-error')).toBeVisible();
+    await expect(page.getByTestId('vital-card-steps')).toHaveCount(0);
+    await expect(page.getByTestId('vitals-grid')).toHaveCount(0);
+
+    // The failure is recoverable in-page: drop the mock and retry, rather
+    // than leaving the dashboard stuck on an error paragraph for the whole
+    // session with no way back but a manual reload.
+    await page.unroute('**/api/users/me/settings');
+    await page.getByTestId('vitals-grid-retry').click();
+    await expect(page.getByTestId('vitals-grid').getByTestId('vital-card-steps')).toBeVisible();
+    await expect(page.getByTestId('vitals-grid-error')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Customize' })).toBeEnabled();
+  });
+});
+
 test.describe('Settings lost-update race', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    // Repair any hidden card leaked by a failed visibility test before
+    // asserting on grid contents: every test below assumes the full grid, and
+    // a leaked hidden card fails them for reasons unrelated to what they test.
+    await restoreAllVisible(page);
   });
 
   // Regression for a lost-update race fixed in LanguageContext.tsx/page.tsx:
@@ -278,14 +521,14 @@ test.describe('Settings lost-update race', () => {
   // pre-reorder snapshot and silently clobber the just-saved dashboard_order.
   test('reordering cards then switching language in the same session persists both', async ({ page }) => {
     try {
-      await page.getByRole('button', { name: 'Edit order' }).click();
+      await page.getByRole('button', { name: 'Customize' }).click();
       const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
       for (let i = 0; i < 8; i++) {
         if (await moveWeightUp.isDisabled()) break;
         await moveWeightUp.click();
       }
       await page.getByRole('button', { name: 'Done' }).click();
-      await expect(page.getByRole('button', { name: 'Edit order' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Customize' })).toBeVisible();
 
       // No navigation here — this is the exact sequence that used to revert
       // the reorder above. Awaited through to the server's response for the
@@ -346,6 +589,10 @@ test.describe('Webhook ingest + dashboard', () => {
     expect(resp.status()).toBe(204);
 
     await login(page);
+    // Repair any hidden card leaked by a failed visibility test before
+    // asserting on grid contents: every test below assumes the full grid, and
+    // a leaked hidden card fails them for reasons unrelated to what they test.
+    await restoreAllVisible(page);
     await expect(page.getByText('Steps', { exact: true })).toBeVisible();
 
     // The dashboard's vitals grid fetches ?bucket=day — confirm today's bucket

@@ -47,6 +47,26 @@ export function HistoryIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function EyeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+export function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M10.6 6.1A9.7 9.7 0 0 1 12 5.5c6.5 0 10 6.5 10 6.5a17.8 17.8 0 0 1-3.1 4.1" />
+      <path d="M6.2 8A17.6 17.6 0 0 0 2 12s3.5 6.5 10 6.5a9.9 9.9 0 0 0 4.1-.85" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <path d="m3 3 18 18" />
+    </svg>
+  );
+}
+
 export function LinkIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base(props)}>
