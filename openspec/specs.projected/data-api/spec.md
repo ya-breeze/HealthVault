@@ -185,7 +185,10 @@ The system SHALL expose a `/api/food/*` route group behind the same JWT authenti
 ### Requirement: Manual record write endpoint
 The system SHALL expose `POST /api/data/{type}` (requires authentication), allowlisted to exactly
 three types: `weight`, `height`, `weight_goal`. Every other registered type SHALL continue to
-reject POST.
+reject POST with HTTP 403 — the type is real and readable via `GET`, just not writable. A `{type}`
+that is not registered at all (unknown to `GET`/`DELETE` on this same route family) SHALL instead
+return HTTP 404, matching those endpoints' existing unknown-type behavior. This is a two-step
+check — registered? then allowlisted? — not a single allowlist membership test.
 
 The request body SHALL be `{"value": <float64>, "time": "<RFC3339, optional>"}`. `time` SHALL
 default to the current time when omitted. A missing, non-numeric, or non-positive (`<= 0`)
@@ -224,6 +227,11 @@ new conflict-resolution logic is introduced by this endpoint beyond surfacing th
 #### Scenario: Write rejected for a multi-column type
 - **WHEN** an authenticated user calls `POST /api/data/blood_pressure` with any body
 - **THEN** the system SHALL return HTTP 403 and SHALL NOT create a record
+
+#### Scenario: Write rejected for an unregistered type
+- **WHEN** an authenticated user calls `POST /api/data/nonsense-type` with any body
+- **THEN** the system SHALL return HTTP 404, not HTTP 403, and SHALL NOT create a record — matching
+  `GET`/`DELETE`'s existing unknown-type behavior on this same route family
 
 #### Scenario: Missing value rejected
 - **WHEN** an authenticated user calls `POST /api/data/weight` with a body that omits `value` or
