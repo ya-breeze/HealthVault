@@ -4,16 +4,18 @@
 
 --- openspec/specs/data-model/spec.md
 +++ openspec/specs/data-model/spec.md
-@@ -5,7 +5,7 @@
+@@ -5,7 +5,9 @@
  ### Requirement: Health metric types
  The system SHALL persist health data in typed tables. Each table SHALL belong to a family (via `family_id`) and be associated with a user (via `user_id`).
  
 -Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`, `FoodSearchTranslation`), which have no upstream payload and are specified separately under "Food logging tables".
 +Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`, `FoodSearchTranslation`), which have no upstream payload and are specified separately under "Food logging tables". It also does NOT apply to any point-in-time record created through the manual write endpoint (`POST /api/data/{type}` — see `data-api`), regardless of type: a manually-entered `weight`, `height`, or `weight_goal` record has no upstream webhook or import payload either, and SHALL NOT require or synthesize a `source_payload_id`.
++
++`weight` and `height` are pre-existing ingested tables whose `source_payload_id` column is currently `NOT NULL`. Supporting manual writes to these two types (unlike the brand-new `weight_goal` table, which never has the constraint in the first place) requires relaxing that column to nullable as part of this change — this is a schema change on existing tables, not a purely additive one; see `design.md`'s Migration Plan.
  
  Types are grouped into three categories based on their temporal shape:
  
-@@ -30,6 +30,7 @@
+@@ -30,6 +32,7 @@
  | HeartRateVariability | `rmssd_millis`     | float64 ms             |
  | Weight               | `kilograms`        | float64                |
  | Height               | `meters`           | float64                |
@@ -21,7 +23,7 @@
  | BloodGlucose         | `mmol_per_liter`   | float64                |
  | OxygenSaturation     | `percentage`       | float64                |
  | BodyTemperature      | `celsius`          | float64                |
-@@ -42,6 +43,11 @@
+@@ -42,6 +45,11 @@
  | BoneMass             | `kilograms`        | float64                |
  | Speed                | `meters_per_second`| float64                |
  
@@ -33,7 +35,7 @@
  **Multi-value point-in-time types** — single `time` field, unique on `(user_id, time)`, multiple measurement fields:
  
  | Type            | Fields                                                              |
-@@ -61,6 +67,14 @@
+@@ -61,6 +69,14 @@
  - **WHEN** a user-authored food logging record is created
  - **THEN** the system SHALL persist it with the correct `user_id` and `family_id` and SHALL NOT require or synthesize a `source_payload_id`
  

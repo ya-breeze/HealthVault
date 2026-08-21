@@ -4,19 +4,25 @@
 
 --- openspec/specs/chart-zoom-aggregation/spec.md
 +++ openspec/specs/chart-zoom-aggregation/spec.md
-@@ -152,3 +152,103 @@
+@@ -152,3 +152,128 @@
  - **WHEN** the chart computes an averaged point, a min/max band, or the EMA trend series for display
  - **THEN** the computation SHALL use full floating-point precision, and only the final rendered text SHALL be rounded
  
 +### Requirement: BMI reference bands on the weight chart
 +When the user has at least one `height` record, the `weight` chart SHALL render four WHO BMI
-+category reference bands — `<18.5`, `18.5-25`, `25-30`, `>=30` — converted from BMI to kilograms
-+using the user's latest `height` record (`kg = bmi * heightMeters^2`). The bands SHALL be clipped
++category reference bands — Underweight `(-∞, 18.5)`, Normal `[18.5, 25)`, Overweight `[25, 30)`,
++Obese `[30, ∞)` — converted from BMI to kilograms using the user's latest `height` record
++(`kg = bmi * heightMeters^2`). Boundaries are lower-inclusive: a BMI of exactly 18.5, 25, or 30
++belongs to the higher category, in both the rendered band edges and the BMI readout's category
++lookup below, so the two can never disagree at a boundary value. The bands SHALL be clipped
 +to the chart's existing Y-domain and SHALL NOT themselves expand or otherwise influence that
-+domain. The chart SHALL also display a BMI readout (value to one decimal place, plus the category
-+name) computed from the latest raw `weight` record and the latest `height` record — not from the
-+EMA-smoothed trend value. Both the bands and the readout SHALL be governed by the same "does a
-+`height` record exist" condition, and SHALL both be absent when it does not.
++domain, and SHALL render at every zoom level (Day, Week, Month, and Year) — unlike the dashed
++trend projection line, which is restricted to Month/Year (see "Weight trend projection" below).
++The chart SHALL also display a BMI readout (value to one decimal place, plus the category
++name, via the same category lookup as the bands) computed from the latest raw `weight` record
++and the latest `height` record — not from the EMA-smoothed trend value. Both the bands and the
++readout SHALL be governed by the same "does a `height` record exist" condition, and SHALL both
++be absent when it does not.
 +
 +#### Scenario: Bands and readout render when height is on file
 +- **WHEN** a user with at least one `height` record views the `weight` chart
@@ -32,6 +38,17 @@
 +  actual weight data range
 +- **THEN** the Y-domain SHALL remain governed by the existing weight-data domain computation, and
 +  the bands SHALL be visually clipped at the domain's edges rather than widening it
++
++#### Scenario: Bands render at every zoom level
++- **WHEN** a user with at least one `height` record switches the chart between Day, Week, Month,
++  and Year zoom
++- **THEN** the BMI bands SHALL remain visible at all four zoom levels
++
++#### Scenario: Category boundary is lower-inclusive
++- **WHEN** the latest raw `weight` and `height` compute to a BMI of exactly 18.5, exactly 25, or
++  exactly 30
++- **THEN** the BMI readout SHALL show the higher category (Normal at 18.5, Overweight at 25, Obese
++  at 30), and the band `ReferenceArea` the point falls within SHALL agree with that category
 +
 +### Requirement: Goal weight reference line
 +When the user has at least one `weight_goal` record, the `weight` chart SHALL render a reference
@@ -63,9 +80,11 @@
 +
 +Given sufficient data: if the regression slope does not move toward the goal (flat or diverging),
 +or the computed crossing date falls beyond the 12-month horizon, the system SHALL display "Not on
-+track at your current trend" and SHALL NOT render a projection line. Otherwise the system SHALL
-+render a dashed projection line from the current EMA value to the computed crossing point, and
-+SHALL display the crossing date as ETA text.
++track at your current trend" and SHALL NOT render a projection line. The 12-month horizon SHALL be
++a fixed 365-day count from the most recent day in the 30-day regression window (not calendar-month
++arithmetic): a crossing at or before day 365 from that point is within the horizon, and a crossing
++after day 365 is beyond it. Otherwise the system SHALL render a dashed projection line from the
++current EMA value to the computed crossing point, and SHALL display the crossing date as ETA text.
 +
 +The dashed projection line itself SHALL render only at Month and Year zoom (not Day or Week — a
 +7-day window cannot show a months-away crossing point). The ETA text (or the "not enough data" /
@@ -94,10 +113,16 @@
 +  projection line
 +
 +#### Scenario: Crossing beyond the horizon
-+- **WHEN** a user's trend moves toward their goal but the computed crossing date is more than 12
-+  months out
++- **WHEN** a user's trend moves toward their goal but the computed crossing date is more than 365
++  days out from the regression window's most recent day
 +- **THEN** the chart SHALL display "Not on track at your current trend" and SHALL NOT render a
 +  projection line
++
++#### Scenario: Crossing exactly at the horizon boundary
++- **WHEN** a user's trend moves toward their goal and the computed crossing date is exactly 365
++  days from the regression window's most recent day
++- **THEN** the chart SHALL render the projection line and ETA text — day 365 is within the horizon,
++  not beyond it
 +
 +#### Scenario: Projection is independent of zoom selection
 +- **WHEN** a user switches zoom level between Week, Month, and Year
