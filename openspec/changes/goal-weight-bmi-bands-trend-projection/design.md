@@ -39,11 +39,17 @@ POST /api/data/{type}          type ∈ {weight, height, weight_goal}
 - `{type}` not in the allowlist → 403 (not 404 — the type is real and readable, just not
   writable), matching the existing `typeRegistry` 404-for-unknown-type behavior staying reserved
   for genuinely unregistered types.
-- Value is required; a missing/non-numeric value → 400.
-- Upsert is not implemented as a special case: the existing unique `(user_id, time)` index on
-  each of these three tables makes a same-instant write collide naturally, and every write from
-  this endpoint uses `time = now()` when the caller omits it, so "latest goal wins" falls out of
-  ordinary insert-then-query-latest behavior — no new upsert logic needed.
+- Value is required and must be numeric and strictly positive (`weight`/`height`/`weight_goal`
+  are all quantities with no zero-or-negative reading) — a missing, non-numeric, or non-positive
+  value → 400. This matters beyond input hygiene: `height` feeds this same change's BMI math
+  (`bmi = weight / heightMeters^2`), where a zero or negative value would produce an infinite or
+  meaningless BMI on the very readout this change introduces.
+- Upsert is not implemented as a special case: every write from this endpoint uses `time = now()`
+  when the caller omits it, so "latest goal wins" falls out of ordinary insert-then-query-latest
+  behavior for the common case — no new upsert logic needed there. The one case this doesn't cover
+  is an explicit `time` that collides with an existing row for that type under the existing unique
+  `(user_id, time)` index: that write SHALL return 409 Conflict and SHALL NOT modify the existing
+  record, rather than surfacing the underlying DB constraint error as an unhandled 500.
 - Target user is always `claims.UserID` — this endpoint does **not** call `resolveUser` (the
   helper `GET /api/data/{type}` uses to honor a family-sharing `?user=<member>` override) and does
   not accept `?user=` at all. This matches `DeleteRecordHandler`'s existing convention: mutations
@@ -99,18 +105,25 @@ window = last 30 calendar days of the existing EMA series (dataTypeMeta.ts's ema
 slope, intercept = ordinary least-squares fit of (day_offset, ema_value) over that window
 ```
 
-- **Minimum data**: fewer than 5 weight records, or a span under 14 days between the earliest and
-  latest record — render "Not enough data to project yet," no line, no ETA.
+- **Minimum data**: fewer than 5 weight records total, or a span under 14 days between the
+  earliest and latest record — render "Not enough data to project yet," no line, no ETA. This is
+  a lifetime-history check, distinct from the 30-day regression window: a user can clear it while
+  still having fewer than 2 EMA points inside the last 30 calendar days (e.g. an inactive user
+  with old data but nothing recent). The system SHALL apply this same "Not enough data to project
+  yet" outcome whenever the 30-day window itself contains fewer than 2 EMA points, since the
+  regression and the direction anchor below both require at least two points in that window.
 - **Already-at-goal check runs before the direction check**: a flat EMA doesn't always mean
   failure — a user who has reached their goal and is now maintaining it also has a flat trend.
-  Direction is established from the user's earliest and latest raw `weight` records (already read
-  for the minimum-data gate above): `direction = sign(goal − earliestWeight)`. If the latest EMA
-  value has already reached or passed the goal in that direction (`latestEma <= goal` when
-  `direction` is downward, `latestEma >= goal` when upward, or `earliestWeight == goal` — already
-  at goal from the start of the recorded history), the system SHALL display "You've reached your
-  goal weight" instead of running the direction check below, and SHALL NOT render a projection
-  line. This is a distinct third state from "on track" and "not on track," not a variant of
-  either.
+  Direction is established from the 30-day regression window's own boundary EMA values — not from
+  the user's entire lifetime history — so an old weight from years before the goal was set can't
+  flip the determination: `direction = sign(goal − windowStartEma)`, where `windowStartEma` is the
+  EMA value at the oldest `day_offset` in the 30-day window (`latestEma` is the value at the
+  newest). If the latest EMA value has already reached or passed the goal in that direction
+  (`latestEma <= goal` when `direction` is downward, `latestEma >= goal` when upward, or
+  `windowStartEma == goal` — already at goal at the start of the window), the system SHALL display
+  "You've reached your goal weight" instead of running the direction check below, and SHALL NOT
+  render a projection line. This is a distinct third state from "on track" and "not on track," not
+  a variant of either.
 - **Direction check**: otherwise, if the slope doesn't move toward the goal (flat, or moving
   away), or the projected crossing date is beyond the 12-month horizon — render no line, and "Not
   on track at your current trend." This is a deliberate refusal to extrapolate: an unconditional

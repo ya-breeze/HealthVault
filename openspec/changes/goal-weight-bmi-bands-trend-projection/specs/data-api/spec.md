@@ -6,9 +6,9 @@ three types: `weight`, `height`, `weight_goal`. Every other registered type SHAL
 reject POST.
 
 The request body SHALL be `{"value": <float64>, "time": "<RFC3339, optional>"}`. `time` SHALL
-default to the current time when omitted. A missing or non-numeric `value` SHALL return HTTP 400.
-On success the system SHALL return HTTP 201 with the created record in the same JSON shape
-`GET /api/data/{type}` returns for a single row.
+default to the current time when omitted. A missing, non-numeric, or non-positive (`<= 0`)
+`value` SHALL return HTTP 400. On success the system SHALL return HTTP 201 with the created
+record in the same JSON shape `GET /api/data/{type}` returns for a single row.
 
 Records created through this endpoint SHALL NOT require or carry a `source_payload_id` (see
 `data-model`'s "Health metric types" requirement).
@@ -18,9 +18,12 @@ this endpoint SHALL NOT honor a `?user=` family-member override — it does not 
 path's `resolveUser` helper at all. This matches `DELETE /api/data/{type}/{id}`'s existing
 convention of scoping mutations strictly to the caller.
 
-A write to `weight_goal` (or a write to any allowlisted type at an explicitly duplicate `time`)
-SHALL rely on the type's existing unique `(user_id, time)` constraint rather than a separate
-upsert path — no new conflict-resolution logic is introduced by this endpoint.
+A write whose `(user_id, time)` collides with an existing record of that type — which can only
+happen with an explicitly supplied `time`, since an omitted `time` always defaults to the current
+timestamp — SHALL return HTTP 409 Conflict and SHALL NOT modify the existing record. This relies
+on the type's existing unique `(user_id, time)` constraint rather than a separate upsert path — no
+new conflict-resolution logic is introduced by this endpoint beyond surfacing that constraint as a
+409.
 
 #### Scenario: Write an allowlisted type
 - **WHEN** an authenticated user calls `POST /api/data/weight_goal` with `{"value": 70.0}`
@@ -44,6 +47,16 @@ upsert path — no new conflict-resolution logic is introduced by this endpoint.
 - **WHEN** an authenticated user calls `POST /api/data/weight` with a body that omits `value` or
   where `value` is not numeric
 - **THEN** the system SHALL return HTTP 400 and SHALL NOT create a record
+
+#### Scenario: Non-positive value rejected
+- **WHEN** an authenticated user calls `POST /api/data/height` with `{"value": 0}` or a negative
+  `value`
+- **THEN** the system SHALL return HTTP 400 and SHALL NOT create a record
+
+#### Scenario: Write collides with an existing record at the same time
+- **WHEN** an authenticated user calls `POST /api/data/weight_goal` with an explicit `time` that
+  already has a `weight_goal` record for that user
+- **THEN** the system SHALL return HTTP 409 and SHALL NOT modify the existing record
 
 #### Scenario: Unauthenticated write rejected
 - **WHEN** a request to `POST /api/data/weight` carries no valid token

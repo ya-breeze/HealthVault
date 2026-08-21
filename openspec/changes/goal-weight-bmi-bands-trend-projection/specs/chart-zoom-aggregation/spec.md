@@ -66,15 +66,21 @@ calendar days of the existing EMA series, independent of the chart's currently s
 level. The projection SHALL determine the date the regression line crosses the latest
 `weight_goal` value, if any, within a 12-month horizon.
 
-Minimum data: if the user has fewer than 5 `weight` records, or the span between their earliest
-and latest `weight` record is under 14 days, the system SHALL display "Not enough data to project
-yet" and SHALL NOT render a projection line.
+Minimum data: if the user has fewer than 5 `weight` records total, or the span between their
+earliest and latest `weight` record is under 14 days, the system SHALL display "Not enough data
+to project yet" and SHALL NOT render a projection line. This lifetime-history check does not by
+itself guarantee data inside the 30-day regression window — the system SHALL also display "Not
+enough data to project yet" whenever the 30-day window contains fewer than 2 EMA points (e.g. a
+user with old data but no recent activity), since both the regression and the direction
+determination below require at least two points in that window.
 
-Already at goal: if the latest EMA value has already reached or passed the goal weight — direction
-determined by comparing the user's earliest and latest raw `weight` records to the goal — the
-system SHALL display "You've reached your goal weight" and SHALL NOT render a projection line.
-This check takes precedence over the flat/diverging check below, since a flat trend at the goal is
-success, not failure.
+Already at goal: direction is determined by comparing the 30-day regression window's own boundary
+EMA values to the goal — the EMA value at the oldest day in the window versus the EMA value at the
+newest — not by the user's entire lifetime history, so an old weight from years before the goal
+was set can't flip the determination. If the latest EMA value has already reached or passed the
+goal in that direction, the system SHALL display "You've reached your goal weight" and SHALL NOT
+render a projection line. This check takes precedence over the flat/diverging check below, since a
+flat trend at the goal is success, not failure.
 
 Given sufficient data, and the goal not already reached: if the regression slope does not move
 toward the goal (flat or diverging), or the computed crossing date falls beyond the 12-month
@@ -92,6 +98,13 @@ never hides the answer.
 
 #### Scenario: Not enough data
 - **WHEN** a user has fewer than 5 `weight` records, or their records span fewer than 14 days
+- **THEN** the chart SHALL display "Not enough data to project yet" and SHALL NOT render a
+  projection line, at any zoom level
+
+#### Scenario: Not enough data inside the regression window
+- **WHEN** a user has at least 5 `weight` records spanning at least 14 days, but fewer than 2 of
+  their EMA points fall within the last 30 calendar days (e.g. they stopped logging weight months
+  ago)
 - **THEN** the chart SHALL display "Not enough data to project yet" and SHALL NOT render a
   projection line, at any zoom level
 
@@ -114,10 +127,19 @@ never hides the answer.
 
 #### Scenario: Already at goal weight
 - **WHEN** a user's latest EMA value has already reached or passed their `weight_goal` value (per
-  the direction determined from their earliest and latest raw `weight` records), regardless of
-  whether their 30-day trend is currently flat, diverging, or still moving toward the goal
+  the direction determined from the 30-day regression window's own oldest and newest EMA values,
+  not their entire lifetime history), regardless of whether their 30-day trend is currently flat,
+  diverging, or still moving toward the goal
 - **THEN** the chart SHALL display "You've reached your goal weight" and SHALL NOT render a
   projection line, instead of "Not on track at your current trend"
+
+#### Scenario: Old lifetime history does not falsely trigger "already at goal"
+- **WHEN** a user's earliest-ever recorded `weight` sits on the opposite side of their
+  `weight_goal` from their current 30-day trend (e.g. they weighed 60kg years ago, have since
+  gained to a flat 90kg trend, and just set a 75kg goal to lose weight)
+- **THEN** the chart SHALL NOT display "You've reached your goal weight", since direction is
+  determined from the 30-day regression window's boundary EMA values, not the lifetime-earliest
+  record — and SHALL instead display "Not on track at your current trend" for this flat trend
 
 #### Scenario: Crossing beyond the horizon
 - **WHEN** a user's trend moves toward their goal but the computed crossing date is more than 365

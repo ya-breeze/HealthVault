@@ -20,11 +20,14 @@
       the existing `GET`/`DELETE` on the same path, same auth middleware)
 - [ ] 2.2 Implement the handler per design.md's contract: allowlist check (`weight`, `height`,
       `weight_goal` only, else 403), parse `{value, time?}` body, default `time` to now, validate
-      `value` is numeric and present (else 400), insert, return 201 with the created row in the
-      same shape a GET returns
-- [ ] 2.3 Confirm a same-instant write for `weight_goal` (default `time = now()`, or an explicit
-      duplicate `time`) collides on the existing unique `(user_id, time)` index rather than
-      silently duplicating — this is how "latest goal wins" is achieved with no new upsert code
+      `value` is numeric, present, and strictly positive (else 400), insert, return 201 with the
+      created row in the same shape a GET returns
+- [ ] 2.3 Handle a write whose `(user_id, time)` collides with an existing row for that type (only
+      reachable via an explicit duplicate `time`, since an omitted `time` always defaults to now):
+      catch the existing unique `(user_id, time)` constraint violation and return 409, rather than
+      letting a raw DB error surface as a 500. The common case (`time = now()` on every write) never
+      hits this path — "latest goal wins" already falls out of ordinary insert-then-query-latest
+      behavior without it.
 - [ ] 2.4 Confirm every type outside the allowlist still returns 403 on POST (regression coverage
       for e.g. `steps`, `blood_pressure`)
 - [ ] 2.5 Confirm the handler resolves the target user as `claims.UserID` directly and does not
@@ -94,17 +97,21 @@
 - [ ] 7.1 Add a pure least-squares regression function over `(day_offset, ema_value)` pairs
 - [ ] 7.2 Add a pure function selecting the last 30 calendar days of the existing EMA series,
       independent of the active zoom
-- [ ] 7.3 Add pure "not enough data" gating: <5 weight records or <14-day span → no line, "Not
-      enough data to project yet"
+- [ ] 7.3 Add pure "not enough data" gating: <5 weight records total, or <14-day lifetime span, or
+      fewer than 2 EMA points inside the 30-day regression window (task 7.2) itself → no line, "Not
+      enough data to project yet" — the lifetime check and the window check are independent; either
+      one failing is sufficient
 - [ ] 7.4 Add pure crossing/horizon logic: given slope+intercept+goal, compute the crossing date;
       flat/diverging/beyond the 365-day horizon (fixed day count from the regression window's most
       recent day, not calendar-month arithmetic — see design.md) → no line, "Not on track at your
       current trend"
 - [ ] 7.4a Add a pure "already at goal" check that runs before 7.4's direction check: direction =
-      `sign(goal - earliestWeight)` from the earliest/latest raw `weight` records already read for
-      the minimum-data gate (7.3); if the latest EMA has reached or passed the goal in that
-      direction, use "You've reached your goal weight" instead of routing a flat/at-goal trend
-      through 7.4's "Not on track" message — see design.md
+      `sign(goal - windowStartEma)`, where `windowStartEma`/`latestEma` are the oldest/newest EMA
+      values in the 30-day regression window from 7.2 (NOT the user's lifetime-earliest raw weight —
+      using lifetime history here would let an old, no-longer-relevant weight flip the direction for
+      a user whose weight has since crossed to the other side of the goal); if the latest EMA has
+      reached or passed the goal in that direction, use "You've reached your goal weight" instead of
+      routing a flat/at-goal trend through 7.4's "Not on track" message — see design.md
 - [ ] 7.4b Extend `bucketBandData` with synthetic future-dated rows (populated only in a new
       `projection` field; `avg`/`range`/`trend` left undefined) spanning from the last real bucket
       to the computed crossing date, capped at the 365-day horizon — at the active zoom's bucket
@@ -126,7 +133,9 @@
       classify into the higher category per design.md's lower-inclusive convention)
 - [ ] 8.4 Unit tests for the regression + 30-day-window selection (task 7.1, 7.2)
 - [ ] 8.5 Unit tests for the "not enough data" gate (task 7.3): exactly 4 records, exactly 5
-      records spanning <14 days, exactly 5 spanning >=14 days
+      records spanning <14 days, exactly 5 spanning >=14 days, and a user meeting both lifetime
+      thresholds but with fewer than 2 EMA points inside the last 30 calendar days (old data, no
+      recent activity)
 - [ ] 8.6 Unit tests for crossing/horizon logic (task 7.4): flat trend, wrong-direction trend,
       crossing just inside the 365-day horizon, crossing at exactly day 365 (within horizon),
       crossing at day 366 (beyond horizon)
@@ -136,8 +145,11 @@
       case impractical to seed reliably through a browser
 - [ ] 8.8 Unit tests for the "already at goal" check (task 7.4a): flat trend with latest EMA at the
       goal (displays "You've reached your goal weight", not "Not on track"), flat trend with latest
-      EMA still far from the goal (displays "Not on track" as before), and latest EMA already past
-      the goal on the far side (still classified as reached, not "not on track")
+      EMA still far from the goal (displays "Not on track" as before), latest EMA already past
+      the goal on the far side (still classified as reached, not "not on track"), and a case where
+      the user's lifetime-earliest raw weight sits on the opposite side of the goal from the current
+      30-day window (e.g. old weight 60kg, current flat trend 90kg, goal 75kg) — must display "Not
+      on track", not falsely report "You've reached your goal weight"
 
 ## 9. E2E
 
