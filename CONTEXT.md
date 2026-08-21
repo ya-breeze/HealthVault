@@ -39,3 +39,31 @@ _Avoid_: Technical view, debug mode. Also do not shorten it to "Expert" — rean
 **Expert (reanalysis mode)**:
 The reanalysis correction interface's second authoring mode, where a user lists the meal's components explicitly instead of writing a free-text `Hint`. Unrelated to Expert Mode above — it is an *input* mode that changes what gets analyzed, not a view toggle. The two share a word and a screen, so always qualify which one is meant: "Expert Mode" for the Canonical Name toggle, "Expert reanalysis" or "the Expert tab" for this one. The Expert Mode checkbox's visible label spells out its effect ("show English translation") for the same reason.
 _Avoid_: Expert mode (lowercase "mode" reads as the toggle), component mode
+
+### Dashboard
+
+**Dashboard Card**:
+An individual, independently showable/hideable and reorderable unit on the main dashboard — a Vital Card or a Food Card. Distinct from the dashboard's other sections (the needs-attention banner, Log Food row, More Data row), which are fixed JSX blocks, not Cards, and are not user-configurable.
+_Avoid_: Widget, panel, section (reserve "section" for the fixed non-Card blocks)
+
+**Vital Card**:
+A Dashboard Card showing one vital metric's current value, 7-day sparkline, and trend arrow.
+_Avoid_: Metric card, stat card
+
+**Food Card**:
+A Dashboard Card summarizing food-logging data — e.g. today's intake against a Nutrition Target, or a Healthiness Label.
+_Avoid_: Nutrition widget, food widget
+
+### Nutrition targets
+
+**Goal Weight**:
+The user's target body weight, stored as its own metric (latest-record-wins), distinct from a measured `Weight` reading. Read as the weight input to Nutrition Target calculations, not the user's current measured weight.
+_Avoid_: Target weight, ideal weight (informal use only)
+
+**Nutrition Target**:
+A user's daily calorie/protein/carb/fat goal, computed from Goal Weight, age, sex, and activity level via the Mifflin-St Jeor formula. What food intake is compared against on Food Cards.
+_Avoid_: Goal (ambiguous with Goal Weight), macro goal
+
+**Healthiness Label**:
+A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment.
+_Avoid_: Health score, nutrition score
