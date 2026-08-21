@@ -40,6 +40,13 @@
 - [x] 5a.5 `todo.md`: Phase 1 is shipped by this PR, so stop describing it as ready-to-propose backlog.
 - [x] 5a.6 Regenerate and commit `openspec/specs.projected/` now that the delta applies cleanly (the CI drift check reads it).
 
+## 5b. Code-review fixes (round 2)
+
+- [x] 5b.1 `restoreAllVisible`: `isEnabled()` is one-shot and Customize renders *disabled* until the settings GET resolves, so in `beforeEach` the helper read the loading state, concluded there was nothing to restore, and returned — making 5a.4's pre-normalization a silent no-op. Wait (retrying) on Customize-or-Done being enabled, and detect edit mode from `Done` being present rather than from Customize being enabled. **Verified empirically**, not just by reading: a throwaway spec hid Sleep and left it hidden, after which the visibility tests pass with the fix and fail on the old one-shot logic with exactly the predicted `toHaveCount(0)` error.
+- [x] 5b.2 `'hiding a card … persists across reload'`: the post-reload `toHaveCount(0)` ran before the grid existed (the new load gate), so it passed vacuously and would have passed even if the server had dropped the `hidden` flag. Anchor on a visible card first, then assert the absence.
+- [x] 5b.3 `frontend/app/page.tsx`: the disabled Customize tooltip read "Loading your saved layout…" even after the load had failed. Gate it on `settingsStatus`, like the placeholder beside it.
+- [x] 5b.4 `frontend/app/page.tsx`: the error state was terminal — one transient 500 replaced the vitals grid with a static paragraph for the whole session, with no in-page way back. Added a "Try again" control that re-runs the load, plus the `dashboard.retryLoad` key in both dictionaries, a spec scenario, and e2e coverage of the recovery path.
+
 ## 6. Manual verification against WIP
 
 - [x] 6.1 Deploy branch to the HealthVault WIP stack per CLAUDE.md's dry-run/E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review. **Done:** deployed to `hcw-wip` (`class: wip`, http://192.168.1.54:8892); `dashboard.spec.ts` 15/15 pass and the full suite is 108 passed / 1 skipped / 0 failed. Also checked at a 360px viewport that the now-three-control edit row doesn't overflow a grid cell (`scrollWidth === clientWidth === 149`). **Re-verified after the round-1 review fixes:** redeployed and re-ran the full suite — `dashboard.spec.ts` 16/16, overall 108 passed / 1 skipped / 0 failed.
