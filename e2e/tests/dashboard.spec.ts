@@ -391,6 +391,34 @@ test.describe('Dashboard card visibility', () => {
       await restoreAllVisible(page);
     }
   });
+
+  test('no card is rendered until the saved visibility is known', async ({ page }) => {
+    // Hold the settings GET open, then fail it. `order` defaults to
+    // every-card-visible, so a grid rendered before this resolves would show
+    // cards the user hid — briefly on a slow load, and for the whole session
+    // on a failure, with Customize disabled and no way to re-hide them.
+    let release: () => void = () => {};
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/users/me/settings', async route => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await held;
+      await route.fulfill({ status: 500, json: { error: 'boom' } });
+    });
+
+    await page.goto('/');
+
+    // While in flight: a placeholder holds the slot, and no card exists.
+    await expect(page.getByTestId('vitals-grid-loading')).toBeVisible();
+    await expect(page.getByTestId('vital-card-steps')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Customize' })).toBeDisabled();
+
+    release();
+
+    // After failure: still no cards, and the placeholder says so.
+    await expect(page.getByTestId('vitals-grid-error')).toBeVisible();
+    await expect(page.getByTestId('vital-card-steps')).toHaveCount(0);
+    await expect(page.getByTestId('vitals-grid')).toHaveCount(0);
+  });
 });
 
 test.describe('Settings lost-update race', () => {

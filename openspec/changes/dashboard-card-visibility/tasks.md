@@ -29,6 +29,17 @@
 - [x] 5.1 ~~Add/extend unit tests for `reconcileMetricOrder()`~~ — **dropped.** The frontend has no test runner (no vitest/jest, no `*.test.ts`, no test script), so this task assumed infrastructure that doesn't exist. Rather than introduce a test framework for one function, `reconcileMetricOrder` stays covered end-to-end by 5.2, matching how the archived `dashboard-card-reorder` change shipped the same function. Decided with the user during apply.
 - [x] 5.2 Extend `e2e/tests/dashboard.spec.ts` with scenarios matching the spec delta: hide a card and confirm it disappears from the read-only grid but reappears (dimmed) in edit mode; re-show a hidden card and confirm it returns to its prior position, not the end; hide every card and confirm the placeholder renders; reload/re-login and confirm hidden state persists.
 
+- [x] 5.3 Cover the "Hidden cards are never revealed before the saved settings load" scenario: hold the settings GET open, assert no card and a loading placeholder, then fail it and assert no card and an error placeholder.
+
+## 5a. Code-review fixes (round 1)
+
+- [x] 5a.1 Spec delta: the MODIFIED block renamed its requirement header, which `openspec archive` (and the projected-specs CI job) rejects as "not found". Declare it as `## RENAMED Requirements` (FROM/TO) with MODIFIED on the new header, and keep the canonical **scenario** names — the CLI treats a renamed scenario as a dropped one.
+- [x] 5a.2 Spec delta: also MODIFY the "Dashboard vitals grid" requirement, whose scenario asserted a flat "SHALL render 8 vital cards". Left alone, the archived spec tree would hold two contradicting requirements.
+- [x] 5a.3 `frontend/app/page.tsx`: gate the grid on the settings load. `order` starts as all-visible defaults, so the grid flashed hidden cards in on every load and left them on screen for the whole session when the GET failed (with Customize disabled — no way to re-hide them). Added a loading/error placeholder and a matching spec scenario.
+- [x] 5a.4 `e2e/tests/dashboard.spec.ts`: normalize visibility in `beforeEach`, not only in `finally`. Cleanup is best-effort on a shared account, so one failed run left a card hidden and every later run inverted the toggle and failed misleadingly.
+- [x] 5a.5 `todo.md`: Phase 1 is shipped by this PR, so stop describing it as ready-to-propose backlog.
+- [x] 5a.6 Regenerate and commit `openspec/specs.projected/` now that the delta applies cleanly (the CI drift check reads it).
+
 ## 6. Manual verification against WIP
 
-- [x] 6.1 Deploy branch to the HealthVault WIP stack per CLAUDE.md's dry-run/E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review. **Done:** deployed to `hcw-wip` (`class: wip`, http://192.168.1.54:8892); `dashboard.spec.ts` 15/15 pass and the full suite is 108 passed / 1 skipped / 0 failed. Also checked at a 360px viewport that the now-three-control edit row doesn't overflow a grid cell (`scrollWidth === clientWidth === 149`).
+- [x] 6.1 Deploy branch to the HealthVault WIP stack per CLAUDE.md's dry-run/E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review. **Done:** deployed to `hcw-wip` (`class: wip`, http://192.168.1.54:8892); `dashboard.spec.ts` 15/15 pass and the full suite is 108 passed / 1 skipped / 0 failed. Also checked at a 360px viewport that the now-three-control edit row doesn't overflow a grid cell (`scrollWidth === clientWidth === 149`). **Re-verified after the round-1 review fixes:** redeployed and re-ran the full suite — `dashboard.spec.ts` 16/16, overall 108 passed / 1 skipped / 0 failed.
