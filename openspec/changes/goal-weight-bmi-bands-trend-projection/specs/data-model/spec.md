@@ -5,6 +5,8 @@ The system SHALL persist health data in typed tables. Each table SHALL belong to
 
 Health metric tables are **ingested** data: every row SHALL carry a `source_payload_id` linking it to the raw webhook or import that produced it. This lineage rule applies to the ingested metric types listed below. It does NOT apply to user-authored food logging tables (`FoodMeal`, `FoodItem`, `CustomFood`, `FoodCalibrationSample`, `FoodSearchTranslation`), which have no upstream payload and are specified separately under "Food logging tables". It also does NOT apply to any point-in-time record created through the manual write endpoint (`POST /api/data/{type}` — see `data-api`), regardless of type: a manually-entered `weight`, `height`, or `weight_goal` record has no upstream webhook or import payload either, and SHALL NOT require or synthesize a `source_payload_id`.
 
+`weight` and `height` are pre-existing ingested tables whose `source_payload_id` column is currently `NOT NULL`. Supporting manual writes to these two types (unlike the brand-new `weight_goal` table, which never has the constraint in the first place) requires relaxing that column to nullable as part of this change — this is a schema change on existing tables, not a purely additive one; see `design.md`'s Migration Plan.
+
 Types are grouped into three categories based on their temporal shape:
 
 **Interval types** — have `start_time` and `end_time` with a unique constraint on `(user_id, start_time)`:

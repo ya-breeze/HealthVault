@@ -13,6 +13,11 @@ On success the system SHALL return HTTP 201 with the created record in the same 
 Records created through this endpoint SHALL NOT require or carry a `source_payload_id` (see
 `data-model`'s "Health metric types" requirement).
 
+The record SHALL always be created for the authenticated caller. Unlike `GET /api/data/{type}`,
+this endpoint SHALL NOT honor a `?user=` family-member override — it does not call the `GET`
+path's `resolveUser` helper at all. This matches `DELETE /api/data/{type}/{id}`'s existing
+convention of scoping mutations strictly to the caller.
+
 A write to `weight_goal` (or a write to any allowlisted type at an explicitly duplicate `time`)
 SHALL rely on the type's existing unique `(user_id, time)` constraint rather than a separate
 upsert path — no new conflict-resolution logic is introduced by this endpoint.
@@ -43,6 +48,12 @@ upsert path — no new conflict-resolution logic is introduced by this endpoint.
 #### Scenario: Unauthenticated write rejected
 - **WHEN** a request to `POST /api/data/weight` carries no valid token
 - **THEN** the system SHALL return HTTP 401
+
+#### Scenario: Write always targets the caller, ignoring `?user=`
+- **WHEN** an authenticated user calls `POST /api/data/weight_goal?user=<family-member>` with
+  `{"value": 70.0}`
+- **THEN** the system SHALL create the record for the authenticated caller, not the named family
+  member, exactly as if `?user=` had been omitted
 
 ## MODIFIED Requirements
 

@@ -9,6 +9,10 @@
 - [ ] 1.4 Confirm `WeightGoal` rows created via the new write path (task 2) don't require/synthesize
       a `source_payload_id`, matching the existing food-logging exception in `data-model`
 - [ ] 1.5 Add `"weight_goal"` to `typeTimeCol` in `backend/pkg/mcpserver/tools.go`
+- [ ] 1.6 Migrate `Weight.SourcePayloadID` and `Height.SourcePayloadID` from `uuid.UUID
+      gorm:"not null"` to `*uuid.UUID` (nullable) in `backend/pkg/database/models.go`, so manual
+      writes to these two pre-existing types can omit the column without a synthesized value — see
+      design.md's Migration Plan
 
 ## 2. Backend: allowlisted write path
 
@@ -23,6 +27,9 @@
       silently duplicating — this is how "latest goal wins" is achieved with no new upsert code
 - [ ] 2.4 Confirm every type outside the allowlist still returns 403 on POST (regression coverage
       for e.g. `steps`, `blood_pressure`)
+- [ ] 2.5 Confirm the handler resolves the target user as `claims.UserID` directly and does not
+      call `resolveUser`/honor `?user=` — a family member cannot write into another member's
+      account via this endpoint, matching `DeleteRecordHandler`'s convention
 
 ## 3. Frontend: `weight_goal` registry + i18n
 
@@ -50,10 +57,13 @@
 - [ ] 5.1 Add a pure function in `dataTypeMeta.ts` converting the 3 WHO BMI band edges (18.5, 25,
       30) to kg given a height in meters (`kg = bmi * heightMeters^2`)
 - [ ] 5.2 Render the 4 resulting bands as `ReferenceArea`s on the `weight` chart, clipped to the
-      existing Y-domain (bands never expand it — see design.md)
-- [ ] 5.3 Add a BMI readout (1 decimal + category name) computed from latest raw `weight` +
-      latest `height`
-- [ ] 5.4 Gate both 5.2 and 5.3 behind one shared "does a `height` record exist" condition
+      existing Y-domain (bands never expand it — see design.md), rendered at every zoom level
+- [ ] 5.3 Add a pure `classifyBmi(bmi): category` function in `dataTypeMeta.ts` (lower-inclusive
+      boundaries: `[18.5,25)` Normal, `[25,30)` Overweight, `[30,∞)` Obese, else Underweight — see
+      design.md) and use it for the BMI readout (1 decimal + category name) computed from latest
+      raw `weight` + latest `height`
+- [ ] 5.4 Gate both 5.2 and 5.3 behind one shared "does a `height` record exist" condition, exposed
+      as its own testable helper rather than inlined in the chart component
 - [ ] 5.5 `DataTypeClient.tsx` fetches the latest `height` record when `dataType === 'weight'`
       (new GET alongside the existing weight fetch)
 
@@ -72,7 +82,9 @@
 - [ ] 7.3 Add pure "not enough data" gating: <5 weight records or <14-day span → no line, "Not
       enough data to project yet"
 - [ ] 7.4 Add pure crossing/horizon logic: given slope+intercept+goal, compute the crossing date;
-      flat/diverging/beyond-12-months → no line, "Not on track at your current trend"
+      flat/diverging/beyond the 365-day horizon (fixed day count from the regression window's most
+      recent day, not calendar-month arithmetic — see design.md) → no line, "Not on track at your
+      current trend"
 - [ ] 7.5 Render the dashed projection `Line` only at Month/Year zoom; render the ETA text (or the
       "not enough data" / "not on track" message) at every zoom level
 - [ ] 7.6 Confirm the projection line/text never render at all when no `weight_goal` is set
@@ -82,13 +94,19 @@
 - [ ] 8.1 Add Vitest to `frontend/package.json` (dev dependency + `test` script), minimal config
 - [ ] 8.2 Unit tests for `emaSeries`, `computeYDomain`, `rangeForZoom` (first coverage ever, per
       the `weight-chart-scale-and-trend` change's deferred follow-up)
-- [ ] 8.3 Unit tests for the BMI band-edge conversion (task 5.1)
+- [ ] 8.3 Unit tests for the BMI band-edge conversion (task 5.1) and the `classifyBmi` category
+      lookup (task 5.3), including the exact-boundary values BMI 18.5, 25, and 30 (each SHALL
+      classify into the higher category per design.md's lower-inclusive convention)
 - [ ] 8.4 Unit tests for the regression + 30-day-window selection (task 7.1, 7.2)
 - [ ] 8.5 Unit tests for the "not enough data" gate (task 7.3): exactly 4 records, exactly 5
       records spanning <14 days, exactly 5 spanning >=14 days
 - [ ] 8.6 Unit tests for crossing/horizon logic (task 7.4): flat trend, wrong-direction trend,
-      crossing just inside the 12-month horizon, crossing exactly at the horizon boundary,
-      crossing just beyond it
+      crossing just inside the 365-day horizon, crossing at exactly day 365 (within horizon),
+      crossing at day 366 (beyond horizon)
+- [ ] 8.7 Unit tests for the shared height-exists gate (task 5.4): bands and readout both
+      suppressed with zero `height` records, both present with one — independent of the E2E
+      coverage in 9.2, per IDEA_FORGE_PLAN.md's testing section calling this out as a pure-function
+      case impractical to seed reliably through a browser
 
 ## 9. E2E
 

@@ -44,6 +44,12 @@ POST /api/data/{type}          type ∈ {weight, height, weight_goal}
   each of these three tables makes a same-instant write collide naturally, and every write from
   this endpoint uses `time = now()` when the caller omits it, so "latest goal wins" falls out of
   ordinary insert-then-query-latest behavior — no new upsert logic needed.
+- Target user is always `claims.UserID` — this endpoint does **not** call `resolveUser` (the
+  helper `GET /api/data/{type}` uses to honor a family-sharing `?user=<member>` override) and does
+  not accept `?user=` at all. This matches `DeleteRecordHandler`'s existing convention: mutations
+  on this path family are always scoped to the caller, even though the sibling `GET` is
+  family-sharing-aware. Without this, a family member could write a manual weight/height/goal
+  record into another member's account by adding `?user=` to the request.
 - Rejected: a fully generic POST across all registered types (multi-column types have no single
   `value` field to hang this contract on) and a goal-only endpoint (`POST /api/goal`) — the latter
   would leave the height dead end for BMI unfixed, which is the actual reason this write path
@@ -51,16 +57,23 @@ POST /api/data/{type}          type ∈ {weight, height, weight_goal}
 
 ### BMI bands and readout: computed client-side from latest raw `height` + `weight`
 
-Four WHO categories, band edges in BMI: `18.5`, `25`, `30` (open below 18.5 and above 30). Convert
-each edge to kg via the user's latest `height` record: `kg = bmi * heightMeters^2`. Rendered as
-`ReferenceArea`s that are clipped to whatever the chart's Y-domain already is — they must never be
-the thing that *sets* the domain, since 4 bands spanning roughly BMI 15-35 is, in kg, far wider
-than any real weight chart's data range; letting them expand the domain would flatten the actual
-data to a near-flat line.
+Four WHO categories, band edges in BMI: `18.5`, `25`, `30`. Boundaries are lower-inclusive,
+matching WHO convention: Underweight `(-∞, 18.5)`, Normal `[18.5, 25)`, Overweight `[25, 30)`,
+Obese `[30, ∞)` — a BMI of exactly 18.5, 25, or 30 belongs to the higher category. This applies
+identically to the band `ReferenceArea` edges and to the BMI readout's category-name lookup, so
+the two can never disagree at a boundary value. Convert each edge to kg via the user's latest
+`height` record: `kg = bmi * heightMeters^2`. Rendered as `ReferenceArea`s that are clipped to
+whatever the chart's Y-domain already is — they must never be the thing that *sets* the domain,
+since 4 bands spanning roughly BMI 15-35 is, in kg, far wider than any real weight chart's data
+range; letting them expand the domain would flatten the actual data to a near-flat line. The bands
+render at every zoom level (Day/Week/Month/Year) — unlike the dashed trend projection, they have
+no zoom restriction.
 
 The BMI readout (value to 1 decimal + category name) uses the latest **raw** `weight` record, not
 the EMA-smoothed value, so the number next to "your BMI" matches the same raw weight already shown
-elsewhere on the page rather than a smoothed one that could read differently.
+elsewhere on the page rather than a smoothed one that could read differently. The category-name
+lookup (BMI value → one of the four category names above) SHALL be its own pure function, exported
+alongside the band-edge conversion, so both are unit-testable independent of the chart component.
 
 Both the bands and the readout are gated on a single condition — "does a `height` record exist" —
 so there's no way for one to render while the other silently doesn't.
@@ -87,6 +100,11 @@ slope, intercept = ordinary least-squares fit of (day_offset, ema_value) over th
   your current trend." This is a deliberate refusal to extrapolate: an unconditional projection
   either produces a 6-year line (useless) or, for a wrong-direction trend, simply never crosses
   the goal at all, which needs to say so rather than draw nothing with no explanation.
+- **Horizon is a fixed day count, not calendar-month arithmetic**: "12 months" = 365 days from the
+  most recent day in the 30-day EMA window (the regression's last `day_offset`). A crossing at
+  `day_offset <= 365` from that point is within the horizon; beyond it is not. Pinning this as a
+  day count (rather than leaving it to calendar-month arithmetic, which varies 28-31 days per
+  month) gives the boundary-exactly-at-the-horizon unit test a single unambiguous expected value.
 - **Zoom-independence is load-bearing**: tying the regression window to the currently-visible zoom
   range would make "when will I hit my goal?" answer differently depending on a view control,
   which isn't a real change in the underlying trend.
@@ -106,9 +124,18 @@ slope, intercept = ordinary least-squares fit of (day_offset, ema_value) over th
 
 ## Migration Plan
 
-Additive only: one new table (`weight_goal`), one new route. No existing table, route, or response
-shape changes. No backfill needed — an empty `weight_goal` table means "no goal set," which the
-frontend already has to handle as its default state.
+Mostly additive: one new table (`weight_goal`), one new route. No existing route or response shape
+changes. No backfill needed — an empty `weight_goal` table means "no goal set," which the frontend
+already has to handle as its default state.
+
+One exception is not purely additive: the pre-existing `weights` and `heights` tables have a
+`NOT NULL` `source_payload_id` column (every row today is ingested, never manually written). To
+honor the "manual writes SHALL NOT require or synthesize a `source_payload_id`" rule for these two
+types, that column becomes nullable (`*uuid.UUID` in Go) on both existing tables. This is a
+column-relaxation migration, not a purely additive one — no existing row is affected (they all
+already have a non-null value) and no data loss occurs, but it is a schema change on tables that
+predate this change, so it needs its own migration step rather than falling out of `AutoMigrate`
+adding a new table.
 
 ## Open Questions
 
