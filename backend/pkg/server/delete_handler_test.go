@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -22,6 +23,11 @@ type mockStorage struct {
 
 func (m *mockStorage) DeleteRecord(tableName string, id uuid.UUID, userID uuid.UUID) error {
 	return m.deleteFunc(tableName, id, userID)
+}
+func (m *mockStorage) InsertRecord(
+	_, _, _ string, _, _ uuid.UUID, _ time.Time, _ float64,
+) (map[string]any, error) {
+	return nil, nil
 }
 func (m *mockStorage) FindUserByName(_ string) (*kinmodels.User, error)              { return nil, nil }
 func (m *mockStorage) FindUserByID(_ uuid.UUID) (*kinmodels.User, error)             { return nil, nil }

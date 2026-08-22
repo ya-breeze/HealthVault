@@ -28,8 +28,8 @@ as two commits after implementation has been reviewed.
 - [x] Mark completed
 
 ### Task 2: Backend: allowlisted write path
-- [ ] Implement section 2 ("Backend: allowlisted write path") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
-- [ ] Mark completed
+- [x] Implement section 2 ("Backend: allowlisted write path") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
+- [x] Mark completed
 
 ### Task 3: Frontend: `weight_goal` registry + i18n
 - [ ] Implement section 3 ("Frontend: `weight_goal` registry + i18n") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go

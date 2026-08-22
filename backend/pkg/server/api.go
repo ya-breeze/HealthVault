@@ -71,6 +71,82 @@ var typeRegistry = map[string]typeInfo{
 // value or a bucketed request against food_meal, which never aggregates.
 var errInvalidBucket = errors.New("bucket must be 'day' or 'month'")
 
+// writeAllowlist is the set of types POST /api/data/{type} accepts manual
+// writes for. Deliberately narrow to single-value-column point types with a
+// plausible manual-entry use case: blood_pressure/nutrition are multi-column
+// and have no single `value` field to hang this contract on, and shipping a
+// fully generic POST across every registered type with an unexplained
+// exception for those two is worse than an explicit allowlist (see
+// design.md).
+var writeAllowlist = map[string]bool{
+	"weight":      true,
+	"height":      true,
+	"weight_goal": true,
+}
+
+// createRecordRequest is the POST /api/data/{type} request body. Value is a
+// pointer so a missing key is distinguishable from a present-but-zero value.
+type createRecordRequest struct {
+	Value *float64   `json:"value"`
+	Time  *time.Time `json:"time"`
+}
+
+// CreateRecordHandler creates one manually-authored record for an
+// allowlisted type, scoped to the caller (claims.UserID) — it does not
+// honor ?user=, unlike the sibling GET, matching DeleteRecordHandler's
+// convention that mutations on this path family are always caller-scoped.
+// Exported for use in tests.
+func CreateRecordHandler(storage database.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		typeName := mux.Vars(r)["type"]
+		info, ok := typeRegistry[typeName]
+		if !ok {
+			http.Error(w, "unknown type", http.StatusNotFound)
+			return
+		}
+		if !writeAllowlist[typeName] {
+			http.Error(w, "type is not writable", http.StatusForbidden)
+			return
+		}
+
+		claims := ClaimsFromCtx(r)
+		if claims == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		familyID := FamilyIDFromCtx(r)
+
+		var req createRecordRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+		if req.Value == nil || *req.Value <= 0 {
+			http.Error(w, "value must be a positive number", http.StatusBadRequest)
+			return
+		}
+
+		t := time.Now().UTC()
+		if req.Time != nil {
+			t = *req.Time
+		}
+
+		record, err := storage.InsertRecord(info.table, info.timeCol, info.valueCol, familyID, claims.UserID, t, *req.Value)
+		if err != nil {
+			if errors.Is(err, database.ErrConflict) {
+				http.Error(w, "record already exists for this time", http.StatusConflict)
+				return
+			}
+			http.Error(w, "insert error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(record) //nolint:errcheck
+	}
+}
+
 // queryBucketed dispatches a bucketed aggregation query to the right storage
 // method: the two multi-value-column special cases, or the generic
 // single-valueCol path for every other type.

@@ -16,23 +16,23 @@
 
 ## 2. Backend: allowlisted write path
 
-- [ ] 2.1 Add `POST /api/data/{type}` route in `backend/pkg/server/server.go` (registered before
+- [x] 2.1 Add `POST /api/data/{type}` route in `backend/pkg/server/server.go` (registered before
       the existing `GET`/`DELETE` on the same path, same auth middleware)
-- [ ] 2.2 Implement the handler per design.md's contract: two-step type check — unregistered type
+- [x] 2.2 Implement the handler per design.md's contract: two-step type check — unregistered type
       (not in `typeRegistry`) → 404, matching `GET`/`DELETE`'s existing unknown-type behavior;
       registered but not in the write allowlist (`weight`, `height`, `weight_goal` only) → 403 —
       then parse `{value, time?}` body, default `time` to now, validate `value` is numeric,
       present, and strictly positive (else 400), insert, return 201 with the created row in the
       same shape a GET returns
-- [ ] 2.3 Handle a write whose `(user_id, time)` collides with an existing row for that type (only
+- [x] 2.3 Handle a write whose `(user_id, time)` collides with an existing row for that type (only
       reachable via an explicit duplicate `time`, since an omitted `time` always defaults to now):
       catch the existing unique `(user_id, time)` constraint violation and return 409, rather than
       letting a raw DB error surface as a 500. The common case (`time = now()` on every write) never
       hits this path — "latest goal wins" already falls out of ordinary insert-then-query-latest
       behavior without it.
-- [ ] 2.4 Confirm every type outside the allowlist still returns 403 on POST (regression coverage
+- [x] 2.4 Confirm every type outside the allowlist still returns 403 on POST (regression coverage
       for e.g. `steps`, `blood_pressure`)
-- [ ] 2.5 Confirm the handler resolves the target user as `claims.UserID` directly and does not
+- [x] 2.5 Confirm the handler resolves the target user as `claims.UserID` directly and does not
       call `resolveUser`/honor `?user=` — a family member cannot write into another member's
       account via this endpoint, matching `DeleteRecordHandler`'s convention
 

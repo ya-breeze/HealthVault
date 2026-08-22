@@ -1,9 +1,12 @@
 package database
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/mattn/go-sqlite3"
 	kinmodels "github.com/ya-breeze/kin-core/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -89,6 +92,44 @@ func (s *storageImpl) DeleteRecord(tableName string, id uuid.UUID, userID uuid.U
 		}
 	}
 	return nil
+}
+
+// InsertRecord inserts a single manually-authored point record via a raw
+// parameterized INSERT (there's no Go struct shared across weight/height/
+// weight_goal to hand GORM's struct-based Create, and GORM's map-based
+// Create needs a registered schema to build its RETURNING clause, which a
+// bare Table() call doesn't have). tableName/timeCol/valueCol are always
+// sourced from typeRegistry, never user input, so building the query string
+// with them is safe — same trust boundary DeleteRecord and QueryRecords
+// already rely on. The row is re-read by ID afterward so the response
+// matches QueryRecords' map[string]any shape exactly, including
+// DB-computed defaults.
+func (s *storageImpl) InsertRecord(
+	tableName, timeCol, valueCol string, familyID, userID uuid.UUID, t time.Time, value float64,
+) (map[string]any, error) {
+	id := uuid.New()
+	now := time.Now().UTC()
+	query := fmt.Sprintf(
+		"INSERT INTO %s (id, family_id, user_id, created_at, updated_at, %s, %s) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		tableName, timeCol, valueCol,
+	)
+	if err := s.db.Exec(query, id, familyID, userID, now, now, t, value).Error; err != nil {
+		var sqliteErr sqlite3.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return nil, ErrConflict
+		}
+		return nil, err
+	}
+	// Take, not First: First appends "ORDER BY <primary key>" by default,
+	// which needs a registered schema to resolve the primary key column —
+	// unavailable on a bare Table() call with no Model. Take has no default
+	// order, which is fine since Where("id = ?") already narrows to at most
+	// one row.
+	var result map[string]any
+	if err := s.db.Table(tableName).Where("id = ?", id).Take(&result).Error; err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *storageImpl) QueryRecords(tableName string, timeCol string, userID uuid.UUID, tr TimeRange) ([]map[string]any, error) {
