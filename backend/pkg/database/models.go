@@ -94,18 +94,29 @@ type HeartRateVariability struct {
 
 type Weight struct {
 	models.TenantModel
-	UserID          uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_weight_user_time"`
-	SourcePayloadID uuid.UUID `gorm:"type:uuid;not null"`
-	Time            time.Time `gorm:"not null;uniqueIndex:idx_weight_user_time"`
-	Kilograms       float64   `gorm:"not null"`
+	UserID          uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex:idx_weight_user_time"`
+	SourcePayloadID *uuid.UUID `gorm:"type:uuid"`
+	Time            time.Time  `gorm:"not null;uniqueIndex:idx_weight_user_time"`
+	Kilograms       float64    `gorm:"not null"`
 }
 
 type Height struct {
 	models.TenantModel
-	UserID          uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_height_user_time"`
-	SourcePayloadID uuid.UUID `gorm:"type:uuid;not null"`
-	Time            time.Time `gorm:"not null;uniqueIndex:idx_height_user_time"`
-	Meters          float64   `gorm:"not null"`
+	UserID          uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex:idx_height_user_time"`
+	SourcePayloadID *uuid.UUID `gorm:"type:uuid"`
+	Time            time.Time  `gorm:"not null;uniqueIndex:idx_height_user_time"`
+	Meters          float64    `gorm:"not null"`
+}
+
+// WeightGoal is a manually-written point-in-time type: it is never ingested
+// from a webhook or import, so unlike Weight/Height it has no
+// SourcePayloadID field at all. "Latest record wins" for the user's current
+// goal falls out of ordinary latest-by-time queries.
+type WeightGoal struct {
+	models.TenantModel
+	UserID    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_weight_goal_user_time"`
+	Time      time.Time `gorm:"not null;uniqueIndex:idx_weight_goal_user_time"`
+	Kilograms float64   `gorm:"not null"`
 }
 
 type BloodGlucose struct {

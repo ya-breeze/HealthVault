@@ -22,6 +22,7 @@ var typeTimeCol = map[string][2]string{
 	"total_calories":         {"total_calories", "start_time"},
 	"weight":                 {"weights", "time"},
 	"height":                 {"heights", "time"},
+	"weight_goal":            {"weight_goals", "time"},
 	"blood_pressure":         {"blood_pressures", "time"},
 	"blood_glucose":          {"blood_glucoses", "time"},
 	"oxygen_saturation":      {"oxygen_saturations", "time"},
@@ -106,8 +107,8 @@ func registerTools(server *mcp.Server, storage database.Storage) {
 		Name: "query_data",
 		Description: "Query health records for a user and data type. " +
 			"type must be one of: steps, heart_rate, heart_rate_variability, sleep, distance, " +
-			"active_calories, total_calories, weight, height, blood_pressure, blood_glucose, " +
-			"oxygen_saturation, body_temperature, skin_temperature, respiratory_rate, " +
+			"active_calories, total_calories, weight, height, weight_goal, blood_pressure, " +
+			"blood_glucose, oxygen_saturation, body_temperature, skin_temperature, respiratory_rate, " +
 			"resting_heart_rate, exercise, hydration, nutrition, basal_metabolic_rate, " +
 			"body_fat, lean_body_mass, vo2_max, bone_mass, food_meal. " +
 			"food_meal returns metadata and aggregate macros only (no photo, no raw response); " +

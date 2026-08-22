@@ -329,6 +329,84 @@ test.describe('API data endpoints', () => {
   });
 });
 
+test.describe('Manual record writes: weight_goal, height, write allowlist', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  async function deleteAllRecords(page: Page, type: string) {
+    const records = await page.evaluate(async (t) => {
+      const r = await fetch(`/api/data/${t}?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`, {
+        credentials: 'include',
+      });
+      return r.json();
+    }, type);
+    for (const rec of records as Array<{ id: string }>) {
+      await page.evaluate(async ({ t, id }) => {
+        await fetch(`/api/data/${t}/${id}`, { method: 'DELETE', credentials: 'include' });
+      }, { t: type, id: rec.id });
+    }
+  }
+
+  async function postRecord(page: Page, type: string, value: number) {
+    await page.evaluate(async ({ t, value }) => {
+      await fetch(`/api/data/${t}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      });
+    }, { t: type, value });
+  }
+
+  test('creating a weight_goal record via the Add-record form appears on /data/weight_goal and as a goal line on the weight chart', async ({ page }) => {
+    // Tests are re-run against a persistent WIP stack, so clear out any goal
+    // left by a prior run rather than assuming a clean-slate account.
+    await deleteAllRecords(page, 'weight_goal');
+
+    await page.goto('/data/weight_goal/');
+    await page.getByLabel('Value').fill('72.5');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(page.getByRole('cell', { name: '72.5' })).toBeVisible();
+
+    await page.goto('/data/weight/');
+    await expect(page.getByText('Goal', { exact: true })).toBeVisible();
+  });
+
+  test('creating a height record closes the BMI dead end: bands + readout appear on the weight chart after, absent before', async ({ page }) => {
+    await deleteAllRecords(page, 'height');
+    // The BMI readout reads the latest *raw* weight record already visible
+    // in the current (Week) zoom window, independent of the height gate
+    // under test here — seed a fresh one so recency of seeded data can't
+    // make this test flaky.
+    await postRecord(page, 'weight', 80);
+
+    await page.goto('/data/weight/');
+    await expect(page.getByText('BMI', { exact: true })).not.toBeVisible();
+
+    await page.goto('/data/height/');
+    await page.getByLabel('Value').fill('1.78');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(page.getByRole('cell', { name: '1.78' })).toBeVisible();
+
+    await page.goto('/data/weight/');
+    await expect(page.getByText('BMI', { exact: true })).toBeVisible();
+  });
+
+  test('POST to a non-allowlisted type (steps) is rejected with 403', async ({ page }) => {
+    const status = await page.evaluate(async () => {
+      const r = await fetch('/api/data/steps', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 1000 }),
+      });
+      return r.status;
+    });
+    expect(status).toBe(403);
+  });
+});
+
 test.describe('Webhook endpoint', () => {
   test('POST /webhook/alice with valid payload returns 204', async ({ request }) => {
     const resp = await request.post(`${BASE_URL}/webhook/${USER}`, {

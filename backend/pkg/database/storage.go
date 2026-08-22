@@ -12,6 +12,12 @@ import (
 // ErrNotFound is returned by DeleteRecord when no row matches (wrong user or non-existent ID).
 var ErrNotFound = errors.New("record not found")
 
+// ErrConflict is returned by InsertRecord when a row already exists at the
+// requested (user_id, timeCol) instant, per the table's unique index. Only
+// reachable via an explicit, colliding time — an omitted time always
+// defaults to now.
+var ErrConflict = errors.New("record already exists for this time")
+
 type TimeRange struct {
 	From time.Time
 	To   time.Time
@@ -59,6 +65,14 @@ type Storage interface {
 	// DeleteRecord hard-deletes a single record by ID, scoped to userID.
 	// Returns ErrNotFound if no matching row exists or the row belongs to another user.
 	DeleteRecord(tableName string, id uuid.UUID, userID uuid.UUID) error
+	// InsertRecord inserts one manually-authored point record (used by the
+	// allowlisted POST /api/data/{type} write path) and returns it in the
+	// same map[string]any shape QueryRecords returns. Returns ErrConflict
+	// if a row already exists at (userID, t) under the table's unique
+	// (user_id, timeCol) index.
+	InsertRecord(
+		tableName, timeCol, valueCol string, familyID, userID uuid.UUID, t time.Time, value float64,
+	) (map[string]any, error)
 	// Summary data
 	SummarySteps(userID uuid.UUID, tr TimeRange) (int, error)
 	SummaryAvgHeartRate(userID uuid.UUID, tr TimeRange) (float64, error)

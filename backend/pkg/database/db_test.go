@@ -51,9 +51,10 @@ func TestDeleteRecord_OwnRecord(t *testing.T) {
 	s := newTestStorage(t)
 	userID, familyID := seedUserAndFamily(t, s)
 
+	payloadID := uuid.New()
 	rec := database.Weight{
 		UserID:          userID,
-		SourcePayloadID: uuid.New(),
+		SourcePayloadID: &payloadID,
 		Time:            time.Now(),
 		Kilograms:       70.0,
 	}
@@ -80,9 +81,10 @@ func TestDeleteRecord_OtherUsersRecord(t *testing.T) {
 	userID, familyID := seedUserAndFamily(t, s)
 	otherUserID := uuid.New()
 
+	payloadID := uuid.New()
 	rec := database.Weight{
 		UserID:          userID,
-		SourcePayloadID: uuid.New(),
+		SourcePayloadID: &payloadID,
 		Time:            time.Now(),
 		Kilograms:       70.0,
 	}

@@ -92,6 +92,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	// Note: /data/summary must be registered before /data/{type} to avoid
 	// gorilla/mux routing "summary" as the {type} variable.
 	api.HandleFunc("/data/summary", summaryHandler(storage)).Methods("GET")
+	api.HandleFunc("/data/{type}", CreateRecordHandler(storage)).Methods("POST")
 	api.HandleFunc("/data/{type}", DataHandler(storage)).Methods("GET")
 	api.HandleFunc("/data/{type}/{id}", DeleteRecordHandler(storage, fh.photos)).Methods("DELETE")
 	api.HandleFunc("/import/health-connect", importHealthConnectHandler(storage)).Methods("POST")
