@@ -93,3 +93,93 @@ every type. The main implementation gaps are (1) secondary types are
 currently never fetched, so presence-checking them means adding fetches, and
 (2) the "no data" window/scope and its interaction with Phase 1's
 user-controlled visibility need explicit decisions before implementation.
+
+## Findings write-up
+
+### What was built
+
+A throwaway prototype (commit `2455e9d`, `frontend/app/page.tsx`) implements
+the chosen approach end-to-end on the dashboard:
+
+- **Vitals grid** — cards are filtered to `PRIMARY_METRICS` where
+  `extractVital()` returns non-null (reusing the fetch already in place, no
+  new API calls). A user-hidden card (Phase 1) stays hidden regardless of
+  data; a visible-but-dataless card is now omitted from the read-only view.
+  In Edit mode, dataless cards still render (dimmed via the existing
+  `editing` path) so they stay discoverable and re-orderable, mirroring how
+  Phase 1 already shows user-hidden cards in Edit mode.
+- **More Data pills** — a new presence-only fetch (`Promise.all` over
+  `SECONDARY_TYPES`, unbucketed `api.data()`, 7-day window) drives filtering
+  the pill list down to types with at least one row. Unlike the vitals grid,
+  this section has no Customize/Edit escape hatch, so a dataless type is
+  dropped outright rather than shown dimmed — there is nothing actionable for
+  the user to do about it here. The whole section (heading + pills) disappears
+  if nothing has data, rather than showing an empty pill row.
+- **Fail-open loading** — both filters default to "show everything" until
+  their respective fetch resolves (`vitalsLoaded` / `secondaryLoaded`), so
+  nothing flashes hidden-then-visible on first paint.
+- **New empty state** — a distinct `dashboard.noVitalsData` message
+  ("no data yet" for a grid the user did *not* hide) separate from the
+  existing `allCardsHidden` message ("you hid everything, use Customize"),
+  since Customize cannot fix a lack of recorded data.
+
+### Findings
+
+- The core assumption behind the chosen approach holds: `[]` from
+  `/api/data/{type}` is an unambiguous, universal "no data" signal, never
+  conflated with a legitimate zero-valued row.
+- Client-side filtering composes cleanly with the existing Phase 1
+  hide/show feature — the two are orthogonal (explicit user preference vs.
+  data presence) and can be applied as sequential filters without conflict.
+- Secondary-type presence requires new fetches (18 extra calls today); the
+  prototype batches them in one `Promise.all` reusing the same 7-day window
+  as the vitals grid, so no additional network round-trip depth is added
+  versus the primary-metrics fetch.
+- `food_meal`'s unbucketed endpoint works fine for a presence-only check
+  (row count > 0), sidestepping its `bucket=day` incompatibility since
+  presence checking never needs aggregation.
+
+### Limitations
+
+- **Window scope is arbitrary.** Presence is evaluated over the dashboard's
+  7-day sparkline window, so a type logged only 8+ days ago reads as "no
+  data" and stays hidden even though the user has historical data for it.
+  The prototype does not implement an "ever any data" alternative (which
+  would need a different, unbounded query, especially costly for the 18
+  secondary types).
+- **Extra network cost for secondary types is unconditional.** All 18
+  `SECONDARY_TYPES` are now fetched on every dashboard load purely to decide
+  visibility, even though most users will only ever populate a handful.
+  There's no caching or server-side precomputation of "which types have any
+  data," which would avoid this per-load cost.
+- **Spec is not updated.** `openspec/specs/dashboard-ui/spec.md` (lines
+  32-34) still codifies the old "show placeholder, don't hide" behavior for
+  missing vitals data; this prototype contradicts it and was built without
+  an approved OpenSpec change, per this investigation's scope (research
+  only, not implementation).
+- **No tests were added** for the new filtering logic, empty states, or the
+  Edit-mode dimmed-but-dataless card behavior — the prototype is illustrative
+  only.
+- **Not evaluated:** interaction with slower/failing networks beyond the
+  basic `.catch(() => [])` fallback (treated as "no data" on error, which is
+  fail-closed for that one type but fail-open for the whole section while
+  loading — the two failure modes aren't unified).
+
+### Suggested next steps
+
+1. Decide the window-scope question explicitly (7-day sparkline window vs.
+   "ever any data") before writing a real OpenSpec proposal — this is the
+   single biggest behavioral judgment call left open.
+2. If secondary-type presence checking proceeds, consider a lighter-weight
+   backend signal (e.g. a single `/api/data/presence` endpoint returning
+   which types have any data) instead of 18 client-side fetches, to avoid
+   the unconditional per-load cost noted above.
+3. Write the OpenSpec change updating `dashboard-ui/spec.md`'s "Missing data
+   for a metric" requirement, plus a new requirement for secondary-type
+   filtering and the Edit-mode dataless-card behavior, and get it approved
+   before implementing for real.
+4. Add test coverage for: empty-vitals-with-data-elsewhere state, the new
+   `noVitalsData` vs. `allCardsHidden` message split, Edit-mode dimmed
+   dataless cards, and More Data section fully collapsing.
+5. Discard or rework the throwaway prototype commit — it was built to
+   validate feasibility, not as the shipped implementation.
