@@ -127,25 +127,25 @@
 
 ## 8. Testing: Vitest setup + unit coverage
 
-- [ ] 8.1 Add Vitest to `frontend/package.json` (dev dependency + `test` script), minimal config
-- [ ] 8.2 Unit tests for `emaSeries`, `computeYDomain`, `rangeForZoom` (first coverage ever, per
+- [x] 8.1 Add Vitest to `frontend/package.json` (dev dependency + `test` script), minimal config
+- [x] 8.2 Unit tests for `emaSeries`, `computeYDomain`, `rangeForZoom` (first coverage ever, per
       the `weight-chart-scale-and-trend` change's deferred follow-up)
-- [ ] 8.3 Unit tests for the BMI band-edge conversion (task 5.1) and the `classifyBmi` category
+- [x] 8.3 Unit tests for the BMI band-edge conversion (task 5.1) and the `classifyBmi` category
       lookup (task 5.3), including the exact-boundary values BMI 18.5, 25, and 30 (each SHALL
       classify into the higher category per design.md's lower-inclusive convention)
-- [ ] 8.4 Unit tests for the regression + 30-day-window selection (task 7.1, 7.2)
-- [ ] 8.5 Unit tests for the "not enough data" gate (task 7.3): exactly 4 records, exactly 5
+- [x] 8.4 Unit tests for the regression + 30-day-window selection (task 7.1, 7.2)
+- [x] 8.5 Unit tests for the "not enough data" gate (task 7.3): exactly 4 records, exactly 5
       records spanning <14 days, exactly 5 spanning >=14 days, and a user meeting both lifetime
       thresholds but with fewer than 2 EMA points inside the last 30 calendar days (old data, no
       recent activity)
-- [ ] 8.6 Unit tests for crossing/horizon logic (task 7.4): flat trend, wrong-direction trend,
+- [x] 8.6 Unit tests for crossing/horizon logic (task 7.4): flat trend, wrong-direction trend,
       crossing just inside the 365-day horizon, crossing at exactly day 365 (within horizon),
       crossing at day 366 (beyond horizon)
-- [ ] 8.7 Unit tests for the shared height-exists gate (task 5.4): bands and readout both
+- [x] 8.7 Unit tests for the shared height-exists gate (task 5.4): bands and readout both
       suppressed with zero `height` records, both present with one — independent of the E2E
       coverage in 9.2, per IDEA_FORGE_PLAN.md's testing section calling this out as a pure-function
       case impractical to seed reliably through a browser
-- [ ] 8.8 Unit tests for the "already at goal" check (task 7.4a): flat trend with latest EMA at the
+- [x] 8.8 Unit tests for the "already at goal" check (task 7.4a): flat trend with latest EMA at the
       goal (displays "You've reached your goal weight", not "Not on track"), flat trend with latest
       EMA still far from the goal (displays "Not on track" as before), latest EMA already past
       the goal on the far side (still classified as reached, not "not on track"), and a case where

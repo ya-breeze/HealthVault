@@ -52,8 +52,8 @@ as two commits after implementation has been reviewed.
 - [x] Mark completed
 
 ### Task 8: Testing: Vitest setup + unit coverage
-- [ ] Implement section 8 ("Testing: Vitest setup + unit coverage") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
-- [ ] Mark completed
+- [x] Implement section 8 ("Testing: Vitest setup + unit coverage") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
+- [x] Mark completed
 
 ### Task 9: E2E
 - [ ] Implement section 9 ("E2E") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
