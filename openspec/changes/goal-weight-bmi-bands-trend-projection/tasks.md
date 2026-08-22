@@ -90,40 +90,40 @@
 
 ## 7. Frontend: trend projection
 
-- [ ] 7.0 `DataTypeClient.tsx` fetches a dedicated 30+-day daily-bucketed `weight` range for the
+- [x] 7.0 `DataTypeClient.tsx` fetches a dedicated 30+-day daily-bucketed `weight` range for the
       regression, independent of the active zoom's own bucket fetch — Day zoom fetches no bucketed
       data today, Week zoom's widened lookback only reaches 14 days, and Year zoom's bucket is
       monthly, so none of the three can feed a 30-daily-point EMA window on their own; only Month
       zoom's fetch happens to already cover it. Since the ETA text must render at every zoom level
       (7.5), this fetch cannot be conditional on which zoom is active.
-- [ ] 7.1 Add a pure least-squares regression function over `(day_offset, ema_value)` pairs
-- [ ] 7.2 Add a pure function selecting the last 30 calendar days of the existing EMA series,
+- [x] 7.1 Add a pure least-squares regression function over `(day_offset, ema_value)` pairs
+- [x] 7.2 Add a pure function selecting the last 30 calendar days of the existing EMA series,
       independent of the active zoom
-- [ ] 7.3 Add pure "not enough data" gating: <5 weight records total, or <14-day lifetime span, or
+- [x] 7.3 Add pure "not enough data" gating: <5 weight records total, or <14-day lifetime span, or
       fewer than 2 EMA points inside the 30-day regression window (task 7.2) itself → no line, "Not
       enough data to project yet" — the lifetime check and the window check are independent; either
       one failing is sufficient
-- [ ] 7.4 Add pure crossing/horizon logic: given slope+intercept+goal, compute the crossing date;
+- [x] 7.4 Add pure crossing/horizon logic: given slope+intercept+goal, compute the crossing date;
       flat/diverging/beyond the 365-day horizon (fixed day count from the regression window's most
       recent day, not calendar-month arithmetic — see design.md) → no line, "Not on track at your
       current trend"
-- [ ] 7.4a Add a pure "already at goal" check that runs before 7.4's direction check: direction =
+- [x] 7.4a Add a pure "already at goal" check that runs before 7.4's direction check: direction =
       `sign(goal - windowStartEma)`, where `windowStartEma`/`latestEma` are the oldest/newest EMA
       values in the 30-day regression window from 7.2 (NOT the user's lifetime-earliest raw weight —
       using lifetime history here would let an old, no-longer-relevant weight flip the direction for
       a user whose weight has since crossed to the other side of the goal); if the latest EMA has
       reached or passed the goal in that direction, use "You've reached your goal weight" instead of
       routing a flat/at-goal trend through 7.4's "Not on track" message — see design.md
-- [ ] 7.4b Extend `bucketBandData` with synthetic future-dated rows (populated only in a new
+- [x] 7.4b Extend `bucketBandData` with synthetic future-dated rows (populated only in a new
       `projection` field; `avg`/`range`/`trend` left undefined) spanning from the last real bucket
       to the computed crossing date, capped at the 365-day horizon — at the active zoom's bucket
       granularity (daily at Month, monthly at Year) — so the dashed line has X-axis positions to
       plot on the categorical axis. Confirm Month zoom's visible X-range is allowed to expand
       beyond its normal ~30-day window to fit the crossing point — see design.md
-- [ ] 7.5 Render the dashed projection `Line` only at Month/Year zoom, using the extended data from
+- [x] 7.5 Render the dashed projection `Line` only at Month/Year zoom, using the extended data from
       7.4b; render the ETA text (or the "not enough data" / "not on track" / "you've reached your
       goal" message) at every zoom level
-- [ ] 7.6 Confirm the projection line/text never render at all when no `weight_goal` is set
+- [x] 7.6 Confirm the projection line/text never render at all when no `weight_goal` is set
 
 ## 8. Testing: Vitest setup + unit coverage
 

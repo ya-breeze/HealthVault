@@ -9,7 +9,9 @@ import { api, DataType, WRITABLE_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import {
   TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue,
-  toDisplayUnit, bmiBandEdgesKg, classifyBmi, hasHeightRecord,
+  toDisplayUnit, bmiBandEdgesKg, classifyBmi, hasHeightRecord, toDayOffset, linearRegression,
+  last30DayEmaWindow, hasEnoughDataForProjection, computeProjection, projectionPoints,
+  ProjectionResult,
 } from '@/lib/dataTypeMeta';
 import Header from '@/components/Header';
 import AddRecordForm from '@/components/AddRecordForm';
@@ -40,6 +42,18 @@ function bucketLabel(bucketStart: unknown, zoom: Zoom): string {
 
 function mean(values: number[]): number {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+}
+
+// `projection` is only ever set on the last real bucket (the dashed line's
+// join point) and on synthetic future rows appended by the trend-projection
+// feature (task 7.4b) — `avg`/`range`/`trend` are deliberately left
+// undefined on synthetic rows so the existing series don't extend into them.
+interface BandRow {
+  label: string;
+  avg?: number;
+  range?: [number, number];
+  trend?: number;
+  projection?: number;
 }
 
 // weight/height/weight_goal all use timeCol "time" in the backend's
@@ -121,6 +135,18 @@ export default function DataTypeClient({ type }: Props) {
   // zoom-windowed fetch. Feeds the goal ReferenceLine (6.2) on the weight
   // page. Empty on every other type's page.
   const [goalRecords, setGoalRecords] = useState<Record<string, unknown>[]>([]);
+  // All-time raw weight records (task 7.3's lifetime-history gate: total
+  // record count + earliest-to-latest span) — fetched all-time like
+  // height/goal above, since the dedicated regression fetch below is capped
+  // to a fixed lookback and can't answer "how much history exists in total".
+  const [allTimeWeightRecords, setAllTimeWeightRecords] = useState<Record<string, unknown>[]>([]);
+  // Dedicated 30+-day daily-bucketed weight fetch for the trend regression
+  // (task 7.0) — independent of the active zoom's own bucket fetch: Day zoom
+  // fetches no bucketed data, Week's widened lookback only reaches 14 days,
+  // and Year's bucket is monthly, so none of the three can feed a 30-daily-
+  // point EMA window on their own. 60 days back gives the alpha=0.25 EMA
+  // room to converge before the last 30 calendar days it's actually judged on.
+  const [projectionBucketRows, setProjectionBucketRows] = useState<Record<string, unknown>[]>([]);
   const isWritable = WRITABLE_TYPES.includes(dataType);
   // "Set goal" shortcut (task 4.2): only meaningful on the weight page,
   // where it opens the same AddRecordForm pre-targeted at `weight_goal`
@@ -184,9 +210,19 @@ export default function DataTypeClient({ type }: Props) {
       api.data('weight_goal', ALL_TIME_FROM, to, userParam)
         .then(setGoalRecords)
         .catch(() => setGoalRecords([]));
+      api.data('weight', ALL_TIME_FROM, to, userParam)
+        .then(setAllTimeWeightRecords)
+        .catch(() => setAllTimeWeightRecords([]));
+      const projectionFrom = new Date(to);
+      projectionFrom.setDate(projectionFrom.getDate() - 60);
+      api.data('weight', projectionFrom.toISOString(), to, userParam, 'day')
+        .then(setProjectionBucketRows)
+        .catch(() => setProjectionBucketRows([]));
     } else {
       setHeightRecords([]);
       setGoalRecords([]);
+      setAllTimeWeightRecords([]);
+      setProjectionBucketRows([]);
     }
   }, [type, dataType, from, to, chartFrom, bucket, hasChart, userParam, router, refreshKey]);
 
@@ -254,7 +290,7 @@ export default function DataTypeClient({ type }: Props) {
   // stacked (transparent-bottom + visible-band) Area would instead anchor its
   // baseline at the stack's absolute value origin (0), which silently pulls
   // the Y-axis back toward zero regardless of the `domain` prop below.
-  const bucketBandData = visibleChartRows.map((r, i) => ({
+  const bucketBandData: BandRow[] = visibleChartRows.map((r, i) => ({
     label: bucketLabel(r.bucket_start, zoom),
     avg: num(r.avg),
     range: [num(r.min), num(r.max)] as [number, number],
@@ -389,6 +425,89 @@ export default function DataTypeClient({ type }: Props) {
   const goalLine = latestGoalKg !== undefined
     ? <ReferenceLine y={latestGoalKg} stroke="var(--accent)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: 'Goal', position: 'insideTopRight', fill: 'var(--accent)', fontSize: 11 }} />
     : null;
+
+  // Trend projection (task 7) — `undefined` (no line, no text) whenever no
+  // goal is set (task 7.6) or there isn't enough data (task 7.3); otherwise
+  // one of computeProjection's three outcomes, plus (only for 'on-track')
+  // the extra fields extendedBucketBandData/projectionMessage need to render
+  // the dashed line and ETA date. Computed independent of the active zoom
+  // (design.md's "Zoom-independence is load-bearing") from a dedicated
+  // fetch (projectionBucketRows, task 7.0), not whatever bucketed data the
+  // current zoom happens to already have loaded.
+  type Projection = ProjectionResult & { crossingDate?: Date; lastDayOffset?: number; slope?: number; intercept?: number };
+  const projection: Projection | undefined = useMemo(() => {
+    if (dataType !== 'weight' || latestGoalKg === undefined) return undefined;
+
+    const times = allTimeWeightRecords.map(r => new Date(String(r.time)).getTime());
+    const totalRecords = allTimeWeightRecords.length;
+    const lifetimeSpanDays = totalRecords > 1
+      ? (Math.max(...times) - Math.min(...times)) / (24 * 60 * 60 * 1000)
+      : 0;
+
+    const dates = projectionBucketRows.map(r => String(r.bucket_start));
+    const fullEma = emaSeries(projectionBucketRows.map(r => num(r.avg)), 0.25);
+    const window = last30DayEmaWindow(dates, fullEma);
+
+    if (!hasEnoughDataForProjection(totalRecords, lifetimeSpanDays, window.length)) {
+      return undefined;
+    }
+
+    const points = window.map(w => ({ x: toDayOffset(w.date), y: w.ema }));
+    const { slope, intercept } = linearRegression(points);
+    const windowStartEma = window[0].ema;
+    const latestEma = window[window.length - 1].ema;
+    const lastDayOffset = points[points.length - 1].x;
+
+    const result = computeProjection({ slope, intercept, goal: latestGoalKg, windowStartEma, latestEma, lastDayOffset });
+    if (result.status !== 'on-track' || result.crossingDayOffset === undefined) return result;
+
+    return {
+      ...result,
+      crossingDate: new Date(result.crossingDayOffset * 24 * 60 * 60 * 1000),
+      lastDayOffset,
+      slope,
+      intercept,
+    };
+  }, [dataType, latestGoalKg, allTimeWeightRecords, projectionBucketRows]);
+
+  const projectionMessage = !projection ? null : (
+    projection.status === 'reached' ? "You've reached your goal weight" :
+    projection.status === 'not-on-track' ? 'Not on track at your current trend' :
+    `On track to reach your goal around ${projection.crossingDate!.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+  );
+  const noDataMessage = dataType === 'weight' && latestGoalKg !== undefined && projection === undefined
+    ? 'Not enough data to project yet'
+    : null;
+
+  // Dashed projection line (task 7.5) renders only at Month/Year zoom; the
+  // ETA/status text above renders at every zoom via projectionMessage/
+  // noDataMessage regardless of zoom, so switching zoom never hides the
+  // answer to the question the feature exists to answer (design.md).
+  const showProjectionLine = dataType === 'weight' && (zoom === 'month' || zoom === 'year') && projection?.status === 'on-track';
+  const projectionGranularity: 'day' | 'month' = zoom === 'year' ? 'month' : 'day';
+
+  const extendedBucketBandData: BandRow[] = useMemo(() => {
+    if (!showProjectionLine || !projection || projection.status !== 'on-track'
+      || projection.crossingDayOffset === undefined || projection.lastDayOffset === undefined
+      || projection.slope === undefined || projection.intercept === undefined) {
+      return bucketBandData;
+    }
+    const pts = projectionPoints(
+      projection.intercept, projection.slope, projection.lastDayOffset, projection.crossingDayOffset, projectionGranularity
+    );
+    const syntheticRows: BandRow[] = pts.map(p => ({
+      label: bucketLabel(new Date(p.dayOffset * 24 * 60 * 60 * 1000).toISOString(), zoom),
+      projection: p.value,
+    }));
+    if (bucketBandData.length === 0) return syntheticRows;
+    // Seed the join point on the last real bucket so the dashed line
+    // connects continuously from the solid trend line rather than jumping.
+    const joined = bucketBandData.slice(0, -1).concat({
+      ...bucketBandData[bucketBandData.length - 1],
+      projection: bucketBandData[bucketBandData.length - 1].avg,
+    });
+    return [...joined, ...syntheticRows];
+  }, [showProjectionLine, projection, bucketBandData, projectionGranularity, zoom]);
 
   const handleConfirmDelete = async (id: string) => {
     setDeleting(true);
@@ -536,7 +655,7 @@ export default function DataTypeClient({ type }: Props) {
                 <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} />
               </BarChart>
             ) : (
-              <ComposedChart data={bucketBandData}>
+              <ComposedChart data={dataType === 'weight' ? extendedBucketBandData : bucketBandData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
@@ -557,9 +676,24 @@ export default function DataTypeClient({ type }: Props) {
                     name="Trend"
                   />
                 )}
+                {showProjectionLine && (
+                  <Line
+                    type="monotone"
+                    dataKey="projection"
+                    stroke="var(--accent)"
+                    strokeWidth={1.5}
+                    strokeDasharray="2 4"
+                    dot={false}
+                    name="Projection"
+                  />
+                )}
               </ComposedChart>
             )}
           </ResponsiveContainer>
+
+          {dataType === 'weight' && (projectionMessage || noDataMessage) && (
+            <p className="mt-3 text-xs text-text-muted">{projectionMessage ?? noDataMessage}</p>
+          )}
 
           <div className="flex gap-6 mt-3 pt-3 border-t border-border">
             <div>

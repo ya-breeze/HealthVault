@@ -194,6 +194,155 @@ export function hasHeightRecord(heightRecords: unknown[]): boolean {
   return heightRecords.length > 0;
 }
 
+const MS_PER_DAY = 86_400_000;
+
+/** See goal-weight-bmi-bands-trend-projection's design.md "Trend projection". */
+export const PROJECTION_WINDOW_DAYS = 30;
+export const PROJECTION_HORIZON_DAYS = 365;
+export const PROJECTION_MIN_RECORDS = 5;
+export const PROJECTION_MIN_LIFETIME_SPAN_DAYS = 14;
+export const PROJECTION_MIN_WINDOW_POINTS = 2;
+
+/**
+ * Days since the Unix epoch (UTC, floored) for a date string — the x-axis
+ * unit for the trend regression (task 7.1) and for the projection's
+ * crossing/horizon math (task 7.4), so a day-offset can be converted back to
+ * a Date with simple multiplication rather than calendar-month arithmetic.
+ */
+export function toDayOffset(dateStr: string): number {
+  return Math.floor(new Date(dateStr).getTime() / MS_PER_DAY);
+}
+
+/**
+ * Ordinary least-squares fit over arbitrary (x, y) pairs — used for the
+ * trend projection's (day_offset, ema_value) regression (task 7.1), kept
+ * generic/pure so it needs no chart or date context to unit test.
+ */
+export function linearRegression(points: { x: number; y: number }[]): { slope: number; intercept: number } {
+  const n = points.length;
+  if (n === 0) return { slope: 0, intercept: 0 };
+  const sumX = points.reduce((a, p) => a + p.x, 0);
+  const sumY = points.reduce((a, p) => a + p.y, 0);
+  const sumXY = points.reduce((a, p) => a + p.x * p.y, 0);
+  const sumXX = points.reduce((a, p) => a + p.x * p.x, 0);
+  const denom = n * sumXX - sumX * sumX;
+  const slope = denom === 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / n;
+  return { slope, intercept };
+}
+
+/**
+ * Selects the last 30 calendar days (inclusive of the series' own last date,
+ * regardless of the currently active zoom) of an EMA series paired with its
+ * source dates — task 7.2. `dates` and `emaValues` must be the same length
+ * and in ascending date order (i.e. dates[i] produced emaValues[i], as
+ * emaSeries already preserves index alignment with its input).
+ */
+export function last30DayEmaWindow(dates: string[], emaValues: number[]): { date: string; ema: number }[] {
+  if (dates.length === 0) return [];
+  const lastMs = new Date(dates[dates.length - 1]).getTime();
+  const cutoffMs = lastMs - (PROJECTION_WINDOW_DAYS - 1) * MS_PER_DAY;
+  const result: { date: string; ema: number }[] = [];
+  for (let i = 0; i < dates.length; i++) {
+    if (new Date(dates[i]).getTime() >= cutoffMs) {
+      result.push({ date: dates[i], ema: emaValues[i] });
+    }
+  }
+  return result;
+}
+
+/**
+ * "Not enough data to project yet" gate (task 7.3) — a lifetime-history
+ * check (total records, earliest-to-latest span) independent of the 30-day
+ * regression window itself, which can separately fail to have 2+ points
+ * (e.g. an inactive user with old data but nothing recent). Either
+ * insufficiency alone is enough to gate the projection off.
+ */
+export function hasEnoughDataForProjection(
+  totalRecords: number,
+  lifetimeSpanDays: number,
+  windowPointCount: number
+): boolean {
+  return totalRecords >= PROJECTION_MIN_RECORDS
+    && lifetimeSpanDays >= PROJECTION_MIN_LIFETIME_SPAN_DAYS
+    && windowPointCount >= PROJECTION_MIN_WINDOW_POINTS;
+}
+
+export type ProjectionStatus = 'reached' | 'not-on-track' | 'on-track';
+
+export interface ProjectionResult {
+  status: ProjectionStatus;
+  /** Set only when status is 'on-track' — see toDayOffset for the unit. */
+  crossingDayOffset?: number;
+}
+
+/**
+ * Given a regression fit over the 30-day EMA window plus the goal, decides
+ * between "already reached" (task 7.4a), "not on track" and "on track"
+ * (task 7.4) — in that priority order, per design.md's "Trend projection".
+ *
+ * `windowStartEma`/`latestEma` are the oldest/newest EMA values inside the
+ * 30-day regression window (task 7.2's output), NOT the user's
+ * lifetime-earliest weight — using lifetime history here would let an old,
+ * no-longer-relevant weight flip the reached/direction determination for a
+ * user whose weight has since crossed to the other side of the goal.
+ *
+ * When `windowStartEma === goal` exactly, direction is undefined (sign of
+ * zero): this is only "reached" if `latestEma` is still exactly at goal too;
+ * otherwise it falls through to the slope-based on-track/not-on-track check
+ * below rather than being misreported as reached.
+ */
+export function computeProjection(params: {
+  slope: number;
+  intercept: number;
+  goal: number;
+  windowStartEma: number;
+  latestEma: number;
+  lastDayOffset: number;
+}): ProjectionResult {
+  const { slope, intercept, goal, windowStartEma, latestEma, lastDayOffset } = params;
+
+  const direction = Math.sign(goal - windowStartEma);
+  if (direction !== 0) {
+    const reached = direction > 0 ? latestEma >= goal : latestEma <= goal;
+    if (reached) return { status: 'reached' };
+  } else if (latestEma === goal) {
+    return { status: 'reached' };
+  }
+
+  if (slope === 0) return { status: 'not-on-track' };
+  const crossingDayOffset = (goal - intercept) / slope;
+  const daysToGoal = crossingDayOffset - lastDayOffset;
+  if (daysToGoal <= 0 || daysToGoal > PROJECTION_HORIZON_DAYS) return { status: 'not-on-track' };
+  return { status: 'on-track', crossingDayOffset };
+}
+
+/**
+ * Synthetic future (day_offset, projected kg) points along the regression
+ * line — from just after `lastDayOffset` through `endDayOffset` inclusive —
+ * evaluated directly from the fit (`intercept + slope * dayOffset`) rather
+ * than re-fit, so the dashed continuation is exactly the same line the solid
+ * trend already shows. `endDayOffset` is always the projection's own
+ * crossing day-offset (computeProjection already rejects anything beyond the
+ * 365-day horizon), at either daily or monthly spacing matching the active
+ * zoom's own bucket granularity — task 7.4b.
+ */
+export function projectionPoints(
+  intercept: number,
+  slope: number,
+  lastDayOffset: number,
+  endDayOffset: number,
+  granularity: 'day' | 'month'
+): { dayOffset: number; value: number }[] {
+  const stepDays = granularity === 'day' ? 1 : 30;
+  const points: { dayOffset: number; value: number }[] = [];
+  for (let d = lastDayOffset + stepDays; d < endDayOffset; d += stepDays) {
+    points.push({ dayOffset: d, value: intercept + slope * d });
+  }
+  points.push({ dayOffset: endDayOffset, value: intercept + slope * endDayOffset });
+  return points;
+}
+
 export type Zoom = 'day' | 'week' | 'month' | 'year';
 
 /** Zoom → time range + bucket, per chart-zoom-aggregation's zoom table. */

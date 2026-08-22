@@ -48,8 +48,8 @@ as two commits after implementation has been reviewed.
 - [x] Mark completed
 
 ### Task 7: Frontend: trend projection
-- [ ] Implement section 7 ("Frontend: trend projection") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
-- [ ] Mark completed
+- [x] Implement section 7 ("Frontend: trend projection") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
+- [x] Mark completed
 
 ### Task 8: Testing: Vitest setup + unit coverage
 - [ ] Implement section 8 ("Testing: Vitest setup + unit coverage") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
