@@ -172,8 +172,7 @@ the chosen approach end-to-end on the dashboard:
   an approved OpenSpec change, per this investigation's scope (research
   only, not implementation).
 - **No tests were added** for the new filtering logic, empty states, or the
-  Edit-mode dimmed-but-dataless card behavior — the prototype is illustrative
-  only.
+  Edit-mode dataless card behavior — the prototype is illustrative only.
 - **The prototype makes several existing e2e assertions implicitly dependent
   on live data.** `e2e/tests/dashboard.spec.ts`'s `'shows the vitals grid
   with all 8 primary metrics'`, `'vitals grid card links to its data page'`,
@@ -186,9 +185,14 @@ the chosen approach end-to-end on the dashboard:
   to either mock the presence fetches in these tests or seed the relevant
   data before they run.
 - **Not evaluated:** interaction with slower/failing networks beyond the
-  basic `.catch(() => [])` fallback (treated as "no data" on error, which is
-  fail-closed for that one type but fail-open for the whole section while
-  loading — the two failure modes aren't unified).
+  fail-open handling already in place (a failed per-type fetch is tracked
+  separately — `vitalsFailed` / the secondary-types equivalent — and treated
+  as "has data" rather than "no data," so a transient error keeps the card
+  visible with its normal no-data placeholder instead of hiding it; this is
+  distinct from the initial-load fail-open behavior, which shows every card
+  until its fetch resolves. The two mechanisms aren't unified into one
+  concept, and retry/backoff behavior for a failed presence fetch was not
+  evaluated).
 
 ### Suggested next steps
 
@@ -204,7 +208,8 @@ the chosen approach end-to-end on the dashboard:
    filtering and the Edit-mode dataless-card behavior, and get it approved
    before implementing for real.
 4. Add test coverage for: empty-vitals-with-data-elsewhere state, the new
-   `noVitalsData` vs. `allCardsHidden` message split, Edit-mode dimmed
-   dataless cards, and More Data section fully collapsing.
+   `noVitalsData` vs. `allCardsHidden` message split, whatever Edit-mode
+   dataless-card behavior is decided in step 3 above, and More Data section
+   fully collapsing.
 5. Discard or rework the throwaway prototype commit — it was built to
    validate feasibility, not as the shipped implementation.
