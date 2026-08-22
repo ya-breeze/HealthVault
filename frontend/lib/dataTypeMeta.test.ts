@@ -9,6 +9,7 @@ import {
   hasHeightRecord,
   last30DayEmaWindow,
   linearRegression,
+  projectionPoints,
   rangeForZoom,
   toDayOffset,
 } from './dataTypeMeta';
@@ -135,6 +136,31 @@ describe('last30DayEmaWindow', () => {
     const window = last30DayEmaWindow(dates, emaValues);
     // Series ends 2026-02-10; cutoff is 30 days back = 2026-01-12, so 2026-01-01 drops out.
     expect(window.map(w => w.date)).toEqual(['2026-01-15', '2026-02-01', '2026-02-10']);
+  });
+});
+
+describe('projectionPoints', () => {
+  it('returns just the endpoint when the step would overshoot it', () => {
+    const points = projectionPoints(0, 1, 100, 105, 'month');
+    expect(points).toEqual([{ dayOffset: 105, value: 105 }]);
+  });
+
+  it('steps daily and always includes the exact end offset', () => {
+    const points = projectionPoints(10, 2, 0, 3, 'day');
+    expect(points).toEqual([
+      { dayOffset: 1, value: 12 },
+      { dayOffset: 2, value: 14 },
+      { dayOffset: 3, value: 16 },
+    ]);
+  });
+
+  it('steps in 30-day increments for monthly granularity, ending on the exact end offset', () => {
+    const points = projectionPoints(0, 1, 0, 65, 'month');
+    expect(points).toEqual([
+      { dayOffset: 30, value: 30 },
+      { dayOffset: 60, value: 60 },
+      { dayOffset: 65, value: 65 },
+    ]);
   });
 });
 

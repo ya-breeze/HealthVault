@@ -128,7 +128,7 @@ func CreateRecordHandler(storage database.Storage) http.HandlerFunc {
 
 		t := time.Now().UTC()
 		if req.Time != nil {
-			t = *req.Time
+			t = req.Time.UTC()
 		}
 
 		record, err := storage.InsertRecord(info.table, info.timeCol, info.valueCol, familyID, claims.UserID, t, *req.Value)

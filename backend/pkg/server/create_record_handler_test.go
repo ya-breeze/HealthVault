@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/ya-breeze/healthvault/pkg/server"
+	"github.com/ya-breeze/kin-core/auth"
 	kinmodels "github.com/ya-breeze/kin-core/models"
 )
 
@@ -69,6 +71,60 @@ func TestCreateRecordHandler_ExplicitTime(t *testing.T) {
 	}
 	if !got.Equal(time.Date(2026, time.January, 15, 8, 0, 0, 0, time.UTC)) {
 		t.Errorf("time = %v, want %s", got, ts)
+	}
+}
+
+func TestCreateRecordHandler_ExplicitTimeNonUTCOffsetNormalized(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	h := server.CreateRecordHandler(st)
+	w := httptest.NewRecorder()
+	// 08:00:00+05:00 is the same instant as 03:00:00Z.
+	h.ServeHTTP(w, newCreateRequest("weight", map[string]any{"value": 80, "time": "2026-01-15T08:00:00+05:00"}, userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var row map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &row); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got, err := time.Parse(time.RFC3339, row["time"].(string))
+	if err != nil {
+		t.Fatalf("parse time: %v", err)
+	}
+	want := time.Date(2026, time.January, 15, 3, 0, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Errorf("time = %v, want %v (normalized to UTC)", got, want)
+	}
+	if got.Location() != time.UTC {
+		t.Errorf("stored time location = %v, want UTC", got.Location())
+	}
+}
+
+func TestCreateRecordHandler_WritesCallerFamilyID(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	h := server.CreateRecordHandler(st)
+	w := httptest.NewRecorder()
+	b, _ := json.Marshal(map[string]any{"value": 80})
+	r := httptest.NewRequest(http.MethodPost, "/api/data/weight", bytes.NewReader(b))
+	r = mux.SetURLVars(r, map[string]string{"type": "weight"})
+	claims := &auth.Claims{UserID: userID, FamilyID: &familyID}
+	r = r.WithContext(context.WithValue(r.Context(), server.ClaimsContextKey, claims))
+	h.ServeHTTP(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var row map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &row); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if row["family_id"] != familyID.String() {
+		t.Errorf("family_id = %v, want %s", row["family_id"], familyID)
 	}
 }
 
