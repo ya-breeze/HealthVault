@@ -60,8 +60,8 @@ as two commits after implementation has been reviewed.
 - [x] Mark completed
 
 ### Task 10: Docs
-- [ ] Implement section 10 ("Docs") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
-- [ ] Mark completed
+- [x] Implement section 10 ("Docs") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
+- [x] Mark completed
 
 ### Task 11: Verification
 - [ ] Implement section 11 ("Verification") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go

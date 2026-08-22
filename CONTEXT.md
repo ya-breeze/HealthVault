@@ -67,3 +67,17 @@ _Avoid_: Goal (ambiguous with Goal Weight), macro goal
 **Healthiness Label**:
 A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment.
 _Avoid_: Health score, nutrition score
+
+### Weight chart
+
+**Manual Record**:
+A metric-type record (`weight`, `height`, or `weight_goal` only — the write allowlist) created directly by the user through the Add-record form, via `POST /api/data/{type}`, rather than by ingestion (CSV import, MCP tool call, food-photo recognition). The distinction matters only at write time; a Manual Record reads back identically to an ingested one.
+_Avoid_: Manual entry (ambiguous with food logging's manual entry mode)
+
+**BMI Band**:
+One of the 4 WHO BMI category ranges (Underweight, Normal, Overweight, Obese) rendered as a horizontal `ReferenceArea` on the weight chart, converted from BMI thresholds (18.5, 25, 30) to kilograms using the user's latest `height` record. Absent entirely when no `height` record exists.
+_Avoid_: BMI zone, weight range
+
+**Trend Projection**:
+A dashed line extrapolating the weight chart's existing EMA trend line forward, via least-squares regression over the last 30 calendar days of EMA values, to the calendar date it's projected to cross Goal Weight. Rendered only at Month/Year zoom; the plain-language ETA text it produces ("on track", "not on track", "already reached", "not enough data") renders at every zoom level and only appears at all when a Goal Weight is set.
+_Avoid_: Forecast, prediction line

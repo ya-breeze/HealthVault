@@ -168,14 +168,14 @@
 
 ## 10. Docs
 
-- [ ] 10.1 `CONTEXT.md`: add glossary entries for **BMI Band**, **Trend Projection**, **Manual
+- [x] 10.1 `CONTEXT.md`: add glossary entries for **BMI Band**, **Trend Projection**, **Manual
       Record**
-- [ ] 10.2 New `docs/adr/ADR-005-<slug>.md` for the allowlisted write path (`Status: Proposed`
+- [x] 10.2 New `docs/adr/ADR-005-<slug>.md` for the allowlisted write path (`Status: Proposed`
       until this change merges)
-- [ ] 10.3 Correct `docs/adr/ADR-002-goal-weight-as-metric-type.md`'s Consequences section to match
+- [x] 10.3 Correct `docs/adr/ADR-002-goal-weight-as-metric-type.md`'s Consequences section to match
       ADR-003's actual split decision (calories/BMR from measured weight, protein g/kg from goal
       weight), not the current "goal weight only" misstatement
-- [ ] 10.4 Mark the weight-chart backlog item in `todo.md` as claimed by this change
+- [x] 10.4 Mark the weight-chart backlog item in `todo.md` as claimed by this change
 
 ## 11. Verification
 
