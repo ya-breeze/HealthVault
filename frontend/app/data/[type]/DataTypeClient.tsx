@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  LineChart, Line, BarChart, Bar, ComposedChart, Area, ReferenceArea, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, TooltipValueType,
+  LineChart, Line, BarChart, Bar, ComposedChart, Area, ReferenceArea, ReferenceLine, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend, ResponsiveContainer, TooltipValueType,
 } from 'recharts';
 import { api, DataType, WRITABLE_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
@@ -116,6 +116,11 @@ export default function DataTypeClient({ type }: Props) {
   // (5.2) and readout (5.3) on the weight page, both gated on its presence
   // (5.4). Empty on every other type's page.
   const [heightRecords, setHeightRecords] = useState<Record<string, unknown>[]>([]);
+  // Latest weight_goal record, fetched all-time (task 6.1) — a goal is set
+  // once and rarely changed, so (like height) it must not fall out of a
+  // zoom-windowed fetch. Feeds the goal ReferenceLine (6.2) on the weight
+  // page. Empty on every other type's page.
+  const [goalRecords, setGoalRecords] = useState<Record<string, unknown>[]>([]);
   const isWritable = WRITABLE_TYPES.includes(dataType);
   // "Set goal" shortcut (task 4.2): only meaningful on the weight page,
   // where it opens the same AddRecordForm pre-targeted at `weight_goal`
@@ -176,8 +181,12 @@ export default function DataTypeClient({ type }: Props) {
       api.data('height', ALL_TIME_FROM, to, userParam)
         .then(setHeightRecords)
         .catch(() => setHeightRecords([]));
+      api.data('weight_goal', ALL_TIME_FROM, to, userParam)
+        .then(setGoalRecords)
+        .catch(() => setGoalRecords([]));
     } else {
       setHeightRecords([]);
+      setGoalRecords([]);
     }
   }, [type, dataType, from, to, chartFrom, bucket, hasChart, userParam, router, refreshKey]);
 
@@ -309,13 +318,24 @@ export default function DataTypeClient({ type }: Props) {
   // flagged that leaving these on raw num() would silently desync the axis
   // range from the data the moment any point-family type gains a unit
   // conversion — keeping both on the same helper closes that off structurally.
+  // Latest weight_goal record (task 6.1) — unlike BMI bands, the goal line's
+  // value IS folded into both Y-domain computations below, so it always
+  // expands the axis rather than being clipped to it (design.md's "Goal line
+  // Y-domain: always expands" — an accepted trade-off).
+  const latestGoalKg = useMemo(() => {
+    if (dataType !== 'weight') return undefined;
+    const latest = latestByTime(goalRecords);
+    return latest ? num(latest.kilograms) : undefined;
+  }, [dataType, goalRecords]);
+
   const dayDomain = useMemo(() => {
     if (meta?.family !== 'point') return undefined;
     const values = isBloodPressure
       ? records.flatMap(r => [numDisplay(r.systolic), numDisplay(r.diastolic)])
       : (numericKey ? records.map(r => numDisplay(r[numericKey])) : []);
+    if (latestGoalKg !== undefined) values.push(latestGoalKg);
     return computeYDomain(values);
-  }, [meta, isBloodPressure, records, numericKey]);
+  }, [meta, isBloodPressure, records, numericKey, latestGoalKg]);
 
   const bandDomain = useMemo(() => {
     if (meta?.family !== 'point') return undefined;
@@ -324,8 +344,9 @@ export default function DataTypeClient({ type }: Props) {
           numDisplay(r.systolic_min), numDisplay(r.systolic_max), numDisplay(r.diastolic_min), numDisplay(r.diastolic_max),
         ])
       : visibleChartRows.flatMap(r => [numDisplay(r.min), numDisplay(r.max)]);
+    if (latestGoalKg !== undefined) values.push(latestGoalKg);
     return computeYDomain(values);
-  }, [meta, isBloodPressure, visibleChartRows]);
+  }, [meta, isBloodPressure, visibleChartRows, latestGoalKg]);
 
   // BMI bands + readout (task 5): both gated on the same "does a height
   // record exist" condition (hasHeightRecord, task 5.4) so neither can
@@ -360,6 +381,13 @@ export default function DataTypeClient({ type }: Props) {
         <ReferenceArea key="bmi-over" y1={bmiBandEdges[1]} y2={bmiBandEdges[2]} fill={BMI_BAND_COLORS[2]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
         <ReferenceArea key="bmi-obese" y1={bmiBandEdges[2]} fill={BMI_BAND_COLORS[3]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
       ]
+    : null;
+
+  // Goal line (task 6.2) — rendered at every zoom level, in both chart
+  // branches below, same as the BMI bands. Unlike the bands, its value is
+  // already folded into dayDomain/bandDomain above, so it's never clipped.
+  const goalLine = latestGoalKg !== undefined
+    ? <ReferenceLine y={latestGoalKg} stroke="var(--accent)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: 'Goal', position: 'insideTopRight', fill: 'var(--accent)', fontSize: 11 }} />
     : null;
 
   const handleConfirmDelete = async (id: string) => {
@@ -413,7 +441,7 @@ export default function DataTypeClient({ type }: Props) {
         {dataType === 'weight' && showGoalForm && (
           <AddRecordForm
             type="weight_goal"
-            onSuccess={() => setShowGoalForm(false)}
+            onSuccess={() => { setShowGoalForm(false); setRefreshKey(k => k + 1); }}
             onCancel={() => setShowGoalForm(false)}
           />
         )}
@@ -477,6 +505,7 @@ export default function DataTypeClient({ type }: Props) {
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
                   <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
                   {bmiBandAreas}
+                  {goalLine}
                   <Line
                     type="monotone"
                     dataKey={isNutrition ? macro : numericKey}
@@ -514,6 +543,7 @@ export default function DataTypeClient({ type }: Props) {
                 <Tooltip formatter={formatTooltipValue} />
                 {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
                 {bmiBandAreas}
+                {goalLine}
                 <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" name="Range" />
                 <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name="Avg" />
                 {dataType === 'weight' && (

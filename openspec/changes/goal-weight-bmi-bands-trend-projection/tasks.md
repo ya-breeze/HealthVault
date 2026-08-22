@@ -78,11 +78,11 @@
 
 ## 6. Frontend: goal line
 
-- [ ] 6.1 Fetch the latest `weight_goal` record when `dataType === 'weight'`
-- [ ] 6.2 Render a `ReferenceLine` at the goal value, in both of `DataTypeClient.tsx`'s chart
+- [x] 6.1 Fetch the latest `weight_goal` record when `dataType === 'weight'`
+- [x] 6.2 Render a `ReferenceLine` at the goal value, in both of `DataTypeClient.tsx`'s chart
       branches (Day-zoom `LineChart` and Week/Month/Year `ComposedChart`) — the line must render at
       every zoom level, per the requirement, so neither branch can be skipped
-- [ ] 6.3 Fold the goal value into the value set passed to `computeYDomain` for **both** existing
+- [x] 6.3 Fold the goal value into the value set passed to `computeYDomain` for **both** existing
       domain computations — `dayDomain` (feeds the Day-zoom `LineChart`) and `bandDomain` (feeds
       the Week/Month/Year `ComposedChart`) — so the Y-domain always expands to include the goal at
       every zoom, not just the zoom tier touched first (see design.md; this is the accepted
