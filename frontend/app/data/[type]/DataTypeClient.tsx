@@ -506,11 +506,17 @@ export default function DataTypeClient({ type }: Props) {
       projection: p.value,
     }));
     if (bucketBandData.length === 0) return syntheticRows;
-    // Seed the join point on the last real bucket so the dashed line
-    // connects continuously from the solid trend line rather than jumping.
+    // Seed the join point from the regression line itself (not the zoom's
+    // own `trend` EMA) so the dashed line connects continuously from its
+    // own synthetic points rather than jumping. `trend` at Year zoom is an
+    // EMA over monthly buckets while the regression is always fit to a
+    // daily-granularity window (projectionBucketRows), so the two can
+    // diverge materially — evaluating the same intercept/slope at
+    // lastDayOffset guarantees an exact match with the first synthetic
+    // point instead of an approximate one.
     const joined = bucketBandData.slice(0, -1).concat({
       ...bucketBandData[bucketBandData.length - 1],
-      projection: bucketBandData[bucketBandData.length - 1].trend,
+      projection: projection.intercept + projection.slope * projection.lastDayOffset,
     });
     return [...joined, ...syntheticRows];
   }, [showProjectionLine, projection, bucketBandData, projectionGranularity, zoom]);
