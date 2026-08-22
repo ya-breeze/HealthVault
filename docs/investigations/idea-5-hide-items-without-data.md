@@ -146,12 +146,21 @@ the chosen approach end-to-end on the dashboard:
 
 ### Limitations
 
-- **Window scope is arbitrary.** Presence is evaluated over the dashboard's
-  7-day sparkline window, so a type logged only 8+ days ago reads as "no
-  data" and stays hidden even though the user has historical data for it.
-  The prototype does not implement an "ever any data" alternative (which
-  would need a different, unbounded query, especially costly for the 18
-  secondary types).
+- **Window scope is arbitrary, and hiding a type is a full navigation
+  lockout, not just a dashboard omission.** Presence is evaluated over the
+  dashboard's 7-day sparkline window, so a type logged only 8+ days ago
+  reads as "no data" and stays hidden even though the user has historical
+  data for it. This matters more than a missing summary card: `page.tsx`
+  is the only place in the frontend that links to a type's `/data/{type}/`
+  history page (via `VitalCard`'s `<Link>` wrapper for primary metrics, or
+  the More Data pill list for secondary types), and `VitalCard` only
+  renders that `<Link>` in the read-only (non-`editing`) branch — in Edit
+  mode it renders a plain, unlinked `<div>` regardless of data. So once a
+  type falls out of the 7-day window, there is no remaining path anywhere
+  in the UI to view that type's existing history until new data is logged
+  for it. The prototype does not implement an "ever any data" alternative
+  (which would need a different, unbounded query, especially costly for
+  the 18 secondary types).
 - **Extra network cost for secondary types is unconditional.** All 18
   `SECONDARY_TYPES` are now fetched on every dashboard load purely to decide
   visibility, even though most users will only ever populate a handful.
