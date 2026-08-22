@@ -38,15 +38,15 @@
 
 ## 3. Frontend: `weight_goal` registry + i18n
 
-- [ ] 3.1 Add `"weight_goal"` to `DATA_TYPES` in `frontend/lib/api.ts`
-- [ ] 3.2 Add a `TYPE_META` entry in `frontend/lib/dataTypeMeta.ts` (`{ family: 'point', decimals:
+- [x] 3.1 Add `"weight_goal"` to `DATA_TYPES` in `frontend/lib/api.ts`
+- [x] 3.2 Add a `TYPE_META` entry in `frontend/lib/dataTypeMeta.ts` (`{ family: 'point', decimals:
       1 }`, matching the `Weight`/`Height` entries — `TYPE_META` carries no `label`/`unit` field;
       the display label comes from a new `metric.weight_goal` key in `frontend/lib/i18n/en.ts` and
       `ru.ts`, task 3.3)
-- [ ] 3.3 Add `weight_goal` labels to `frontend/lib/i18n/en.ts` and `ru.ts`
-- [ ] 3.4 Add `--c-weight_goal` CSS var (light + dark) to `frontend/app/globals.css`, following the
+- [x] 3.3 Add `weight_goal` labels to `frontend/lib/i18n/en.ts` and `ru.ts`
+- [x] 3.4 Add `--c-weight_goal` CSS var (light + dark) to `frontend/app/globals.css`, following the
       existing `--c-weight` pattern
-- [ ] 3.5 Confirm `weight_goal` is excluded from `PRIMARY_METRICS` (no dashboard Vital Card) but
+- [x] 3.5 Confirm `weight_goal` is excluded from `PRIMARY_METRICS` (no dashboard Vital Card) but
       renders its own `/data/weight_goal` page (chart + delete-able record table) via the existing
       generic `[type]` route
 

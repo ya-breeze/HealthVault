@@ -52,6 +52,7 @@ export const TYPE_META: Partial<Record<DataType, TypeMeta>> = {
   heart_rate: { family: 'point', decimals: 0 },
   heart_rate_variability: { family: 'point', decimals: 0 },
   weight: { family: 'point', decimals: 1 },
+  weight_goal: { family: 'point', decimals: 1 },
   height: { family: 'point', decimals: 2 },
   blood_pressure: { family: 'point', decimals: 0 },
   blood_glucose: { family: 'point', decimals: 1 },
