@@ -508,7 +508,7 @@ export default function DataTypeClient({ type }: Props) {
     // connects continuously from the solid trend line rather than jumping.
     const joined = bucketBandData.slice(0, -1).concat({
       ...bucketBandData[bucketBandData.length - 1],
-      projection: bucketBandData[bucketBandData.length - 1].avg,
+      projection: bucketBandData[bucketBandData.length - 1].trend,
     });
     return [...joined, ...syntheticRows];
   }, [showProjectionLine, projection, bucketBandData, projectionGranularity, zoom]);
@@ -537,7 +537,7 @@ export default function DataTypeClient({ type }: Props) {
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
             {type.replace(/_/g, ' ')}
           </h1>
-          {dataType === 'weight' && !showGoalForm && (
+          {!userParam && dataType === 'weight' && !showGoalForm && (
             <TapTarget
               type="button"
               onClick={() => setShowGoalForm(true)}
@@ -561,7 +561,7 @@ export default function DataTypeClient({ type }: Props) {
           </div>
         </div>
 
-        {dataType === 'weight' && showGoalForm && (
+        {!userParam && dataType === 'weight' && showGoalForm && (
           <AddRecordForm
             type="weight_goal"
             onSuccess={() => { setShowGoalForm(false); setRefreshKey(k => k + 1); }}
@@ -569,7 +569,7 @@ export default function DataTypeClient({ type }: Props) {
           />
         )}
 
-        {isWritable && <AddRecordForm type={dataType} onSuccess={() => setRefreshKey(k => k + 1)} />}
+        {!userParam && isWritable && <AddRecordForm type={dataType} onSuccess={() => setRefreshKey(k => k + 1)} />}
 
         {isNutrition && (
           <div className="flex gap-1.5 flex-wrap mb-4">
