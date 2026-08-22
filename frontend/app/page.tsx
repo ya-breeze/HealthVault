@@ -42,6 +42,10 @@ export default function Dashboard() {
   // populated would hide every card for one render, then pop them back in —
   // a visible flash on every load. See the render below.
   const [vitalsLoaded, setVitalsLoaded] = useState(false);
+  // Types whose presence fetch failed (as opposed to succeeding with zero
+  // rows). Kept separate from `vitals` so a transient fetch error can't be
+  // mistaken for "no data" by the filter below.
+  const [vitalsFailed, setVitalsFailed] = useState<Set<string>>(new Set());
   // Presence-only (no rendered value), so a plain type -> has-data map is
   // enough — unlike PRIMARY_METRICS, SECONDARY_TYPES only ever render as a
   // link pill, never a value/sparkline.
@@ -100,13 +104,28 @@ export default function Dashboard() {
     const { from, to } = last7DaysRange();
 
     Promise.all(
-      PRIMARY_METRICS.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
+      PRIMARY_METRICS.map(m =>
+        api.data(m.type, from, to, undefined, 'day').then(
+          rows => ({ ok: true as const, rows }),
+          () => ({ ok: false as const, rows: [] as Record<string, unknown>[] }),
+        ),
+      )
     ).then(results => {
       const next: Record<string, VitalResult | null> = {};
+      const failed = new Set<string>();
       PRIMARY_METRICS.forEach((m, i) => {
-        next[m.type] = extractVital(m.type, results[i]);
+        const r = results[i];
+        // A failed fetch is not evidence of "no data" — fail open (keep the
+        // card in the grid, same as before this change) rather than mixing
+        // errors into the no-data filter below and letting a transient
+        // failure hide a card, or the whole grid, behind a false "No vitals
+        // recorded yet" message. `vitals[type]` stays null either way, so
+        // VitalCard renders its normal inline no-data placeholder for it.
+        if (!r.ok) failed.add(m.type);
+        next[m.type] = extractVital(m.type, r.rows);
       });
       setVitals(next);
+      setVitalsFailed(failed);
       setVitalsLoaded(true);
     });
   }, [ready]);
@@ -124,11 +143,21 @@ export default function Dashboard() {
     const { from, to } = last7DaysRange();
 
     Promise.all(
-      SECONDARY_TYPES.map(type => api.data(type, from, to).catch(() => []))
+      SECONDARY_TYPES.map(type =>
+        api.data(type, from, to).then(
+          rows => ({ ok: true as const, rows }),
+          () => ({ ok: false as const, rows: [] as Record<string, unknown>[] }),
+        ),
+      )
     ).then(results => {
       const next: Record<string, boolean> = {};
       SECONDARY_TYPES.forEach((type, i) => {
-        next[type] = results[i].length > 0;
+        const r = results[i];
+        // Fail open on a failed fetch, same as the vitals grid above: a
+        // request error is not evidence of "no data," so it must not cause a
+        // pill to vanish for a type that actually has data, with no retry
+        // available in this section.
+        next[type] = !r.ok || r.rows.length > 0;
       });
       setSecondaryHasData(next);
       setSecondaryLoaded(true);
@@ -156,7 +185,7 @@ export default function Dashboard() {
   // Until the fetch resolves, treat every card as having data so the no-data
   // filter below doesn't hide the whole grid for one render and then pop
   // cards back in once `vitals` populates.
-  const hasVital = (type: string) => !vitalsLoaded || vitals[type] != null;
+  const hasVital = (type: string) => !vitalsLoaded || vitalsFailed.has(type) || vitals[type] != null;
   const visibleCards = order.filter(m => !m.hidden && hasVital(m.type));
   // Distinct from allHidden: this is "the user left cards visible, but none
   // of them have data yet" — Customize can't fix that, so it gets its own
