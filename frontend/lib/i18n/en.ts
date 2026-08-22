@@ -217,6 +217,10 @@ const en = {
   'dashboard.showCard': 'Show {metric}',
   'dashboard.retryLoad': 'Try again',
   'dashboard.allCardsHidden': 'All cards are hidden. Tap Customize to show some again.',
+  // Shown instead of allCardsHidden when every visible card has no recorded
+  // data yet (as opposed to being user-hidden) — a different cause needs
+  // different guidance, since Customize can't fix a lack of data.
+  'dashboard.noVitalsData': 'No vitals recorded yet. Cards will appear here once you log some data.',
   // Four plural forms because the dictionary type is shared with ru.ts, which
   // needs all four. English only ever selects 'one' and 'other', so the two
   // middle entries are unreachable here and simply mirror 'other' — see

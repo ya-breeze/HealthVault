@@ -15,6 +15,15 @@ import { CameraIcon, PencilIcon, HistoryIcon } from '@/components/icons';
 
 const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type === t));
 
+// Shared by the vitals and secondary-types presence fetches below so the two
+// stay in lockstep if the lookback window ever changes.
+function last7DaysRange() {
+  const from = new Date();
+  from.setDate(from.getDate() - 7);
+  from.setUTCHours(0, 0, 0, 0);
+  return { from: from.toISOString(), to: new Date().toISOString() };
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { showToast } = useToast();
@@ -28,6 +37,20 @@ export default function Dashboard() {
   const tRef = useLatest(t);
   const [ready, setReady] = useState(false);
   const [vitals, setVitals] = useState<Record<string, VitalResult | null>>({});
+  // False until the primary-metrics fetch below resolves. Gates the
+  // no-data filter in the read-only grid: filtering on `vitals` before it's
+  // populated would hide every card for one render, then pop them back in —
+  // a visible flash on every load. See the render below.
+  const [vitalsLoaded, setVitalsLoaded] = useState(false);
+  // Types whose presence fetch failed (as opposed to succeeding with zero
+  // rows). Kept separate from `vitals` so a transient fetch error can't be
+  // mistaken for "no data" by the filter below.
+  const [vitalsFailed, setVitalsFailed] = useState<Set<string>>(new Set());
+  // Presence-only (no rendered value), so a plain type -> has-data map is
+  // enough — unlike PRIMARY_METRICS, SECONDARY_TYPES only ever render as a
+  // link pill, never a value/sparkline.
+  const [secondaryHasData, setSecondaryHasData] = useState<Record<string, boolean>>({});
+  const [secondaryLoaded, setSecondaryLoaded] = useState(false);
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
   // 'loading' until the saved order/visibility arrives. The grid is not
   // rendered at all until then — `order` starts as every-card-visible
@@ -78,22 +101,66 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!ready) return;
-    const from = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      d.setUTCHours(0, 0, 0, 0);
-      return d.toISOString();
-    })();
-    const to = new Date().toISOString();
+    const { from, to } = last7DaysRange();
 
     Promise.all(
-      PRIMARY_METRICS.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
+      PRIMARY_METRICS.map(m =>
+        api.data(m.type, from, to, undefined, 'day').then(
+          rows => ({ ok: true as const, rows }),
+          () => ({ ok: false as const, rows: [] as Record<string, unknown>[] }),
+        ),
+      )
     ).then(results => {
       const next: Record<string, VitalResult | null> = {};
+      const failed = new Set<string>();
       PRIMARY_METRICS.forEach((m, i) => {
-        next[m.type] = extractVital(m.type, results[i]);
+        const r = results[i];
+        // A failed fetch is not evidence of "no data" — fail open (keep the
+        // card in the grid, same as before this change) rather than mixing
+        // errors into the no-data filter below and letting a transient
+        // failure hide a card, or the whole grid, behind a false "No vitals
+        // recorded yet" message. `vitals[type]` stays null either way, so
+        // VitalCard renders its normal inline no-data placeholder for it.
+        if (!r.ok) failed.add(m.type);
+        next[m.type] = extractVital(m.type, r.rows);
       });
       setVitals(next);
+      setVitalsFailed(failed);
+      setVitalsLoaded(true);
+    });
+  }, [ready]);
+
+  // Presence check for the "More Data" pills, mirroring the vitals fetch
+  // above but unbucketed: these types are never rendered with an aggregated
+  // value, only linked to, so raw rows are enough and — unlike the bucketed
+  // endpoint — the same call works for food_meal too (bucket=day 400s for
+  // that type; see backend/pkg/server/api.go's queryBucketed). Reuses the
+  // vitals grid's 7-day window for consistency, even though that means a
+  // type logged only further back still shows as "no data" here — see the
+  // idea-5 investigation notes for the tradeoff.
+  useEffect(() => {
+    if (!ready) return;
+    const { from, to } = last7DaysRange();
+
+    Promise.all(
+      SECONDARY_TYPES.map(type =>
+        api.data(type, from, to).then(
+          rows => ({ ok: true as const, rows }),
+          () => ({ ok: false as const, rows: [] as Record<string, unknown>[] }),
+        ),
+      )
+    ).then(results => {
+      const next: Record<string, boolean> = {};
+      SECONDARY_TYPES.forEach((type, i) => {
+        const r = results[i];
+        // Fail open on a failed fetch, same as the vitals grid above: a
+        // request error is not evidence of "no data," so it must not cause a
+        // pill to vanish for a type that actually has data, with no retry
+        // available in this section.
+        next[type] = !r.ok || r.rows.length > 0;
+      });
+      setSecondaryHasData(next);
+      setSecondaryLoaded(true);
     });
   }, [ready]);
 
@@ -115,6 +182,17 @@ export default function Dashboard() {
   }
 
   const allHidden = order.every(m => m.hidden);
+  // Until the fetch resolves, treat every card as having data so the no-data
+  // filter below doesn't hide the whole grid for one render and then pop
+  // cards back in once `vitals` populates.
+  const hasVital = (type: string) => !vitalsLoaded || vitalsFailed.has(type) || vitals[type] != null;
+  const visibleCards = order.filter(m => !m.hidden && hasVital(m.type));
+  // Distinct from allHidden: this is "the user left cards visible, but none
+  // of them have data yet" — Customize can't fix that, so it gets its own
+  // message (dashboard.noVitalsData) rather than allCardsHidden's "tap
+  // Customize" copy.
+  const noVitalsData = !allHidden && vitalsLoaded && visibleCards.length === 0;
+  const visibleSecondaryTypes = SECONDARY_TYPES.filter(type => !secondaryLoaded || secondaryHasData[type]);
 
   function toggleHidden(index: number) {
     setOrder(prev => prev.map((m, i) => (i === index ? { ...m, hidden: !m.hidden } : m)));
@@ -184,9 +262,13 @@ export default function Dashboard() {
           <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
             {t('dashboard.allCardsHidden')}
           </p>
+        ) : noVitalsData && !editing ? (
+          <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty-no-data">
+            {t('dashboard.noVitalsData')}
+          </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
-            {order.map((m, i) => (editing || !m.hidden) && (
+            {order.map((m, i) => (editing || (!m.hidden && hasVital(m.type))) && (
               <VitalCard
                 key={m.type}
                 type={m.type}
@@ -250,22 +332,32 @@ export default function Dashboard() {
           </a>
         </div>
 
-        <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-          {t('dashboard.moreData')}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {SECONDARY_TYPES.map(type => (
-            <a
-              key={type}
-              href={`/data/${type}/`}
-              className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-border bg-bg-elevated hover:border-accent transition-colors flex items-center gap-1.5"
-              style={{ color: metricColorVar(type) }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: metricColorVar(type) }} />
-              {metricLabel(t, type)}
-            </a>
-          ))}
-        </div>
+        {/* Hidden outright once loaded and empty, rather than shown with an
+            empty-state message: unlike the vitals grid this section has no
+            Customize escape hatch, so there's nothing actionable to tell the
+            user — the pills simply reappear once a type has data. Renders
+            unfiltered while secondaryLoaded is false, matching the vitals
+            grid's same load-then-filter pattern above. */}
+        {visibleSecondaryTypes.length > 0 && (
+          <>
+            <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
+              {t('dashboard.moreData')}
+            </p>
+            <div className="flex flex-wrap gap-2" data-testid="more-data">
+              {visibleSecondaryTypes.map(type => (
+                <a
+                  key={type}
+                  href={`/data/${type}/`}
+                  className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-border bg-bg-elevated hover:border-accent transition-colors flex items-center gap-1.5"
+                  style={{ color: metricColorVar(type) }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: metricColorVar(type) }} />
+                  {metricLabel(t, type)}
+                </a>
+              ))}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );
