@@ -153,7 +153,11 @@ export default function DataTypeClient({ type }: Props) {
   // rather than `weight` — a distinct type from the page it's mounted on.
   const [showGoalForm, setShowGoalForm] = useState(false);
 
-  const { from, to, bucket } = useMemo(() => rangeForZoom(zoom), [zoom]);
+  // refreshKey is in the dep list too: rangeForZoom's `to` is `now()` at the
+  // time this memo runs, so a record just created via AddRecordForm (timed
+  // after that frozen `to`) would fall outside the refetch below unless this
+  // window is recomputed fresh on every refresh, not just on a zoom change.
+  const { from, to, bucket } = useMemo(() => rangeForZoom(zoom), [zoom, refreshKey]);
 
   // weight's Week/Year-zoom trend line needs enough trailing bucketed history
   // to seed its EMA before the visible window starts — see
