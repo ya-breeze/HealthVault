@@ -42,6 +42,7 @@ var typeRegistry = map[string]typeInfo{
 	"total_calories":       {table: "total_calories", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "calories"},
 	"weight":               {table: "weights", timeCol: "time", family: database.AggFamilyPoint, valueCol: "kilograms"},
 	"height":               {table: "heights", timeCol: "time", family: database.AggFamilyPoint, valueCol: "meters"},
+	"weight_goal":          {table: "weight_goals", timeCol: "time", family: database.AggFamilyPoint, valueCol: "kilograms"},
 	"blood_pressure":       {table: "blood_pressures", timeCol: "time", family: database.AggFamilyPoint}, // multi-column: see QueryAggregateBloodPressure
 	"blood_glucose":        {table: "blood_glucoses", timeCol: "time", family: database.AggFamilyPoint, valueCol: "mmol_per_liter"},
 	"oxygen_saturation":    {table: "oxygen_saturations", timeCol: "time", family: database.AggFamilyPoint, valueCol: "percentage"},

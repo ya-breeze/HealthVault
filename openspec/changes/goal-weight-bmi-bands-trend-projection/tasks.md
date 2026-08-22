@@ -1,15 +1,15 @@
 ## 1. Backend: `weight_goal` metric type registration
 
-- [ ] 1.1 Add `WeightGoal` Go struct in `backend/pkg/database/` alongside `Weight`/`Height`
+- [x] 1.1 Add `WeightGoal` Go struct in `backend/pkg/database/` alongside `Weight`/`Height`
       (`time`, `kilograms`, `user_id`, `family_id`; unique `(user_id, time)`; no
       `source_payload_id` requirement — see 1.4)
-- [ ] 1.2 Add `&WeightGoal{}` to the `AutoMigrate(...)` list in `backend/pkg/database/db.go`
-- [ ] 1.3 Add `"weight_goal"` to `typeRegistry` in `backend/pkg/server/api.go`
+- [x] 1.2 Add `&WeightGoal{}` to the `AutoMigrate(...)` list in `backend/pkg/database/db.go`
+- [x] 1.3 Add `"weight_goal"` to `typeRegistry` in `backend/pkg/server/api.go`
       (`table: "weight_goals", timeCol: "time", family: database.AggFamilyPoint, valueCol: "kilograms"`)
-- [ ] 1.4 Confirm `WeightGoal` rows created via the new write path (task 2) don't require/synthesize
+- [x] 1.4 Confirm `WeightGoal` rows created via the new write path (task 2) don't require/synthesize
       a `source_payload_id`, matching the existing food-logging exception in `data-model`
-- [ ] 1.5 Add `"weight_goal"` to `typeTimeCol` in `backend/pkg/mcpserver/tools.go`
-- [ ] 1.6 Migrate `Weight.SourcePayloadID` and `Height.SourcePayloadID` from `uuid.UUID
+- [x] 1.5 Add `"weight_goal"` to `typeTimeCol` in `backend/pkg/mcpserver/tools.go`
+- [x] 1.6 Migrate `Weight.SourcePayloadID` and `Height.SourcePayloadID` from `uuid.UUID
       gorm:"not null"` to `*uuid.UUID` (nullable) in `backend/pkg/database/models.go`, so manual
       writes to these two pre-existing types can omit the column without a synthesized value — see
       design.md's Migration Plan

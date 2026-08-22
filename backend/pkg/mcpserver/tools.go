@@ -22,6 +22,7 @@ var typeTimeCol = map[string][2]string{
 	"total_calories":         {"total_calories", "start_time"},
 	"weight":                 {"weights", "time"},
 	"height":                 {"heights", "time"},
+	"weight_goal":            {"weight_goals", "time"},
 	"blood_pressure":         {"blood_pressures", "time"},
 	"blood_glucose":          {"blood_glucoses", "time"},
 	"oxygen_saturation":      {"oxygen_saturations", "time"},
