@@ -36,7 +36,7 @@ function bucketLabel(bucketStart: unknown, zoom: Zoom): string {
   const d = new Date(String(bucketStart));
   if (isNaN(d.getTime())) return String(bucketStart ?? '');
   return zoom === 'year'
-    ? d.toLocaleDateString(undefined, { month: 'short' })
+    ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
@@ -396,14 +396,16 @@ export default function DataTypeClient({ type }: Props) {
     const latest = latestByTime(heightRecords);
     return latest ? num(latest.meters) : undefined;
   }, [heightRecords]);
-  // The same raw weight record already shown in the table below — see
-  // design.md's "matches the same raw weight already shown elsewhere on the
-  // page" — not a separate all-time fetch like height's.
+  // All-time latest raw weight record (allTimeWeightRecords, not the
+  // zoom-scoped `records`) so the BMI readout stays in sync with the bands'
+  // shared "does a height record exist" gate (design.md) instead of
+  // disappearing whenever the user's last weigh-in falls outside the
+  // currently selected zoom window.
   const latestWeightKg = useMemo(() => {
     if (dataType !== 'weight') return undefined;
-    const latest = latestByTime(records);
+    const latest = latestByTime(allTimeWeightRecords);
     return latest ? num(latest.kilograms) : undefined;
-  }, [dataType, records]);
+  }, [dataType, allTimeWeightRecords]);
   const bmi = heightExists && latestHeightMeters !== undefined && latestWeightKg !== undefined
     ? latestWeightKg / (latestHeightMeters * latestHeightMeters)
     : undefined;
