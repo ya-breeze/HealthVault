@@ -61,19 +61,19 @@
 
 ## 5. Frontend: BMI bands + readout
 
-- [ ] 5.1 Add a pure function in `dataTypeMeta.ts` converting the 3 WHO BMI band edges (18.5, 25,
+- [x] 5.1 Add a pure function in `dataTypeMeta.ts` converting the 3 WHO BMI band edges (18.5, 25,
       30) to kg given a height in meters (`kg = bmi * heightMeters^2`)
-- [ ] 5.2 Render the 4 resulting bands as `ReferenceArea`s on the `weight` chart, clipped to the
+- [x] 5.2 Render the 4 resulting bands as `ReferenceArea`s on the `weight` chart, clipped to the
       existing Y-domain (bands never expand it — see design.md), rendered at every zoom level —
       `DataTypeClient.tsx` has two chart branches selected by zoom (the Day-zoom `LineChart` and
       the Week/Month/Year `ComposedChart`), so the bands must be added to both, not just one
-- [ ] 5.3 Add a pure `classifyBmi(bmi): category` function in `dataTypeMeta.ts` (lower-inclusive
+- [x] 5.3 Add a pure `classifyBmi(bmi): category` function in `dataTypeMeta.ts` (lower-inclusive
       boundaries: `[18.5,25)` Normal, `[25,30)` Overweight, `[30,∞)` Obese, else Underweight — see
       design.md) and use it for the BMI readout (1 decimal + category name) computed from latest
       raw `weight` + latest `height`
-- [ ] 5.4 Gate both 5.2 and 5.3 behind one shared "does a `height` record exist" condition, exposed
+- [x] 5.4 Gate both 5.2 and 5.3 behind one shared "does a `height` record exist" condition, exposed
       as its own testable helper rather than inlined in the chart component
-- [ ] 5.5 `DataTypeClient.tsx` fetches the latest `height` record when `dataType === 'weight'`
+- [x] 5.5 `DataTypeClient.tsx` fetches the latest `height` record when `dataType === 'weight'`
       (new GET alongside the existing weight fetch)
 
 ## 6. Frontend: goal line

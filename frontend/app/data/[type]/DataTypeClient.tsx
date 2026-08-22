@@ -2,12 +2,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  LineChart, Line, BarChart, Bar, ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, TooltipValueType,
+  LineChart, Line, BarChart, Bar, ComposedChart, Area, ReferenceArea, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer, TooltipValueType,
 } from 'recharts';
 import { api, DataType, WRITABLE_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
+import {
+  TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue,
+  toDisplayUnit, bmiBandEdgesKg, classifyBmi, hasHeightRecord,
+} from '@/lib/dataTypeMeta';
 import Header from '@/components/Header';
 import AddRecordForm from '@/components/AddRecordForm';
 import TapTarget from '@/components/ui/TapTarget';
@@ -38,6 +41,25 @@ function bucketLabel(bucketStart: unknown, zoom: Zoom): string {
 function mean(values: number[]): number {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
 }
+
+// weight/height/weight_goal all use timeCol "time" in the backend's
+// typeRegistry (see api.go) — safe to hardcode rather than re-deriving the
+// timeKey-detection dance `records`/`displayColumns` do for arbitrary types.
+function latestByTime(records: Record<string, unknown>[]): Record<string, unknown> | undefined {
+  if (records.length === 0) return undefined;
+  return records.reduce((latest, r) =>
+    new Date(String(r.time)).getTime() > new Date(String(latest.time)).getTime() ? r : latest
+  );
+}
+
+// Height changes rarely, so the BMI gate (task 5.5) fetches all-time rather
+// than the page's own zoom-windowed range — a height set years ago must
+// still surface the readout today.
+const ALL_TIME_FROM = new Date(0).toISOString();
+
+// WHO-convention band colors (blue/green/yellow/red), low opacity so the
+// plotted weight line/area stays the focal element.
+const BMI_BAND_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444'];
 
 export default function DataTypeClient({ type }: Props) {
   const router = useRouter();
@@ -90,6 +112,10 @@ export default function DataTypeClient({ type }: Props) {
   // successful write would never appear in `records`/`chartRows` without
   // navigating away and back. See task 4.1.
   const [refreshKey, setRefreshKey] = useState(0);
+  // Latest height record, fetched all-time (task 5.5) — feeds the BMI bands
+  // (5.2) and readout (5.3) on the weight page, both gated on its presence
+  // (5.4). Empty on every other type's page.
+  const [heightRecords, setHeightRecords] = useState<Record<string, unknown>[]>([]);
   const isWritable = WRITABLE_TYPES.includes(dataType);
   // "Set goal" shortcut (task 4.2): only meaningful on the weight page,
   // where it opens the same AddRecordForm pre-targeted at `weight_goal`
@@ -145,7 +171,15 @@ export default function DataTypeClient({ type }: Props) {
     } else {
       setChartRows([]);
     }
-  }, [type, from, to, chartFrom, bucket, hasChart, userParam, router, refreshKey]);
+
+    if (dataType === 'weight') {
+      api.data('height', ALL_TIME_FROM, to, userParam)
+        .then(setHeightRecords)
+        .catch(() => setHeightRecords([]));
+    } else {
+      setHeightRecords([]);
+    }
+  }, [type, dataType, from, to, chartFrom, bucket, hasChart, userParam, router, refreshKey]);
 
   const isDay = zoom === 'day';
 
@@ -293,6 +327,41 @@ export default function DataTypeClient({ type }: Props) {
     return computeYDomain(values);
   }, [meta, isBloodPressure, visibleChartRows]);
 
+  // BMI bands + readout (task 5): both gated on the same "does a height
+  // record exist" condition (hasHeightRecord, task 5.4) so neither can
+  // render while the other silently doesn't.
+  const heightExists = dataType === 'weight' && hasHeightRecord(heightRecords);
+  const latestHeightMeters = useMemo(() => {
+    const latest = latestByTime(heightRecords);
+    return latest ? num(latest.meters) : undefined;
+  }, [heightRecords]);
+  // The same raw weight record already shown in the table below — see
+  // design.md's "matches the same raw weight already shown elsewhere on the
+  // page" — not a separate all-time fetch like height's.
+  const latestWeightKg = useMemo(() => {
+    if (dataType !== 'weight') return undefined;
+    const latest = latestByTime(records);
+    return latest ? num(latest.kilograms) : undefined;
+  }, [dataType, records]);
+  const bmi = heightExists && latestHeightMeters !== undefined && latestWeightKg !== undefined
+    ? latestWeightKg / (latestHeightMeters * latestHeightMeters)
+    : undefined;
+  const bmiBandEdges = heightExists && latestHeightMeters !== undefined
+    ? bmiBandEdgesKg(latestHeightMeters)
+    : undefined;
+  // Rendered as ReferenceAreas whose open ends (an omitted y1/y2) fall back
+  // to the Y-axis's own current domain — see recharts' ReferenceArea
+  // getRect — so the bands are clipped to whatever the chart's Y-domain
+  // already is and can never be the thing that expands it (design.md).
+  const bmiBandAreas = bmiBandEdges
+    ? [
+        <ReferenceArea key="bmi-under" y2={bmiBandEdges[0]} fill={BMI_BAND_COLORS[0]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
+        <ReferenceArea key="bmi-normal" y1={bmiBandEdges[0]} y2={bmiBandEdges[1]} fill={BMI_BAND_COLORS[1]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
+        <ReferenceArea key="bmi-over" y1={bmiBandEdges[1]} y2={bmiBandEdges[2]} fill={BMI_BAND_COLORS[2]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
+        <ReferenceArea key="bmi-obese" y1={bmiBandEdges[2]} fill={BMI_BAND_COLORS[3]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
+      ]
+    : null;
+
   const handleConfirmDelete = async (id: string) => {
     setDeleting(true);
     setDeleteError(null);
@@ -407,6 +476,7 @@ export default function DataTypeClient({ type }: Props) {
                   />
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
                   <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
+                  {bmiBandAreas}
                   <Line
                     type="monotone"
                     dataKey={isNutrition ? macro : numericKey}
@@ -443,6 +513,7 @@ export default function DataTypeClient({ type }: Props) {
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
                 <Tooltip formatter={formatTooltipValue} />
                 {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
+                {bmiBandAreas}
                 <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" name="Range" />
                 <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name="Avg" />
                 {dataType === 'weight' && (
@@ -473,6 +544,12 @@ export default function DataTypeClient({ type }: Props) {
               <div>
                 <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Total</p>
                 <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.total)}</p>
+              </div>
+            )}
+            {bmi !== undefined && (
+              <div>
+                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">BMI</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{bmi.toFixed(1)} · {classifyBmi(bmi)}</p>
               </div>
             )}
           </div>

@@ -151,6 +151,49 @@ export function emaSeries(values: number[], alpha = 0.25): number[] {
   return result;
 }
 
+/**
+ * WHO BMI category band edges, in BMI units (kg/m²) — see
+ * goal-weight-bmi-bands-trend-projection's design.md "BMI bands and
+ * readout". Shared by bmiBandEdgesKg (chart bands) and classifyBmi (readout
+ * category), so the two can never disagree at a boundary value.
+ */
+export const BMI_BAND_EDGES = [18.5, 25, 30] as const;
+
+/**
+ * Converts the WHO BMI band edges to kg for a given height, so the weight
+ * chart (a kg Y-axis) can render them as ReferenceAreas without converting
+ * plotted weight data to BMI. `bmi = kg / heightMeters^2`, so
+ * `kg = bmi * heightMeters^2`.
+ */
+export function bmiBandEdgesKg(heightMeters: number): number[] {
+  return BMI_BAND_EDGES.map(bmi => bmi * heightMeters * heightMeters);
+}
+
+export type BmiCategory = 'Underweight' | 'Normal' | 'Overweight' | 'Obese';
+
+/**
+ * WHO BMI category lookup with lower-inclusive boundaries — a BMI of
+ * exactly 18.5, 25, or 30 belongs to the higher category, matching
+ * bmiBandEdgesKg's band edges so the chart bands and this readout never
+ * disagree at a boundary value.
+ */
+export function classifyBmi(bmi: number): BmiCategory {
+  if (bmi < BMI_BAND_EDGES[0]) return 'Underweight';
+  if (bmi < BMI_BAND_EDGES[1]) return 'Normal';
+  if (bmi < BMI_BAND_EDGES[2]) return 'Overweight';
+  return 'Obese';
+}
+
+/**
+ * Shared gate for BMI bands + readout — both are suppressed together when
+ * the user has no `height` record on file, rather than each independently
+ * checking record presence and risking disagreement. See design.md "Both
+ * the bands and the readout are gated on a single condition".
+ */
+export function hasHeightRecord(heightRecords: unknown[]): boolean {
+  return heightRecords.length > 0;
+}
+
 export type Zoom = 'day' | 'week' | 'month' | 'year';
 
 /** Zoom → time range + bucket, per chart-zoom-aggregation's zoom table. */
