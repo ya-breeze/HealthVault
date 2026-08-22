@@ -179,7 +179,7 @@
 
 ## 11. Verification
 
-- [ ] 11.1 `make lint`
-- [ ] 11.2 `make test`
-- [ ] 11.3 `npx tsc --noEmit` and `npm run build` in `frontend/`
-- [ ] 11.4 `openspec validate --strict` for this change
+- [x] 11.1 `make lint`
+- [x] 11.2 `make test`
+- [x] 11.3 `npx tsc --noEmit` and `npm run build` in `frontend/`
+- [x] 11.4 `openspec validate --strict` for this change
