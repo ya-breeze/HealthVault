@@ -112,8 +112,11 @@ function trendFrom(series: number[]): 'up' | 'down' | 'flat' {
 /**
  * Extracts a vitals-grid card's display value, sparkline, and trend from a
  * ?bucket=day response, per the type's aggregation family (see
- * chart-zoom-aggregation spec). Returns null when there's no data — the
- * card renders a "no data" state rather than an empty/broken sparkline.
+ * chart-zoom-aggregation spec). Returns null when there's no data. VitalCard
+ * still renders a "no data" placeholder for a null result (e.g. in Edit
+ * mode), but the dashboard's read-only view (app/page.tsx) filters null
+ * results out of the grid entirely instead of showing that placeholder —
+ * see docs/investigations/idea-5-hide-items-without-data.md.
  */
 export function extractVital(type: DataType, rows: Record<string, unknown>[]): VitalResult | null {
   if (rows.length === 0) return null;

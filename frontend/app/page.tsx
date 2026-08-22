@@ -15,6 +15,15 @@ import { CameraIcon, PencilIcon, HistoryIcon } from '@/components/icons';
 
 const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type === t));
 
+// Shared by the vitals and secondary-types presence fetches below so the two
+// stay in lockstep if the lookback window ever changes.
+function last7DaysRange() {
+  const from = new Date();
+  from.setDate(from.getDate() - 7);
+  from.setUTCHours(0, 0, 0, 0);
+  return { from: from.toISOString(), to: new Date().toISOString() };
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { showToast } = useToast();
@@ -88,13 +97,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!ready) return;
-    const from = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      d.setUTCHours(0, 0, 0, 0);
-      return d.toISOString();
-    })();
-    const to = new Date().toISOString();
+    const { from, to } = last7DaysRange();
 
     Promise.all(
       PRIMARY_METRICS.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
@@ -118,13 +121,7 @@ export default function Dashboard() {
   // idea-5 investigation notes for the tradeoff.
   useEffect(() => {
     if (!ready) return;
-    const from = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      d.setUTCHours(0, 0, 0, 0);
-      return d.toISOString();
-    })();
-    const to = new Date().toISOString();
+    const { from, to } = last7DaysRange();
 
     Promise.all(
       SECONDARY_TYPES.map(type => api.data(type, from, to).catch(() => []))

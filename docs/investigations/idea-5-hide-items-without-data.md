@@ -105,9 +105,14 @@ the chosen approach end-to-end on the dashboard:
   `extractVital()` returns non-null (reusing the fetch already in place, no
   new API calls). A user-hidden card (Phase 1) stays hidden regardless of
   data; a visible-but-dataless card is now omitted from the read-only view.
-  In Edit mode, dataless cards still render (dimmed via the existing
-  `editing` path) so they stay discoverable and re-orderable, mirroring how
-  Phase 1 already shows user-hidden cards in Edit mode.
+  In Edit mode, dataless cards still render (via the existing `editing`
+  path, which renders every card in `order` regardless of data) so they stay
+  discoverable and re-orderable — but, unlike Phase 1's user-hidden cards,
+  they render at full opacity with the existing "no data" placeholder text,
+  not dimmed. `VitalCard`'s dim treatment (`opacity-40`) is keyed only on the
+  user's explicit `hidden` preference, not on data presence, so
+  dataless-but-visible and user-hidden cards do not yet share a visual
+  treatment in Edit mode — see Limitations below.
 - **More Data pills** — a new presence-only fetch (`Promise.all` over
   `SECONDARY_TYPES`, unbucketed `api.data()`, 7-day window) drives filtering
   the pill list down to types with at least one row. Unlike the vitals grid,
@@ -160,6 +165,17 @@ the chosen approach end-to-end on the dashboard:
 - **No tests were added** for the new filtering logic, empty states, or the
   Edit-mode dimmed-but-dataless card behavior — the prototype is illustrative
   only.
+- **The prototype makes several existing e2e assertions implicitly dependent
+  on live data.** `e2e/tests/dashboard.spec.ts`'s `'shows the vitals grid
+  with all 8 primary metrics'`, `'vitals grid card links to its data page'`,
+  and `'secondary "more data" row links to a non-primary data page'` (plus
+  two visibility-settings tests) previously passed regardless of data
+  because every card/pill always rendered. With this filtering in place they
+  now require the seeded test account to have data for all 8 primary types
+  and `vo2_max` within the rolling 7-day window — nothing in the suite or
+  `backend/pkg/database/seed.go` guarantees that. A real implementation needs
+  to either mock the presence fetches in these tests or seed the relevant
+  data before they run.
 - **Not evaluated:** interaction with slower/failing networks beyond the
   basic `.catch(() => [])` fallback (treated as "no data" on error, which is
   fail-closed for that one type but fail-open for the whole section while
