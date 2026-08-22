@@ -423,6 +423,15 @@ export const api = {
   deleteRecord: (type: string, id: string): Promise<void> =>
     apiFetchNoBody(`/data/${type}/${id}`, { method: 'DELETE' }),
 
+  // POST /api/data/{type} — allowlisted manual write (see WRITABLE_TYPES
+  // below and the backend's writeAllowlist in api.go). `time` omitted lets
+  // the backend default to now(); a value <= 0 is rejected server-side (400).
+  createRecord: (type: string, input: { value: number; time?: string }) =>
+    apiFetch<Record<string, unknown>>(`/data/${type}`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
   importHealthConnect: (file: File): Promise<Record<string, number>> => {
     const form = new FormData();
     form.append('file', file);
@@ -532,3 +541,9 @@ export const DATA_TYPES = [
 ] as const;
 
 export type DataType = typeof DATA_TYPES[number];
+
+// Mirrors the backend's writeAllowlist (backend/pkg/server/api.go) — the
+// only types POST /api/data/{type} accepts a manual write for. Kept in sync
+// by hand since it's a small, deliberately narrow set (see design.md); the
+// frontend must not offer an Add-record form for any other type.
+export const WRITABLE_TYPES: readonly DataType[] = ['weight', 'height', 'weight_goal'];

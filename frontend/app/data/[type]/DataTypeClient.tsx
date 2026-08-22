@@ -5,10 +5,12 @@ import {
   LineChart, Line, BarChart, Bar, ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, TooltipValueType,
 } from 'recharts';
-import { api, DataType } from '@/lib/api';
+import { api, DataType, WRITABLE_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
 import Header from '@/components/Header';
+import AddRecordForm from '@/components/AddRecordForm';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   type: string;
@@ -83,6 +85,16 @@ export default function DataTypeClient({ type }: Props) {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Bumped by AddRecordForm's onSuccess to force the fetch effect below to
+  // re-run — the effect otherwise only depends on the range/zoom, so a
+  // successful write would never appear in `records`/`chartRows` without
+  // navigating away and back. See task 4.1.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const isWritable = WRITABLE_TYPES.includes(dataType);
+  // "Set goal" shortcut (task 4.2): only meaningful on the weight page,
+  // where it opens the same AddRecordForm pre-targeted at `weight_goal`
+  // rather than `weight` — a distinct type from the page it's mounted on.
+  const [showGoalForm, setShowGoalForm] = useState(false);
 
   const { from, to, bucket } = useMemo(() => rangeForZoom(zoom), [zoom]);
 
@@ -133,7 +145,7 @@ export default function DataTypeClient({ type }: Props) {
     } else {
       setChartRows([]);
     }
-  }, [type, from, to, chartFrom, bucket, hasChart, userParam, router]);
+  }, [type, from, to, chartFrom, bucket, hasChart, userParam, router, refreshKey]);
 
   const isDay = zoom === 'day';
 
@@ -305,6 +317,15 @@ export default function DataTypeClient({ type }: Props) {
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
             {type.replace(/_/g, ' ')}
           </h1>
+          {dataType === 'weight' && !showGoalForm && (
+            <TapTarget
+              type="button"
+              onClick={() => setShowGoalForm(true)}
+              className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
+            >
+              Set goal
+            </TapTarget>
+          )}
           <div className="flex gap-1 bg-bg-elevated border border-border rounded-lg p-1">
             {ZOOMS.map(z => (
               <button
@@ -319,6 +340,16 @@ export default function DataTypeClient({ type }: Props) {
             ))}
           </div>
         </div>
+
+        {dataType === 'weight' && showGoalForm && (
+          <AddRecordForm
+            type="weight_goal"
+            onSuccess={() => setShowGoalForm(false)}
+            onCancel={() => setShowGoalForm(false)}
+          />
+        )}
+
+        {isWritable && <AddRecordForm type={dataType} onSuccess={() => setRefreshKey(k => k + 1)} />}
 
         {isNutrition && (
           <div className="flex gap-1.5 flex-wrap mb-4">

@@ -36,8 +36,8 @@ as two commits after implementation has been reviewed.
 - [x] Mark completed
 
 ### Task 4: Frontend: reusable Add-record form
-- [ ] Implement section 4 ("Frontend: reusable Add-record form") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
-- [ ] Mark completed
+- [x] Implement section 4 ("Frontend: reusable Add-record form") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go
+- [x] Mark completed
 
 ### Task 5: Frontend: BMI bands + readout
 - [ ] Implement section 5 ("Frontend: BMI bands + readout") of `openspec/changes/goal-weight-bmi-bands-trend-projection/tasks.md`, ticking that file's checkboxes as you go

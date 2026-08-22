@@ -52,12 +52,12 @@
 
 ## 4. Frontend: reusable Add-record form
 
-- [ ] 4.1 Build one reusable Add-record form component, mounted on each allowlisted type's page
+- [x] 4.1 Build one reusable Add-record form component, mounted on each allowlisted type's page
       (`weight`, `height`, `weight_goal`) — value + optional timestamp, POSTs to the new endpoint,
       refetches the page's data on success
-- [ ] 4.2 Add a "Set goal" shortcut on the weight page that opens the same form pre-targeted at
+- [x] 4.2 Add a "Set goal" shortcut on the weight page that opens the same form pre-targeted at
       `weight_goal`
-- [ ] 4.3 Confirm the form does *not* render on any non-allowlisted type's page
+- [x] 4.3 Confirm the form does *not* render on any non-allowlisted type's page
 
 ## 5. Frontend: BMI bands + readout
 
