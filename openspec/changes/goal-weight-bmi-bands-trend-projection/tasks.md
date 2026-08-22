@@ -158,13 +158,13 @@
 
 ## 9. E2E
 
-- [ ] 9.1 Extend `e2e/tests/data-types.spec.ts`: create a `weight_goal` record via the new
+- [x] 9.1 Extend `e2e/tests/data-types.spec.ts`: create a `weight_goal` record via the new
       Add-record form, confirm it appears on `/data/weight_goal` and as a goal line on the weight
       chart
-- [ ] 9.2 E2E coverage for the height dead end being closed: create a `height` record via the same
+- [x] 9.2 E2E coverage for the height dead end being closed: create a `height` record via the same
       form, confirm BMI bands + readout appear on the weight chart afterward and are absent before
-- [ ] 9.3 E2E coverage confirming POST to a non-allowlisted type (e.g. `steps`) is rejected
-- [ ] 9.4 Run full suite against `hcw-wip`
+- [x] 9.3 E2E coverage confirming POST to a non-allowlisted type (e.g. `steps`) is rejected
+- [x] 9.4 Run full suite against `hcw-wip`
 
 ## 10. Docs
 
