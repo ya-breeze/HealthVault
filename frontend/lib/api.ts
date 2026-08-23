@@ -420,6 +420,8 @@ export const api = {
     );
   },
 
+  dataTypesPresence: () => apiFetch<Record<string, boolean>>('/data-types/presence'),
+
   deleteRecord: (type: string, id: string): Promise<void> =>
     apiFetchNoBody(`/data/${type}/${id}`, { method: 'DELETE' }),
 

@@ -95,6 +95,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/data/{type}", CreateRecordHandler(storage)).Methods("POST")
 	api.HandleFunc("/data/{type}", DataHandler(storage)).Methods("GET")
 	api.HandleFunc("/data/{type}/{id}", DeleteRecordHandler(storage, fh.photos)).Methods("DELETE")
+	api.HandleFunc("/data-types/presence", DataTypesPresenceHandler(storage)).Methods("GET")
 	api.HandleFunc("/import/health-connect", importHealthConnectHandler(storage)).Methods("POST")
 	api.HandleFunc("/import/libra", importLibraHandler(storage)).Methods("POST")
 	api.HandleFunc("/food/search", fh.Search).Methods("GET")

@@ -348,6 +348,44 @@ func summaryHandler(storage database.Storage) http.HandlerFunc {
 	}
 }
 
+// DataTypesPresenceHandler returns, for every type in typeRegistry, whether
+// the resolved user has ever recorded at least one row of it — the signal the
+// dashboard uses to hide types with no data at all (as opposed to the
+// existing 7-day recency window, which is unrelated). One indexed COUNT
+// round-trip per type against storage.DB() directly, mirroring
+// NeedsAttentionCount's precedent; see design.md for why this is fine at this
+// project's scale. Exported for use in tests.
+func DataTypesPresenceHandler(storage database.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := ClaimsFromCtx(r)
+		if claims == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		familyID := FamilyIDFromCtx(r)
+
+		targetUser, err := resolveUser(r, storage, claims.UserID, familyID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+
+		presence := make(map[string]bool, len(typeRegistry))
+		for name, info := range typeRegistry {
+			var count int64
+			if err := storage.DB().Table(info.table).
+				Where("user_id = ?", targetUser.ID).
+				Count(&count).Error; err != nil {
+				http.Error(w, "query error", http.StatusInternalServerError)
+				return
+			}
+			presence[name] = count > 0
+		}
+
+		writeJSON(w, presence)
+	}
+}
+
 // DeleteRecordHandler hard-deletes a single health record owned by the authenticated user.
 // photos may be nil; it is only consulted for the food_meal type, whose photo
 // file must be removed alongside the row. Exported for use in tests.

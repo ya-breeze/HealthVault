@@ -82,6 +82,20 @@ export function reconcileMetricOrder(saved: StoredCardPref[] | undefined): Dashb
   return [...ordered, ...missing];
 }
 
+/**
+ * Whether `type` should be treated as having data, per the presence map
+ * returned by `api.dataTypesPresence()`. Fails open in both documented ways:
+ * a `null` map (the fetch failed) and a map missing an entry for `type` (an
+ * incomplete-but-successful response) both resolve to "present" rather than
+ * "absent" — only an explicit `false` hides a type. See the
+ * hide-unrecorded-data-types change's design.md, "Fail-open contract".
+ */
+export function hasPresence(presence: Record<string, boolean> | null, type: string): boolean {
+  if (!presence) return true;
+  const value = presence[type];
+  return value === undefined ? true : value;
+}
+
 export interface VitalResult {
   value: string;
   // A dictionary key, not the unit text itself: this module is a pure data

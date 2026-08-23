@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, DATA_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, DashboardCardPref, VitalResult } from '@/lib/vitals';
+import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, DashboardCardPref, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
@@ -44,6 +44,14 @@ export default function Dashboard() {
   const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // `null` means "not resolved yet" (initial state) *and* "fetch failed" —
+  // both fail open via hasPresence's `!presence` branch, so no separate error
+  // state is needed here the way settingsStatus needs one. `presenceReady`
+  // is the loading-gate flag: false until the fetch settles (success or
+  // failure), so the grid/More Data never flash unfiltered cards before
+  // presence resolves.
+  const [presence, setPresence] = useState<Record<string, boolean> | null>(null);
+  const [presenceReady, setPresenceReady] = useState(false);
 
   useEffect(() => {
     api.me()
@@ -99,25 +107,69 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!ready) return;
+    api.dataTypesPresence()
+      .then(p => setPresence(p))
+      .catch(() => setPresence(null))
+      .finally(() => setPresenceReady(true));
+  }, [ready]);
+
+  useEffect(() => {
+    if (!ready) return;
     api.needsAttentionCount()
       .then(res => setNeedsAttentionCount(res.count))
       .catch(() => setNeedsAttentionCount(0));
   }, [ready]);
 
+  // moveCard/toggleHidden take an index into the presence-filtered list
+  // (what's actually rendered — see presentOrder below), not into `order`
+  // itself, since zero-presence metrics are excluded from the customizable
+  // set entirely and must not be reachable by these controls. Each resolves
+  // the index to a type first, then updates that type's entry within the
+  // full `order`, so absent-presence entries keep their stored position
+  // untouched (they may gain presence on a later load).
   function moveCard(index: number, direction: -1 | 1) {
     setOrder(prev => {
+      const visibleTypes = prev.filter(m => hasPresence(presence, m.type)).map(m => m.type);
       const target = index + direction;
-      if (target < 0 || target >= prev.length) return prev;
+      if (target < 0 || target >= visibleTypes.length) return prev;
+      const idxA = prev.findIndex(m => m.type === visibleTypes[index]);
+      const idxB = prev.findIndex(m => m.type === visibleTypes[target]);
       const next = [...prev];
-      [next[index], next[target]] = [next[target], next[index]];
+      [next[idxA], next[idxB]] = [next[idxB], next[idxA]];
       return next;
     });
   }
 
-  const allHidden = order.every(m => m.hidden);
+  // Gates the vitals grid and Customize control on both the saved order and
+  // presence resolving, so neither a flash of unfiltered cards (order without
+  // presence-filtering) nor a flash of the pre-presence full set happens
+  // before both are known.
+  const dashboardReady = settingsLoaded && presenceReady;
+
+  // Only metrics with presence are ever rendered (read-only grid or edit
+  // mode) — see design.md, "Presence excludes a type from the customizable
+  // set entirely". A zero-presence metric never appears here, regardless of
+  // its stored `hidden` flag.
+  const presentOrder = order.filter(m => hasPresence(presence, m.type));
+  // "No data at all" (nothing to show, Customize can't help) is distinct from
+  // "user hid everything that does have data" (allHidden, below) — see the
+  // two-empty-states decision in design.md. allHidden must not fire when
+  // there's nothing present to hide.
+  const noPrimaryData = presentOrder.length === 0;
+  const allHidden = presentOrder.length > 0 && presentOrder.every(m => m.hidden);
+  // Gated on presenceReady (not just filtered unconditionally) so a pending
+  // fetch never flashes every secondary type before presence is known — the
+  // section renders nothing at all until it resolves, same as the vitals
+  // grid's dashboardReady gate. See design.md, "More Data collapses, not
+  // renders empty".
+  const presentSecondaryTypes = presenceReady ? SECONDARY_TYPES.filter(type => hasPresence(presence, type)) : [];
 
   function toggleHidden(index: number) {
-    setOrder(prev => prev.map((m, i) => (i === index ? { ...m, hidden: !m.hidden } : m)));
+    setOrder(prev => {
+      const visibleTypes = prev.filter(m => hasPresence(presence, m.type)).map(m => m.type);
+      const type = visibleTypes[index];
+      return prev.map(m => (m.type === type ? { ...m, hidden: !m.hidden } : m));
+    });
   }
 
   async function handleDone() {
@@ -152,19 +204,19 @@ export default function Dashboard() {
           ) : (
             <TapTarget
               onClick={() => setEditing(true)}
-              disabled={!settingsLoaded}
-              title={settingsLoaded ? undefined : t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
+              disabled={!dashboardReady}
+              title={dashboardReady ? undefined : t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
               className="px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
               {t('dashboard.customize')}
             </TapTarget>
           )}
         </div>
-        {/* Edit mode renders every card, including hidden ones, so they can be
-            found and shown again; the read-only grid renders only the visible
-            ones. Move controls are indexed against the full `order` either way,
-            so hiding a card never shifts what a neighbour's arrow does. */}
-        {!settingsLoaded ? (
+        {/* Edit mode renders every present card, including hidden ones, so they
+            can be found and shown again; the read-only grid renders only the
+            visible ones. Move controls are indexed against the presence-filtered
+            list — see the moveCard/toggleHidden comment above. */}
+        {!dashboardReady ? (
           <div
             className="mb-8 flex flex-wrap items-center justify-between gap-2 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3"
             data-testid={settingsStatus === 'error' ? 'vitals-grid-error' : 'vitals-grid-loading'}
@@ -180,13 +232,17 @@ export default function Dashboard() {
               </TapTarget>
             )}
           </div>
+        ) : noPrimaryData ? (
+          <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty-no-data">
+            {t('dashboard.noPrimaryData')}
+          </p>
         ) : allHidden && !editing ? (
           <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
             {t('dashboard.allCardsHidden')}
           </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
-            {order.map((m, i) => (editing || !m.hidden) && (
+            {presentOrder.map((m, i) => (editing || !m.hidden) && (
               <VitalCard
                 key={m.type}
                 type={m.type}
@@ -196,7 +252,7 @@ export default function Dashboard() {
                 onMoveUp={() => moveCard(i, -1)}
                 onMoveDown={() => moveCard(i, 1)}
                 moveUpDisabled={i === 0}
-                moveDownDisabled={i === order.length - 1}
+                moveDownDisabled={i === presentOrder.length - 1}
                 hidden={m.hidden}
                 onToggleHidden={() => toggleHidden(i)}
                 controlsDisabled={saving}
@@ -250,22 +306,26 @@ export default function Dashboard() {
           </a>
         </div>
 
-        <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-          {t('dashboard.moreData')}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {SECONDARY_TYPES.map(type => (
-            <a
-              key={type}
-              href={`/data/${type}/`}
-              className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-border bg-bg-elevated hover:border-accent transition-colors flex items-center gap-1.5"
-              style={{ color: metricColorVar(type) }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: metricColorVar(type) }} />
-              {metricLabel(t, type)}
-            </a>
-          ))}
-        </div>
+        {presentSecondaryTypes.length > 0 && (
+          <div data-testid="more-data">
+            <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
+              {t('dashboard.moreData')}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {presentSecondaryTypes.map(type => (
+                <a
+                  key={type}
+                  href={`/data/${type}/`}
+                  className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-border bg-bg-elevated hover:border-accent transition-colors flex items-center gap-1.5"
+                  style={{ color: metricColorVar(type) }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: metricColorVar(type) }} />
+                  {metricLabel(t, type)}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
