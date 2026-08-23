@@ -697,61 +697,80 @@ test.describe('Data-type presence filtering', () => {
     await page.goto('/');
   });
 
-  // Sleep sits between Heart Rate and HRV in the default order; hiding it by
-  // presence creates a gap in the *middle* of the rendered list — the case
-  // moveCard/toggleHidden's index-remapping exists for (see the comment
-  // above them in app/page.tsx: index into the presence-filtered list,
-  // resolved back onto the full stored `order`), but nothing else exercises
-  // that remapping with an actual move plus reload. Found in code review.
+  // Hiding a middle card by presence creates a gap in the rendered list —
+  // the case moveCard/toggleHidden's index-remapping exists for (see the
+  // comment above them in app/page.tsx: index into the presence-filtered
+  // list, resolved back onto the full stored `order`), but nothing else
+  // exercises that remapping with an actual move plus reload. Reads the
+  // account's *actual* current order rather than assuming PRIMARY_METRICS's
+  // default — the shared seeded account's stored order may have drifted
+  // from it via earlier reorder tests, and this test's own assertions don't
+  // depend on which order it starts from. Found in code review.
   test('reordering a card adjacent to a presence gap resolves onto the full order, leaving the gapped type\'s own stored position untouched', async ({ page }) => {
+    const grid = page.getByTestId('vitals-grid');
+
+    // Baseline: capture whichever order this account currently has, then
+    // pick Sleep's two neighbours to swap around the gap it will leave.
+    await page.route('**/api/data-types/presence', route => route.fulfill({ json: presenceFixture() }));
+    await page.goto('/');
+    await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+    const fullBefore = await grid.locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')!));
+    const sleepIdx = fullBefore.indexOf('vital-card-sleep');
+    expect(sleepIdx).toBeGreaterThan(0);
+    expect(sleepIdx).toBeLessThan(fullBefore.length - 1);
+    const predType = fullBefore[sleepIdx - 1];
+    const succType = fullBefore[sleepIdx + 1];
+
+    // Hide Sleep by presence: predType and succType become adjacent in the
+    // rendered list, with the gap it leaves behind in the middle of `order`.
     await page.route('**/api/data-types/presence', route =>
       route.fulfill({ json: presenceFixture({ sleep: false }) })
     );
-    await page.goto('/');
+    await page.reload();
+    await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+    const filteredBefore = await grid.locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')!));
+    expect(filteredBefore).toEqual(fullBefore.filter(id => id !== 'vital-card-sleep'));
 
     try {
-      const grid = page.getByTestId('vitals-grid');
-      const renderedBefore = await grid.locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')));
-      expect(renderedBefore).toEqual([
-        'vital-card-steps', 'vital-card-heart_rate', 'vital-card-heart_rate_variability',
-        'vital-card-distance', 'vital-card-weight', 'vital-card-blood_pressure', 'vital-card-oxygen_saturation',
-      ]);
-
       await page.getByRole('button', { name: 'Customize' }).click();
-      await withSettingsSave(page, () =>
-        page.getByRole('button', { name: /move hrv up/i }).click()
-      );
+      // succType now renders immediately after predType — move it up, onto
+      // predType's old slot. The move itself only updates local state;
+      // Done is what persists it (handleDone's PUT), so withSettingsSave
+      // waits on that click, not the move.
+      await page.getByTestId(succType).getByRole('button', { name: /move .* up/i }).click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
 
-      // Persisted with the gap still active: HRV now renders before Heart
-      // Rate, Sleep still absent.
+      // Persisted with the gap still active.
       await page.reload();
-      const renderedAfter = await page.getByTestId('vitals-grid').locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')));
-      expect(renderedAfter).toEqual([
-        'vital-card-steps', 'vital-card-heart_rate_variability', 'vital-card-heart_rate',
-        'vital-card-distance', 'vital-card-weight', 'vital-card-blood_pressure', 'vital-card-oxygen_saturation',
-      ]);
+      await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+      const filteredAfter = await grid.locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')!));
+      const expectedFiltered = [...filteredBefore];
+      const i = expectedFiltered.indexOf(succType);
+      [expectedFiltered[i - 1], expectedFiltered[i]] = [expectedFiltered[i], expectedFiltered[i - 1]];
+      expect(filteredAfter).toEqual(expectedFiltered);
 
       // Sleep's own stored position must be untouched by that swap: once it
-      // regains presence, it renders back in its original slot — between the
-      // two cards that were just swapped around it — not shifted to the
-      // front or appended at the end.
+      // regains presence, it renders back between the very two cards that
+      // were just swapped around it, not shifted to the front or appended
+      // at the end.
       await page.route('**/api/data-types/presence', route =>
         route.fulfill({ json: presenceFixture() })
       );
       await page.reload();
-      const renderedFull = await page.getByTestId('vitals-grid').locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')));
-      expect(renderedFull).toEqual([
-        'vital-card-steps', 'vital-card-heart_rate_variability', 'vital-card-sleep',
-        'vital-card-heart_rate', 'vital-card-distance', 'vital-card-weight',
-        'vital-card-blood_pressure', 'vital-card-oxygen_saturation',
-      ]);
+      await expect(grid.getByTestId('vital-card-sleep')).toBeVisible();
+      const fullAfter = await grid.locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')!));
+      const expectedFull = [...fullBefore];
+      const predIdx = expectedFull.indexOf(predType);
+      const succIdx = expectedFull.indexOf(succType);
+      [expectedFull[predIdx], expectedFull[succIdx]] = [expectedFull[succIdx], expectedFull[predIdx]];
+      expect(fullAfter).toEqual(expectedFull);
     } finally {
       // Undoes the swap through the mirror move (down instead of up) in the
-      // same presence-gapped context that produced it, so it inverts exactly
-      // rather than needing a different sequence of arrow clicks under full
-      // presence — HRV and Heart Rate are no longer adjacent in the full
-      // order once Sleep is back, so a single full-presence "move down"
-      // would swap the wrong pair.
+      // same presence-gapped context that produced it, so it inverts
+      // exactly rather than needing a different sequence of arrow clicks
+      // under full presence — predType and succType are no longer adjacent
+      // in the full order once Sleep is back, so a full-presence "move
+      // down" would swap the wrong pair.
       await page.route('**/api/data-types/presence', route =>
         route.fulfill({ json: presenceFixture({ sleep: false }) })
       );
@@ -760,9 +779,9 @@ test.describe('Data-type presence filtering', () => {
       await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
       if (await customizeBtn.isVisible().catch(() => false)) {
         await customizeBtn.click().catch(() => {});
-        const moveHrvDown = page.getByRole('button', { name: /move hrv down/i });
-        if (!(await moveHrvDown.isDisabled().catch(() => true))) {
-          await withSettingsSave(page, () => moveHrvDown.click());
+        const moveBack = page.getByTestId(succType).getByRole('button', { name: /move .* down/i });
+        if (!(await moveBack.isDisabled().catch(() => true))) {
+          await moveBack.click().catch(() => {});
         }
         const done = page.getByRole('button', { name: 'Done' });
         if (await done.isVisible().catch(() => false)) {
