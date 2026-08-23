@@ -29,10 +29,17 @@ that have **never** had a record, computed server-side.
   `backend/pkg/server/food_meal_detail.go` (lines 344-367), a single
   `COUNT(*)` per call with no time bound.
 - `backend/pkg/database/models.go` — every telemetry table has
-  `uniqueIndex:idx_<table>_user_time` covering `(user_id, time_col)`;
-  `food_meal` (`models_food.go` line 43) has a plain `index` on `user_id`.
-  So an unbounded "does this user have any row of this type" check is
-  index-covered for all 26 types — cheap even as 26 separate queries.
+  `uniqueIndex:idx_<table>_user_time` with `user_id` as its leading column,
+  so a `user_id = ?` presence check is index-covered for all 26 types
+  regardless of which column anchors the rest of the index; `food_meal`
+  (`models_food.go` line 43) has a plain `index` on `user_id`. One
+  exception worth naming: `sleep`'s index is `(user_id, session_end_time)`
+  (line 219), not `(user_id, start_time)` even though `start_time` is the
+  `timeCol` registered for `sleep` in `typeRegistry` (`api.go` line 39) —
+  the presence check is still covered by the `user_id` prefix since it
+  never filters on the time column, but this table does not fit the
+  "index covers `(user_id, timeCol)`" pattern the other 24 do — `food_meal`
+  is the other exception, per its plain `user_id` index noted above.
 - `backend/pkg/server/server.go` lines 82-116 — router registration pattern
   (e.g. `/api/food/meals/needs-attention-count`) to model a new route on.
 - Phase 1 hide/show (`c9c955b`, archived at
@@ -131,9 +138,10 @@ addresses both problems idea-5's client-side prototype ran into: it answers
 "has this type ever had a row" directly instead of proxying through a 7-day
 window, and it costs one request instead of eighteen. The backend has no
 existing unbounded-existence query to reuse verbatim, but every candidate
-table already carries a `(user_id, time)` index that makes such a query
-cheap, and `NeedsAttentionCount` is a close structural precedent for a new
-single-purpose, auth-gated aggregate route. The main open implementation
+table already carries a `user_id`-leading index (`(user_id, time)` for 24 of
+26 types, `user_id` alone for `food_meal`, `(user_id, session_end_time)` for
+`sleep`) that makes such a query cheap, and `NeedsAttentionCount` is a close
+structural precedent for a new single-purpose, auth-gated aggregate route. The main open implementation
 decisions are the concurrency/query shape for checking 26 tables in one
 request, and the exact JSON shape of the response — everything else
 (fail-open contract, two empty states, composition with Phase 1, `food_meal`
@@ -236,7 +244,16 @@ This resolves the two open decisions:
   present-only type names was considered and rejected: the map form makes
   "type absent from response" (e.g. a partial failure) distinguishable from
   "type present but false," which an array can't express without a second
-  field.
+  field. That distinguishability is only useful if the frontend actually
+  acts on it: the handler sketch above always populates one entry per
+  `typeRegistry` name on a `200`, so a successful response is contractually
+  complete and a missing key can only mean a malformed/partial response,
+  not "no data." The frontend's fail-open handling (see "Suggested next
+  steps" #4) must therefore treat that case the same as a fetch error —
+  show the type — rather than treating an absent key as `false`; simply
+  intersecting "true-valued keys" with `PRIMARY_METRICS`/`SECONDARY_TYPES`
+  (as this section's opening sentence puts it) is exactly the shortcut that
+  would get this wrong, since it silently reads "absent" as "not true."
 
 One thing this sketch surfaces that pure reading didn't: `food_meal`'s
 entry has no `valueCol`/`family` set but does have a `table`, so it needs
@@ -301,13 +318,13 @@ other registered type.
   investigation did not evaluate whether that optimization is worth the
   added complexity versus a straightforward per-load query, and defaults to
   recommending the latter first.
-- **Locale coverage for the new copy was not investigated.** The plan
-  carries over "Both locales (en + ru)" as a constraint, but this
-  investigation's "Relevant code" section never identifies
-  `frontend/lib/i18n/en.ts`/`ru.ts` (the actual dictionaries `page.tsx`
-  reads via `t()`) as code this change touches, and no section below
-  addresses what the new no-data empty-state key(s) should read in either
-  locale. Left for the OpenSpec proposal.
+- **Exact copy for the new locale strings was not drafted.** "Relevant
+  code" above (line 55) identifies `frontend/lib/i18n/en.ts`/`ru.ts` as the
+  dictionaries this change touches, and "Suggested next steps" below calls
+  out that new keys are needed in both, but this investigation stops at
+  naming the files — it does not draft the actual key name(s) or English/
+  Russian copy for the new no-data empty state. Left for the OpenSpec
+  proposal.
 
 ### Suggested next steps
 
@@ -333,11 +350,16 @@ other registered type.
 4. Implement frontend integration: one presence fetch in `page.tsx`
    alongside the existing dashboard fetches, gating both the vitals grid
    and More Data pills from the same response, with fail-open behavior on
-   fetch error and no flash-of-hidden-cards (mirroring Phase 1's
-   `settingsStatus` gating pattern). Per the plan's carried-over "Both
-   locales (en + ru)" constraint, the new empty-state copy needs matching
-   keys in both `frontend/lib/i18n/en.ts` and `ru.ts` (alongside the
-   existing `dashboard.allCardsHidden` key it must stay distinct from).
+   both fetch error and a successful-but-incomplete response (a type
+   missing from the map on a `200` must be treated as "show it," the same
+   as a fetch error — not silently coerced to `false` by an intersection
+   over true-valued keys, since the endpoint contract only guarantees
+   completeness, not that every client-side consumer honors it), and no
+   flash-of-hidden-cards (mirroring Phase 1's `settingsStatus` gating
+   pattern). Per the plan's carried-over "Both locales (en + ru)"
+   constraint, the new empty-state copy needs matching keys in both
+   `frontend/lib/i18n/en.ts` and `ru.ts` (alongside the existing
+   `dashboard.allCardsHidden` key it must stay distinct from).
 5. Add E2E coverage in `e2e/tests/dashboard.spec.ts` for: a type with no
    data ever hidden from both sections, a type with data outside the 7-day
    sparkline window still shown (the case idea-5 got wrong), the new
