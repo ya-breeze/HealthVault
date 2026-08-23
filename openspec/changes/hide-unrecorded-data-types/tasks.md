@@ -16,10 +16,10 @@
 
 ## 3. Frontend: vitals grid presence filtering (`frontend/app/page.tsx`, `frontend/lib/vitals.ts`)
 
-- [ ] 3.1 Exclude zero-presence primary metrics from both the read-only grid and the edit/Customize mode's reorder/show-hide list — they are not part of the customizable set at all, not defaulted to hidden within it.
-- [ ] 3.2 Exclude zero-presence metrics from the "all cards hidden" (`vitals-grid-empty`) check, so that state only triggers when the user has hidden every metric that *does* have presence.
-- [ ] 3.3 Add the new empty state: when zero primary metrics have presence, render a placeholder with `data-testid="vitals-grid-empty-no-data"` and copy that does not reference Customize.
-- [ ] 3.4 Confirm the existing "missing data in the last 7 days" placeholder (for a metric that has presence but no recent rows) is unaffected — presence filtering only removes cards with zero data ever.
+- [x] 3.1 Exclude zero-presence primary metrics from both the read-only grid and the edit/Customize mode's reorder/show-hide list — they are not part of the customizable set at all, not defaulted to hidden within it.
+- [x] 3.2 Exclude zero-presence metrics from the "all cards hidden" (`vitals-grid-empty`) check, so that state only triggers when the user has hidden every metric that *does* have presence.
+- [x] 3.3 Add the new empty state: when zero primary metrics have presence, render a placeholder with `data-testid="vitals-grid-empty-no-data"` and copy that does not reference Customize.
+- [x] 3.4 Confirm the existing "missing data in the last 7 days" placeholder (for a metric that has presence but no recent rows) is unaffected — presence filtering only removes cards with zero data ever.
 
 ## 4. Frontend: More Data presence filtering (`frontend/app/page.tsx`)
 

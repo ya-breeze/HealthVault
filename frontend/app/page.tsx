@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, DATA_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, DashboardCardPref, VitalResult } from '@/lib/vitals';
+import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, DashboardCardPref, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
@@ -120,12 +120,22 @@ export default function Dashboard() {
       .catch(() => setNeedsAttentionCount(0));
   }, [ready]);
 
+  // moveCard/toggleHidden take an index into the presence-filtered list
+  // (what's actually rendered — see presentOrder below), not into `order`
+  // itself, since zero-presence metrics are excluded from the customizable
+  // set entirely and must not be reachable by these controls. Each resolves
+  // the index to a type first, then updates that type's entry within the
+  // full `order`, so absent-presence entries keep their stored position
+  // untouched (they may gain presence on a later load).
   function moveCard(index: number, direction: -1 | 1) {
     setOrder(prev => {
+      const visibleTypes = prev.filter(m => hasPresence(presence, m.type)).map(m => m.type);
       const target = index + direction;
-      if (target < 0 || target >= prev.length) return prev;
+      if (target < 0 || target >= visibleTypes.length) return prev;
+      const idxA = prev.findIndex(m => m.type === visibleTypes[index]);
+      const idxB = prev.findIndex(m => m.type === visibleTypes[target]);
       const next = [...prev];
-      [next[index], next[target]] = [next[target], next[index]];
+      [next[idxA], next[idxB]] = [next[idxB], next[idxA]];
       return next;
     });
   }
@@ -136,10 +146,24 @@ export default function Dashboard() {
   // before both are known.
   const dashboardReady = settingsLoaded && presenceReady;
 
-  const allHidden = order.every(m => m.hidden);
+  // Only metrics with presence are ever rendered (read-only grid or edit
+  // mode) — see design.md, "Presence excludes a type from the customizable
+  // set entirely". A zero-presence metric never appears here, regardless of
+  // its stored `hidden` flag.
+  const presentOrder = order.filter(m => hasPresence(presence, m.type));
+  // "No data at all" (nothing to show, Customize can't help) is distinct from
+  // "user hid everything that does have data" (allHidden, below) — see the
+  // two-empty-states decision in design.md. allHidden must not fire when
+  // there's nothing present to hide.
+  const noPrimaryData = presentOrder.length === 0;
+  const allHidden = presentOrder.length > 0 && presentOrder.every(m => m.hidden);
 
   function toggleHidden(index: number) {
-    setOrder(prev => prev.map((m, i) => (i === index ? { ...m, hidden: !m.hidden } : m)));
+    setOrder(prev => {
+      const visibleTypes = prev.filter(m => hasPresence(presence, m.type)).map(m => m.type);
+      const type = visibleTypes[index];
+      return prev.map(m => (m.type === type ? { ...m, hidden: !m.hidden } : m));
+    });
   }
 
   async function handleDone() {
@@ -202,13 +226,17 @@ export default function Dashboard() {
               </TapTarget>
             )}
           </div>
+        ) : noPrimaryData ? (
+          <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty-no-data">
+            {t('dashboard.noPrimaryData')}
+          </p>
         ) : allHidden && !editing ? (
           <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
             {t('dashboard.allCardsHidden')}
           </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
-            {order.map((m, i) => (editing || !m.hidden) && (
+            {presentOrder.map((m, i) => (editing || !m.hidden) && (
               <VitalCard
                 key={m.type}
                 type={m.type}
@@ -218,7 +246,7 @@ export default function Dashboard() {
                 onMoveUp={() => moveCard(i, -1)}
                 onMoveDown={() => moveCard(i, 1)}
                 moveUpDisabled={i === 0}
-                moveDownDisabled={i === order.length - 1}
+                moveDownDisabled={i === presentOrder.length - 1}
                 hidden={m.hidden}
                 onToggleHidden={() => toggleHidden(i)}
                 controlsDisabled={saving}
