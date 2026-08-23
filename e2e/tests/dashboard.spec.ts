@@ -4,6 +4,35 @@ const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
 const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8888';
 
+// Mirrors DATA_TYPES (frontend/lib/api.ts) / typeRegistry (backend/pkg/server/api.go):
+// every key a real `/api/data-types/presence` response has exactly one entry
+// for. Kept here, rather than imported, so this file documents independently
+// of the production code which types a presence fixture must cover to look
+// like a real (non-fail-open) response.
+const ALL_DATA_TYPES = [
+  'steps', 'heart_rate', 'heart_rate_variability', 'sleep', 'distance',
+  'active_calories', 'total_calories', 'weight', 'height', 'blood_pressure',
+  'blood_glucose', 'oxygen_saturation', 'body_temperature', 'skin_temperature',
+  'respiratory_rate', 'resting_heart_rate', 'exercise', 'hydration', 'nutrition',
+  'basal_metabolic_rate', 'body_fat', 'lean_body_mass', 'vo2_max', 'bone_mass',
+  'speed', 'food_meal',
+];
+
+const PRIMARY_METRIC_TYPES = [
+  'steps', 'heart_rate', 'sleep', 'heart_rate_variability', 'distance', 'weight',
+  'blood_pressure', 'oxygen_saturation',
+];
+
+const SECONDARY_TYPES = ALL_DATA_TYPES.filter(t => !PRIMARY_METRIC_TYPES.includes(t));
+
+// Builds a full, every-type-covered presence map (a real response never omits
+// a type), defaulting every entry to present and applying `overrides` on top.
+function presenceFixture(overrides: Record<string, boolean> = {}): Record<string, boolean> {
+  const map: Record<string, boolean> = {};
+  for (const type of ALL_DATA_TYPES) map[type] = true;
+  return { ...map, ...overrides };
+}
+
 async function login(page: Page) {
   await page.goto('/login/');
   await page.getByPlaceholder(/username/i).fill(USER);
@@ -606,5 +635,152 @@ test.describe('Webhook ingest + dashboard', () => {
     expect(Array.isArray(bucketed)).toBe(true);
     const total = bucketed.reduce((sum: number, b: { sum?: number }) => sum + (b.sum ?? 0), 0);
     expect(total).toBeGreaterThanOrEqual(stepCount);
+  });
+});
+
+// hide-unrecorded-data-types: presence (whether a type has ever had a row,
+// not just whether it has recent data) is fetched from
+// `/api/data-types/presence` and drives which cards/pills the dashboard shows
+// at all. Every test here mocks that route directly rather than depending on
+// which types the seeded account happens to have real rows for, so the
+// covered scenarios (a type gaining/losing presence, a failed/incomplete
+// fetch, a pending fetch) are exercised deterministically regardless of
+// seed data.
+test.describe('Data-type presence filtering', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    // Same reasoning as the other describe blocks: a card left hidden by an
+    // earlier failed test must not be mistaken for presence filtering here.
+    await restoreAllVisible(page);
+  });
+
+  test('a primary metric with zero data ever is hidden from the read-only vitals grid', async ({ page }) => {
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture({ sleep: false }) })
+    );
+    await page.goto('/');
+
+    const grid = page.getByTestId('vitals-grid');
+    await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+    await expect(grid.getByTestId('vital-card-sleep')).toHaveCount(0);
+  });
+
+  // The idea-5 regression: a metric that has data, just none in the 7-day
+  // sparkline window, must stay on the grid (with its own "No data"
+  // in-card state) rather than being hidden — hiding is a presence-only
+  // decision, not a recent-data one.
+  test('a primary metric with data outside the 7-day window but presence stays shown', async ({ page }) => {
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture({ sleep: true }) })
+    );
+    await page.route('**/api/data/sleep**', route => route.fulfill({ json: [] }));
+    await page.goto('/');
+
+    const grid = page.getByTestId('vitals-grid');
+    const sleepCard = grid.getByTestId('vital-card-sleep');
+    await expect(sleepCard).toBeVisible();
+    await expect(sleepCard.getByText('No data')).toBeVisible();
+  });
+
+  test('a zero-presence metric does not appear in edit/Customize mode\'s reorder/show-hide list', async ({ page }) => {
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture({ sleep: false }) })
+    );
+    await page.goto('/');
+
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByTestId('vital-card-sleep-visibility')).toHaveCount(0);
+    await expect(page.locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1);
+
+    // Nothing was changed, so leave without triggering a settings write —
+    // same reasoning as restoreAllVisible's own no-op exit.
+    await page.goto('/');
+  });
+
+  test('the vitals-grid-empty-no-data placeholder renders when no primary metric has presence', async ({ page }) => {
+    const overrides = Object.fromEntries(PRIMARY_METRIC_TYPES.map(type => [type, false]));
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture(overrides) })
+    );
+    await page.goto('/');
+
+    // Distinct from vitals-grid-empty, which covers "hid every data-bearing
+    // card via Customize" — here there is nothing to un-hide.
+    await expect(page.getByTestId('vitals-grid-empty-no-data')).toBeVisible();
+    await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
+    await expect(page.getByTestId('vitals-grid')).toHaveCount(0);
+  });
+
+  test('a secondary type with zero data ever is omitted from More Data; one with data is shown', async ({ page }) => {
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture({ vo2_max: true, height: false }) })
+    );
+    await page.goto('/');
+
+    const moreData = page.getByTestId('more-data');
+    await expect(moreData.locator('a[href="/data/vo2_max/"]')).toBeVisible();
+    await expect(moreData.locator('a[href="/data/height/"]')).toHaveCount(0);
+  });
+
+  test('the More Data section is entirely absent when no secondary type has presence', async ({ page }) => {
+    const overrides = Object.fromEntries(SECONDARY_TYPES.map(type => [type, false]));
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture(overrides) })
+    );
+    await page.goto('/');
+
+    await expect(page.getByTestId('more-data')).toHaveCount(0);
+  });
+
+  test('a presence-fetch failure leaves every primary and secondary type visible (fail open)', async ({ page }) => {
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ status: 500, json: { error: 'boom' } })
+    );
+    await page.goto('/');
+
+    const grid = page.getByTestId('vitals-grid');
+    for (const type of PRIMARY_METRIC_TYPES) {
+      await expect(grid.getByTestId(`vital-card-${type}`)).toBeVisible();
+    }
+    await expect(page.getByTestId('more-data').locator('a[href="/data/vo2_max/"]')).toBeVisible();
+  });
+
+  test('a presence response missing an entry for a type leaves that type visible (fail open)', async ({ page }) => {
+    // Only `steps` present in the response — every other type (primary and
+    // secondary) is absent from the map entirely, not merely `false`.
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: { steps: true } })
+    );
+    await page.goto('/');
+
+    const grid = page.getByTestId('vitals-grid');
+    for (const type of PRIMARY_METRIC_TYPES) {
+      await expect(grid.getByTestId(`vital-card-${type}`)).toBeVisible();
+    }
+    await expect(page.getByTestId('more-data').locator('a[href="/data/vo2_max/"]')).toBeVisible();
+  });
+
+  test('while the presence fetch is pending, nothing is filtered in by presence yet', async ({ page }) => {
+    // Mirrors the existing settings-load gate test: hold the response open,
+    // assert the loading placeholder covers the grid and More Data, then
+    // release and confirm both appear.
+    let release: () => void = () => {};
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/data-types/presence', async route => {
+      await held;
+      await route.fulfill({ json: presenceFixture() });
+    });
+
+    await page.goto('/');
+
+    await expect(page.getByTestId('vitals-grid-loading')).toBeVisible();
+    await expect(page.getByTestId('vitals-grid')).toHaveCount(0);
+    await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+    release();
+
+    await expect(page.getByTestId('vitals-grid')).toBeVisible();
+    await expect(page.getByTestId('vitals-grid-loading')).toHaveCount(0);
+    await expect(page.getByTestId('more-data')).toBeVisible();
   });
 });

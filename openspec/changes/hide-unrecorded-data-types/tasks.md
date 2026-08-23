@@ -33,15 +33,15 @@
 
 ## 6. Tests (`e2e/tests/dashboard.spec.ts`)
 
-- [ ] 6.1 A primary metric with zero data ever is hidden from the read-only vitals grid.
-- [ ] 6.2 A primary metric with data outside the 7-day sparkline window (but at least one row ever) remains shown — the regression case idea-5 got wrong.
-- [ ] 6.3 A zero-presence metric does not appear in edit/Customize mode's reorder/show-hide list.
-- [ ] 6.4 The new `vitals-grid-empty-no-data` placeholder renders when the user has recorded none of the 8 primary metrics, and is distinct from `vitals-grid-empty` (which still covers "hid every data-bearing card via Customize").
-- [ ] 6.5 A secondary type with zero data ever is omitted from More Data; a secondary type with data is shown.
-- [ ] 6.6 The More Data section (`more-data` testid) is entirely absent when no secondary type has data.
-- [ ] 6.7 A presence-fetch failure leaves every primary and secondary type visible (fail open).
-- [ ] 6.8 A successful presence response missing an entry for some type leaves that type visible (fail open on incompleteness) — exercise via a route mock returning a partial map.
-- [ ] 6.9 While the presence fetch is pending (delayed route mock), neither the vitals grid nor More Data render any card/entry as filtered-in by presence until it resolves or fails, mirroring the existing settings-load gate.
+- [x] 6.1 A primary metric with zero data ever is hidden from the read-only vitals grid.
+- [x] 6.2 A primary metric with data outside the 7-day sparkline window (but at least one row ever) remains shown — the regression case idea-5 got wrong.
+- [x] 6.3 A zero-presence metric does not appear in edit/Customize mode's reorder/show-hide list.
+- [x] 6.4 The new `vitals-grid-empty-no-data` placeholder renders when the user has recorded none of the 8 primary metrics, and is distinct from `vitals-grid-empty` (which still covers "hid every data-bearing card via Customize").
+- [x] 6.5 A secondary type with zero data ever is omitted from More Data; a secondary type with data is shown.
+- [x] 6.6 The More Data section (`more-data` testid) is entirely absent when no secondary type has data.
+- [x] 6.7 A presence-fetch failure leaves every primary and secondary type visible (fail open).
+- [x] 6.8 A successful presence response missing an entry for some type leaves that type visible (fail open on incompleteness) — exercise via a route mock returning a partial map.
+- [x] 6.9 While the presence fetch is pending (delayed route mock), neither the vitals grid nor More Data render any card/entry as filtered-in by presence until it resolves or fails, mirroring the existing settings-load gate.
 
 ## 7. Manual verification against WIP
 
