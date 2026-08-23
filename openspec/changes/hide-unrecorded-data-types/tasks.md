@@ -29,7 +29,7 @@
 
 ## 5. Localization (`frontend/lib/i18n/en.ts`, `ru.ts`)
 
-- [ ] 5.1 Add the new no-data empty-state copy key(s) to both dictionaries, distinct from the existing `dashboard.allCardsHidden` key and its copy.
+- [x] 5.1 Add the new no-data empty-state copy key(s) to both dictionaries, distinct from the existing `dashboard.allCardsHidden` key and its copy.
 
 ## 6. Tests (`e2e/tests/dashboard.spec.ts`)
 
