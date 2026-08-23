@@ -52,15 +52,26 @@ async function login(page: Page) {
 // used for cleanup, so a missing response times out quietly instead of
 // masking the assertion failure that triggered the cleanup. Found in code
 // review.
-async function withSettingsSave(page: Page, action: () => Promise<unknown>) {
+//
+// Returns whether a matching PUT was actually observed, so a caller that
+// conditions further mutation on "did this really persist" (see the
+// presence-gap reorder test's `finally`) has something to check instead of
+// assuming the write landed. `false` covers both a failed `action()` and a
+// response that never arrived in time.
+async function withSettingsSave(page: Page, action: () => Promise<unknown>): Promise<boolean> {
   const saved = page
     .waitForResponse(
       r => r.url().includes('/api/users/me/settings') && r.request().method() === 'PUT',
       { timeout: 15_000 }
     )
-    .catch(() => null);
+    // A non-OK response (e.g. a 500) means api.updateSettings threw and the
+    // server never persisted the new order — callers that gate cleanup on
+    // this return value (like the presence-gap reorder test) must treat that
+    // the same as no PUT having fired at all. Found in code review.
+    .then(r => r.ok())
+    .catch(() => false);
   await action().catch(() => {});
-  await saved;
+  return saved;
 }
 
 // Shared cleanup for tests that reorder the vitals grid: puts Weight back
@@ -731,6 +742,14 @@ test.describe('Data-type presence filtering', () => {
     const filteredBefore = await grid.locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')!));
     expect(filteredBefore).toEqual(fullBefore.filter(id => id !== 'vital-card-sleep'));
 
+    // Tracks whether the forward move actually reached the server: the
+    // `finally` below re-navigates fresh (page.goto discards any unsaved
+    // local state), so it must know whether the account's *persisted* order
+    // was really touched before undoing it — otherwise, if the forward click
+    // or its Done never persisted, "undoing" a mutation that never happened
+    // would apply a fresh, unintended one to the untouched account. Found in
+    // code review.
+    let forwardSaved = false;
     try {
       await page.getByRole('button', { name: 'Customize' }).click();
       // succType now renders immediately after predType — move it up, onto
@@ -738,7 +757,7 @@ test.describe('Data-type presence filtering', () => {
       // Done is what persists it (handleDone's PUT), so withSettingsSave
       // waits on that click, not the move.
       await page.getByTestId(succType).getByRole('button', { name: /move .* up/i }).click();
-      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      forwardSaved = await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
 
       // Persisted with the gap still active.
       await page.reload();
@@ -765,27 +784,34 @@ test.describe('Data-type presence filtering', () => {
       [expectedFull[predIdx], expectedFull[succIdx]] = [expectedFull[succIdx], expectedFull[predIdx]];
       expect(fullAfter).toEqual(expectedFull);
     } finally {
-      // Undoes the swap through the mirror move (down instead of up) in the
-      // same presence-gapped context that produced it, so it inverts
-      // exactly rather than needing a different sequence of arrow clicks
-      // under full presence — predType and succType are no longer adjacent
-      // in the full order once Sleep is back, so a full-presence "move
-      // down" would swap the wrong pair.
-      await page.route('**/api/data-types/presence', route =>
-        route.fulfill({ json: presenceFixture({ sleep: false }) })
-      );
-      await page.goto('/');
-      const customizeBtn = page.getByRole('button', { name: 'Customize' });
-      await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
-      if (await customizeBtn.isVisible().catch(() => false)) {
-        await customizeBtn.click().catch(() => {});
-        const moveBack = page.getByTestId(succType).getByRole('button', { name: /move .* down/i });
-        if (!(await moveBack.isDisabled().catch(() => true))) {
-          await moveBack.click().catch(() => {});
-        }
-        const done = page.getByRole('button', { name: 'Done' });
-        if (await done.isVisible().catch(() => false)) {
-          await withSettingsSave(page, () => done.click());
+      // Skip the inverse entirely if the forward move never persisted (e.g.
+      // the move-up click or Done failed before its PUT landed): the account
+      // is still in its original, untouched order, and blindly clicking
+      // "move down" here would swap succType with whatever actually follows
+      // it there — a new, unrelated mutation — rather than undo anything.
+      if (forwardSaved) {
+        // Undoes the swap through the mirror move (down instead of up) in the
+        // same presence-gapped context that produced it, so it inverts
+        // exactly rather than needing a different sequence of arrow clicks
+        // under full presence — predType and succType are no longer adjacent
+        // in the full order once Sleep is back, so a full-presence "move
+        // down" would swap the wrong pair.
+        await page.route('**/api/data-types/presence', route =>
+          route.fulfill({ json: presenceFixture({ sleep: false }) })
+        );
+        await page.goto('/');
+        const customizeBtn = page.getByRole('button', { name: 'Customize' });
+        await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
+        if (await customizeBtn.isVisible().catch(() => false)) {
+          await customizeBtn.click().catch(() => {});
+          const moveBack = page.getByTestId(succType).getByRole('button', { name: /move .* down/i });
+          if (!(await moveBack.isDisabled().catch(() => true))) {
+            await moveBack.click().catch(() => {});
+          }
+          const done = page.getByRole('button', { name: 'Done' });
+          if (await done.isVisible().catch(() => false)) {
+            await withSettingsSave(page, () => done.click());
+          }
         }
       }
     }
