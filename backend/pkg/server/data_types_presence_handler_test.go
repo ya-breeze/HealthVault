@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	kinmodels "github.com/ya-breeze/kin-core/models"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
+	"gorm.io/gorm"
 )
 
 // presenceTypeNames mirrors typeRegistry's keys in api.go. Kept here (rather
@@ -165,5 +167,30 @@ func TestDataTypesPresenceHandler_UserParamOutsideFamilyForbidden(t *testing.T) 
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// Regression guard: the per-type Count query's error must surface as a 500,
+// not be swallowed into a partial/incorrect 200 presence map.
+func TestDataTypesPresenceHandler_QueryErrorReturns500(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	const hookName = "test:presence-query-error"
+	st.DB().Callback().Query().Before("gorm:query").Register(hookName, func(tx *gorm.DB) {
+		// Scoped to the "steps" table so this only poisons the presence
+		// handler's own per-type Count query, not resolveUser's user lookup.
+		if tx.Statement.Table == "steps" {
+			tx.Error = errors.New("simulated count query failure")
+		}
+	})
+	t.Cleanup(func() { st.DB().Callback().Query().Remove(hookName) })
+
+	h := server.DataTypesPresenceHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, withClaims(newPresenceRequest(""), userID))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when a Count query errors, got %d: %s", w.Code, w.Body.String())
 	}
 }

@@ -697,6 +697,81 @@ test.describe('Data-type presence filtering', () => {
     await page.goto('/');
   });
 
+  // Sleep sits between Heart Rate and HRV in the default order; hiding it by
+  // presence creates a gap in the *middle* of the rendered list — the case
+  // moveCard/toggleHidden's index-remapping exists for (see the comment
+  // above them in app/page.tsx: index into the presence-filtered list,
+  // resolved back onto the full stored `order`), but nothing else exercises
+  // that remapping with an actual move plus reload. Found in code review.
+  test('reordering a card adjacent to a presence gap resolves onto the full order, leaving the gapped type\'s own stored position untouched', async ({ page }) => {
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture({ sleep: false }) })
+    );
+    await page.goto('/');
+
+    try {
+      const grid = page.getByTestId('vitals-grid');
+      const renderedBefore = await grid.locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')));
+      expect(renderedBefore).toEqual([
+        'vital-card-steps', 'vital-card-heart_rate', 'vital-card-heart_rate_variability',
+        'vital-card-distance', 'vital-card-weight', 'vital-card-blood_pressure', 'vital-card-oxygen_saturation',
+      ]);
+
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await withSettingsSave(page, () =>
+        page.getByRole('button', { name: /move hrv up/i }).click()
+      );
+
+      // Persisted with the gap still active: HRV now renders before Heart
+      // Rate, Sleep still absent.
+      await page.reload();
+      const renderedAfter = await page.getByTestId('vitals-grid').locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')));
+      expect(renderedAfter).toEqual([
+        'vital-card-steps', 'vital-card-heart_rate_variability', 'vital-card-heart_rate',
+        'vital-card-distance', 'vital-card-weight', 'vital-card-blood_pressure', 'vital-card-oxygen_saturation',
+      ]);
+
+      // Sleep's own stored position must be untouched by that swap: once it
+      // regains presence, it renders back in its original slot — between the
+      // two cards that were just swapped around it — not shifted to the
+      // front or appended at the end.
+      await page.route('**/api/data-types/presence', route =>
+        route.fulfill({ json: presenceFixture() })
+      );
+      await page.reload();
+      const renderedFull = await page.getByTestId('vitals-grid').locator('> *').evaluateAll(els => els.map(e => e.getAttribute('data-testid')));
+      expect(renderedFull).toEqual([
+        'vital-card-steps', 'vital-card-heart_rate_variability', 'vital-card-sleep',
+        'vital-card-heart_rate', 'vital-card-distance', 'vital-card-weight',
+        'vital-card-blood_pressure', 'vital-card-oxygen_saturation',
+      ]);
+    } finally {
+      // Undoes the swap through the mirror move (down instead of up) in the
+      // same presence-gapped context that produced it, so it inverts exactly
+      // rather than needing a different sequence of arrow clicks under full
+      // presence — HRV and Heart Rate are no longer adjacent in the full
+      // order once Sleep is back, so a single full-presence "move down"
+      // would swap the wrong pair.
+      await page.route('**/api/data-types/presence', route =>
+        route.fulfill({ json: presenceFixture({ sleep: false }) })
+      );
+      await page.goto('/');
+      const customizeBtn = page.getByRole('button', { name: 'Customize' });
+      await customizeBtn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null);
+      if (await customizeBtn.isVisible().catch(() => false)) {
+        await customizeBtn.click().catch(() => {});
+        const moveHrvDown = page.getByRole('button', { name: /move hrv down/i });
+        if (!(await moveHrvDown.isDisabled().catch(() => true))) {
+          await withSettingsSave(page, () => moveHrvDown.click());
+        }
+        const done = page.getByRole('button', { name: 'Done' });
+        if (await done.isVisible().catch(() => false)) {
+          await withSettingsSave(page, () => done.click());
+        }
+      }
+    }
+  });
+
   test('the vitals-grid-empty-no-data placeholder renders when no primary metric has presence', async ({ page }) => {
     const overrides = Object.fromEntries(PRIMARY_METRIC_TYPES.map(type => [type, false]));
     await page.route('**/api/data-types/presence', route =>

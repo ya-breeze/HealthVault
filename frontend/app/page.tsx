@@ -212,10 +212,10 @@ export default function Dashboard() {
             </TapTarget>
           )}
         </div>
-        {/* Edit mode renders every card, including hidden ones, so they can be
-            found and shown again; the read-only grid renders only the visible
-            ones. Move controls are indexed against the full `order` either way,
-            so hiding a card never shifts what a neighbour's arrow does. */}
+        {/* Edit mode renders every present card, including hidden ones, so they
+            can be found and shown again; the read-only grid renders only the
+            visible ones. Move controls are indexed against the presence-filtered
+            list — see the moveCard/toggleHidden comment above. */}
         {!dashboardReady ? (
           <div
             className="mb-8 flex flex-wrap items-center justify-between gap-2 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3"

@@ -54,6 +54,10 @@ _Avoid_: Metric card, stat card
 A Dashboard Card summarizing food-logging data — e.g. today's intake against a Nutrition Target, or a Healthiness Label.
 _Avoid_: Nutrition widget, food widget
 
+**Presence**:
+Whether the resolved user has ever recorded at least one row of a given data type, computed over all time — the `GET /api/data-types/presence` signal used to hide a type everywhere on the dashboard (vitals grid and More Data) when the user has no data for it at all. Distinct from a Dashboard Card's `hidden` flag (a user preference, only meaningful for types that do have presence) and from the vitals grid's 7-day recency window (a metric with presence but no data in the last 7 days still renders its card, just with the "no data" sparkline placeholder).
+_Avoid_: "Has data" (ambiguous with the recency window), "visible" (conflates with the `hidden` preference)
+
 ### Nutrition targets
 
 **Goal Weight**:
