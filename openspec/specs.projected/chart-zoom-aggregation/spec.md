@@ -244,9 +244,11 @@ Given sufficient data, and the goal not already reached: if the regression slope
 toward the goal (flat or diverging), or the computed crossing date falls beyond the 12-month
 horizon, the system SHALL display "Not on track at your current trend" and SHALL NOT render a
 projection line. The 12-month horizon SHALL be
-a fixed 365-day count from the most recent day in the 30-day regression window (not calendar-month
-arithmetic): a crossing at or before day 365 from that point is within the horizon, and a crossing
-after day 365 is beyond it. Otherwise the system SHALL render a dashed projection line from the
+a fixed 365-day count from **today** (not calendar-month arithmetic, and not from the most recent
+day that happens to have data): a crossing at or before day 365 from today is within the horizon,
+and a crossing after day 365 is beyond it. A crossing at or before today SHALL be treated as not
+on track, so a user whose last weigh-in is weeks old is never shown an ETA that has already
+passed. Otherwise the system SHALL render a dashed projection line from the
 current EMA value to the computed crossing point, and SHALL display the crossing date as ETA text.
 
 The dashed projection line itself SHALL render only at Month and Year zoom (not Day or Week — a
@@ -260,9 +262,9 @@ never hides the answer.
   projection line, at any zoom level
 
 #### Scenario: Not enough data inside the regression window
-- **WHEN** a user has at least 5 `weight` records spanning at least 14 days, but fewer than 2 of
-  their EMA points fall within the last 30 calendar days (e.g. they stopped logging weight months
-  ago)
+- **WHEN** a user has at least 5 `weight` records spanning at least 14 days, but their EMA points
+  inside the last 30 calendar days number fewer than 5 or span fewer than 14 days (e.g. they
+  stopped logging weight months ago, or logged a handful of times in one week)
 - **THEN** the chart SHALL display "Not enough data to project yet" and SHALL NOT render a
   projection line, at any zoom level
 
@@ -298,6 +300,19 @@ never hides the answer.
 - **THEN** the chart SHALL NOT display "You've reached your goal weight", since direction is
   determined from the 30-day regression window's boundary EMA values, not the lifetime-earliest
   record — and SHALL instead display "Not on track at your current trend" for this flat trend
+
+#### Scenario: ETA never falls in the past
+- **WHEN** a user's most recent `weight` record is several weeks old and the fitted trend line
+  crosses the goal at a date earlier than today
+- **THEN** the chart SHALL display "Not on track at your current trend" and SHALL NOT render a
+  projection line or an ETA date
+
+#### Scenario: Projection point count is bounded
+- **WHEN** an on-track projection's crossing is far enough ahead that daily spacing would produce
+  more synthetic points than real buckets
+- **THEN** the system SHALL widen the spacing between synthetic points so their count stays
+  bounded, keeping the crossing point itself on the chart, rather than compressing the real
+  weight series into a sliver of the categorical x-axis
 
 #### Scenario: Crossing beyond the horizon
 - **WHEN** a user's trend moves toward their goal but the computed crossing date is more than 365
