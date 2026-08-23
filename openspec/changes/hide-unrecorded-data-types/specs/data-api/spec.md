@@ -6,7 +6,7 @@ The system SHALL expose `GET /api/data-types/presence` (requires authentication)
 
 The response SHALL be a JSON object mapping each registered type name to a boolean (`true` if at least one record exists for that type, `false` if none). A successful (`200`) response SHALL include an entry for every registered type; a type absent from the map on a `200` response indicates a malformed or partial response and SHALL be treated by callers the same as a fetch failure — never as `false`.
 
-This endpoint SHALL accept the same optional `?user=<username>` family-member parameter as other data endpoints (see "Family member data access"), subject to the same same-family authorization check.
+This endpoint SHALL accept the same optional `?user=<username>` family-member parameter as other data endpoints (see "Family member data access"), subject to the same family authorization check.
 
 #### Scenario: Presence for a user with some recorded types
 
