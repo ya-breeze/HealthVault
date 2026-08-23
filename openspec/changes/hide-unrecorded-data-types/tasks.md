@@ -45,4 +45,4 @@
 
 ## 7. Manual verification against WIP
 
-- [ ] 7.1 Deploy the branch to the HealthVault WIP stack per CLAUDE.md's E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review.
+- [x] 7.1 Deploy the branch to the HealthVault WIP stack per CLAUDE.md's E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review.
