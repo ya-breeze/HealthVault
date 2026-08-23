@@ -5,6 +5,7 @@
 - [ ] 1.3 Loop over `typeRegistry`, running one indexed existence check (`Count() > 0`, or `SELECT EXISTS(...)` if measurement later shows `Count()` too slow — not needed at this project's scale) per type against `storage.DB()` directly, keyed by the registry's type name.
 - [ ] 1.4 Return `map[string]bool` as JSON via the existing `writeJSON` helper, with exactly one entry per `typeRegistry` name on success.
 - [ ] 1.5 Register `GET /api/data-types/presence` in `server.go`, behind the same auth middleware as the other `/api/data/*` routes.
+- [ ] 1.6 Add `backend/pkg/server/data_types_presence_handler_test.go` covering: unauthenticated request rejected (401), a type with zero rows reports `false`, a type with at least one row reports `true`, the response has exactly one entry per registered type, and family-member resolution via `?user=` behaves the same as `DataHandler`'s.
 
 ## 2. Frontend: presence fetch (`frontend/lib/api.ts`, `frontend/app/page.tsx`)
 
@@ -40,6 +41,7 @@
 - [ ] 6.6 The More Data section (`more-data` testid) is entirely absent when no secondary type has data.
 - [ ] 6.7 A presence-fetch failure leaves every primary and secondary type visible (fail open).
 - [ ] 6.8 A successful presence response missing an entry for some type leaves that type visible (fail open on incompleteness) — exercise via a route mock returning a partial map.
+- [ ] 6.9 While the presence fetch is pending (delayed route mock), neither the vitals grid nor More Data render any card/entry as filtered-in by presence until it resolves or fails, mirroring the existing settings-load gate.
 
 ## 7. Manual verification against WIP
 

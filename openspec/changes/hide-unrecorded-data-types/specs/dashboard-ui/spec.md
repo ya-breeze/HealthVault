@@ -14,7 +14,7 @@ The dashboard SHALL replace the 3-card summary and separate "Browse Data" grid w
 - **WHEN** a user clicks a vital card
 - **THEN** the system SHALL navigate to that metric's `/data/{type}` page
 
-#### Scenario: Missing data in the last 7 days for a metric that has been recorded before
+#### Scenario: Missing data for a metric
 
 - **WHEN** the resolved user has at least one record ever for one of the 8 primary metrics, but none in the last 7 days
 - **THEN** that metric's card SHALL still render and SHALL indicate no data rather than rendering an empty or broken sparkline — presence-based hiding (see "Presence-based visibility of vitals grid cards") applies only to metrics with zero records ever, not to a metric whose only gap is the last 7 days
@@ -52,7 +52,7 @@ The dashboard vitals grid SHALL support a per-user, persisted custom display ord
 - **WHEN** a user in edit mode toggles a previously-hidden card back to visible, and clicks Done
 - **THEN** the read-only grid SHALL render that card again in the same position it held before it was hidden, not appended at the end
 
-#### Scenario: Hiding every presence-eligible card shows a placeholder
+#### Scenario: Hiding every card shows a placeholder
 
 - **WHEN** a user hides every presence-eligible card in the vitals grid and clicks Done
 - **THEN** the system SHALL persist the all-hidden state without error, and the read-only grid SHALL render the `vitals-grid-empty` placeholder message instead of an empty grid — this scenario presumes at least one metric has presence; a user with zero presence-eligible metrics instead sees the distinct placeholder described in "Distinct empty state for a vitals grid with no recorded data"
@@ -120,6 +120,11 @@ If the presence fetch fails, the system SHALL fail open: treat every primary met
 - **WHEN** the presence fetch succeeds but its response omits an entry for one primary metric
 - **THEN** the system SHALL treat that metric as present and render it, not treat the omission as `false`
 
+#### Scenario: No card is shown before presence is known
+
+- **WHEN** the presence fetch has not yet resolved (and has not failed)
+- **THEN** the dashboard SHALL NOT render any vitals-grid card as filtered-in by presence until the fetch resolves or fails, consistent with the existing settings-load gating in "Customizable vitals grid order and visibility" — cards SHALL wait for both the saved settings load and the presence fetch before rendering
+
 ### Requirement: Presence-based filtering of the More Data section
 
 The More Data section SHALL list only secondary (non-primary) registered types for which the resolved user has at least one recorded data point of any age, per `GET /api/data-types/presence` and the same fail-open rules as the vitals grid (a fetch failure, or a type missing from a successful response, means that type is shown). When zero secondary types have presence, the More Data section SHALL NOT render at all — no heading, no empty list. The section's container SHALL carry `data-testid="more-data"`.
@@ -143,6 +148,11 @@ The More Data section SHALL list only secondary (non-primary) registered types f
 
 - **WHEN** the presence fetch fails
 - **THEN** the system SHALL render every secondary type in the More Data section, as if every type had presence
+
+#### Scenario: More Data section waits for presence before rendering
+
+- **WHEN** the presence fetch has not yet resolved (and has not failed)
+- **THEN** the dashboard SHALL NOT render the More Data section as filtered-in by presence until the fetch resolves or fails
 
 ### Requirement: Distinct empty state for a vitals grid with no recorded data
 
