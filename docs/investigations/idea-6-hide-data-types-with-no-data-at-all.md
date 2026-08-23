@@ -8,6 +8,36 @@ the unmerged, non-archived branch
 7-day-window approach was rejected. Goal here: hide vitals/"more data" types
 that have **never** had a record, computed server-side.
 
+## Outcome
+
+This investigation concluded in a proposed OpenSpec change,
+`openspec/changes/hide-unrecorded-data-types/` (proposal, design, spec
+deltas for `data-api` and `dashboard-ui`, and an implementer `tasks.md` with
+every box left unticked). `openspec validate hide-unrecorded-data-types
+--strict` passes. No production code was written or wired up — per this
+repo's spec-first workflow, that is deliberately out of scope for this
+Attempt and is left for a later, separate implementation pass against the
+approved spec.
+
+The chosen approach matches "Suggested next steps" below: a dedicated
+`GET /api/data-types/presence` endpoint returning `map[string]bool` (one
+entry per registered type, computed via a sequential existence-check loop
+over `typeRegistry`), consumed by one additional frontend fetch that
+presence-filters both the vitals grid and the More Data pills, fails open
+on fetch error or an incomplete response, and adds a new
+`vitals-grid-empty-no-data` state distinct from Phase 1's
+`vitals-grid-empty`. The one question this investigation had left open
+(next step #5 below — whether a never-had-data card should still appear,
+dimmed, in Customize/edit mode) is now resolved in the proposal's
+`design.md`: such types are excluded from the customizable set entirely,
+not defaulted to hidden within it, because toggling a data-less type
+"visible" via Customize could never make it render anything.
+
+Everything below this point is the original research write-up, produced
+before the proposal existed; it is left as-is for traceability. Where it
+says a decision is "left for the OpenSpec proposal," that decision has
+since been made — see `design.md`, not this section, for the resolution.
+
 ## Relevant code
 
 - `frontend/app/page.tsx` — Dashboard. Vitals grid at lines 187-206
