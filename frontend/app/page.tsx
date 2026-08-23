@@ -157,6 +157,12 @@ export default function Dashboard() {
   // there's nothing present to hide.
   const noPrimaryData = presentOrder.length === 0;
   const allHidden = presentOrder.length > 0 && presentOrder.every(m => m.hidden);
+  // Gated on presenceReady (not just filtered unconditionally) so a pending
+  // fetch never flashes every secondary type before presence is known — the
+  // section renders nothing at all until it resolves, same as the vitals
+  // grid's dashboardReady gate. See design.md, "More Data collapses, not
+  // renders empty".
+  const presentSecondaryTypes = presenceReady ? SECONDARY_TYPES.filter(type => hasPresence(presence, type)) : [];
 
   function toggleHidden(index: number) {
     setOrder(prev => {
@@ -300,22 +306,26 @@ export default function Dashboard() {
           </a>
         </div>
 
-        <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-          {t('dashboard.moreData')}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {SECONDARY_TYPES.map(type => (
-            <a
-              key={type}
-              href={`/data/${type}/`}
-              className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-border bg-bg-elevated hover:border-accent transition-colors flex items-center gap-1.5"
-              style={{ color: metricColorVar(type) }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: metricColorVar(type) }} />
-              {metricLabel(t, type)}
-            </a>
-          ))}
-        </div>
+        {presentSecondaryTypes.length > 0 && (
+          <div data-testid="more-data">
+            <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
+              {t('dashboard.moreData')}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {presentSecondaryTypes.map(type => (
+                <a
+                  key={type}
+                  href={`/data/${type}/`}
+                  className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-border bg-bg-elevated hover:border-accent transition-colors flex items-center gap-1.5"
+                  style={{ color: metricColorVar(type) }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: metricColorVar(type) }} />
+                  {metricLabel(t, type)}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

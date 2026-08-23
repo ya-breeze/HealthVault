@@ -23,9 +23,9 @@
 
 ## 4. Frontend: More Data presence filtering (`frontend/app/page.tsx`)
 
-- [ ] 4.1 Filter `SECONDARY_TYPES` to only those with presence before rendering the More Data pills.
-- [ ] 4.2 Add `data-testid="more-data"` to the section's wrapper element.
-- [ ] 4.3 Omit the More Data section entirely (no heading, no empty list) when zero secondary types have presence.
+- [x] 4.1 Filter `SECONDARY_TYPES` to only those with presence before rendering the More Data pills.
+- [x] 4.2 Add `data-testid="more-data"` to the section's wrapper element.
+- [x] 4.3 Omit the More Data section entirely (no heading, no empty list) when zero secondary types have presence.
 
 ## 5. Localization (`frontend/lib/i18n/en.ts`, `ru.ts`)
 
