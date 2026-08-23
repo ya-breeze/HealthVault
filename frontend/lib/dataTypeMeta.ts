@@ -201,7 +201,24 @@ export const PROJECTION_WINDOW_DAYS = 30;
 export const PROJECTION_HORIZON_DAYS = 365;
 export const PROJECTION_MIN_RECORDS = 5;
 export const PROJECTION_MIN_LIFETIME_SPAN_DAYS = 14;
-export const PROJECTION_MIN_WINDOW_POINTS = 2;
+/**
+ * The ≥5-records/≥14-day gate applies to the regression *window*, not only to
+ * lifetime history. Two points a day apart fit an exact line, so a window
+ * minimum of 2 let ordinary day-to-day weight noise (±1.5 kg is routine)
+ * produce a confident "three days to goal" ETA while the lifetime gate
+ * happily passed on years-old data.
+ */
+export const PROJECTION_MIN_WINDOW_POINTS = 5;
+export const PROJECTION_MIN_WINDOW_SPAN_DAYS = 14;
+/**
+ * Cap on synthetic projection points. The x-axis is a categorical band scale,
+ * so every appended point steals width from the real data: an unthrottled
+ * daily walk to a 365-day crossing put ~365 synthetic categories next to ~30
+ * real buckets at Month zoom and squeezed the actual weight series into a
+ * sliver. Downsampling (rather than clipping the horizon) keeps the crossing
+ * point itself on the chart.
+ */
+export const PROJECTION_MAX_POINTS = 12;
 
 /**
  * Days since the Unix epoch (UTC, floored) for a date string — the x-axis
@@ -261,11 +278,13 @@ export function last30DayEmaWindow(dates: string[], emaValues: number[]): { date
 export function hasEnoughDataForProjection(
   totalRecords: number,
   lifetimeSpanDays: number,
-  windowPointCount: number
+  windowPointCount: number,
+  windowSpanDays: number
 ): boolean {
   return totalRecords >= PROJECTION_MIN_RECORDS
     && lifetimeSpanDays >= PROJECTION_MIN_LIFETIME_SPAN_DAYS
-    && windowPointCount >= PROJECTION_MIN_WINDOW_POINTS;
+    && windowPointCount >= PROJECTION_MIN_WINDOW_POINTS
+    && windowSpanDays >= PROJECTION_MIN_WINDOW_SPAN_DAYS;
 }
 
 export type ProjectionStatus = 'reached' | 'not-on-track' | 'on-track';
@@ -299,8 +318,9 @@ export function computeProjection(params: {
   windowStartEma: number;
   latestEma: number;
   lastDayOffset: number;
+  todayDayOffset: number;
 }): ProjectionResult {
-  const { slope, intercept, goal, windowStartEma, latestEma, lastDayOffset } = params;
+  const { slope, intercept, goal, windowStartEma, latestEma, lastDayOffset, todayDayOffset } = params;
 
   const direction = Math.sign(goal - windowStartEma);
   if (direction !== 0) {
@@ -312,7 +332,12 @@ export function computeProjection(params: {
 
   if (slope === 0) return { status: 'not-on-track' };
   const crossingDayOffset = (goal - intercept) / slope;
-  const daysToGoal = crossingDayOffset - lastDayOffset;
+  // Measured from *today*, not from the last day that happens to have data.
+  // Measuring from lastDayOffset meant a user whose last weigh-in was 40 days
+  // ago, with a line crossing 20 days after it, was told "on track to reach
+  // your goal around <three weeks ago>" — a positive daysToGoal describing a
+  // date already in the past. The horizon is likewise a year from now.
+  const daysToGoal = crossingDayOffset - todayDayOffset;
   if (daysToGoal <= 0 || daysToGoal > PROJECTION_HORIZON_DAYS) return { status: 'not-on-track' };
   return { status: 'on-track', crossingDayOffset };
 }
@@ -334,7 +359,11 @@ export function projectionPoints(
   endDayOffset: number,
   granularity: 'day' | 'month'
 ): { dayOffset: number; value: number }[] {
-  const stepDays = granularity === 'day' ? 1 : 30;
+  // Widen the step when the crossing is far out, so the number of synthetic
+  // categories stays bounded regardless of horizon — see PROJECTION_MAX_POINTS.
+  const baseStep = granularity === 'day' ? 1 : 30;
+  const span = Math.max(0, endDayOffset - lastDayOffset);
+  const stepDays = Math.max(baseStep, Math.ceil(span / PROJECTION_MAX_POINTS));
   const points: { dayOffset: number; value: number }[] = [];
   for (let d = lastDayOffset + stepDays; d < endDayOffset; d += stepDays) {
     points.push({ dayOffset: d, value: intercept + slope * d });

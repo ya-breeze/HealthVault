@@ -255,3 +255,54 @@ func TestCreateRecordHandler_DoesNotHonorUserQueryParam(t *testing.T) {
 		t.Errorf("expected the record to be scoped to the caller %s despite ?user=other, got user_id=%v", userID, row["user_id"])
 	}
 }
+
+// A bare "> 0" check is not enough when one generic form serves kilograms and
+// metres alike: 178 is a natural thing to type for a height and used to be
+// stored as 178 metres, which then rendered BMI as 0.0 with category bands
+// drawn around 586,000 kg. Bounds are enforced at the API so no client can
+// write the bad value.
+func TestCreateRecordHandler_ImplausibleValueReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	h := server.CreateRecordHandler(st)
+	cases := []struct {
+		typeName string
+		value    float64
+	}{
+		{"height", 178},       // metres typed as centimetres
+		{"height", 0.2},       // implausibly short
+		{"weight", 0.5},       // kilograms typed as something else
+		{"weight", 900},       // implausibly heavy
+		{"weight_goal", 5000}, // fat-fingered goal
+	}
+	for _, c := range cases {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newCreateRequest(c.typeName, map[string]any{"value": c.value}, userID))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s=%v: expected 400, got %d: %s", c.typeName, c.value, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestCreateRecordHandler_PlausibleBoundaryValuesAccepted(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	h := server.CreateRecordHandler(st)
+	cases := []struct {
+		typeName string
+		value    float64
+	}{
+		{"height", 1.78},
+		{"weight", 91.1},
+		{"weight_goal", 80},
+	}
+	for _, c := range cases {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newCreateRequest(c.typeName, map[string]any{"value": c.value}, userID))
+		if w.Code != http.StatusCreated {
+			t.Errorf("%s=%v: expected 201, got %d: %s", c.typeName, c.value, w.Code, w.Body.String())
+		}
+	}
+}

@@ -10,7 +10,11 @@ check — registered? then allowlisted? — not a single allowlist membership te
 
 The request body SHALL be `{"value": <float64>, "time": "<RFC3339, optional>"}`. `time` SHALL
 default to the current time when omitted. A missing, non-numeric, or non-positive (`<= 0`)
-`value` SHALL return HTTP 400. On success the system SHALL return HTTP 201 with the created
+`value` SHALL return HTTP 400. A `value` outside the per-type plausibility range SHALL also
+return HTTP 400: `weight` and `weight_goal` accept 20-500 (kilograms), `height` accepts 0.5-2.5
+(metres). A bare positivity check is insufficient because one generic entry form serves units of
+very different magnitude, so the natural `178` for a height would otherwise be stored as 178
+metres and silently corrupt every BMI reading derived from it. On success the system SHALL return HTTP 201 with the created
 record in the same JSON shape `GET /api/data/{type}` returns for a single row.
 
 Records created through this endpoint SHALL NOT require or carry a `source_payload_id` (see
@@ -59,6 +63,11 @@ new conflict-resolution logic is introduced by this endpoint beyond surfacing th
 #### Scenario: Non-positive value rejected
 - **WHEN** an authenticated user calls `POST /api/data/height` with `{"value": 0}` or a negative
   `value`
+- **THEN** the system SHALL return HTTP 400 and SHALL NOT create a record
+
+#### Scenario: Implausible value rejected
+- **WHEN** an authenticated user calls `POST /api/data/height` with `{"value": 178}` (centimetres
+  typed into a metres field), or `POST /api/data/weight` with a value below 20 or above 500
 - **THEN** the system SHALL return HTTP 400 and SHALL NOT create a record
 
 #### Scenario: Write collides with an existing record at the same time

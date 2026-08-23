@@ -84,6 +84,19 @@ var writeAllowlist = map[string]bool{
 	"weight_goal": true,
 }
 
+// writeBounds are per-type plausibility ranges in the type's stored unit
+// (kilograms for weight/weight_goal, metres for height). A bare `> 0` check
+// is not enough when one generic form serves units of wildly different
+// magnitude: entering the natural "178" for a height stores 178 *metres*,
+// which is accepted, and BMI then renders as 0.0 with category bands drawn
+// around 586,000 kg. Rejecting it at the API keeps the bad value out of the
+// database no matter which client wrote it.
+var writeBounds = map[string]struct{ min, max float64 }{
+	"weight":      {min: 20, max: 500},
+	"weight_goal": {min: 20, max: 500},
+	"height":      {min: 0.5, max: 2.5},
+}
+
 // createRecordRequest is the POST /api/data/{type} request body. Value is a
 // pointer so a missing key is distinguishable from a present-but-zero value.
 type createRecordRequest struct {
@@ -123,6 +136,10 @@ func CreateRecordHandler(storage database.Storage) http.HandlerFunc {
 		}
 		if req.Value == nil || *req.Value <= 0 {
 			http.Error(w, "value must be a positive number", http.StatusBadRequest)
+			return
+		}
+		if b, ok := writeBounds[typeName]; ok && (*req.Value < b.min || *req.Value > b.max) {
+			http.Error(w, fmt.Sprintf("value must be between %g and %g", b.min, b.max), http.StatusBadRequest)
 			return
 		}
 

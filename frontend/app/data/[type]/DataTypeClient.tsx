@@ -454,17 +454,20 @@ export default function DataTypeClient({ type }: Props) {
     const fullEma = emaSeries(projectionBucketRows.map(r => num(r.avg)), 0.25);
     const window = last30DayEmaWindow(dates, fullEma);
 
-    if (!hasEnoughDataForProjection(totalRecords, lifetimeSpanDays, window.length)) {
+    const points = window.map(w => ({ x: toDayOffset(w.date), y: w.ema }));
+    const windowSpanDays = points.length > 0 ? points[points.length - 1].x - points[0].x : 0;
+
+    if (!hasEnoughDataForProjection(totalRecords, lifetimeSpanDays, window.length, windowSpanDays)) {
       return undefined;
     }
 
-    const points = window.map(w => ({ x: toDayOffset(w.date), y: w.ema }));
     const { slope, intercept } = linearRegression(points);
     const windowStartEma = window[0].ema;
     const latestEma = window[window.length - 1].ema;
     const lastDayOffset = points[points.length - 1].x;
+    const todayDayOffset = toDayOffset(new Date().toISOString());
 
-    const result = computeProjection({ slope, intercept, goal: latestGoalKg, windowStartEma, latestEma, lastDayOffset });
+    const result = computeProjection({ slope, intercept, goal: latestGoalKg, windowStartEma, latestEma, lastDayOffset, todayDayOffset });
     if (result.status !== 'on-track' || result.crossingDayOffset === undefined) return result;
 
     return {

@@ -26,7 +26,7 @@ var presenceTypeNames = []string{
 	"blood_glucose", "oxygen_saturation", "body_temperature", "skin_temperature",
 	"respiratory_rate", "resting_heart_rate", "exercise", "hydration", "nutrition",
 	"basal_metabolic_rate", "body_fat", "lean_body_mass", "vo2_max", "bone_mass",
-	"speed", "food_meal",
+	"speed", "food_meal", "weight_goal",
 }
 
 func newPresenceRequest(rawQuery string) *http.Request {

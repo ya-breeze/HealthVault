@@ -172,24 +172,24 @@ describe('toDayOffset', () => {
 
 describe('hasEnoughDataForProjection', () => {
   it('rejects fewer than the minimum total records', () => {
-    expect(hasEnoughDataForProjection(4, 30, 10)).toBe(false);
+    expect(hasEnoughDataForProjection(4, 30, 10, 30)).toBe(false);
   });
 
   it('rejects fewer than the minimum lifetime span, even with enough records', () => {
-    expect(hasEnoughDataForProjection(5, 13, 10)).toBe(false);
+    expect(hasEnoughDataForProjection(5, 13, 10, 30)).toBe(false);
   });
 
   it('rejects fewer than 2 points inside the 30-day regression window, even with enough lifetime history', () => {
-    expect(hasEnoughDataForProjection(20, 365, 1)).toBe(false);
+    expect(hasEnoughDataForProjection(20, 365, 1, 30)).toBe(false);
   });
 
-  it('accepts when all three thresholds are met', () => {
-    expect(hasEnoughDataForProjection(5, 14, 2)).toBe(true);
+  it('accepts when every threshold is met', () => {
+    expect(hasEnoughDataForProjection(5, 14, 5, 14)).toBe(true);
   });
 });
 
 describe('computeProjection', () => {
-  const base = { slope: 0, intercept: 0, goal: 75, windowStartEma: 90, latestEma: 90, lastDayOffset: 100 };
+  const base = { slope: 0, intercept: 0, goal: 75, windowStartEma: 90, latestEma: 90, lastDayOffset: 100, todayDayOffset: 100 };
 
   it('reports not-on-track for a flat trend far from goal', () => {
     expect(computeProjection(base)).toEqual({ status: 'not-on-track' });
@@ -243,12 +243,78 @@ describe('computeProjection', () => {
   it('reports not-on-track when an old lifetime weight sits on the opposite side of the goal from the current flat window', () => {
     // windowStartEma/latestEma (the 30-day window) are both 90, well above goal 75 — the
     // caller must never substitute the lifetime-earliest weight (60) for windowStartEma here.
-    const result = computeProjection({ slope: 0, intercept: 90, goal: 75, windowStartEma: 90, latestEma: 90, lastDayOffset: 100 });
+    const result = computeProjection({ slope: 0, intercept: 90, goal: 75, windowStartEma: 90, latestEma: 90, lastDayOffset: 100, todayDayOffset: 100 });
     expect(result.status).toBe('not-on-track');
   });
 
   it('reports not-on-track (not reached) when windowStartEma equals goal exactly but latestEma has since diverged', () => {
-    const result = computeProjection({ slope: 0, intercept: 80, goal: 75, windowStartEma: 75, latestEma: 80, lastDayOffset: 100 });
+    const result = computeProjection({ slope: 0, intercept: 80, goal: 75, windowStartEma: 75, latestEma: 80, lastDayOffset: 100, todayDayOffset: 100 });
     expect(result.status).toBe('not-on-track');
+  });
+});
+
+// Regression coverage for the three defects found reviewing PR #28.
+describe('projection review regressions', () => {
+  const onTrackBase = { goal: 75, windowStartEma: 90, latestEma: 88, lastDayOffset: 100 };
+
+  it('never reports an ETA in the past when the last weigh-in is stale', () => {
+    // Line crosses the goal 20 days after the last data point, but that point
+    // is 40 days old — the crossing is three weeks *behind* today.
+    const slope = -0.65;
+    const crossingDayOffset = 120;
+    const intercept = onTrackBase.goal - slope * crossingDayOffset;
+    const result = computeProjection({ ...onTrackBase, slope, intercept, todayDayOffset: 140 });
+    expect(result.status).toBe('not-on-track');
+  });
+
+  it('still projects when the crossing is ahead of today', () => {
+    const slope = -0.65;
+    const crossingDayOffset = 160;
+    const intercept = onTrackBase.goal - slope * crossingDayOffset;
+    const result = computeProjection({ ...onTrackBase, slope, intercept, todayDayOffset: 140 });
+    expect(result.status).toBe('on-track');
+    expect(result.crossingDayOffset).toBeCloseTo(crossingDayOffset);
+  });
+
+  it('rejects a crossing that lands exactly on today', () => {
+    const slope = -0.65;
+    const intercept = onTrackBase.goal - slope * 140;
+    const result = computeProjection({ ...onTrackBase, slope, intercept, todayDayOffset: 140 });
+    expect(result.status).toBe('not-on-track');
+  });
+
+  it('anchors the 365-day horizon to today', () => {
+    // Same stale last data point either way; only the distance from *today*
+    // decides. 365 days out is inside, 366 is not.
+    const mk = (crossing: number) => {
+      const slope = -0.05;
+      return computeProjection({
+        ...onTrackBase, slope,
+        intercept: onTrackBase.goal - slope * crossing,
+        todayDayOffset: 140,
+      }).status;
+    };
+    expect(mk(140 + 365)).toBe('on-track');
+    expect(mk(140 + 366)).toBe('not-on-track');
+  });
+
+  it('gates off a regression window that spans too few days', () => {
+    // Plenty of lifetime history and points, but the window covers 3 days.
+    expect(hasEnoughDataForProjection(500, 3650, 8, 3)).toBe(false);
+  });
+
+  it('gates off a two-point regression window', () => {
+    expect(hasEnoughDataForProjection(500, 3650, 2, 30)).toBe(false);
+  });
+
+  it('bounds synthetic point count no matter how far the crossing is', () => {
+    const pts = projectionPoints(100, -0.05, 0, 365, 'day');
+    expect(pts.length).toBeLessThanOrEqual(13);
+    expect(pts[pts.length - 1].dayOffset).toBe(365);
+  });
+
+  it('still emits fine-grained points for a near crossing', () => {
+    const pts = projectionPoints(100, -1, 0, 8, 'day');
+    expect(pts.length).toBe(8);
   });
 });

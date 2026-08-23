@@ -20,7 +20,18 @@ interface Props {
 // in task 2; `time` is left out of the request entirely when blank so the
 // backend's own "defaults to now()" behavior applies, rather than the form
 // re-deriving "now" itself.
+// Unit and plausibility range per writable type, mirroring the API's own
+// writeBounds. One generic form serves units of very different magnitude, so
+// without a visible unit the natural "178" for a height is a 178-metre record
+// that the old `> 0` check happily accepted.
+const WRITE_UNITS: Record<string, { unit: string; min: number; max: number }> = {
+  weight: { unit: 'kg', min: 20, max: 500 },
+  weight_goal: { unit: 'kg', min: 20, max: 500 },
+  height: { unit: 'm', min: 0.5, max: 2.5 },
+};
+
 export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
+  const spec = WRITE_UNITS[type];
   const [value, setValue] = useState('');
   const [time, setTime] = useState('');
   const [saving, setSaving] = useState(false);
@@ -31,6 +42,10 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
     const numeric = Number(value);
     if (!value.trim() || !Number.isFinite(numeric) || numeric <= 0) {
       setError('Enter a positive number');
+      return;
+    }
+    if (spec && (numeric < spec.min || numeric > spec.max)) {
+      setError(`Enter a value between ${spec.min} and ${spec.max} ${spec.unit}`);
       return;
     }
     setSaving(true);
@@ -56,12 +71,14 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
       className="flex flex-wrap items-end gap-3 bg-bg-elevated rounded-[12px] border border-border p-4 mb-4"
     >
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-text-muted">Value</span>
+        <span className="text-xs text-text-muted">{spec ? `Value (${spec.unit})` : 'Value'}</span>
         <input
           type="number"
           step="any"
           value={value}
           onChange={e => setValue(e.target.value)}
+          min={spec?.min}
+          max={spec?.max}
           className="w-28 border border-border rounded-md px-2 py-1.5 text-sm bg-bg text-text"
           required
         />
