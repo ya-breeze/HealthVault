@@ -1,11 +1,11 @@
 ## 1. Backend: presence endpoint (`backend/pkg/server/api.go`)
 
-- [ ] 1.1 Add `DataTypesPresenceHandler(storage database.Storage) http.HandlerFunc`, a plain function closing over `storage`, following `DataHandler`/`summaryHandler`'s shape (not a new `Storage` interface method).
-- [ ] 1.2 Resolve the target user via `resolveUser(r, storage, claims.UserID, FamilyIDFromCtx(r))`, returning 401/403 exactly as `DataHandler`/`summaryHandler` do.
-- [ ] 1.3 Loop over `typeRegistry`, running one indexed existence check (`Count() > 0`, or `SELECT EXISTS(...)` if measurement later shows `Count()` too slow — not needed at this project's scale) per type against `storage.DB()` directly, keyed by the registry's type name.
-- [ ] 1.4 Return `map[string]bool` as JSON via the existing `writeJSON` helper, with exactly one entry per `typeRegistry` name on success.
-- [ ] 1.5 Register `GET /api/data-types/presence` in `server.go`, behind the same auth middleware as the other `/api/data/*` routes.
-- [ ] 1.6 Add `backend/pkg/server/data_types_presence_handler_test.go` covering: unauthenticated request rejected (401), a type with zero rows reports `false`, a type with at least one row reports `true`, the response has exactly one entry per registered type, and family-member resolution via `?user=` behaves the same as `DataHandler`'s.
+- [x] 1.1 Add `DataTypesPresenceHandler(storage database.Storage) http.HandlerFunc`, a plain function closing over `storage`, following `DataHandler`/`summaryHandler`'s shape (not a new `Storage` interface method).
+- [x] 1.2 Resolve the target user via `resolveUser(r, storage, claims.UserID, FamilyIDFromCtx(r))`, returning 401/403 exactly as `DataHandler`/`summaryHandler` do.
+- [x] 1.3 Loop over `typeRegistry`, running one indexed existence check (`Count() > 0`, or `SELECT EXISTS(...)` if measurement later shows `Count()` too slow — not needed at this project's scale) per type against `storage.DB()` directly, keyed by the registry's type name.
+- [x] 1.4 Return `map[string]bool` as JSON via the existing `writeJSON` helper, with exactly one entry per `typeRegistry` name on success.
+- [x] 1.5 Register `GET /api/data-types/presence` in `server.go`, behind the same auth middleware as the other `/api/data/*` routes.
+- [x] 1.6 Add `backend/pkg/server/data_types_presence_handler_test.go` covering: unauthenticated request rejected (401), a type with zero rows reports `false`, a type with at least one row reports `true`, the response has exactly one entry per registered type, and family-member resolution via `?user=` behaves the same as `DataHandler`'s.
 
 ## 2. Frontend: presence fetch (`frontend/lib/api.ts`, `frontend/app/page.tsx`)
 
