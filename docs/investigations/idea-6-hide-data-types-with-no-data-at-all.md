@@ -44,12 +44,21 @@ that have **never** had a record, computed server-side.
   hidden-then-shown cards here.
 - `openspec/specs/dashboard-ui/spec.md` lines 32-34, "Missing data for a
   metric" — codifies today's "show placeholder, don't hide" behavior; will
-  need to change.
+  need to change. The adjacent "Secondary data types remain reachable"
+  requirement will too — see "Findings" below.
+- `frontend/lib/i18n/en.ts`/`ru.ts` — the dictionaries `page.tsx` reads via
+  `t()` (e.g. `dashboard.allCardsHidden`); the new no-data empty-state copy
+  needs matching keys here in both locales, per the plan's carried-over
+  "Both locales (en + ru)" constraint.
 - `e2e/tests/dashboard.spec.ts` — tests vitals-grid states (all-8-render,
   loading/error/retry, Phase 1 reorder/hide-show, all-hidden placeholder)
   via existing testids `vitals-grid`, `vitals-grid-empty`,
-  `vitals-grid-loading`, `vitals-grid-error`, `vitals-grid-retry`. **Nothing
-  tests More Data today.** The testids named in the plan
+  `vitals-grid-loading`, `vitals-grid-error`, `vitals-grid-retry`. One
+  existing test (`'secondary "more data" row links to a non-primary data
+  page'`, line 111) covers link navigation for one secondary type via its
+  `href`, but nothing exercises presence-based hiding, the collapsed-when-
+  empty state, or a testid-addressable More Data section — those remain
+  uncovered. The testids named in the plan
   (`vitals-grid-empty-no-data`, `more-data`) **do not exist anywhere in the
   current tree** — they're carried over from the idea-5 plan document as
   proposed names, not leftover dead code from a merged attempt. Note
@@ -142,8 +151,23 @@ left open.
 **Correction to Task 1's "suggested next steps" #3**: re-reading
 `NeedsAttentionCount` (`food_meal_detail.go` lines 351-365) shows it queries
 `h.storage.DB()` directly with GORM, not through a dedicated `Storage`
-interface method — that's the actual precedent to follow, not a new
-`PresentDataTypes` interface method as first suggested.
+interface method — no new `Storage` interface method is needed here either.
+That said, `NeedsAttentionCount` is a method on `foodHandlers`, a struct type
+specific to the food domain; there is no `dataHandlers` struct anywhere in
+`backend/pkg/server`. The endpoint's actual siblings — `DataHandler` and
+`summaryHandler`, the other `typeRegistry`-consuming handlers in `api.go`,
+the file this would live in — are plain functions closing over
+`storage database.Storage` and returning an `http.HandlerFunc`, registered
+in `server.go` as e.g. `api.HandleFunc("/data/summary",
+summaryHandler(storage))`. That closure shape, not `NeedsAttentionCount`'s
+struct-method shape, is the precedent to follow for *where this code lives*;
+`NeedsAttentionCount` remains the precedent for *querying `DB()` directly
+without a new `Storage` method*. `DataHandler`/`summaryHandler` also resolve
+the target user via `resolveUser(r, storage, claims.UserID,
+FamilyIDFromCtx(r))` (`api.go` lines 343-356) rather than `claims.UserID`
+directly, so a family member's data can be viewed via `?user=`; the sketch
+below follows that too, since a presence endpoint backing the same dashboard
+should stay consistent with its siblings on this point.
 
 Because `typeRegistry` stores raw table names (not per-type Go structs), a
 single generic loop over `typeRegistry` — using GORM's `.Table(name)` rather
@@ -151,42 +175,60 @@ than a typed model per type — avoids a 26-way type switch entirely:
 
 ```go
 // GET /api/data-types/presence — sketch, not wired up.
-func (h *dataHandlers) DataTypesPresence(w http.ResponseWriter, r *http.Request) {
-	claims := ClaimsFromCtx(r)
-	if claims == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	present := make(map[string]bool, len(typeRegistry))
-	for name, info := range typeRegistry {
-		var exists int64
-		err := h.storage.DB().Table(info.table).
-			Where("user_id = ?", claims.UserID).
-			Limit(1).Count(&exists).Error
-		if err != nil {
-			http.Error(w, "query error", http.StatusInternalServerError)
+func DataTypesPresenceHandler(storage database.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := ClaimsFromCtx(r)
+		if claims == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		present[name] = exists > 0
-	}
+		targetUser, err := resolveUser(r, storage, claims.UserID, FamilyIDFromCtx(r))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 
-	writeJSON(w, present) // map[string]bool, e.g. {"steps": true, "vo2_max": false, ...}
+		present := make(map[string]bool, len(typeRegistry))
+		for name, info := range typeRegistry {
+			var exists int64
+			err := storage.DB().Table(info.table).
+				Where("user_id = ?", targetUser.ID).
+				Count(&exists).Error
+			if err != nil {
+				http.Error(w, "query error", http.StatusInternalServerError)
+				return
+			}
+			present[name] = exists > 0
+		}
+
+		writeJSON(w, present) // map[string]bool, e.g. {"steps": true, "vo2_max": false, ...}
+	}
 }
 ```
 
 This resolves the two open decisions:
 
 - **Query shape**: sequential loop over `typeRegistry`, one indexed
-  `COUNT` (capped by `Limit(1)`, so it's an existence check, not a full
-  count) per type, reusing the existing single-`DB()`-call idiom the
-  codebase already has (`NeedsAttentionCount`). 26 sequential round-trips
-  to a local/small SQLite-or-Postgres instance at this project's scale
-  (per `/data/CLAUDE.md`, "Scale") is milliseconds of total work — not
-  worth the added complexity of goroutines or a hand-written `UNION ALL`
-  unless a future measurement says otherwise. This also means no new
-  `Storage` interface surface is needed — a plain handler method mirrors
-  `NeedsAttentionCount`'s shape exactly.
+  `COUNT` per type, reusing the existing single-`DB()`-call idiom the
+  codebase already has (`NeedsAttentionCount`). Note GORM's `Count()`
+  retains a `LIMIT` clause in the generated SQL but doesn't use it to
+  short-circuit an aggregate that already returns one row — `Limit(1)`
+  paired with `Count()` is a no-op, not a true existence check, so an
+  earlier draft of this sketch that chained them has been corrected to a
+  plain `Count()`. A real early-exit existence check (e.g. raw
+  `SELECT EXISTS(SELECT 1 FROM <table> WHERE user_id = ? LIMIT 1)`, or
+  `.Select("1").Limit(1).Find(&rows)` checking `len(rows)`) is available if
+  a future measurement shows the full count is too slow on a
+  much-larger-than-personal-scale table, but isn't needed here: 26
+  sequential round-trips to a local/small SQLite-or-Postgres instance at
+  this project's scale (per `/data/CLAUDE.md`, "Scale") is milliseconds of
+  total work — not worth the added complexity of goroutines or a
+  hand-written `UNION ALL` unless a future measurement says otherwise. This
+  also means no new `Storage` interface surface is needed — a plain
+  handler function queries `DB()` directly, mirroring `NeedsAttentionCount`
+  on that point, while using the closure-over-`storage` shape of its actual
+  siblings `DataHandler`/`summaryHandler` for how it's declared and
+  registered.
 - **Response JSON shape**: `map[string]bool` keyed by the same type names
   the frontend's `DATA_TYPES` (`frontend/lib/api.ts`) already uses — the
   frontend can intersect this map's true-valued keys with `PRIMARY_METRICS`
@@ -227,7 +269,13 @@ other registered type.
   plus new requirements for secondary-type filtering, the presence
   endpoint's contract, and the new empty state — per this project's
   spec-first rule, that change needs proposing and approving before any
-  implementation.
+  implementation. The adjacent "Secondary data types remain reachable"
+  requirement (same file, just below "Missing data for a metric") also
+  needs amending, not just supplementing: it currently reads "Registered
+  types outside the 8-metric vitals grid SHALL remain reachable from the
+  dashboard as a compact link list, **preserving today's full-catalog
+  access**" — and that "full-catalog access" phrase is exactly what
+  presence-based hiding of secondary types intentionally breaks.
 
 ### Limitations of this investigation
 
@@ -240,7 +288,7 @@ other registered type.
   decisions, but it isn't wired into `server.go` or committed as
   production code.
 - **Query-shape performance was reasoned about, not measured.** No
-  benchmark was run comparing the sequential `Limit(1)`-count loop above
+  benchmark was run comparing the sequential count-loop above
   against a hand-written `UNION ALL` or 26 goroutines in parallel — at
   this project's personal-deployment scale (per `/data/CLAUDE.md`,
   "Scale") the sequential loop is almost certainly fine and is now the
@@ -253,6 +301,13 @@ other registered type.
   investigation did not evaluate whether that optimization is worth the
   added complexity versus a straightforward per-load query, and defaults to
   recommending the latter first.
+- **Locale coverage for the new copy was not investigated.** The plan
+  carries over "Both locales (en + ru)" as a constraint, but this
+  investigation's "Relevant code" section never identifies
+  `frontend/lib/i18n/en.ts`/`ru.ts` (the actual dictionaries `page.tsx`
+  reads via `t()`) as code this change touches, and no section below
+  addresses what the new no-data empty-state key(s) should read in either
+  locale. Left for the OpenSpec proposal.
 
 ### Suggested next steps
 
@@ -263,24 +318,35 @@ other registered type.
    Data) filtering, and the new no-data empty state distinct from Phase 1's
    all-hidden state — per this repo's spec-first workflow, this must be
    approved before implementation.
-2. The presence-check query shape (sequential `Limit(1)`-count loop over
+2. The presence-check query shape (sequential count loop over
    `typeRegistry`) and response JSON shape (`map[string]bool`) are now
    decided by the prototype sketch above; the proposal should still pin
    down the new testids (avoiding collision with the existing
    `vitals-grid-empty`).
-3. Implement the backend endpoint as a plain handler method querying
-   `h.storage.DB()` directly (mirroring `NeedsAttentionCount`, not a new
+3. Implement the backend endpoint as a plain function closing over
+   `storage database.Storage` (mirroring `DataHandler`/`summaryHandler` in
+   `api.go`, the actual sibling handlers for this route — not a new
    `Storage` interface method), reusing `typeRegistry` as the iteration
    source so a future new data type is automatically covered without
-   touching the presence logic.
+   touching the presence logic, and resolving the target user via
+   `resolveUser` for consistency with those siblings' family-member support.
 4. Implement frontend integration: one presence fetch in `page.tsx`
    alongside the existing dashboard fetches, gating both the vitals grid
    and More Data pills from the same response, with fail-open behavior on
    fetch error and no flash-of-hidden-cards (mirroring Phase 1's
-   `settingsStatus` gating pattern).
+   `settingsStatus` gating pattern). Per the plan's carried-over "Both
+   locales (en + ru)" constraint, the new empty-state copy needs matching
+   keys in both `frontend/lib/i18n/en.ts` and `ru.ts` (alongside the
+   existing `dashboard.allCardsHidden` key it must stay distinct from).
 5. Add E2E coverage in `e2e/tests/dashboard.spec.ts` for: a type with no
    data ever hidden from both sections, a type with data outside the 7-day
    sparkline window still shown (the case idea-5 got wrong), the new
    no-data empty state text distinct from the all-hidden one, More Data
-   fully collapsing when no secondary type has data, and presence-fetch
-   failure leaving everything visible.
+   fully collapsing when no secondary type has data, presence-fetch
+   failure leaving everything visible, and a presence-hidden card's
+   visibility while in Customize/edit mode — `page.tsx`'s existing edit
+   mode renders every card including Phase-1-hidden ones so they can be
+   re-shown (comment at `page.tsx` lines 163-166), and this investigation
+   doesn't resolve whether a never-had-data card should behave the same
+   way or stay hidden even in edit mode; that's an open question for the
+   OpenSpec proposal, not settled here.
