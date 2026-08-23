@@ -9,10 +9,10 @@
 
 ## 2. Frontend: presence fetch (`frontend/lib/api.ts`, `frontend/app/page.tsx`)
 
-- [ ] 2.1 Add an `api.ts` function fetching `/api/data-types/presence` and typing its response as `Record<string, boolean>`.
-- [ ] 2.2 In `page.tsx`, fetch presence alongside the existing dashboard/settings fetches, gated the same way (no flash of unfiltered cards before it resolves — mirror the existing `settingsStatus` loading-gate pattern).
-- [ ] 2.3 On fetch failure, treat every type as present (fail open) — do not block the dashboard on this fetch succeeding.
-- [ ] 2.4 When intersecting the presence map against `PRIMARY_METRICS`/`SECONDARY_TYPES`, treat a type absent from a successful response as present (fail open on incompleteness) — do not implement this as a plain "keep only true-valued keys" intersection, which would get this case wrong.
+- [x] 2.1 Add an `api.ts` function fetching `/api/data-types/presence` and typing its response as `Record<string, boolean>`.
+- [x] 2.2 In `page.tsx`, fetch presence alongside the existing dashboard/settings fetches, gated the same way (no flash of unfiltered cards before it resolves — mirror the existing `settingsStatus` loading-gate pattern).
+- [x] 2.3 On fetch failure, treat every type as present (fail open) — do not block the dashboard on this fetch succeeding.
+- [x] 2.4 When intersecting the presence map against `PRIMARY_METRICS`/`SECONDARY_TYPES`, treat a type absent from a successful response as present (fail open on incompleteness) — do not implement this as a plain "keep only true-valued keys" intersection, which would get this case wrong.
 
 ## 3. Frontend: vitals grid presence filtering (`frontend/app/page.tsx`, `frontend/lib/vitals.ts`)
 

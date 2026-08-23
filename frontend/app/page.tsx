@@ -44,6 +44,14 @@ export default function Dashboard() {
   const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // `null` means "not resolved yet" (initial state) *and* "fetch failed" —
+  // both fail open via hasPresence's `!presence` branch, so no separate error
+  // state is needed here the way settingsStatus needs one. `presenceReady`
+  // is the loading-gate flag: false until the fetch settles (success or
+  // failure), so the grid/More Data never flash unfiltered cards before
+  // presence resolves.
+  const [presence, setPresence] = useState<Record<string, boolean> | null>(null);
+  const [presenceReady, setPresenceReady] = useState(false);
 
   useEffect(() => {
     api.me()
@@ -99,6 +107,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!ready) return;
+    api.dataTypesPresence()
+      .then(p => setPresence(p))
+      .catch(() => setPresence(null))
+      .finally(() => setPresenceReady(true));
+  }, [ready]);
+
+  useEffect(() => {
+    if (!ready) return;
     api.needsAttentionCount()
       .then(res => setNeedsAttentionCount(res.count))
       .catch(() => setNeedsAttentionCount(0));
@@ -113,6 +129,12 @@ export default function Dashboard() {
       return next;
     });
   }
+
+  // Gates the vitals grid and Customize control on both the saved order and
+  // presence resolving, so neither a flash of unfiltered cards (order without
+  // presence-filtering) nor a flash of the pre-presence full set happens
+  // before both are known.
+  const dashboardReady = settingsLoaded && presenceReady;
 
   const allHidden = order.every(m => m.hidden);
 
@@ -152,8 +174,8 @@ export default function Dashboard() {
           ) : (
             <TapTarget
               onClick={() => setEditing(true)}
-              disabled={!settingsLoaded}
-              title={settingsLoaded ? undefined : t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
+              disabled={!dashboardReady}
+              title={dashboardReady ? undefined : t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
               className="px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
             >
               {t('dashboard.customize')}
@@ -164,7 +186,7 @@ export default function Dashboard() {
             found and shown again; the read-only grid renders only the visible
             ones. Move controls are indexed against the full `order` either way,
             so hiding a card never shifts what a neighbour's arrow does. */}
-        {!settingsLoaded ? (
+        {!dashboardReady ? (
           <div
             className="mb-8 flex flex-wrap items-center justify-between gap-2 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3"
             data-testid={settingsStatus === 'error' ? 'vitals-grid-error' : 'vitals-grid-loading'}
