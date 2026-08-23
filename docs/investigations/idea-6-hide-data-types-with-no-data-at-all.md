@@ -131,6 +131,77 @@ request, and the exact JSON shape of the response — everything else
 handling) has a clear answer already, either carried over from idea-5's
 findings or resolved by design in this plan's "What I want instead."
 
+## Prototype: concrete query and endpoint shape
+
+Not wired into `server.go`'s router or committed as shipping code (per
+"Limitations" below, that step waits for an approved OpenSpec change) — this
+is a design-level sketch validating that the chosen approach is mechanically
+straightforward, and resolving the two decisions the investigation above
+left open.
+
+**Correction to Task 1's "suggested next steps" #3**: re-reading
+`NeedsAttentionCount` (`food_meal_detail.go` lines 351-365) shows it queries
+`h.storage.DB()` directly with GORM, not through a dedicated `Storage`
+interface method — that's the actual precedent to follow, not a new
+`PresentDataTypes` interface method as first suggested.
+
+Because `typeRegistry` stores raw table names (not per-type Go structs), a
+single generic loop over `typeRegistry` — using GORM's `.Table(name)` rather
+than a typed model per type — avoids a 26-way type switch entirely:
+
+```go
+// GET /api/data-types/presence — sketch, not wired up.
+func (h *dataHandlers) DataTypesPresence(w http.ResponseWriter, r *http.Request) {
+	claims := ClaimsFromCtx(r)
+	if claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	present := make(map[string]bool, len(typeRegistry))
+	for name, info := range typeRegistry {
+		var exists int64
+		err := h.storage.DB().Table(info.table).
+			Where("user_id = ?", claims.UserID).
+			Limit(1).Count(&exists).Error
+		if err != nil {
+			http.Error(w, "query error", http.StatusInternalServerError)
+			return
+		}
+		present[name] = exists > 0
+	}
+
+	writeJSON(w, present) // map[string]bool, e.g. {"steps": true, "vo2_max": false, ...}
+}
+```
+
+This resolves the two open decisions:
+
+- **Query shape**: sequential loop over `typeRegistry`, one indexed
+  `COUNT` (capped by `Limit(1)`, so it's an existence check, not a full
+  count) per type, reusing the existing single-`DB()`-call idiom the
+  codebase already has (`NeedsAttentionCount`). 26 sequential round-trips
+  to a local/small SQLite-or-Postgres instance at this project's scale
+  (per `/data/CLAUDE.md`, "Scale") is milliseconds of total work — not
+  worth the added complexity of goroutines or a hand-written `UNION ALL`
+  unless a future measurement says otherwise. This also means no new
+  `Storage` interface surface is needed — a plain handler method mirrors
+  `NeedsAttentionCount`'s shape exactly.
+- **Response JSON shape**: `map[string]bool` keyed by the same type names
+  the frontend's `DATA_TYPES` (`frontend/lib/api.ts`) already uses — the
+  frontend can intersect this map's true-valued keys with `PRIMARY_METRICS`
+  and `SECONDARY_TYPES` directly, no translation layer needed. An array of
+  present-only type names was considered and rejected: the map form makes
+  "type absent from response" (e.g. a partial failure) distinguishable from
+  "type present but false," which an array can't express without a second
+  field.
+
+One thing this sketch surfaces that pure reading didn't: `food_meal`'s
+entry has no `valueCol`/`family` set but does have a `table`, so it needs
+no special case in this loop — confirming the investigation's earlier note
+that presence (unlike bucketed aggregation) treats `food_meal` like any
+other registered type.
+
 ## Findings write-up
 
 ### What was found
@@ -160,19 +231,21 @@ findings or resolved by design in this plan's "What I want instead."
 
 ### Limitations of this investigation
 
-- **No prototype was built.** Per the plan's Task 2 ("Build the
-  prototype/investigation described under 'Chosen approach'"), the
-  intended output of this investigation-track plan is the write-up itself,
-  not shipped code — implementing the actual endpoint and frontend wiring
-  requires the OpenSpec propose → approve → implement cycle mandated by
-  this repo's workflow (`/data/CLAUDE.md`, "OpenSpec — MANDATORY"), which is
-  out of scope for an investigate-only idea-forge plan.
+- **No shipped/wired-up code was written.** Per this repo's spec-first
+  workflow (`/data/CLAUDE.md`, "OpenSpec — MANDATORY"), implementing and
+  routing the actual endpoint requires the OpenSpec propose → approve →
+  implement cycle, which is out of scope for an investigate-only
+  idea-forge plan. The "Prototype" section above sketches the concrete
+  handler code to validate the approach and settle the two open design
+  decisions, but it isn't wired into `server.go` or committed as
+  production code.
 - **Query-shape performance was reasoned about, not measured.** No
-  benchmark was run comparing "26 sequential EXISTS queries" vs. "one
-  `UNION ALL` query" vs. "26 goroutines in parallel" — at this project's
-  personal-deployment scale (per `/data/CLAUDE.md`, "Scale") any of the
-  three is almost certainly fine, but the choice is left to implementation
-  time rather than decided here.
+  benchmark was run comparing the sequential `Limit(1)`-count loop above
+  against a hand-written `UNION ALL` or 26 goroutines in parallel — at
+  this project's personal-deployment scale (per `/data/CLAUDE.md`,
+  "Scale") the sequential loop is almost certainly fine and is now the
+  recommended default (see "Prototype" above), but no timing was actually
+  measured against real data.
 - **Response caching/invalidation was not investigated.** Presence is a
   slowly-changing fact (it only flips true the first time a user logs a new
   type), which could be cached (e.g. in `UserSettings`, updated on first
@@ -184,19 +257,22 @@ findings or resolved by design in this plan's "What I want instead."
 ### Suggested next steps
 
 1. Write and propose an OpenSpec change for `dashboard-ui` covering: the new
-   `GET /api/data-types/presence`-style endpoint's contract, updating the
-   "Missing data for a metric" requirement, a new requirement for
-   secondary-type (More Data) filtering, and the new no-data empty state
-   distinct from Phase 1's all-hidden state — per this repo's spec-first
-   workflow, this must be approved before implementation.
-2. In that proposal, decide explicitly: the presence-check query shape
-   (sequential vs. `UNION ALL` vs. parallel), the exact response JSON shape
-   (map of type→bool vs. array of present types), and the new testids
-   (avoiding collision with the existing `vitals-grid-empty`).
-3. Implement the backend endpoint plus a `Storage` interface method (e.g.
-   `PresentDataTypes(userID uuid.UUID) (map[string]bool, error)`), reusing
-   `typeRegistry` as the iteration source so a future new data type is
-   automatically covered without touching the presence logic.
+   `GET /api/data-types/presence`-style endpoint's contract (map[string]bool
+   response, per the "Prototype" section above), updating the "Missing data
+   for a metric" requirement, a new requirement for secondary-type (More
+   Data) filtering, and the new no-data empty state distinct from Phase 1's
+   all-hidden state — per this repo's spec-first workflow, this must be
+   approved before implementation.
+2. The presence-check query shape (sequential `Limit(1)`-count loop over
+   `typeRegistry`) and response JSON shape (`map[string]bool`) are now
+   decided by the prototype sketch above; the proposal should still pin
+   down the new testids (avoiding collision with the existing
+   `vitals-grid-empty`).
+3. Implement the backend endpoint as a plain handler method querying
+   `h.storage.DB()` directly (mirroring `NeedsAttentionCount`, not a new
+   `Storage` interface method), reusing `typeRegistry` as the iteration
+   source so a future new data type is automatically covered without
+   touching the presence logic.
 4. Implement frontend integration: one presence fetch in `page.tsx`
    alongside the existing dashboard fetches, gating both the vitals grid
    and More Data pills from the same response, with fail-open behavior on
