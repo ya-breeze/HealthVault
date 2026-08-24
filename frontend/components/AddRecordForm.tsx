@@ -30,6 +30,15 @@ const WRITE_UNITS: Record<string, { unit: string; min: number; max: number }> = 
   height: { unit: 'm', min: 0.5, max: 2.5 },
 };
 
+// `datetime-local` wants a local-time "YYYY-MM-DDTHH:mm" string, not an ISO
+// UTC one — toISOString() here would set the ceiling to the wrong instant for
+// anyone not on UTC.
+function maxLocalDateTime(): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
   const spec = WRITE_UNITS[type];
   const [value, setValue] = useState('');
@@ -89,6 +98,11 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
           type="datetime-local"
           value={time}
           onChange={e => setTime(e.target.value)}
+          // Records are only ever read up to now, so a future date would
+          // create a row that is invisible everywhere and therefore also
+          // un-deletable. The API rejects it too — this just surfaces the
+          // limit before the round-trip.
+          max={maxLocalDateTime()}
           className="border border-border rounded-md px-2 py-1.5 text-sm bg-bg text-text"
         />
       </label>

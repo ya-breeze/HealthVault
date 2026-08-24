@@ -143,6 +143,21 @@ never hides the answer.
   determined from the 30-day regression window's boundary EMA values, not the lifetime-earliest
   record — and SHALL instead display "Not on track at your current trend" for this flat trend
 
+#### Scenario: A height can be recorded from the weight page
+- **WHEN** an authenticated user views their own weight page and has no `height` record on file
+- **THEN** the page SHALL offer a shortcut that opens the Add-record form targeted at `height`,
+  and the shortcut SHALL disappear once a height exists. `height` is a secondary type, and the
+  dashboard's More Data list — the only place secondary type pages are linked — is filtered by
+  data presence, so without this shortcut a user with no height has no route to the page where a
+  height could be added, and the BMI bands and readout are permanently unreachable for exactly
+  the users they are gated on.
+
+#### Scenario: Projection status is not asserted before it is known
+- **WHEN** the weight history backing the projection is still loading, or its fetch failed
+- **THEN** the chart SHALL NOT display "Not enough data to project yet", since that states a fact
+  about the user's records that is not yet known; while loading it SHALL display no projection
+  message, and on failure it SHALL indicate that the history could not be loaded
+
 #### Scenario: ETA never falls in the past
 - **WHEN** a user's most recent `weight` record is several weeks old and the fitted trend line
   crosses the goal at a date earlier than today

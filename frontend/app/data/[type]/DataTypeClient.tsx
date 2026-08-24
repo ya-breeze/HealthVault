@@ -151,7 +151,13 @@ export default function DataTypeClient({ type }: Props) {
   // "Set goal" shortcut (task 4.2): only meaningful on the weight page,
   // where it opens the same AddRecordForm pre-targeted at `weight_goal`
   // rather than `weight` — a distinct type from the page it's mounted on.
+  // The projection's two inputs both start as [] and both used to collapse a
+  // failed fetch into [] as well, so "still loading", "request failed" and
+  // "genuinely no history" were one value — and the page asserted "Not enough
+  // data to project yet" for all three, permanently on error.
+  const [projectionStatus, setProjectionStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [showGoalForm, setShowGoalForm] = useState(false);
+  const [showHeightForm, setShowHeightForm] = useState(false);
 
   // refreshKey is in the dep list too: rangeForZoom's `to` is `now()` at the
   // time this memo runs, so a record just created via AddRecordForm (timed
@@ -214,14 +220,23 @@ export default function DataTypeClient({ type }: Props) {
       api.data('weight_goal', ALL_TIME_FROM, to, userParam)
         .then(setGoalRecords)
         .catch(() => setGoalRecords([]));
-      api.data('weight', ALL_TIME_FROM, to, userParam)
-        .then(setAllTimeWeightRecords)
-        .catch(() => setAllTimeWeightRecords([]));
       const projectionFrom = new Date(to);
       projectionFrom.setDate(projectionFrom.getDate() - 60);
-      api.data('weight', projectionFrom.toISOString(), to, userParam, 'day')
-        .then(setProjectionBucketRows)
-        .catch(() => setProjectionBucketRows([]));
+      setProjectionStatus('loading');
+      Promise.all([
+        api.data('weight', ALL_TIME_FROM, to, userParam),
+        api.data('weight', projectionFrom.toISOString(), to, userParam, 'day'),
+      ])
+        .then(([allTime, buckets]) => {
+          setAllTimeWeightRecords(allTime);
+          setProjectionBucketRows(buckets);
+          setProjectionStatus('ready');
+        })
+        .catch(() => {
+          setAllTimeWeightRecords([]);
+          setProjectionBucketRows([]);
+          setProjectionStatus('error');
+        });
     } else {
       setHeightRecords([]);
       setGoalRecords([]);
@@ -484,8 +499,16 @@ export default function DataTypeClient({ type }: Props) {
     projection.status === 'not-on-track' ? 'Not on track at your current trend' :
     `On track to reach your goal around ${projection.crossingDate!.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
   );
-  const noDataMessage = dataType === 'weight' && latestGoalKg !== undefined && projection === undefined
+  // Only claim "not enough data" once we actually know. While loading, say
+  // nothing; on failure, say the history could not be loaded rather than
+  // stating a false fact about the user's records.
+  const noDataMessage = dataType === 'weight' && latestGoalKg !== undefined
+    && projection === undefined && projectionStatus === 'ready'
     ? 'Not enough data to project yet'
+    : null;
+  const projectionErrorMessage = dataType === 'weight' && latestGoalKg !== undefined
+    && projectionStatus === 'error'
+    ? "Couldn't load your weight history"
     : null;
 
   // Dashed projection line (task 7.5) renders only at Month/Year zoom; the
@@ -557,6 +580,25 @@ export default function DataTypeClient({ type }: Props) {
               Set goal
             </TapTarget>
           )}
+          {/*
+            Without this, the BMI feature is unreachable for exactly the users
+            it targets. `height` is a secondary type, and the dashboard's More
+            Data list — the only place secondary type pages are linked — is
+            filtered by presence, so a user with zero height rows never gets a
+            link to /data/height and can never add the record that turns BMI
+            on. Same shape as "Set goal" above, and it disappears once a
+            height exists.
+          */}
+          {!userParam && dataType === 'weight' && !heightExists && !showHeightForm && (
+            <TapTarget
+              type="button"
+              onClick={() => setShowHeightForm(true)}
+              data-testid="set-height"
+              className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
+            >
+              Set height
+            </TapTarget>
+          )}
           <div className="flex gap-1 bg-bg-elevated border border-border rounded-lg p-1">
             {ZOOMS.map(z => (
               <button
@@ -577,6 +619,14 @@ export default function DataTypeClient({ type }: Props) {
             type="weight_goal"
             onSuccess={() => { setShowGoalForm(false); setRefreshKey(k => k + 1); }}
             onCancel={() => setShowGoalForm(false)}
+          />
+        )}
+
+        {!userParam && dataType === 'weight' && showHeightForm && (
+          <AddRecordForm
+            type="height"
+            onSuccess={() => { setShowHeightForm(false); setRefreshKey(k => k + 1); }}
+            onCancel={() => setShowHeightForm(false)}
           />
         )}
 
@@ -706,8 +756,10 @@ export default function DataTypeClient({ type }: Props) {
             )}
           </ResponsiveContainer>
 
-          {dataType === 'weight' && (projectionMessage || noDataMessage) && (
-            <p className="mt-3 text-xs text-text-muted">{projectionMessage ?? noDataMessage}</p>
+          {dataType === 'weight' && (projectionMessage || noDataMessage || projectionErrorMessage) && (
+            <p className="mt-3 text-xs text-text-muted" data-testid="projection-message">
+              {projectionMessage ?? noDataMessage ?? projectionErrorMessage}
+            </p>
           )}
 
           <div className="flex gap-6 mt-3 pt-3 border-t border-border">

@@ -158,15 +158,26 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
   // visibility check.
   test('weight Week-zoom bucketed fetch widens to >= 14 days', async ({ page }) => {
     await page.goto('/data/weight/');
+    // The trend projection also issues an /api/data/weight?...bucket=day
+    // request, with a fixed 60-day lookback that satisfies ">= 14" on its own.
+    // Matching the bare URL pattern would let this test pass on that request
+    // instead of the chart's, silently ceasing to guard the widening it was
+    // written for — so exclude the projection's window structurally.
+    const PROJECTION_LOOKBACK_DAYS = 60;
+    const spanDays = (url: URL) =>
+      (new Date(url.searchParams.get('to')!).getTime()
+        - new Date(url.searchParams.get('from')!).getTime()) / (1000 * 60 * 60 * 24);
+
     const [req] = await Promise.all([
-      page.waitForRequest(r => /\/api\/data\/weight\?.*bucket=day/.test(r.url())),
+      page.waitForRequest(r => {
+        if (!/\/api\/data\/weight\?.*bucket=day/.test(r.url())) return false;
+        return spanDays(new URL(r.url())) < PROJECTION_LOOKBACK_DAYS - 5;
+      }),
       page.getByRole('button', { name: 'Week', exact: true }).click(),
     ]);
-    const url = new URL(req.url());
-    const from = new Date(url.searchParams.get('from')!);
-    const to = new Date(url.searchParams.get('to')!);
-    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    const days = spanDays(new URL(req.url()));
     expect(days).toBeGreaterThanOrEqual(14);
+    expect(days).toBeLessThan(PROJECTION_LOOKBACK_DAYS - 5);
   });
 
   test('weight Year-zoom bucketed fetch widens to >= ~2 years', async ({ page }) => {

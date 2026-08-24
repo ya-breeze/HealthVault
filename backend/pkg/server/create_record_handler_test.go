@@ -306,3 +306,33 @@ func TestCreateRecordHandler_PlausibleBoundaryValuesAccepted(t *testing.T) {
 		}
 	}
 }
+
+// Every read path caps its upper bound at now, so a future-dated row would be
+// created but invisible in every table, chart and readout — and therefore
+// un-deletable, while its timestamp permanently returns 409 on retry.
+func TestCreateRecordHandler_FutureTimeReturns400(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	h := server.CreateRecordHandler(st)
+	future := time.Now().UTC().Add(48 * time.Hour).Format(time.RFC3339)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newCreateRequest("weight", map[string]any{"value": 91.1, "time": future}, userID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// A client clock a little fast must not be an error.
+func TestCreateRecordHandler_SlightlyFutureTimeAccepted(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	h := server.CreateRecordHandler(st)
+	nearly := time.Now().UTC().Add(10 * time.Second).Format(time.RFC3339)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newCreateRequest("weight", map[string]any{"value": 91.1, "time": nearly}, userID))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+}

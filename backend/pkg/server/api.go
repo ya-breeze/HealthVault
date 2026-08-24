@@ -97,6 +97,11 @@ var writeBounds = map[string]struct{ min, max float64 }{
 	"height":      {min: 0.5, max: 2.5},
 }
 
+// clockSkewAllowance is how far ahead of the server a client's timestamp may
+// be before it counts as future-dated. Small enough that a genuinely wrong
+// date is still rejected, large enough that an unsynced client clock isn't.
+const clockSkewAllowance = time.Minute
+
 // createRecordRequest is the POST /api/data/{type} request body. Value is a
 // pointer so a missing key is distinguishable from a present-but-zero value.
 type createRecordRequest struct {
@@ -146,6 +151,18 @@ func CreateRecordHandler(storage database.Storage) http.HandlerFunc {
 		t := time.Now().UTC()
 		if req.Time != nil {
 			t = req.Time.UTC()
+			// Every read path caps its upper bound at now, so a future-dated
+			// row is created but never returned: it appears in no table, no
+			// chart, no goal line and no BMI readout, which also means it has
+			// no delete button. The unique (user_id, time) index then makes
+			// re-entering that timestamp fail with 409 forever, describing a
+			// record the user cannot see. Reject it at the door instead.
+			// The skew allowance keeps a client clock a few seconds fast from
+			// being an error.
+			if t.After(time.Now().UTC().Add(clockSkewAllowance)) {
+				http.Error(w, "time must not be in the future", http.StatusBadRequest)
+				return
+			}
 		}
 
 		record, err := storage.InsertRecord(info.table, info.timeCol, info.valueCol, familyID, claims.UserID, t, *req.Value)
