@@ -124,12 +124,23 @@ test.describe('Mobile tap targets — header and toast', () => {
     await assertMinTapTarget(page.getByRole('link', { name: 'Custom Foods' }), 'header Custom Foods link');
     await assertMinTapTarget(page.getByRole('link', { name: 'Import' }), 'header Import link');
     await assertMinTapTarget(page.getByRole('button', { name: 'Logout' }), 'header Logout button');
-    // Added with the Display Language switcher: the existing assertions above
-    // enumerate header controls by name, so a newly added one is not covered
-    // until it is named here — this one shipped at 44px. See
-    // openspec/specs/mobile-touch-targets "Header and toast controls meet the
-    // minimum".
-    await assertMinTapTarget(page.locator('#display-language'), 'header language select');
+    // Display Language moved off the header into /settings (see
+    // user-profile-and-nutrition-target's design.md); the header control in
+    // its place is this icon-only link to /settings, so it's what needs
+    // covering here now — the existing assertions above enumerate header
+    // controls by name, so a newly added one is not covered until it is named
+    // here. See openspec/specs/mobile-touch-targets "Header and toast
+    // controls meet the minimum".
+    await assertMinTapTarget(page.getByTitle('Settings'), 'header Settings link');
+  });
+
+  test('the relocated Display Language control on /settings meets the 48px minimum', async ({ page }) => {
+    await login(page);
+    await page.goto('/settings');
+    // This one shipped at 44px in its original header location — kept as its
+    // own assertion after the move so that regression coverage follows the
+    // control rather than being lost along with its old spot in the header.
+    await assertMinTapTarget(page.locator('#display-language'), 'settings language select');
   });
 
   test('the Expert Mode toggle meets the 48px minimum', async ({ page }) => {
