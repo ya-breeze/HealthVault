@@ -229,7 +229,12 @@ default to the current time when omitted. A missing, non-numeric, or non-positiv
 return HTTP 400: `weight` and `weight_goal` accept 20-500 (kilograms), `height` accepts 0.5-2.5
 (metres). A bare positivity check is insufficient because one generic entry form serves units of
 very different magnitude, so the natural `178` for a height would otherwise be stored as 178
-metres and silently corrupt every BMI reading derived from it. On success the system SHALL return HTTP 201 with the created
+metres and silently corrupt every BMI reading derived from it. A `time` more than one minute in the future
+SHALL return HTTP 400: every read path caps its upper bound at the current time, so a
+future-dated record would be created but returned by no query — invisible in the record table,
+the chart and the BMI readout, and therefore impossible to delete, while its timestamp
+permanently returns HTTP 409 on any retry. The one-minute allowance keeps a slightly fast client
+clock from being an error. On success the system SHALL return HTTP 201 with the created
 record in the same JSON shape `GET /api/data/{type}` returns for a single row.
 
 Records created through this endpoint SHALL NOT require or carry a `source_payload_id` (see
@@ -278,6 +283,10 @@ new conflict-resolution logic is introduced by this endpoint beyond surfacing th
 #### Scenario: Non-positive value rejected
 - **WHEN** an authenticated user calls `POST /api/data/height` with `{"value": 0}` or a negative
   `value`
+- **THEN** the system SHALL return HTTP 400 and SHALL NOT create a record
+
+#### Scenario: Future-dated write rejected
+- **WHEN** an authenticated user calls `POST /api/data/weight` with a `time` two days in the future
 - **THEN** the system SHALL return HTTP 400 and SHALL NOT create a record
 
 #### Scenario: Implausible value rejected
