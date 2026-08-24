@@ -1,9 +1,7 @@
 ## Purpose
 
 Exposes a Model Context Protocol server so an external LLM agent can query a user's health data (list users, query records by type/range, get a summary) over a single bearer-token-protected endpoint, without needing the REST API's cookie-based session auth.
-
 ## Requirements
-
 ### Requirement: MCP endpoint and bearer token protection
 The system SHALL expose a Model Context Protocol (MCP) server at the path prefix `/mcp`. All requests to `/mcp` SHALL require an `Authorization: Bearer <token>` header matching the value of the `HCW_MCP_TOKEN` environment variable. If `HCW_MCP_TOKEN` is empty or unset, the endpoint SHALL return HTTP 503 (not 401) so that a misconfigured deployment fails visibly rather than silently allowing unauthenticated access.
 
@@ -39,11 +37,15 @@ The MCP server SHALL expose a tool named `list_users` that takes no parameters a
 ---
 
 ### Requirement: query_data tool
-The MCP server SHALL expose a tool named `query_data` that accepts `user` (string, required), `type` (string, required), `from` (RFC3339 string, optional), and `to` (RFC3339 string, optional). It SHALL return a JSON array of health records identical in format to `GET /api/data/{type}`. The same 25 type names and the same time-range defaulting logic (7-day window ending now) SHALL apply as the REST API.
+The MCP server SHALL expose a tool named `query_data` that accepts `user` (string, required), `type` (string, required), `from` (RFC3339 string, optional), and `to` (RFC3339 string, optional). It SHALL return a JSON array of health records identical in format to `GET /api/data/{type}`. The same 26 type names and the same time-range defaulting logic (7-day window ending now) SHALL apply as the REST API, including the `weight_goal` type registered by the goal-weight/BMI/trend-projection change.
 
 #### Scenario: Valid query
 - **WHEN** `query_data` is called with a valid username and type
 - **THEN** the tool SHALL return a JSON array of health records for that user and type in the resolved time range
+
+#### Scenario: Query goal weight
+- **WHEN** `query_data` is called with a valid username and `type: "weight_goal"`
+- **THEN** the tool SHALL return a JSON array of that user's goal-weight records in the resolved time range
 
 #### Scenario: Unknown type
 - **WHEN** `query_data` is called with a `type` value not in the supported set
@@ -56,8 +58,6 @@ The MCP server SHALL expose a tool named `query_data` that accepts `user` (strin
 #### Scenario: No records in range
 - **WHEN** the query returns no records
 - **THEN** the tool SHALL return an empty JSON array `[]`
-
----
 
 ### Requirement: summary tool
 The MCP server SHALL expose a tool named `summary` that accepts `user` (string, required), `from` (RFC3339 string, optional), and `to` (RFC3339 string, optional). It SHALL return a JSON object containing `user`, `from`, `to`, `steps`, `avg_heart_rate`, and `sleep_seconds`, computed identically to `GET /api/data/summary`.
@@ -82,3 +82,4 @@ MCP tool errors (unknown user, unknown type, storage failures) SHALL be returned
 #### Scenario: Tool error returned as MCP result
 - **WHEN** a tool encounters an error condition (unknown user, unknown type, DB error)
 - **THEN** the HTTP response SHALL be 200 and the `CallToolResult.IsError` field SHALL be `true`
+
