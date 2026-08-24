@@ -1,14 +1,15 @@
 ## 1. Backend: activity-level inference
 
-- [ ] 1.1 Add a pure function computing the trailing 28-day step average with trailing-edge
-      trimming (zero-record or <500-step days at the tail, stopping at the first day that clears
-      500) per design.md, given a caller-supplied "today" and a source of daily step
+- [ ] 1.1 Add a pure function computing the trailing 28-day step average applying two exclusion
+      rules per design.md: (a) zero-record days excluded anywhere in the window, not just the tail,
+      and (b) <500-step (but nonzero-record) days trimmed only from the trailing edge, stopping at
+      the first day that clears 500 — given a caller-supplied "today" and a source of daily step
       sums/record-counts (reuse the existing `GET /api/data/steps?bucket=day` aggregation logic —
       see `backend/pkg/server/api.go`'s bucketed-query path)
 - [ ] 1.2 Add the 5-tier table (Sedentary/Lightly active/Moderately active/Very active/Extra active
-      → 1.2/1.375/1.55/1.725/1.9) mapping the trimmed average to a multiplier
+      → 1.2/1.375/1.55/1.725/1.9) mapping the resulting average to a multiplier
 - [ ] 1.3 Return "unavailable" (not a default tier) when fewer than 7 valid days remain after
-      trimming
+      exclusion
 
 ## 2. Backend: `GET /api/users/me/nutrition-target`
 
@@ -40,11 +41,12 @@
 
 ## 3. Backend: unit tests
 
-- [ ] 3.1 Unit-test the trailing-window trim function (task 1.1) against: a day with 0 records, a
-      day with fewer than 500 steps, a day with exactly 500 steps (kept, not trimmed), a day with
-      more than 500 steps, a trimmed-then-clean-day sequence (trimming stops at the first clean
-      day scanning backward), and a window with exactly 7 valid days vs. 6 valid days
-      (`insufficient_activity_data` boundary)
+- [ ] 3.1 Unit-test the trailing-window exclusion function (task 1.1) against: a day with 0 records
+      at the trailing edge, a day with 0 records in the interior of the window (must be excluded,
+      not averaged in as 0), a day with fewer than 500 steps, a day with exactly 500 steps (kept,
+      not trimmed), a day with more than 500 steps, a trimmed-then-clean-day sequence (trailing-edge
+      trimming stops at the first clean day scanning backward), and a window with exactly 7 valid
+      days vs. 6 valid days (`insufficient_activity_data` boundary)
 - [ ] 3.2 Unit-test the tier-boundary mapping (task 1.2) at each exact boundary value (4,999 /
       5,000 / 7,499 / 7,500 / 9,999 / 10,000 / 12,499 / 12,500 steps/day)
 - [ ] 3.3 Unit-test the `activity_override` → tier/multiplier resolution (task 2.4) for all 5 enum

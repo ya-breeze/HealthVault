@@ -5,12 +5,19 @@ The system SHALL infer a user's activity tier from a trailing 28-calendar-day wi
 `steps` metric, ending the day before the current day (the current day is always excluded — it has
 not yet ended, so its count is inherently partial).
 
-Within that window, the system SHALL trim incomplete days from the trailing (most recent) edge only:
-walking backward from the most recent day in the window, each day with zero step records, or with
-fewer than 500 total steps, SHALL be discarded; trimming SHALL stop at the first day that has 500 or
-more total steps, and no day older than that stopping point SHALL be discarded regardless of its
-step count. The remaining days SHALL be averaged directly — the window SHALL NOT be extended with
-additional older days to replace ones that were trimmed.
+Two exclusion rules apply within that window:
+
+1. A day with zero step records SHALL be excluded from the average and the valid-day count
+   regardless of where it falls in the window — trailing edge or interior. A day with no records is
+   missing data, not a measured zero.
+2. A day with fewer than 500 total steps (but at least one record) SHALL be discarded only as part
+   of a contiguous run at the trailing (most recent) edge: walking backward from the most recent day
+   in the window, such days SHALL be discarded until the first day that has 500 or more total steps
+   is reached; trimming SHALL stop there, and no day older than that stopping point SHALL be
+   discarded on this basis regardless of its step count.
+
+The remaining days SHALL be averaged directly — the window SHALL NOT be extended with additional
+older days to replace ones that were excluded.
 
 The resulting average SHALL map to one of 5 tiers:
 
@@ -22,7 +29,7 @@ The resulting average SHALL map to one of 5 tiers:
 | Very active | 10,000 – 12,499 | 1.725 |
 | Extra active | ≥ 12,500 | 1.9 |
 
-If fewer than 7 days remain after trimming, and the user has no `activity_override` set (see
+If fewer than 7 days remain after exclusion, and the user has no `activity_override` set (see
 `user-profile`), the system SHALL treat the activity tier as unavailable rather than inferring one
 from fewer than 7 days or defaulting to a fixed tier.
 
@@ -41,9 +48,16 @@ from fewer than 7 days or defaulting to a fixed tier.
 - **THEN** the system SHALL include that 300-step day in the average — trimming does not resume once
   a day at or above the 500-step floor has been reached scanning backward from the most recent day
 
+#### Scenario: An interior zero-record day is excluded, not averaged in as zero
+
+- **WHEN** a day 10 days ago has zero step records (a mid-window sync gap) but every other day in the
+  28-day window, including yesterday, has at least 500 steps
+- **THEN** the system SHALL exclude that day from both the average and the valid-day count — it SHALL
+  NOT be averaged in as a measured 0, even though it is not part of the trailing edge
+
 #### Scenario: Fewer than 7 valid days and no override
 
-- **WHEN** trimming leaves fewer than 7 valid days in the window and the user has no
+- **WHEN** exclusion leaves fewer than 7 valid days in the window and the user has no
   `activity_override` set
 - **THEN** the system SHALL treat the activity tier as unavailable for that user
 

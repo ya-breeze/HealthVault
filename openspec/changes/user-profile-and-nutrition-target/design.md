@@ -59,7 +59,7 @@ implemented as this table, not inferred from string similarity:
 | `active`      | Very active        | 1.725 |
 | `very_active` | Extra active       | 1.9   |
 
-### Trailing window: 28 calendar days ending yesterday, trimmed from the tail only
+### Trailing window: 28 calendar days ending yesterday, low-but-nonzero days trimmed from the tail only
 
 Today (the current calendar day) is always excluded from the window: it hasn't ended, so its step
 count is structurally partial regardless of sync state, not just occasionally. The window is the 28
@@ -69,23 +69,29 @@ UTC, matching the convention every other time-bounded read/write in this codebas
 same storage-layer day boundary) — HealthVault has no per-user timezone concept anywhere today, so
 this change does not introduce one.
 
-Within that window, walk backward from the most recent day (yesterday) and discard each day that
-has either zero step records or fewer than 500 total steps that day, **stopping at the first day
-that clears 500** — trimming only ever removes a contiguous run at the recent edge of the window,
-never an interior day. This directly matches what the production query already found: the two most
-recent days had no rows at all (trimmed by the zero-records rule), and the day before that had 96
-steps (trimmed by the 500-step floor, since 96 is not a plausible full day even for someone
-sedentary — it reads as a device capturing a few minutes before a sync gap started). 500 is
-comfortably below the observed sedentary tier's own floor and exists only to catch "a fragment of a
-day," not to reclassify a real low-activity day — which is exactly why trimming stops at the first
-day that clears it: an interior day with, say, 1,800 real steps (a legitimate rest day) is kept, not
-discarded, because trimming never resumes once a clean day is found.
+Two separate rules apply within that window, and only the second is edge-only:
 
-The remaining days (up to 28, however many survive trimming) are averaged directly — the window is
-not backfilled with older days to replace trimmed ones, so a run of trimmed days simply means fewer
-days feed the average, not a shifted window.
+1. **Zero-record days are always excluded, anywhere in the window.** A day with no step records at
+   all is missing data, not a measured zero, so it never contributes to the average or the valid-day
+   count regardless of where it falls — trailing edge or interior. This is what "trailing sync gaps"
+   in the production data actually are (two full days with no rows), and it is also what an interior
+   sync gap would be, which is exactly as uninformative.
+2. **The 500-step floor trims only a contiguous run at the recent edge.** Walking backward from the
+   most recent day (yesterday), discard each day with fewer than 500 total steps, **stopping at the
+   first day that clears 500** — this never resumes once a clean day is found, so an interior day
+   with, say, 300 steps is kept, not discarded. This directly matches what the production query
+   already found: the day before the two no-rows days had 96 steps (trimmed by this floor, since 96
+   is not a plausible full day even for someone sedentary — it reads as a device capturing a few
+   minutes before a sync gap started). 500 is comfortably below the observed sedentary tier's own
+   floor and exists only to catch "a fragment of a day," not to reclassify a real low-activity day —
+   an interior day with, say, 1,800 real steps (a legitimate rest day) is kept, because this rule
+   only ever removes the trailing run.
 
-**Minimum data**: fewer than 7 valid days after trimming, and no `activity_override` set → the
+The remaining days (up to 28, however many survive both rules) are averaged directly — the window is
+not backfilled with older days to replace excluded ones, so excluded days simply mean fewer days
+feed the average, not a shifted window.
+
+**Minimum data**: fewer than 7 valid days after exclusion, and no `activity_override` set → the
 endpoint reports `insufficient_activity_data` (see below) rather than guessing a default tier. 7 is
 one calendar week — enough to span a weekday/weekend cycle, which is the shortest period that says
 anything about "typical" activity rather than one unusual day.
@@ -167,8 +173,8 @@ compute for carbs/fat either — this is the ADR-003 inconsistency this change's
 assumed," per the existing `display-language` requirement's own pattern — not validated at the
 generic `PUT /api/users/me/settings` write (that endpoint stays schema-agnostic, per
 `user-settings`'s existing contract; only "is this valid JSON" is checked there). A malformed
-`birthdate` (unparsable, in the future, or implying an age below 5 or above 120 years, inclusive of
-those two bounds) or `sex` outside the two-value enum is treated as absent, producing
+`birthdate` (unparsable, in the future, or implying an age below 5 or above 120 years — 5 and 120
+themselves are valid ages) or `sex` outside the two-value enum is treated as absent, producing
 `missing_profile` — a value that made it into the blob (however it got there — the form is expected
 to prevent this, but nothing stops a direct API call) never produces a wrong number silently.
 
