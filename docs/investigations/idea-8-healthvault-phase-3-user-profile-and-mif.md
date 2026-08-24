@@ -69,7 +69,7 @@ were pinned down in `design.md` rather than left as open questions.
   must show calories/carbs/fat with protein specifically unavailable (ADR-
   003's own math makes carbs/fat depend on protein being fixed first, so
   there's no partial-target state to support). Both corrections are recorded
-  in the proposal and left as an implementer task (`tasks.md` 7.1) rather
+  in the proposal and left as an implementer task (`tasks.md` 8.1) rather
   than applied now, since editing ADR-003 is implementation work, not
   proposal work.
 - **The relocation of Display Language breaks an existing E2E test in a way
@@ -79,7 +79,7 @@ were pinned down in `design.md` rather than left as open questions.
   too (to a new `settings.spec.ts`) and be extended to cover the profile
   form as a third writer, not just relocated verbatim. This is called out
   explicitly in the proposal's "Impact" section and as its own `tasks.md`
-  section (6) so it isn't treated as a side effect of the route change.
+  section (7) so it isn't treated as a side effect of the route change.
 
 ## Limitations of this investigation
 
@@ -102,7 +102,7 @@ were pinned down in `design.md` rather than left as open questions.
   expanding this change's scope to include a `PRIVACY.md` or encryption-at-
   rest work.
 - **The new ADR-006 (recording the steps-inference-at-read-time pattern) was
-  not drafted**, only named as a required task (`tasks.md` 7.2) with its
+  not drafted**, only named as a required task (`tasks.md` 8.2) with its
   slug left for the implementer to fill in — the investigation identified
   that this decision is architecturally distinct from ADR-003's formula
   choice (a new pattern: deriving a profile-shaped value from time-series
@@ -117,14 +117,14 @@ were pinned down in `design.md` rather than left as open questions.
    `main`).
 2. Implement in `tasks.md`'s order: activity inference (section 1) and the
    `GET /api/users/me/nutrition-target` handler (section 2) first, since the
-   frontend profile form (sections 3-5) has nothing to call until the
+   frontend profile form (sections 4-6) has nothing to call until the
    endpoint and the `UserSettings` field additions exist.
-3. When wiring the profile form (section 4), get the
+3. When wiring the profile form (section 5), get the
    `useLanguage().updateSettings(patch)` call right on the first pass —
    this is the single highest-risk line in the whole change per `design.md`,
-   and the extended race test (section 6) should be written early enough to
+   and the extended race test (section 7) should be written early enough to
    catch a `api.updateSettings`-direct mistake before it ships, not after.
-4. Apply the ADR-003 corrections and write ADR-006 (section 7) in the same
+4. Apply the ADR-003 corrections and write ADR-006 (section 8) in the same
    PR as the code, not deferred — per this repo's ADR rule, a new ADR
    introduced by an in-flight change starts `Proposed` and flips to
    `Accepted` only at merge time, together with archiving the OpenSpec
