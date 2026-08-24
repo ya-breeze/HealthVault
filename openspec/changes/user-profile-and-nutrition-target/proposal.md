@@ -25,12 +25,14 @@ Jeor actually needs are solid: 1,225 weight records and a plausible height. It a
   so it can never silently drift stale.
 - **Activity level is inferred, not asked.** A trailing 28-day average of daily step counts (from
   the existing `steps` metric) maps to one of 5 standard Mifflin-St Jeor/Harris-Benedict-style
-  multipliers. Days at the trailing edge of the window with no step records or an implausibly low
-  count (sync lag / a partial day still being captured) are trimmed from the average rather than
-  averaged in as real zeros or real low-activity days — trimming stops at the first day that looks
-  complete, so a genuinely low-but-real day further back in the window is never discarded. A third
-  new `UserSettings` key, `activity_override`, lets a user whose activity doesn't register as steps
-  (cycling, lifting) pin one of the same 5 tiers directly; when set, it always wins over inference.
+  multipliers. Two separate exclusion rules apply: a day with no step records at all is excluded
+  wherever it falls in the window (trailing edge or interior — missing data is never averaged in
+  as a real zero), while a day with an implausibly low but nonzero count (sync lag / a partial day
+  still being captured) is trimmed only from the trailing edge, stopping at the first day that
+  clears the floor — so a genuinely low-but-real day further back in the window is never
+  discarded. A third new `UserSettings` key, `activity_override`, lets a user whose activity
+  doesn't register as steps (cycling, lifting) pin one of the same 5 tiers directly; when set, it
+  always wins over inference.
 - **New capability `nutrition-target`**: `GET /api/users/me/nutrition-target`, following the
   existing `summaryHandler` precedent (auth via `ClaimsFromCtx`, no request body, plain JSON).
   Computed fresh on every read from the user's current profile fields, latest measured `weight`
@@ -100,9 +102,11 @@ Jeor actually needs are solid: 1,225 weight records and a plausible height. It a
   its queue — the profile form is a new caller of its existing `updateSettings`), `frontend/lib/api.ts`
   (`UserSettings` interface gains `birthdate`/`sex`/`activity_override`, new
   `getNutritionTarget()`).
-- `e2e/tests/dashboard.spec.ts`'s `Settings lost-update race` describe block and its
-  `#display-language`-driving tests move to a new `e2e/tests/settings.spec.ts`; the race test gains
-  the profile form as a third writer.
+- `e2e/tests/dashboard.spec.ts`'s `Settings lost-update race` describe block moves to a new
+  `e2e/tests/settings.spec.ts` and gains the profile form as a third writer. The `Dashboard card
+  reorder` describe block's `switching language mid-reorder keeps the unsaved order` test is
+  deleted rather than moved: it depends on the language switcher being reachable without leaving
+  the dashboard's edit mode, a premise the `/settings` relocation removes.
 - Docs: `docs/adr/ADR-003-nutrition-targets-from-goal-weight.md` (three corrections),
   `docs/adr/ADR-006-*.md` (new), `CONTEXT.md` (glossary: **Activity Level**, **Nutrition Target**
   updated), `todo.md` (Phase 3 marked claimed).

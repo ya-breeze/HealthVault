@@ -1,0 +1,111 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Regenerate with: make projected-specs
+     See openspec/specs.projected.README.md for details. -->
+
+--- openspec/specs/user-profile/spec.md
++++ openspec/specs/user-profile/spec.md
+@@ -0,0 +1,104 @@
++# user-profile Specification
++
++## Purpose
++TBD - created by archiving change user-profile-and-nutrition-target. Update Purpose after archive.
++## Requirements
++### Requirement: Profile fields stored in the settings blob
++The system SHALL store a user's birthdate and sex as `birthdate` and `sex` keys in their existing
++`UserSettings` JSON object (`GET`/`PUT /api/users/me/settings`), requiring no new storage or
++endpoint. `birthdate` SHALL be an ISO 8601 date (`YYYY-MM-DD`). `sex` SHALL be exactly `"male"` or
++`"female"`.
++
++Age SHALL be derived from `birthdate` at the time it is needed (calendar age in completed years),
++never stored, so a corrected birthdate is immediately reflected everywhere age is used without
++leaving any previously-computed age stale.
++
++A stored `birthdate` or `sex` value that is absent, unparsable, or outside plausible bounds SHALL be
++treated as not set by any feature that consumes it — the same "interpreted, not assumed" handling
++`display_language` already receives — rather than causing a crash or being silently coerced to a
++default. A `birthdate` SHALL be treated as not set if it does not parse as `YYYY-MM-DD`, names a
++date in the future, or implies an age below 5 or above 120 years (5 and 120 themselves are valid
++ages). A `sex` SHALL be treated as not set if it is not exactly `"male"` or `"female"`.
++
++#### Scenario: Setting a profile
++
++- **WHEN** an authenticated user sends `PUT /api/users/me/settings` with a body including
++  `"birthdate": "1990-05-14"` and `"sex": "female"`
++- **THEN** the system stores both as part of their settings object, and subsequent reads of
++  `GET /api/users/me/settings` include them
++
++#### Scenario: Malformed birthdate treated as not set
++
++- **WHEN** a stored `birthdate` value does not parse as `YYYY-MM-DD`, names a future date, or
++  implies an age outside 5–120 years
++- **THEN** any feature reading it SHALL treat the profile as having no birthdate, not attempt to use
++  the malformed value
++
++#### Scenario: Unrecognized sex value treated as not set
++
++- **WHEN** a stored `sex` value is anything other than exactly `"male"` or `"female"`
++- **THEN** any feature reading it SHALL treat the profile as having no sex set
++
++### Requirement: Manual activity-level override
++The system SHALL allow a user to store an `activity_override` key in their settings object, one of
++`"sedentary"`, `"light"`, `"moderate"`, `"active"`, or `"very_active"` — the same 5 tiers the
++step-based activity inference (see `nutrition-target`) can produce, mapped to tier name and
++multiplier exactly as follows (the enum's literal spelling does not positionally match the tier
++display names, most notably `"active"` → "Very active" and `"very_active"` → "Extra active"):
++
++| `activity_override` value | Tier name         | Multiplier |
++|---|---|---|
++| `sedentary`   | Sedentary          | 1.2   |
++| `light`       | Lightly active     | 1.375 |
++| `moderate`    | Moderately active  | 1.55  |
++| `active`      | Very active        | 1.725 |
++| `very_active` | Extra active       | 1.9   |
++
++When present and valid, it SHALL be used in place of the step-based inference by every feature that
++needs the user's activity tier, with no blending between the override and the inferred value. An
++absent or unrecognized `activity_override` value SHALL fall back to the step-based inference.
++
++#### Scenario: Override takes precedence over inference
++
++- **WHEN** a user has both 30 days of step history that would infer as "Moderately active" and an
++  `activity_override` of `"sedentary"`
++- **THEN** the system SHALL use "Sedentary" wherever the user's activity tier is needed
++
++#### Scenario: Unset override falls back to inference
++
++- **WHEN** a user has no `activity_override` key (or an unrecognized value)
++- **THEN** the system SHALL use the step-based inference
++
++#### Scenario: `active` and `very_active` map to their non-obvious tiers
++
++- **WHEN** a user sets `activity_override` to `"active"`
++- **THEN** the system SHALL use the "Very active" tier (multiplier 1.725), not "Extra active"
++- **WHEN** a different user sets `activity_override` to `"very_active"`
++- **THEN** the system SHALL use the "Extra active" tier (multiplier 1.9), not "Very active"
++
++### Requirement: Profile form on /settings
++The frontend SHALL provide a Profile section on a new `/settings` route with controls for
++birthdate (required), sex (required, exactly two options), and activity override (optional, 6
++options including "Automatic (based on steps)" as the default/unset state). Saving SHALL write
++through the same shared settings write queue the Display Language switcher uses (see
++`user-settings`'s concurrent-write-safety requirement), not an independent read-modify-write. Every
++interactive control on this form SHALL meet the existing 48×48px minimum tap target (see
++`mobile-touch-targets`).
++
++#### Scenario: Saving the profile persists birthdate and sex
++
++- **WHEN** a user fills in birthdate and sex on `/settings` and saves
++- **THEN** the system SHALL persist both via `PUT /api/users/me/settings` and they SHALL be present
++  on the next `GET /api/users/me/settings`
++
++#### Scenario: Sex is required
++
++- **WHEN** a user attempts to save the profile form with no sex selected
++- **THEN** the system SHALL NOT submit the write and SHALL indicate the field is required
++
++#### Scenario: Profile save does not clobber a concurrently-saved Display Language
++
++- **WHEN** a user saves the profile form and changes their Display Language in the same session
++  with no navigation in between
++- **THEN** both writes SHALL persist — neither SHALL silently overwrite the other's change
++

@@ -1,0 +1,36 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Regenerate with: make projected-specs
+     See openspec/specs.projected.README.md for details. -->
+
+--- openspec/specs/display-language/spec.md
++++ openspec/specs/display-language/spec.md
+@@ -58,16 +58,25 @@
+ 
+ ### Requirement: UI Language Switcher
+ 
+-The frontend SHALL provide a control for the authenticated user to change their Display Language,
+-which writes the new value via `PUT /api/users/me/settings` and re-renders static UI strings in
+-the newly selected language without requiring a page reload.
++The frontend SHALL provide a control, located on the `/settings` route, for the authenticated user
++to change their Display Language, which writes the new value via `PUT /api/users/me/settings` and
++re-renders static UI strings in the newly selected language without requiring a page reload. The
++control SHALL write through the same shared settings write queue described in `user-settings`'s
++concurrent-write-safety requirement, since `/settings` also hosts the profile form
++(`user-profile`), a second writer to the same settings object.
+ 
+ #### Scenario: Switching Display Language updates the UI immediately
+ 
+-- **WHEN** a user selects a different Display Language from the switcher
++- **WHEN** a user selects a different Display Language from the switcher on `/settings`
+ - **THEN** the system saves the new setting and the interface's static strings SHALL reflect the
+   new language without a full page reload
+ 
++#### Scenario: The switcher is reachable from every authenticated page
++
++- **WHEN** a user is on any authenticated page other than `/settings`
++- **THEN** the header SHALL provide a link to `/settings` where the Display Language switcher is
++  found — the switcher itself is no longer rendered directly in the header
++
+ ### Requirement: Localized Surfaces
+ 
+ The Display Language SHALL govern the dashboard — its vitals grid, the meal-attention link, the
