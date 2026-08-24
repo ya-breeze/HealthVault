@@ -110,19 +110,19 @@
 
 ## 8. Docs
 
-- [ ] 8.1 Correct `docs/adr/ADR-003-nutrition-targets-from-goal-weight.md`'s Consequences section:
+- [x] 8.1 Correct `docs/adr/ADR-003-nutrition-targets-from-goal-weight.md`'s Consequences section:
       remove the "softer dependency on Phase 2" claim (now a hard dependency, since a goal is
       required), remove the internally-inconsistent "cards must show calories/carbs/fat even when
       protein is unavailable" claim, fold in the three settled numbers (activity tiers, no-goal
       behavior, g/kg/split figures), and flip its `Status` from `Proposed` to `Accepted` (per this
       project's ADR lifecycle rule — its content is now finalized by this change)
-- [ ] 8.2 New `docs/adr/ADR-006-<slug>.md` recording the steps-inference-instead-of-storage
+- [x] 8.2 New `docs/adr/ADR-006-<slug>.md` recording the steps-inference-instead-of-storage
       decision (`Status: Proposed` until this change merges, then flip to `Accepted` at merge
       alongside 8.1's ADR-003 flip)
-- [ ] 8.3 `CONTEXT.md`: add an **Activity Level** glossary entry (Nutrition targets section);
+- [x] 8.3 `CONTEXT.md`: add an **Activity Level** glossary entry (Nutrition targets section);
       update the existing **Nutrition Target** entry to mention the two new profile fields instead
       of leaving "activity level" unexplained
-- [ ] 8.4 Mark the Phase 3 backlog item in `todo.md` as claimed by this change, and correct its
+- [x] 8.4 Mark the Phase 3 backlog item in `todo.md` as claimed by this change, and correct its
       now-stale claims: the activity-tier count is decided (5, not "still undecided"), and the
       calorie/carb/fat targets now have a hard dependency on Phase 2 too, not "only the protein
       target does" (mirrors the ADR-003 corrections in 8.1)
