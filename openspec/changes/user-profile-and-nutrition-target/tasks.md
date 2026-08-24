@@ -1,14 +1,14 @@
 ## 1. Backend: activity-level inference
 
-- [ ] 1.1 Add a pure function computing the trailing 28-day step average applying two exclusion
+- [x] 1.1 Add a pure function computing the trailing 28-day step average applying two exclusion
       rules per design.md: (a) zero-record days excluded anywhere in the window, not just the tail,
       and (b) <500-step (but nonzero-record) days trimmed only from the trailing edge, stopping at
       the first day that clears 500 — given a caller-supplied "today" and a source of daily step
       sums/record-counts (reuse the existing `GET /api/data/steps?bucket=day` aggregation logic —
       see `backend/pkg/server/api.go`'s bucketed-query path)
-- [ ] 1.2 Add the 5-tier table (Sedentary/Lightly active/Moderately active/Very active/Extra active
+- [x] 1.2 Add the 5-tier table (Sedentary/Lightly active/Moderately active/Very active/Extra active
       → 1.2/1.375/1.55/1.725/1.9) mapping the resulting average to a multiplier
-- [ ] 1.3 Return "unavailable" (not a default tier) when fewer than 7 valid days remain after
+- [x] 1.3 Return "unavailable" (not a default tier) when fewer than 7 valid days remain after
       exclusion
 
 ## 2. Backend: `GET /api/users/me/nutrition-target`
