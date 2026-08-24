@@ -13,31 +13,31 @@
 
 ## 2. Backend: `GET /api/users/me/nutrition-target`
 
-- [ ] 2.1 Add `NutritionTargetHandler` in `backend/pkg/server/api.go`, alongside `summaryHandler`:
+- [x] 2.1 Add `NutritionTargetHandler` in `backend/pkg/server/api.go`, alongside `summaryHandler`:
       auth via `ClaimsFromCtx`, no request body. Unlike `summaryHandler`, do NOT call `resolveUser`
       / support `?user=` — this endpoint is self-only (see design.md's "Self-only" decision)
-- [ ] 2.2 Read `birthdate`/`sex`/`activity_override` from the user's `UserSettings` JSON
+- [x] 2.2 Read `birthdate`/`sex`/`activity_override` from the user's `UserSettings` JSON
       (`storage.GetUserSettings`), applying the "malformed/absent → not set" interpretation from
       `user-profile`'s spec (not a schema-validated read — the settings blob stays opaque at the
       storage layer)
-- [ ] 2.3 Read latest `weight`, `height`, `weight_goal` records via existing storage methods
-- [ ] 2.4 Resolve the activity tier: `activity_override` if valid, else the task-1 inference over
+- [x] 2.3 Read latest `weight`, `height`, `weight_goal` records via existing storage methods
+- [x] 2.4 Resolve the activity tier: `activity_override` if valid, else the task-1 inference over
       the user's `steps` history. Use the explicit override-value→tier→multiplier table in
       design.md/`user-profile`'s spec (do NOT derive the mapping from string similarity between the
       enum values and tier names — `"active"`/`"very_active"` do not positionally match "Very
       active"/"Extra active")
-- [ ] 2.5 Implement the 4-reason 422 precondition check in the exact order from design.md
+- [x] 2.5 Implement the 4-reason 422 precondition check in the exact order from design.md
       (`missing_profile` → `missing_measurements` → `missing_goal_weight` →
       `insufficient_activity_data`), returning as soon as the first unmet reason is found
-- [ ] 2.6 Implement the Mifflin-St Jeor + activity multiplier + protein/carb/fat-with-floor
+- [x] 2.6 Implement the Mifflin-St Jeor + activity multiplier + protein/carb/fat-with-floor
       computation from design.md, converting the `height` metric's stored metres to centimetres
       and computing calendar age (UTC, matching the rest of the API) from `birthdate` at request
       time. Clamp `carbs_grams` to 0 (not negative) when protein alone meets or exceeds `calories`;
       round all four output values to the nearest whole unit before returning
-- [ ] 2.7 Return HTTP 200 with `calories`, `protein_grams`, `carbs_grams`, `fat_grams`, and the
+- [x] 2.7 Return HTTP 200 with `calories`, `protein_grams`, `carbs_grams`, `fat_grams`, and the
       echoed inputs (`measured_weight_kg`, `goal_weight_kg`, `height_m`, `age_years`, `sex`,
       `activity_multiplier`, `activity_tier`) on success
-- [ ] 2.8 Register the route in `backend/pkg/server/server.go` behind the existing auth middleware
+- [x] 2.8 Register the route in `backend/pkg/server/server.go` behind the existing auth middleware
 
 ## 3. Backend: unit tests
 

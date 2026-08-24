@@ -17,6 +17,19 @@ var (
 	tierExtra     = activityTier{Name: "Extra active", Multiplier: 1.9}
 )
 
+// activityOverrideTiers maps a user-profile `activity_override` enum value to
+// its activity tier, per design.md/user-profile's explicit table. The
+// mapping is intentionally not derived from string similarity between the
+// enum values and tier names: "active" and "very_active" do not positionally
+// match "Very active"/"Extra active".
+var activityOverrideTiers = map[string]activityTier{
+	"sedentary":   tierSedentary,
+	"light":       tierLight,
+	"moderate":    tierModerate,
+	"active":      tierActive,
+	"very_active": tierExtra,
+}
+
 // trailingWindowDays is the size of the trailing step-history window used to
 // infer activity level from steps (design.md "Trailing window: 28 calendar
 // days ending yesterday").
