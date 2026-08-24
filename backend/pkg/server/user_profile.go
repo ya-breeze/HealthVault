@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,17 +40,24 @@ type userProfile struct {
 // display_language: the blob stays schema-agnostic at the storage layer
 // (user-settings's PUT only checks "is this valid JSON"), and interpretation
 // happens here, at read time, per feature.
-func readUserProfile(storage database.Storage, userID uuid.UUID) userProfile {
+//
+// The returned error is non-nil only for a genuine storage failure — a
+// missing row (gorm.ErrRecordNotFound) or unparsable/implausible field
+// values are not errors, they surface as a zero-value/Has*=false profile,
+// per the "interpreted, not assumed" contract above. Callers must
+// distinguish the two: an empty profile from a real DB failure must not be
+// reported to the client as "you haven't set up your profile yet".
+func readUserProfile(storage database.Storage, userID uuid.UUID) (userProfile, error) {
 	settingsJSON, err := storage.GetUserSettings(userID)
 	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.Error("readUserProfile: read user settings", "err", err, "user_id", userID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return userProfile{}, nil
 		}
-		return userProfile{}
+		return userProfile{}, err
 	}
 	var obj map[string]any
 	if err := json.Unmarshal([]byte(settingsJSON), &obj); err != nil {
-		return userProfile{}
+		return userProfile{}, nil
 	}
 
 	var p userProfile
@@ -71,7 +77,7 @@ func readUserProfile(storage database.Storage, userID uuid.UUID) userProfile {
 			p.HasActivityOverride = true
 		}
 	}
-	return p
+	return p, nil
 }
 
 // parseBirthdate parses a YYYY-MM-DD birthdate and rejects it (ok=false) if

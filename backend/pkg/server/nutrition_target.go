@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"math"
 	"net/http"
 	"time"
@@ -55,27 +56,47 @@ func NutritionTargetHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		profile := readUserProfile(storage, claims.UserID)
+		profile, err := readUserProfile(storage, claims.UserID)
+		if err != nil {
+			writeQueryError(w, "nutrition target: read user profile", err, claims.UserID)
+			return
+		}
 		if !profile.HasBirthdate || !profile.HasSex {
 			writeUnprocessable(w, "missing_profile")
 			return
 		}
 
-		weightKg, hasWeight := latestPointValue(storage, "weights", "time", "kilograms", claims.UserID)
-		heightM, hasHeight := latestPointValue(storage, "heights", "time", "meters", claims.UserID)
+		weightKg, hasWeight, err := latestPointValue(storage, "weights", "time", "kilograms", claims.UserID)
+		if err != nil {
+			writeQueryError(w, "nutrition target: read weight", err, claims.UserID)
+			return
+		}
+		heightM, hasHeight, err := latestPointValue(storage, "heights", "time", "meters", claims.UserID)
+		if err != nil {
+			writeQueryError(w, "nutrition target: read height", err, claims.UserID)
+			return
+		}
 		if !hasWeight || !hasHeight {
 			writeUnprocessable(w, "missing_measurements")
 			return
 		}
 
-		goalWeightKg, hasGoal := latestPointValue(storage, "weight_goals", "time", "kilograms", claims.UserID)
+		goalWeightKg, hasGoal, err := latestPointValue(storage, "weight_goals", "time", "kilograms", claims.UserID)
+		if err != nil {
+			writeQueryError(w, "nutrition target: read goal weight", err, claims.UserID)
+			return
+		}
 		if !hasGoal {
 			writeUnprocessable(w, "missing_goal_weight")
 			return
 		}
 
 		now := time.Now().UTC()
-		tierName, multiplier, ok := resolveActivityTier(storage, claims.UserID, profile, now)
+		tierName, multiplier, ok, err := resolveActivityTier(storage, claims.UserID, profile, now)
+		if err != nil {
+			writeQueryError(w, "nutrition target: resolve activity tier", err, claims.UserID)
+			return
+		}
 		if !ok {
 			writeUnprocessable(w, "insufficient_activity_data")
 			return
@@ -139,22 +160,26 @@ func computeNutritionTarget(
 // activity_override if set and valid, else the trailing-steps inference
 // (task 1). No blending between the two (design.md/user-profile: "no
 // blending between the override and the inferred value").
+//
+// The returned error is non-nil only for a genuine storage failure while
+// fetching step history; ok=false/err=nil means "insufficient data", a
+// normal, expected outcome, never a storage failure.
 func resolveActivityTier(
 	storage database.Storage, userID uuid.UUID, profile userProfile, today time.Time,
-) (string, float64, bool) {
+) (string, float64, bool, error) {
 	if profile.HasActivityOverride {
 		t := activityOverrideTiers[profile.ActivityOverride]
-		return t.Name, t.Multiplier, true
+		return t.Name, t.Multiplier, true, nil
 	}
 	days, err := fetchDailySteps(storage, userID, today)
 	if err != nil {
-		return "", 0, false
+		return "", 0, false, err
 	}
 	tier, ok := inferActivityTier(today, days)
 	if !ok {
-		return "", 0, false
+		return "", 0, false, nil
 	}
-	return tier.Name, tier.Multiplier, true
+	return tier.Name, tier.Multiplier, true, nil
 }
 
 // fetchDailySteps loads the per-day step sums trailingStepsAverage needs,
@@ -188,8 +213,10 @@ func fetchDailySteps(storage database.Storage, userID uuid.UUID, today time.Time
 
 // latestPointValue returns the most recent valueCol reading for userID from
 // a point-type table (weights/heights/weight_goals), ordered by timeCol
-// descending. ok is false if the user has no rows in the table at all.
-func latestPointValue(storage database.Storage, table, timeCol, valueCol string, userID uuid.UUID) (float64, bool) {
+// descending. ok is false if the user has no rows in the table at all; the
+// returned error is non-nil only for a genuine storage failure, never for
+// "no rows" (GORM's Find, unlike First, does not error on an empty result).
+func latestPointValue(storage database.Storage, table, timeCol, valueCol string, userID uuid.UUID) (float64, bool, error) {
 	var rows []map[string]any
 	err := storage.DB().Table(table).
 		Select(valueCol).
@@ -197,10 +224,13 @@ func latestPointValue(storage database.Storage, table, timeCol, valueCol string,
 		Order(timeCol + " DESC").
 		Limit(1).
 		Find(&rows).Error
-	if err != nil || len(rows) == 0 {
-		return 0, false
+	if err != nil {
+		return 0, false, err
 	}
-	return toFloat64(rows[0][valueCol]), true
+	if len(rows) == 0 {
+		return 0, false, nil
+	}
+	return toFloat64(rows[0][valueCol]), true, nil
 }
 
 // writeUnprocessable writes the 422 `{"error": "<reason>"}` shape every
@@ -208,6 +238,15 @@ func latestPointValue(storage database.Storage, table, timeCol, valueCol string,
 // code per unmet input").
 func writeUnprocessable(w http.ResponseWriter, reason string) {
 	writeJSONStatus(w, http.StatusUnprocessableEntity, map[string]string{"error": reason})
+}
+
+// writeQueryError reports a genuine storage failure the same way the rest
+// of this package does (api.go's GetUserSettingsHandler/queryBucketed):
+// a logged 500, never folded into one of this endpoint's 422 reasons, which
+// are reserved for "the user hasn't set this up yet".
+func writeQueryError(w http.ResponseWriter, context string, err error, userID uuid.UUID) {
+	slog.Error(context, "err", err, "user_id", userID)
+	http.Error(w, "query error", http.StatusInternalServerError)
 }
 
 func roundToInt(v float64) int {

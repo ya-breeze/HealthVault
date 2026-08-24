@@ -70,7 +70,10 @@ func TestReadUserProfile_UnrecognizedSexRejected(t *testing.T) {
 		t.Fatalf("UpsertUserSettings: %v", err)
 	}
 
-	profile := readUserProfile(st, userID)
+	profile, err := readUserProfile(st, userID)
+	if err != nil {
+		t.Fatalf("readUserProfile: %v", err)
+	}
 	if profile.HasSex {
 		t.Errorf("expected HasSex=false for an unrecognized sex value, got Sex=%q", profile.Sex)
 	}
@@ -86,9 +89,51 @@ func TestReadUserProfile_ValidSexValuesAccepted(t *testing.T) {
 		if err := st.UpsertUserSettings(userID, familyID, `{"sex":"`+sex+`"}`); err != nil {
 			t.Fatalf("UpsertUserSettings: %v", err)
 		}
-		profile := readUserProfile(st, userID)
+		profile, err := readUserProfile(st, userID)
+		if err != nil {
+			t.Fatalf("readUserProfile: %v", err)
+		}
 		if !profile.HasSex || profile.Sex != sex {
 			t.Errorf("sex=%q: got HasSex=%v Sex=%q", sex, profile.HasSex, profile.Sex)
 		}
+	}
+}
+
+// An unrecognized activity_override value must surface as
+// HasActivityOverride=false, the same "malformed/absent -> not set" contract
+// TestReadUserProfile_UnrecognizedSexRejected verifies for sex.
+func TestReadUserProfile_UnrecognizedActivityOverrideRejected(t *testing.T) {
+	st := newProfileTestStorage(t)
+	userID, familyID := uuid.New(), uuid.New()
+	if err := st.UpsertUserSettings(userID, familyID, `{"activity_override":"bogus"}`); err != nil {
+		t.Fatalf("UpsertUserSettings: %v", err)
+	}
+
+	profile, err := readUserProfile(st, userID)
+	if err != nil {
+		t.Fatalf("readUserProfile: %v", err)
+	}
+	if profile.HasActivityOverride {
+		t.Errorf("expected HasActivityOverride=false for an unrecognized value, got ActivityOverride=%q", profile.ActivityOverride)
+	}
+}
+
+// Malformed settings JSON (not even a valid JSON object) must yield an empty
+// profile, not a panic or a propagated parse error — the settings blob is
+// schema-agnostic at the storage layer, so interpretation failures here are
+// not storage failures.
+func TestReadUserProfile_MalformedSettingsJSONYieldsEmptyProfile(t *testing.T) {
+	st := newProfileTestStorage(t)
+	userID, familyID := uuid.New(), uuid.New()
+	if err := st.UpsertUserSettings(userID, familyID, `not json`); err != nil {
+		t.Fatalf("UpsertUserSettings: %v", err)
+	}
+
+	profile, err := readUserProfile(st, userID)
+	if err != nil {
+		t.Fatalf("readUserProfile: %v", err)
+	}
+	if profile.HasBirthdate || profile.HasSex || profile.HasActivityOverride {
+		t.Errorf("expected an empty profile for malformed settings JSON, got %+v", profile)
 	}
 }

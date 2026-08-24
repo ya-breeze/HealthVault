@@ -143,6 +143,18 @@ test.describe('Mobile tap targets — header and toast', () => {
     await assertMinTapTarget(page.locator('#display-language'), 'settings language select');
   });
 
+  test('the Profile form controls on /settings meet the 48px minimum', async ({ page }) => {
+    await login(page);
+    await page.goto('/settings');
+    // mobile-touch-targets' "Settings page controls meet the minimum"
+    // scenario covers the whole Profile form, not just Display Language —
+    // these three share the same TapTarget wrapper, so this is the
+    // regression guard for the rest of it.
+    await assertMinTapTarget(page.getByLabel('Birthdate'), 'settings birthdate input');
+    await assertMinTapTarget(page.getByLabel('Sex'), 'settings sex select');
+    await assertMinTapTarget(page.getByLabel('Activity level'), 'settings activity level select');
+  });
+
   test('the Expert Mode toggle meets the 48px minimum', async ({ page }) => {
     await login(page);
     await page.goto('/food/custom/');
