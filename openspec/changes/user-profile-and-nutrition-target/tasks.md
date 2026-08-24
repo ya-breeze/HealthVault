@@ -129,7 +129,7 @@
 
 ## 9. Verification
 
-- [ ] 9.1 `make lint`
-- [ ] 9.2 `make test`
-- [ ] 9.3 `npx tsc --noEmit` and `npm run build` in `frontend/`
-- [ ] 9.4 `openspec validate --strict` for this change
+- [x] 9.1 `make lint`
+- [x] 9.2 `make test`
+- [x] 9.3 `npx tsc --noEmit` and `npm run build` in `frontend/`
+- [x] 9.4 `openspec validate --strict` for this change
