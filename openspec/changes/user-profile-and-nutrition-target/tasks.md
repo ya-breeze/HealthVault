@@ -71,17 +71,17 @@
 
 ## 5. Frontend: `/settings` route + Profile form
 
-- [ ] 5.1 Create `frontend/app/settings/page.tsx` (or `SettingsClient.tsx` following the existing
+- [x] 5.1 Create `frontend/app/settings/page.tsx` (or `SettingsClient.tsx` following the existing
       `DataTypeClient.tsx` split), rendered behind the existing `Header` chrome
-- [ ] 5.2 Build the Profile form: birthdate input (required), sex select (required, 2 options),
+- [x] 5.2 Build the Profile form: birthdate input (required), sex select (required, 2 options),
       activity override select (optional, "Automatic (based on steps)" + 5 tiers, labeled per the
       tier names in design.md/`user-profile`'s mapping table — not the raw enum values), following
       `CustomFoodModal.tsx`'s hand-rolled `<input>`/`<select>` idiom, every control wrapped in
       `TapTarget`
-- [ ] 5.3 Wire the form's save to `useLanguage().updateSettings(patch)` — NOT `api.updateSettings`
+- [x] 5.3 Wire the form's save to `useLanguage().updateSettings(patch)` — NOT `api.updateSettings`
       or `api.putSettings` directly — per design.md's "one-line difference with a silent-data-loss
       failure mode if missed"
-- [ ] 5.4 Client-side required-field validation for birthdate and sex before submit (mirrors
+- [x] 5.4 Client-side required-field validation for birthdate and sex before submit (mirrors
       `CustomFoodModal`'s name-required check)
 
 ## 6. Frontend: relocate Display Language
