@@ -46,15 +46,28 @@ These are the standard Mifflin-St Jeor/Harris-Benedict multiplier set (1.2/1.375
 not a novel scale — mapped onto conventional steps-per-day bands. Five tiers, not three: the
 production data's own step distribution (96–20,889/day, average 8,552) spans from near-sedentary to
 extra-active, and a 3-tier scheme would put most of that range's meaningful variation inside a
-single bucket. The same 5 tiers are the manual-override enum (`sedentary`, `light`, `moderate`,
-`active`, `very_active`), so a user who overrides sees the same vocabulary the inference would have
-used.
+single bucket. The same 5 tiers are the manual-override enum, but the enum's literal values do not
+share the tier display names — `active` and `very_active` in particular do not positionally match
+"Very active"/"Extra active" the way their spelling suggests. The mapping is exact and MUST be
+implemented as this table, not inferred from string similarity:
+
+| `activity_override` value | Tier name         | Multiplier |
+|---|---|---|
+| `sedentary`   | Sedentary          | 1.2   |
+| `light`       | Lightly active     | 1.375 |
+| `moderate`    | Moderately active  | 1.55  |
+| `active`      | Very active        | 1.725 |
+| `very_active` | Extra active       | 1.9   |
 
 ### Trailing window: 28 calendar days ending yesterday, trimmed from the tail only
 
-Today (the current calendar day, in the user's account — see below on timezone) is always excluded
-from the window: it hasn't ended, so its step count is structurally partial regardless of sync
-state, not just occasionally. The window is the 28 calendar days immediately before today.
+Today (the current calendar day) is always excluded from the window: it hasn't ended, so its step
+count is structurally partial regardless of sync state, not just occasionally. The window is the 28
+calendar days immediately before today. "Today" and every day boundary in the window are computed in
+UTC, matching the convention every other time-bounded read/write in this codebase already uses
+(`time.Now().UTC()` in `backend/pkg/server/api.go`'s write path; `bucket=day` aggregation uses the
+same storage-layer day boundary) — HealthVault has no per-user timezone concept anywhere today, so
+this change does not introduce one.
 
 Within that window, walk backward from the most recent day (yesterday) and discard each day that
 has either zero step records or fewer than 500 total steps that day, **stopping at the first day
@@ -96,7 +109,24 @@ carbs_g, fat_g = split remaining_kcal 50/50 by kcal (fat: /9, carbs: /4)
 if fat_g < fat_floor_g:
     fat_g = fat_floor_g
     carbs_g = (remaining_kcal - fat_floor_g * 9) / 4
+if carbs_g < 0:
+    carbs_g = 0
+calories, protein_g, carbs_g, fat_g = round each to the nearest gram/kcal
 ```
+
+- **All four returned values are rounded to the nearest whole unit** (kcal for `calories`, grams for
+  the other three) — the formulas above produce non-terminating decimals for most real inputs, and
+  an unrounded float in the response is not a meaningful nutrition target for a user to act on.
+- **`remaining_kcal` can be zero or negative** when `protein_kcal` (goal-weight-derived) alone meets
+  or exceeds `calories` (measured-weight-and-activity-derived) — reachable because `weight_goal` and
+  measured `weight` are independent inputs with no enforced relationship (`weight_goal` alone spans
+  20-500 kg per `data-api`), most plausibly for a low-BMR/low-activity user with a goal weight set
+  well above their current weight. `protein_grams` is still returned as computed (it does not depend
+  on `calories`); `fat_grams` still applies its floor; `carbs_grams` is clamped to 0 rather than
+  going negative. The returned macros can legitimately sum to more kcal than `calories` in this case
+  — that reflects the goal-weight-derived minimums genuinely exceeding the measured-weight-derived
+  budget, not a computation bug, and is not one of the four reasons this endpoint returns 422 for
+  (this is a valid-input result, not an unmet precondition).
 
 - **Height** feeds the formula in centimetres (Mifflin-St Jeor's canonical form), while the
   `height` metric type stores metres (existing convention, per `data-model`) — the handler converts
@@ -137,10 +167,26 @@ compute for carbs/fat either — this is the ADR-003 inconsistency this change's
 assumed," per the existing `display-language` requirement's own pattern — not validated at the
 generic `PUT /api/users/me/settings` write (that endpoint stays schema-agnostic, per
 `user-settings`'s existing contract; only "is this valid JSON" is checked there). A malformed
-`birthdate` (unparsable, in the future, or implying an age outside 5–120 years) or `sex` outside the
-two-value enum is treated as absent, producing `missing_profile` — a value that made it into the
-blob (however it got there — the form is expected to prevent this, but nothing stops a direct API
-call) never produces a wrong number silently.
+`birthdate` (unparsable, in the future, or implying an age below 5 or above 120 years, inclusive of
+those two bounds) or `sex` outside the two-value enum is treated as absent, producing
+`missing_profile` — a value that made it into the blob (however it got there — the form is expected
+to prevent this, but nothing stops a direct API call) never produces a wrong number silently.
+
+### Self-only: no `?user=` family-member support
+
+The endpoint description above says it follows "the existing `summaryHandler` pattern," which is
+true for auth-via-`ClaimsFromCtx`/no-body/plain-JSON, but `summaryHandler` also calls
+`resolveUser(r, storage, claims.UserID, familyID)` to honor an optional `?user=<username>` query
+parameter (per `data-api`'s "Family member data access" requirement) — this endpoint deliberately
+does **not** adopt that half of the pattern. `birthdate`/`sex`/`activity_override` live in
+`UserSettings`, which `user-settings`'s existing "Per-user settings storage" requirement scopes as
+"addressable only by the authenticated user's own identity." Since this endpoint's output depends on
+those self-only fields, making the endpoint itself family-visible would either require punching a
+family-visibility hole through `UserSettings`'s existing self-only invariant, or produce an endpoint
+that is family-visible for some of its inputs (`weight`/`height`/`weight_goal`/`steps`) and
+self-only for others — an inconsistency with no precedent elsewhere in the API. `GET
+/api/users/me/nutrition-target` therefore always computes the caller's own target; there is no
+`?user=` parameter, and family members do not see each other's Nutrition Target in this change.
 
 ### Computed on read, never stored
 
@@ -187,6 +233,14 @@ control with a link to `/settings`.
   frontend already knows which of its own two required fields is empty before it ever calls this
   endpoint (client-side required-field validation), so the endpoint's reason code only needs to
   cover the case of a non-form caller or a row edited outside the UI.
+- **Clamping `carbs_grams` to 0 when protein alone exceeds `calories` is this proposal's own
+  judgment call**, not sourced from the grilling session (which didn't anticipate goal weight and
+  measured weight diverging this far) — flagged for the same reason as the trim thresholds above: an
+  unusual but reachable input combination needs a concrete, reviewed answer rather than an
+  implementer inventing one. The alternative considered and rejected was a fifth 422 reason code
+  (e.g. `goal_too_aggressive`); clamping was chosen because `protein_grams` and the fat floor are
+  still both meaningful, well-defined numbers in this case — only `carbs_grams` has nothing left to
+  be, so only it degrades, rather than failing the whole request.
 
 ## Migration Plan
 

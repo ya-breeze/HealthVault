@@ -56,21 +56,29 @@ of calories, protein grams, carbs grams, and fat grams, using:
   user's latest `weight` record, `height_cm` is the user's latest `height` record converted from
   the stored metres, and `age_years` is the user's calendar age derived from `birthdate`.
 - `calories = BMR * activity_multiplier`, using the tier from the step-based inference or the
-  user's `activity_override` if set (see `user-profile`).
+  user's `activity_override` if set (see `user-profile`, including the explicit override-value to
+  multiplier mapping table there).
 - `protein_grams = 1.6 * goal_weight_kg`, where `goal_weight_kg` is the user's latest `weight_goal`
   record.
 - `remaining_kcal = calories - protein_grams * 4`, split 50/50 by kcal between carbs and fat
   (`carbs_grams = remaining_kcal / 2 / 4`, `fat_grams = remaining_kcal / 2 / 9`), UNLESS this
   produces `fat_grams` below `0.8 * goal_weight_kg`, in which case `fat_grams` SHALL be set to
   `0.8 * goal_weight_kg` and `carbs_grams` SHALL be recomputed as whatever kcal remain after
-  protein and the fat floor, divided by 4.
+  protein and the fat floor, divided by 4. If this recomputed `carbs_grams` (or, before any fat
+  floor applies, the un-floored `carbs_grams`) would be negative — reachable when `protein_grams *
+  4` alone meets or exceeds `calories` — `carbs_grams` SHALL be clamped to 0 rather than returned as
+  negative; `protein_grams` and `fat_grams` are unaffected by this clamp and the response is still
+  HTTP 200, not a 422.
+- `calories`, `protein_grams`, `carbs_grams`, and `fat_grams` SHALL each be rounded to the nearest
+  whole unit (kcal for `calories`, grams for the other three) before being returned.
 
 #### Scenario: Standard computation
 
 - **WHEN** a user with measured weight 91.1 kg, height 1.78 m, birthdate implying age 35, sex
-  male, goal weight 80 kg, and an inferred "Moderately active" tier requests their target
-- **THEN** the system SHALL return calories, protein_grams, carbs_grams, and fat_grams computed
-  per the formulas above, with `protein_grams = 128` (80 * 1.6)
+  male, goal weight 80 kg, and an inferred "Moderately active" tier (multiplier 1.55) requests
+  their target
+- **THEN** the system SHALL return HTTP 200 with `calories = 2873`, `protein_grams = 128`,
+  `carbs_grams = 295`, and `fat_grams = 131`
 
 #### Scenario: Fat floor engages for an aggressive deficit
 
@@ -78,12 +86,21 @@ of calories, protein grams, carbs grams, and fat grams, using:
 - **THEN** the system SHALL set `fat_grams` to the floor and recompute `carbs_grams` from the
   remaining kcal, rather than returning a fat target below the floor
 
+#### Scenario: Protein alone exceeds the calorie target
+
+- **WHEN** a user's `protein_grams * 4` is greater than or equal to their `calories`
+- **THEN** the system SHALL return HTTP 200 with `protein_grams` and `fat_grams` (at its floor)
+  computed normally, `carbs_grams = 0`, and SHALL NOT return a 422 for this input combination
+
 ### Requirement: Nutrition Target endpoint
 The system SHALL expose `GET /api/users/me/nutrition-target` (requires authentication), following
-the existing `summaryHandler` pattern: no request body, resolves the authenticated user via
-`ClaimsFromCtx`, returns a plain JSON object. On success it SHALL return HTTP 200 with `calories`,
-`protein_grams`, `carbs_grams`, `fat_grams`, and the inputs used (`measured_weight_kg`,
-`goal_weight_kg`, `height_m`, `age_years`, `sex`, `activity_multiplier`, `activity_tier`).
+the existing `summaryHandler` pattern for its no-request-body, plain-JSON-response shape. Unlike
+`summaryHandler`, it SHALL NOT accept a `?user=<username>` parameter and SHALL always compute the
+target for the authenticated caller only (`ClaimsFromCtx`), since its inputs include the caller's
+own `UserSettings` fields, which are self-only per `user-settings`. On success it SHALL return HTTP
+200 with `calories`, `protein_grams`, `carbs_grams`, `fat_grams`, and the inputs used
+(`measured_weight_kg`, `goal_weight_kg`, `height_m`, `age_years`, `sex`, `activity_multiplier`,
+`activity_tier`).
 
 When an input required by the "Nutrition Target computation" requirement is unavailable, the system
 SHALL return HTTP 422 with `{"error": "<reason>"}`, checking in this order and reporting the first

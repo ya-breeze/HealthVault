@@ -14,8 +14,8 @@ A stored `birthdate` or `sex` value that is absent, unparsable, or outside plaus
 treated as not set by any feature that consumes it — the same "interpreted, not assumed" handling
 `display_language` already receives — rather than causing a crash or being silently coerced to a
 default. A `birthdate` SHALL be treated as not set if it does not parse as `YYYY-MM-DD`, names a
-date in the future, or implies an age outside 5–120 years. A `sex` SHALL be treated as not set if it
-is not exactly `"male"` or `"female"`.
+date in the future, or implies an age below 5 or above 120 years (5 and 120 themselves are valid
+ages). A `sex` SHALL be treated as not set if it is not exactly `"male"` or `"female"`.
 
 #### Scenario: Setting a profile
 
@@ -39,10 +39,21 @@ is not exactly `"male"` or `"female"`.
 ### Requirement: Manual activity-level override
 The system SHALL allow a user to store an `activity_override` key in their settings object, one of
 `"sedentary"`, `"light"`, `"moderate"`, `"active"`, or `"very_active"` — the same 5 tiers the
-step-based activity inference (see `nutrition-target`) can produce. When present and valid, it
-SHALL be used in place of the step-based inference by every feature that needs the user's activity
-tier, with no blending between the override and the inferred value. An absent or unrecognized
-`activity_override` value SHALL fall back to the step-based inference.
+step-based activity inference (see `nutrition-target`) can produce, mapped to tier name and
+multiplier exactly as follows (the enum's literal spelling does not positionally match the tier
+display names, most notably `"active"` → "Very active" and `"very_active"` → "Extra active"):
+
+| `activity_override` value | Tier name         | Multiplier |
+|---|---|---|
+| `sedentary`   | Sedentary          | 1.2   |
+| `light`       | Lightly active     | 1.375 |
+| `moderate`    | Moderately active  | 1.55  |
+| `active`      | Very active        | 1.725 |
+| `very_active` | Extra active       | 1.9   |
+
+When present and valid, it SHALL be used in place of the step-based inference by every feature that
+needs the user's activity tier, with no blending between the override and the inferred value. An
+absent or unrecognized `activity_override` value SHALL fall back to the step-based inference.
 
 #### Scenario: Override takes precedence over inference
 
@@ -54,6 +65,13 @@ tier, with no blending between the override and the inferred value. An absent or
 
 - **WHEN** a user has no `activity_override` key (or an unrecognized value)
 - **THEN** the system SHALL use the step-based inference
+
+#### Scenario: `active` and `very_active` map to their non-obvious tiers
+
+- **WHEN** a user sets `activity_override` to `"active"`
+- **THEN** the system SHALL use the "Very active" tier (multiplier 1.725), not "Extra active"
+- **WHEN** a different user sets `activity_override` to `"very_active"`
+- **THEN** the system SHALL use the "Extra active" tier (multiplier 1.9), not "Very active"
 
 ### Requirement: Profile form on /settings
 The frontend SHALL provide a Profile section on a new `/settings` route with controls for
