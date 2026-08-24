@@ -1,7 +1,7 @@
 # ADR-005: Manual-Write Endpoint Restricted to an Explicit Allowlist
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 

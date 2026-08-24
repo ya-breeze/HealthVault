@@ -1,7 +1,7 @@
 # ADR-002: Goal Weight Modeled as a Metric Type, Not a User Setting
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 

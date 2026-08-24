@@ -25,8 +25,8 @@ grilling/proposal when picked up.
 
 ### Phase 2 — Goal weight + BMI bands + trend projection
 
-**Claimed** by the `goal-weight-bmi-bands-trend-projection` change (see ADR-002 and ADR-005;
-`openspec/changes/goal-weight-bmi-bands-trend-projection/`).
+**Shipped** by the `goal-weight-bmi-bands-trend-projection` change (see ADR-002 and ADR-005;
+archived at `openspec/changes/archive/2026-08-24-goal-weight-bmi-bands-trend-projection/`).
 
 Realizes the "Weight chart: goal weight, BMI bands, and trend projection"
 backlog item further down this file — see that section for the full sizing
@@ -128,8 +128,9 @@ and directly useful for a European user logging packaged food. Only consider
 > a `UserSettings` field). Candidate 4 (trend lines for other metrics) is not
 > part of that phase and remains an open, separate idea.
 >
-> **Claimed** by the `goal-weight-bmi-bands-trend-projection` change — see
-> Phase 2 above.
+> **Shipped 2026-08-24** by the `goal-weight-bmi-bands-trend-projection` change
+> — see Phase 2 above. Candidates 1-3 are done; **candidate 4 (trend lines for
+> other metrics) remains open** and is the only reason this section stays here.
 
 Deferred 2026-08-19 while scoping `weight-chart-scale-and-trend` (fixing the weight
 chart's 0-100 Y-axis bug and adding a smoothed trend line). The reference
