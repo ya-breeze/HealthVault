@@ -62,10 +62,10 @@
 
 ## 4. Frontend: profile fields + activity override in the settings blob
 
-- [ ] 4.1 Extend `UserSettings` in `frontend/lib/api.ts` with `birthdate?: string`,
+- [x] 4.1 Extend `UserSettings` in `frontend/lib/api.ts` with `birthdate?: string`,
       `sex?: 'male' | 'female'`, `activity_override?: 'sedentary' | 'light' | 'moderate' |
       'active' | 'very_active'`
-- [ ] 4.2 Add `api.getNutritionTarget()` calling `GET /api/users/me/nutrition-target`, typed to
+- [x] 4.2 Add `api.getNutritionTarget()` calling `GET /api/users/me/nutrition-target`, typed to
       return either the success shape or throw/return a typed 422 reason (matching the existing
       `ReanalyzeFailedError`-style typed-error convention in `api.ts` for the 4 reason codes)
 
