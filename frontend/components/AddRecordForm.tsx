@@ -77,6 +77,10 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
   return (
     <form
       onSubmit={handleSubmit}
+      // Several of these can be on one page at once (the weight page renders
+      // its own plus the goal/height shortcuts), so each needs to be
+      // addressable on its own rather than by a shared label.
+      data-testid={`add-record-${type}`}
       className="flex flex-wrap items-end gap-3 bg-bg-elevated rounded-[12px] border border-border p-4 mb-4"
     >
       <label className="flex flex-col gap-1">

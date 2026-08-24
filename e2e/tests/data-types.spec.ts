@@ -404,6 +404,49 @@ test.describe('Manual record writes: weight_goal, height, write allowlist', () =
     await expect(page.getByText('BMI', { exact: true })).toBeVisible();
   });
 
+  // The test above navigates to /data/height/ by direct URL, so it proves the
+  // height *page* works while saying nothing about whether a user can reach
+  // it. They could not: height is a secondary type, and the dashboard's More
+  // Data list — the only place secondary type pages are linked — is filtered
+  // by data presence, so a user with no height had no route to it. This test
+  // pins the reachability, not just the page.
+  test('a user with no height can add one without knowing the URL', async ({ page }) => {
+    await deleteAllRecords(page, 'height');
+    await postRecord(page, 'weight', 80);
+
+    // The dashboard must not be relied on: with zero height rows it offers no
+    // link at all. The weight page is where the user already is.
+    await page.goto('/data/weight/');
+    await expect(page.getByText('BMI', { exact: true })).not.toBeVisible();
+
+    const setHeight = page.getByTestId('set-height');
+    await expect(setHeight).toBeVisible();
+    await setHeight.click();
+
+    const heightForm = page.getByTestId('add-record-height');
+    await heightForm.getByLabel(/^Value/).fill('1.78');
+    await heightForm.getByRole('button', { name: 'Add', exact: true }).click();
+
+    // BMI turns on without ever leaving the weight page.
+    await expect(page.getByText('BMI', { exact: true })).toBeVisible();
+    // And the shortcut retires once it has served its purpose.
+    await expect(page.getByTestId('set-height')).toHaveCount(0);
+  });
+
+  test('a future-dated write is rejected rather than creating an invisible record', async ({ page }) => {
+    const future = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    const status = await page.evaluate(async (t) => {
+      const r = await fetch('/api/data/weight', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 81, time: t }),
+      });
+      return r.status;
+    }, future);
+    expect(status).toBe(400);
+  });
+
   test('POST to a non-allowlisted type (steps) is rejected with 403', async ({ page }) => {
     const status = await page.evaluate(async () => {
       const r = await fetch('/api/data/steps', {
