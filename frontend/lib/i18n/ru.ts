@@ -167,6 +167,7 @@ const ru: Dictionary = {
   'metric.active_calories': 'Активные калории',
   'metric.total_calories': 'Всего калорий',
   'metric.weight': 'Вес',
+  'metric.weight_goal': 'Целевой вес',
   'metric.height': 'Рост',
   'metric.blood_pressure': 'Давление',
   'metric.blood_glucose': 'Глюкоза в крови',

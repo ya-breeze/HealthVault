@@ -251,6 +251,7 @@ const en = {
   'metric.active_calories': 'Active Calories',
   'metric.total_calories': 'Total Calories',
   'metric.weight': 'Weight',
+  'metric.weight_goal': 'Goal Weight',
   'metric.height': 'Height',
   'metric.blood_pressure': 'Blood Pressure',
   'metric.blood_glucose': 'Blood Glucose',

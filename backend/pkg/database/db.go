@@ -51,7 +51,7 @@ func Open(l *slog.Logger, dbPath string) (*gorm.DB, error) {
 		&WebhookPayload{},
 		&UserSettings{},
 		&Steps{}, &Distance{}, &ActiveCalories{}, &TotalCalories{}, &Hydration{},
-		&HeartRate{}, &HeartRateVariability{}, &Weight{}, &Height{},
+		&HeartRate{}, &HeartRateVariability{}, &Weight{}, &Height{}, &WeightGoal{},
 		&BloodGlucose{}, &OxygenSaturation{}, &BodyTemperature{},
 		&RespiratoryRate{}, &RestingHeartRate{}, &BasalMetabolicRate{},
 		&BodyFat{}, &LeanBodyMass{}, &VO2Max{}, &BoneMass{},

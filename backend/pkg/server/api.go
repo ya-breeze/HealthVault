@@ -42,6 +42,7 @@ var typeRegistry = map[string]typeInfo{
 	"total_calories":       {table: "total_calories", timeCol: "start_time", family: database.AggFamilyCumulative, valueCol: "calories"},
 	"weight":               {table: "weights", timeCol: "time", family: database.AggFamilyPoint, valueCol: "kilograms"},
 	"height":               {table: "heights", timeCol: "time", family: database.AggFamilyPoint, valueCol: "meters"},
+	"weight_goal":          {table: "weight_goals", timeCol: "time", family: database.AggFamilyPoint, valueCol: "kilograms"},
 	"blood_pressure":       {table: "blood_pressures", timeCol: "time", family: database.AggFamilyPoint}, // multi-column: see QueryAggregateBloodPressure
 	"blood_glucose":        {table: "blood_glucoses", timeCol: "time", family: database.AggFamilyPoint, valueCol: "mmol_per_liter"},
 	"oxygen_saturation":    {table: "oxygen_saturations", timeCol: "time", family: database.AggFamilyPoint, valueCol: "percentage"},
@@ -69,6 +70,116 @@ var typeRegistry = map[string]typeInfo{
 // errInvalidBucket is returned (as HTTP 400) for an unrecognized ?bucket=
 // value or a bucketed request against food_meal, which never aggregates.
 var errInvalidBucket = errors.New("bucket must be 'day' or 'month'")
+
+// writeAllowlist is the set of types POST /api/data/{type} accepts manual
+// writes for. Deliberately narrow to single-value-column point types with a
+// plausible manual-entry use case: blood_pressure/nutrition are multi-column
+// and have no single `value` field to hang this contract on, and shipping a
+// fully generic POST across every registered type with an unexplained
+// exception for those two is worse than an explicit allowlist (see
+// design.md).
+var writeAllowlist = map[string]bool{
+	"weight":      true,
+	"height":      true,
+	"weight_goal": true,
+}
+
+// writeBounds are per-type plausibility ranges in the type's stored unit
+// (kilograms for weight/weight_goal, metres for height). A bare `> 0` check
+// is not enough when one generic form serves units of wildly different
+// magnitude: entering the natural "178" for a height stores 178 *metres*,
+// which is accepted, and BMI then renders as 0.0 with category bands drawn
+// around 586,000 kg. Rejecting it at the API keeps the bad value out of the
+// database no matter which client wrote it.
+var writeBounds = map[string]struct{ min, max float64 }{
+	"weight":      {min: 20, max: 500},
+	"weight_goal": {min: 20, max: 500},
+	"height":      {min: 0.5, max: 2.5},
+}
+
+// clockSkewAllowance is how far ahead of the server a client's timestamp may
+// be before it counts as future-dated. Small enough that a genuinely wrong
+// date is still rejected, large enough that an unsynced client clock isn't.
+const clockSkewAllowance = time.Minute
+
+// createRecordRequest is the POST /api/data/{type} request body. Value is a
+// pointer so a missing key is distinguishable from a present-but-zero value.
+type createRecordRequest struct {
+	Value *float64   `json:"value"`
+	Time  *time.Time `json:"time"`
+}
+
+// CreateRecordHandler creates one manually-authored record for an
+// allowlisted type, scoped to the caller (claims.UserID) — it does not
+// honor ?user=, unlike the sibling GET, matching DeleteRecordHandler's
+// convention that mutations on this path family are always caller-scoped.
+// Exported for use in tests.
+func CreateRecordHandler(storage database.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		typeName := mux.Vars(r)["type"]
+		info, ok := typeRegistry[typeName]
+		if !ok {
+			http.Error(w, "unknown type", http.StatusNotFound)
+			return
+		}
+		if !writeAllowlist[typeName] {
+			http.Error(w, "type is not writable", http.StatusForbidden)
+			return
+		}
+
+		claims := ClaimsFromCtx(r)
+		if claims == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		familyID := FamilyIDFromCtx(r)
+
+		var req createRecordRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+		if req.Value == nil || *req.Value <= 0 {
+			http.Error(w, "value must be a positive number", http.StatusBadRequest)
+			return
+		}
+		if b, ok := writeBounds[typeName]; ok && (*req.Value < b.min || *req.Value > b.max) {
+			http.Error(w, fmt.Sprintf("value must be between %g and %g", b.min, b.max), http.StatusBadRequest)
+			return
+		}
+
+		t := time.Now().UTC()
+		if req.Time != nil {
+			t = req.Time.UTC()
+			// Every read path caps its upper bound at now, so a future-dated
+			// row is created but never returned: it appears in no table, no
+			// chart, no goal line and no BMI readout, which also means it has
+			// no delete button. The unique (user_id, time) index then makes
+			// re-entering that timestamp fail with 409 forever, describing a
+			// record the user cannot see. Reject it at the door instead.
+			// The skew allowance keeps a client clock a few seconds fast from
+			// being an error.
+			if t.After(time.Now().UTC().Add(clockSkewAllowance)) {
+				http.Error(w, "time must not be in the future", http.StatusBadRequest)
+				return
+			}
+		}
+
+		record, err := storage.InsertRecord(info.table, info.timeCol, info.valueCol, familyID, claims.UserID, t, *req.Value)
+		if err != nil {
+			if errors.Is(err, database.ErrConflict) {
+				http.Error(w, "record already exists for this time", http.StatusConflict)
+				return
+			}
+			http.Error(w, "insert error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(record) //nolint:errcheck
+	}
+}
 
 // queryBucketed dispatches a bucketed aggregation query to the right storage
 // method: the two multi-value-column special cases, or the generic

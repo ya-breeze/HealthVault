@@ -5,15 +5,24 @@ ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 # which the USDA food index depends on. Keep it on build, test and vet alike.
 GO_TAGS := sqlite_fts5
 
-.PHONY: all build test lint run-backend projected-specs
+.PHONY: all build test test-backend test-frontend lint run-backend projected-specs
 
 all: build
 
 build:
 	@cd $(ROOT_DIR)/backend/cmd && go build -tags $(GO_TAGS) -o ../bin/hcw .
 
-test:
+# `test` runs both suites. The frontend's Vitest suite covers the weight-chart
+# pure functions (projection, crossing, horizon, BMI, band conversion) whose
+# edge cases are impractical to reach through Playwright; leaving it out of
+# `make test` meant nothing ever ran it.
+test: test-backend test-frontend
+
+test-backend:
 	@cd $(ROOT_DIR)/backend && go test -tags $(GO_TAGS) ./...
+
+test-frontend:
+	@cd $(ROOT_DIR)/frontend && npm test --silent
 
 lint:
 	@cd $(ROOT_DIR)/backend && go vet -tags $(GO_TAGS) ./...

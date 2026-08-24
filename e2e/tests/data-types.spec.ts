@@ -158,15 +158,26 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
   // visibility check.
   test('weight Week-zoom bucketed fetch widens to >= 14 days', async ({ page }) => {
     await page.goto('/data/weight/');
+    // The trend projection also issues an /api/data/weight?...bucket=day
+    // request, with a fixed 60-day lookback that satisfies ">= 14" on its own.
+    // Matching the bare URL pattern would let this test pass on that request
+    // instead of the chart's, silently ceasing to guard the widening it was
+    // written for — so exclude the projection's window structurally.
+    const PROJECTION_LOOKBACK_DAYS = 60;
+    const spanDays = (url: URL) =>
+      (new Date(url.searchParams.get('to')!).getTime()
+        - new Date(url.searchParams.get('from')!).getTime()) / (1000 * 60 * 60 * 24);
+
     const [req] = await Promise.all([
-      page.waitForRequest(r => /\/api\/data\/weight\?.*bucket=day/.test(r.url())),
+      page.waitForRequest(r => {
+        if (!/\/api\/data\/weight\?.*bucket=day/.test(r.url())) return false;
+        return spanDays(new URL(r.url())) < PROJECTION_LOOKBACK_DAYS - 5;
+      }),
       page.getByRole('button', { name: 'Week', exact: true }).click(),
     ]);
-    const url = new URL(req.url());
-    const from = new Date(url.searchParams.get('from')!);
-    const to = new Date(url.searchParams.get('to')!);
-    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    const days = spanDays(new URL(req.url()));
     expect(days).toBeGreaterThanOrEqual(14);
+    expect(days).toBeLessThan(PROJECTION_LOOKBACK_DAYS - 5);
   });
 
   test('weight Year-zoom bucketed fetch widens to >= ~2 years', async ({ page }) => {
@@ -326,6 +337,133 @@ test.describe('API data endpoints', () => {
     if (result.body.length > 0) {
       expect(result.body[0]).not.toHaveProperty('bucket_start');
     }
+  });
+});
+
+test.describe('Manual record writes: weight_goal, height, write allowlist', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  async function deleteAllRecords(page: Page, type: string) {
+    const records = await page.evaluate(async (t) => {
+      const r = await fetch(`/api/data/${t}?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`, {
+        credentials: 'include',
+      });
+      return r.json();
+    }, type);
+    for (const rec of records as Array<{ id: string }>) {
+      await page.evaluate(async ({ t, id }) => {
+        await fetch(`/api/data/${t}/${id}`, { method: 'DELETE', credentials: 'include' });
+      }, { t: type, id: rec.id });
+    }
+  }
+
+  async function postRecord(page: Page, type: string, value: number) {
+    await page.evaluate(async ({ t, value }) => {
+      await fetch(`/api/data/${t}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      });
+    }, { t: type, value });
+  }
+
+  test('creating a weight_goal record via the Add-record form appears on /data/weight_goal and as a goal line on the weight chart', async ({ page }) => {
+    // Tests are re-run against a persistent WIP stack, so clear out any goal
+    // left by a prior run rather than assuming a clean-slate account.
+    await deleteAllRecords(page, 'weight_goal');
+
+    await page.goto('/data/weight_goal/');
+    await page.getByLabel('Value').fill('72.5');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(page.getByRole('cell', { name: '72.5' })).toBeVisible();
+
+    await page.goto('/data/weight/');
+    await expect(page.getByText('Goal', { exact: true })).toBeVisible();
+  });
+
+  test('creating a height record closes the BMI dead end: bands + readout appear on the weight chart after, absent before', async ({ page }) => {
+    await deleteAllRecords(page, 'height');
+    // The BMI readout reads the latest *raw* weight record already visible
+    // in the current (Week) zoom window, independent of the height gate
+    // under test here — seed a fresh one so recency of seeded data can't
+    // make this test flaky.
+    await postRecord(page, 'weight', 80);
+
+    await page.goto('/data/weight/');
+    await expect(page.getByText('BMI', { exact: true })).not.toBeVisible();
+
+    await page.goto('/data/height/');
+    await page.getByLabel('Value').fill('1.78');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(page.getByRole('cell', { name: '1.78' })).toBeVisible();
+
+    await page.goto('/data/weight/');
+    await expect(page.getByText('BMI', { exact: true })).toBeVisible();
+    // Ordering is load-bearing: waiting for the BMI readout first proves the
+    // height fetch has settled, which is what makes this negative assertion
+    // mean something. The shortcut used to render on every load — heightRecords
+    // is [] until the fetch resolves — so a user who already had a height was
+    // offered "Set height" anyway, and clicking it wrote a duplicate.
+    await expect(page.getByTestId('set-height')).toHaveCount(0);
+  });
+
+  // The test above navigates to /data/height/ by direct URL, so it proves the
+  // height *page* works while saying nothing about whether a user can reach
+  // it. They could not: height is a secondary type, and the dashboard's More
+  // Data list — the only place secondary type pages are linked — is filtered
+  // by data presence, so a user with no height had no route to it. This test
+  // pins the reachability, not just the page.
+  test('a user with no height can add one without knowing the URL', async ({ page }) => {
+    await deleteAllRecords(page, 'height');
+    await postRecord(page, 'weight', 80);
+
+    // The dashboard must not be relied on: with zero height rows it offers no
+    // link at all. The weight page is where the user already is.
+    await page.goto('/data/weight/');
+    await expect(page.getByText('BMI', { exact: true })).not.toBeVisible();
+
+    const setHeight = page.getByTestId('set-height');
+    await expect(setHeight).toBeVisible();
+    await setHeight.click();
+
+    const heightForm = page.getByTestId('add-record-height');
+    await heightForm.getByLabel(/^Value/).fill('1.78');
+    await heightForm.getByRole('button', { name: 'Add', exact: true }).click();
+
+    // BMI turns on without ever leaving the weight page.
+    await expect(page.getByText('BMI', { exact: true })).toBeVisible();
+    // And the shortcut retires once it has served its purpose.
+    await expect(page.getByTestId('set-height')).toHaveCount(0);
+  });
+
+  test('a future-dated write is rejected rather than creating an invisible record', async ({ page }) => {
+    const future = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    const status = await page.evaluate(async (t) => {
+      const r = await fetch('/api/data/weight', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 81, time: t }),
+      });
+      return r.status;
+    }, future);
+    expect(status).toBe(400);
+  });
+
+  test('POST to a non-allowlisted type (steps) is rejected with 403', async ({ page }) => {
+    const status = await page.evaluate(async () => {
+      const r = await fetch('/api/data/steps', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 1000 }),
+      });
+      return r.status;
+    });
+    expect(status).toBe(403);
   });
 });
 

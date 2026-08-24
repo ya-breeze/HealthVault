@@ -12,7 +12,7 @@
   --text-muted: #5b6470;
   --accent: #0f9c8c;
 
-  /* One accent per registered type (26), shared by the dashboard vitals
+  /* One accent per registered type (27), shared by the dashboard vitals
      grid and every data page's own chart — see dashboard-ui's "Consistent
      per-metric color" requirement. */
   --c-steps: #b3760c;
@@ -23,6 +23,7 @@
   --c-active_calories: #c2591a;
   --c-total_calories: #c2871a;
   --c-weight: #9c7c0f;
+  --c-weight_goal: #6b9c0f;
   --c-height: #0f7d9c;
   --c-blood_pressure: #c23464;
   --c-blood_glucose: #b8551a;
@@ -77,6 +78,7 @@
     --c-active_calories: #e87a45;
     --c-total_calories: #e8b545;
     --c-weight: #d4b23a;
+    --c-weight_goal: #a3d43a;
     --c-height: #3fc0e8;
     --c-blood_pressure: #f0567e;
     --c-blood_glucose: #e8935a;

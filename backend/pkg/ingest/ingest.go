@@ -136,7 +136,7 @@ func process(db *gorm.DB, userID, familyID, payloadID uuid.UUID, p *PayloadJSON)
 	}
 	for _, r := range p.Weight {
 		rec := &database.Weight{
-			UserID: userID, SourcePayloadID: payloadID,
+			UserID: userID, SourcePayloadID: &payloadID,
 			Time: parseTime(r.Time), Kilograms: r.Kilograms,
 		}
 		rec.ID = uuid.New()
@@ -145,7 +145,7 @@ func process(db *gorm.DB, userID, familyID, payloadID uuid.UUID, p *PayloadJSON)
 	}
 	for _, r := range p.Height {
 		rec := &database.Height{
-			UserID: userID, SourcePayloadID: payloadID,
+			UserID: userID, SourcePayloadID: &payloadID,
 			Time: parseTime(r.Time), Meters: r.Meters,
 		}
 		rec.ID = uuid.New()

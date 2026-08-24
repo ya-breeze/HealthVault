@@ -2,13 +2,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  LineChart, Line, BarChart, Bar, ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, TooltipValueType,
+  LineChart, Line, BarChart, Bar, ComposedChart, Area, ReferenceArea, ReferenceLine, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend, ResponsiveContainer, TooltipValueType,
 } from 'recharts';
-import { api, DataType } from '@/lib/api';
+import { api, DataType, WRITABLE_TYPES } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
+import {
+  TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue,
+  toDisplayUnit, bmiBandEdgesKg, classifyBmi, hasHeightRecord, toDayOffset, linearRegression,
+  last30DayEmaWindow, hasEnoughDataForProjection, computeProjection, projectionPoints,
+  ProjectionResult,
+} from '@/lib/dataTypeMeta';
 import Header from '@/components/Header';
+import AddRecordForm from '@/components/AddRecordForm';
+import TapTarget from '@/components/ui/TapTarget';
 
 interface Props {
   type: string;
@@ -29,13 +36,44 @@ function bucketLabel(bucketStart: unknown, zoom: Zoom): string {
   const d = new Date(String(bucketStart));
   if (isNaN(d.getTime())) return String(bucketStart ?? '');
   return zoom === 'year'
-    ? d.toLocaleDateString(undefined, { month: 'short' })
+    ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function mean(values: number[]): number {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
 }
+
+// `projection` is only ever set on the last real bucket (the dashed line's
+// join point) and on synthetic future rows appended by the trend-projection
+// feature (task 7.4b) — `avg`/`range`/`trend` are deliberately left
+// undefined on synthetic rows so the existing series don't extend into them.
+interface BandRow {
+  label: string;
+  avg?: number;
+  range?: [number, number];
+  trend?: number;
+  projection?: number;
+}
+
+// weight/height/weight_goal all use timeCol "time" in the backend's
+// typeRegistry (see api.go) — safe to hardcode rather than re-deriving the
+// timeKey-detection dance `records`/`displayColumns` do for arbitrary types.
+function latestByTime(records: Record<string, unknown>[]): Record<string, unknown> | undefined {
+  if (records.length === 0) return undefined;
+  return records.reduce((latest, r) =>
+    new Date(String(r.time)).getTime() > new Date(String(latest.time)).getTime() ? r : latest
+  );
+}
+
+// Height changes rarely, so the BMI gate (task 5.5) fetches all-time rather
+// than the page's own zoom-windowed range — a height set years ago must
+// still surface the readout today.
+const ALL_TIME_FROM = new Date(0).toISOString();
+
+// WHO-convention band colors (blue/green/yellow/red), low opacity so the
+// plotted weight line/area stays the focal element.
+const BMI_BAND_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444'];
 
 export default function DataTypeClient({ type }: Props) {
   const router = useRouter();
@@ -83,8 +121,55 @@ export default function DataTypeClient({ type }: Props) {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Bumped by AddRecordForm's onSuccess to force the fetch effect below to
+  // re-run — the effect otherwise only depends on the range/zoom, so a
+  // successful write would never appear in `records`/`chartRows` without
+  // navigating away and back. See task 4.1.
+  const [refreshKey, setRefreshKey] = useState(0);
+  // Latest height record, fetched all-time (task 5.5) — feeds the BMI bands
+  // (5.2) and readout (5.3) on the weight page, both gated on its presence
+  // (5.4). Empty on every other type's page.
+  const [heightRecords, setHeightRecords] = useState<Record<string, unknown>[]>([]);
+  // Latest weight_goal record, fetched all-time (task 6.1) — a goal is set
+  // once and rarely changed, so (like height) it must not fall out of a
+  // zoom-windowed fetch. Feeds the goal ReferenceLine (6.2) on the weight
+  // page. Empty on every other type's page.
+  const [goalRecords, setGoalRecords] = useState<Record<string, unknown>[]>([]);
+  // All-time raw weight records (task 7.3's lifetime-history gate: total
+  // record count + earliest-to-latest span) — fetched all-time like
+  // height/goal above, since the dedicated regression fetch below is capped
+  // to a fixed lookback and can't answer "how much history exists in total".
+  const [allTimeWeightRecords, setAllTimeWeightRecords] = useState<Record<string, unknown>[]>([]);
+  // Dedicated 30+-day daily-bucketed weight fetch for the trend regression
+  // (task 7.0) — independent of the active zoom's own bucket fetch: Day zoom
+  // fetches no bucketed data, Week's widened lookback only reaches 14 days,
+  // and Year's bucket is monthly, so none of the three can feed a 30-daily-
+  // point EMA window on their own. 60 days back gives the alpha=0.25 EMA
+  // room to converge before the last 30 calendar days it's actually judged on.
+  const [projectionBucketRows, setProjectionBucketRows] = useState<Record<string, unknown>[]>([]);
+  const isWritable = WRITABLE_TYPES.includes(dataType);
+  // "Set goal" shortcut (task 4.2): only meaningful on the weight page,
+  // where it opens the same AddRecordForm pre-targeted at `weight_goal`
+  // rather than `weight` — a distinct type from the page it's mounted on.
+  // Every weight-page extra (height, goal, all-time weights, projection
+  // buckets) starts as [] and used to collapse a failed fetch into [] too, so
+  // "still loading", "request failed" and "genuinely nothing on file" were one
+  // value. Two things went wrong: the page asserted "Not enough data to
+  // project yet" for all three, permanently on error; and "Set height" — which
+  // renders precisely when no height is on file — flashed on every single load
+  // before the fetch resolved, so clicking it in that window wrote a duplicate
+  // height for a user who already had one. One settled tri-state for all four
+  // fetches, because they feed one UI region and all four are only meaningful
+  // once known.
+  const [weightContextStatus, setWeightContextStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [showGoalForm, setShowGoalForm] = useState(false);
+  const [showHeightForm, setShowHeightForm] = useState(false);
 
-  const { from, to, bucket } = useMemo(() => rangeForZoom(zoom), [zoom]);
+  // refreshKey is in the dep list too: rangeForZoom's `to` is `now()` at the
+  // time this memo runs, so a record just created via AddRecordForm (timed
+  // after that frozen `to`) would fall outside the refetch below unless this
+  // window is recomputed fresh on every refresh, not just on a zoom change.
+  const { from, to, bucket } = useMemo(() => rangeForZoom(zoom), [zoom, refreshKey]);
 
   // weight's Week/Year-zoom trend line needs enough trailing bucketed history
   // to seed its EMA before the visible window starts — see
@@ -133,7 +218,38 @@ export default function DataTypeClient({ type }: Props) {
     } else {
       setChartRows([]);
     }
-  }, [type, from, to, chartFrom, bucket, hasChart, userParam, router]);
+
+    if (dataType === 'weight') {
+      const projectionFrom = new Date(to);
+      projectionFrom.setDate(projectionFrom.getDate() - 60);
+      setWeightContextStatus('loading');
+      Promise.all([
+        api.data('height', ALL_TIME_FROM, to, userParam),
+        api.data('weight_goal', ALL_TIME_FROM, to, userParam),
+        api.data('weight', ALL_TIME_FROM, to, userParam),
+        api.data('weight', projectionFrom.toISOString(), to, userParam, 'day'),
+      ])
+        .then(([heights, goals, allTime, buckets]) => {
+          setHeightRecords(heights);
+          setGoalRecords(goals);
+          setAllTimeWeightRecords(allTime);
+          setProjectionBucketRows(buckets);
+          setWeightContextStatus('ready');
+        })
+        .catch(() => {
+          setHeightRecords([]);
+          setGoalRecords([]);
+          setAllTimeWeightRecords([]);
+          setProjectionBucketRows([]);
+          setWeightContextStatus('error');
+        });
+    } else {
+      setHeightRecords([]);
+      setGoalRecords([]);
+      setAllTimeWeightRecords([]);
+      setProjectionBucketRows([]);
+    }
+  }, [type, dataType, from, to, chartFrom, bucket, hasChart, userParam, router, refreshKey]);
 
   const isDay = zoom === 'day';
 
@@ -199,7 +315,7 @@ export default function DataTypeClient({ type }: Props) {
   // stacked (transparent-bottom + visible-band) Area would instead anchor its
   // baseline at the stack's absolute value origin (0), which silently pulls
   // the Y-axis back toward zero regardless of the `domain` prop below.
-  const bucketBandData = visibleChartRows.map((r, i) => ({
+  const bucketBandData: BandRow[] = visibleChartRows.map((r, i) => ({
     label: bucketLabel(r.bucket_start, zoom),
     avg: num(r.avg),
     range: [num(r.min), num(r.max)] as [number, number],
@@ -263,13 +379,24 @@ export default function DataTypeClient({ type }: Props) {
   // flagged that leaving these on raw num() would silently desync the axis
   // range from the data the moment any point-family type gains a unit
   // conversion — keeping both on the same helper closes that off structurally.
+  // Latest weight_goal record (task 6.1) — unlike BMI bands, the goal line's
+  // value IS folded into both Y-domain computations below, so it always
+  // expands the axis rather than being clipped to it (design.md's "Goal line
+  // Y-domain: always expands" — an accepted trade-off).
+  const latestGoalKg = useMemo(() => {
+    if (dataType !== 'weight') return undefined;
+    const latest = latestByTime(goalRecords);
+    return latest ? num(latest.kilograms) : undefined;
+  }, [dataType, goalRecords]);
+
   const dayDomain = useMemo(() => {
     if (meta?.family !== 'point') return undefined;
     const values = isBloodPressure
       ? records.flatMap(r => [numDisplay(r.systolic), numDisplay(r.diastolic)])
       : (numericKey ? records.map(r => numDisplay(r[numericKey])) : []);
+    if (latestGoalKg !== undefined) values.push(latestGoalKg);
     return computeYDomain(values);
-  }, [meta, isBloodPressure, records, numericKey]);
+  }, [meta, isBloodPressure, records, numericKey, latestGoalKg]);
 
   const bandDomain = useMemo(() => {
     if (meta?.family !== 'point') return undefined;
@@ -278,8 +405,155 @@ export default function DataTypeClient({ type }: Props) {
           numDisplay(r.systolic_min), numDisplay(r.systolic_max), numDisplay(r.diastolic_min), numDisplay(r.diastolic_max),
         ])
       : visibleChartRows.flatMap(r => [numDisplay(r.min), numDisplay(r.max)]);
+    if (latestGoalKg !== undefined) values.push(latestGoalKg);
     return computeYDomain(values);
-  }, [meta, isBloodPressure, visibleChartRows]);
+  }, [meta, isBloodPressure, visibleChartRows, latestGoalKg]);
+
+  // BMI bands + readout (task 5): both gated on the same "does a height
+  // record exist" condition (hasHeightRecord, task 5.4) so neither can
+  // render while the other silently doesn't.
+  const heightExists = dataType === 'weight' && hasHeightRecord(heightRecords);
+  const latestHeightMeters = useMemo(() => {
+    const latest = latestByTime(heightRecords);
+    return latest ? num(latest.meters) : undefined;
+  }, [heightRecords]);
+  // All-time latest raw weight record (allTimeWeightRecords, not the
+  // zoom-scoped `records`) so the BMI readout stays in sync with the bands'
+  // shared "does a height record exist" gate (design.md) instead of
+  // disappearing whenever the user's last weigh-in falls outside the
+  // currently selected zoom window.
+  const latestWeightKg = useMemo(() => {
+    if (dataType !== 'weight') return undefined;
+    const latest = latestByTime(allTimeWeightRecords);
+    return latest ? num(latest.kilograms) : undefined;
+  }, [dataType, allTimeWeightRecords]);
+  const bmi = heightExists && latestHeightMeters !== undefined && latestWeightKg !== undefined
+    ? latestWeightKg / (latestHeightMeters * latestHeightMeters)
+    : undefined;
+  const bmiBandEdges = heightExists && latestHeightMeters !== undefined
+    ? bmiBandEdgesKg(latestHeightMeters)
+    : undefined;
+  // Rendered as ReferenceAreas whose open ends (an omitted y1/y2) fall back
+  // to the Y-axis's own current domain — see recharts' ReferenceArea
+  // getRect — so the bands are clipped to whatever the chart's Y-domain
+  // already is and can never be the thing that expands it (design.md).
+  const bmiBandAreas = bmiBandEdges
+    ? [
+        <ReferenceArea key="bmi-under" y2={bmiBandEdges[0]} fill={BMI_BAND_COLORS[0]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
+        <ReferenceArea key="bmi-normal" y1={bmiBandEdges[0]} y2={bmiBandEdges[1]} fill={BMI_BAND_COLORS[1]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
+        <ReferenceArea key="bmi-over" y1={bmiBandEdges[1]} y2={bmiBandEdges[2]} fill={BMI_BAND_COLORS[2]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
+        <ReferenceArea key="bmi-obese" y1={bmiBandEdges[2]} fill={BMI_BAND_COLORS[3]} fillOpacity={0.08} stroke="none" ifOverflow="hidden" />,
+      ]
+    : null;
+
+  // Goal line (task 6.2) — rendered at every zoom level, in both chart
+  // branches below, same as the BMI bands. Unlike the bands, its value is
+  // already folded into dayDomain/bandDomain above, so it's never clipped.
+  const goalLine = latestGoalKg !== undefined
+    ? <ReferenceLine y={latestGoalKg} stroke="var(--accent)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: 'Goal', position: 'insideTopRight', fill: 'var(--accent)', fontSize: 11 }} />
+    : null;
+
+  // Trend projection (task 7) — `undefined` (no line, no text) whenever no
+  // goal is set (task 7.6) or there isn't enough data (task 7.3); otherwise
+  // one of computeProjection's three outcomes, plus (only for 'on-track')
+  // the extra fields extendedBucketBandData/projectionMessage need to render
+  // the dashed line and ETA date. Computed independent of the active zoom
+  // (design.md's "Zoom-independence is load-bearing") from a dedicated
+  // fetch (projectionBucketRows, task 7.0), not whatever bucketed data the
+  // current zoom happens to already have loaded.
+  type Projection = ProjectionResult & { crossingDate?: Date; lastDayOffset?: number; slope?: number; intercept?: number };
+  const projection: Projection | undefined = useMemo(() => {
+    if (dataType !== 'weight' || latestGoalKg === undefined) return undefined;
+
+    const times = allTimeWeightRecords.map(r => new Date(String(r.time)).getTime());
+    const totalRecords = allTimeWeightRecords.length;
+    const lifetimeSpanDays = totalRecords > 1
+      ? (Math.max(...times) - Math.min(...times)) / (24 * 60 * 60 * 1000)
+      : 0;
+
+    const dates = projectionBucketRows.map(r => String(r.bucket_start));
+    const fullEma = emaSeries(projectionBucketRows.map(r => num(r.avg)), 0.25);
+    const window = last30DayEmaWindow(dates, fullEma);
+
+    const points = window.map(w => ({ x: toDayOffset(w.date), y: w.ema }));
+    const windowSpanDays = points.length > 0 ? points[points.length - 1].x - points[0].x : 0;
+
+    if (!hasEnoughDataForProjection(totalRecords, lifetimeSpanDays, window.length, windowSpanDays)) {
+      return undefined;
+    }
+
+    const { slope, intercept } = linearRegression(points);
+    const windowStartEma = window[0].ema;
+    const latestEma = window[window.length - 1].ema;
+    const lastDayOffset = points[points.length - 1].x;
+    const todayDayOffset = toDayOffset(new Date().toISOString());
+
+    const result = computeProjection({ slope, intercept, goal: latestGoalKg, windowStartEma, latestEma, todayDayOffset });
+    if (result.status !== 'on-track' || result.crossingDayOffset === undefined) return result;
+
+    return {
+      ...result,
+      crossingDate: new Date(result.crossingDayOffset * 24 * 60 * 60 * 1000),
+      lastDayOffset,
+      slope,
+      intercept,
+    };
+  }, [dataType, latestGoalKg, allTimeWeightRecords, projectionBucketRows]);
+
+  const projectionMessage = !projection ? null : (
+    projection.status === 'reached' ? "You've reached your goal weight" :
+    projection.status === 'not-on-track' ? 'Not on track at your current trend' :
+    `On track to reach your goal around ${projection.crossingDate!.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+  );
+  // Only claim "not enough data" once we actually know. While loading, say
+  // nothing; on failure, say the history could not be loaded rather than
+  // stating a false fact about the user's records.
+  const noDataMessage = dataType === 'weight' && latestGoalKg !== undefined
+    && projection === undefined && weightContextStatus === 'ready'
+    ? 'Not enough data to project yet'
+    : null;
+  // Deliberately NOT gated on latestGoalKg: the goal is one of the fetches
+  // that just failed, so on error it is always undefined and gating on it
+  // would suppress the very message the failure needs to produce.
+  const projectionErrorMessage = dataType === 'weight' && weightContextStatus === 'error'
+    ? "Couldn't load your weight history"
+    : null;
+
+  // Dashed projection line (task 7.5) renders only at Month/Year zoom; the
+  // ETA/status text above renders at every zoom via projectionMessage/
+  // noDataMessage regardless of zoom, so switching zoom never hides the
+  // answer to the question the feature exists to answer (design.md).
+  const showProjectionLine = dataType === 'weight' && (zoom === 'month' || zoom === 'year') && projection?.status === 'on-track';
+  const projectionGranularity: 'day' | 'month' = zoom === 'year' ? 'month' : 'day';
+
+  const extendedBucketBandData: BandRow[] = useMemo(() => {
+    if (!showProjectionLine || !projection || projection.status !== 'on-track'
+      || projection.crossingDayOffset === undefined || projection.lastDayOffset === undefined
+      || projection.slope === undefined || projection.intercept === undefined) {
+      return bucketBandData;
+    }
+    const pts = projectionPoints(
+      projection.intercept, projection.slope, projection.lastDayOffset, projection.crossingDayOffset, projectionGranularity
+    );
+    const syntheticRows: BandRow[] = pts.map(p => ({
+      label: bucketLabel(new Date(p.dayOffset * 24 * 60 * 60 * 1000).toISOString(), zoom),
+      projection: p.value,
+    }));
+    if (bucketBandData.length === 0) return syntheticRows;
+    // Seed the join point from the regression line itself (not the zoom's
+    // own `trend` EMA) so the dashed line connects continuously from its
+    // own synthetic points rather than jumping. `trend` at Year zoom is an
+    // EMA over monthly buckets while the regression is always fit to a
+    // daily-granularity window (projectionBucketRows), so the two can
+    // diverge materially — evaluating the same intercept/slope at
+    // lastDayOffset guarantees an exact match with the first synthetic
+    // point instead of an approximate one.
+    const joined = bucketBandData.slice(0, -1).concat({
+      ...bucketBandData[bucketBandData.length - 1],
+      projection: projection.intercept + projection.slope * projection.lastDayOffset,
+    });
+    return [...joined, ...syntheticRows];
+  }, [showProjectionLine, projection, bucketBandData, projectionGranularity, zoom]);
 
   const handleConfirmDelete = async (id: string) => {
     setDeleting(true);
@@ -305,6 +579,40 @@ export default function DataTypeClient({ type }: Props) {
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
             {type.replace(/_/g, ' ')}
           </h1>
+          {!userParam && dataType === 'weight' && !showGoalForm && (
+            <TapTarget
+              type="button"
+              onClick={() => setShowGoalForm(true)}
+              className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
+            >
+              Set goal
+            </TapTarget>
+          )}
+          {/*
+            Without this, the BMI feature is unreachable for exactly the users
+            it targets. `height` is a secondary type, and the dashboard's More
+            Data list — the only place secondary type pages are linked — is
+            filtered by presence, so a user with zero height rows never gets a
+            link to /data/height and can never add the record that turns BMI
+            on. Same shape as "Set goal" above, and it disappears once a
+            height exists.
+
+            Gated on 'ready' rather than on !heightExists alone: heightRecords
+            is [] until the fetch resolves, so an ungated shortcut appears on
+            every load — including for users who already have a height — and
+            clicking it in that window writes a duplicate.
+          */}
+          {!userParam && dataType === 'weight' && weightContextStatus === 'ready'
+            && !heightExists && !showHeightForm && (
+            <TapTarget
+              type="button"
+              onClick={() => setShowHeightForm(true)}
+              data-testid="set-height"
+              className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
+            >
+              Set height
+            </TapTarget>
+          )}
           <div className="flex gap-1 bg-bg-elevated border border-border rounded-lg p-1">
             {ZOOMS.map(z => (
               <button
@@ -319,6 +627,24 @@ export default function DataTypeClient({ type }: Props) {
             ))}
           </div>
         </div>
+
+        {!userParam && dataType === 'weight' && showGoalForm && (
+          <AddRecordForm
+            type="weight_goal"
+            onSuccess={() => { setShowGoalForm(false); setRefreshKey(k => k + 1); }}
+            onCancel={() => setShowGoalForm(false)}
+          />
+        )}
+
+        {!userParam && dataType === 'weight' && showHeightForm && (
+          <AddRecordForm
+            type="height"
+            onSuccess={() => { setShowHeightForm(false); setRefreshKey(k => k + 1); }}
+            onCancel={() => setShowHeightForm(false)}
+          />
+        )}
+
+        {!userParam && isWritable && <AddRecordForm type={dataType} onSuccess={() => setRefreshKey(k => k + 1)} />}
 
         {isNutrition && (
           <div className="flex gap-1.5 flex-wrap mb-4">
@@ -376,6 +702,8 @@ export default function DataTypeClient({ type }: Props) {
                   />
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
                   <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
+                  {bmiBandAreas}
+                  {goalLine}
                   <Line
                     type="monotone"
                     dataKey={isNutrition ? macro : numericKey}
@@ -406,12 +734,14 @@ export default function DataTypeClient({ type }: Props) {
                 <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} />
               </BarChart>
             ) : (
-              <ComposedChart data={bucketBandData}>
+              <ComposedChart data={dataType === 'weight' ? extendedBucketBandData : bucketBandData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
                 <Tooltip formatter={formatTooltipValue} />
                 {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
+                {bmiBandAreas}
+                {goalLine}
                 <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" name="Range" />
                 <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name="Avg" />
                 {dataType === 'weight' && (
@@ -425,9 +755,26 @@ export default function DataTypeClient({ type }: Props) {
                     name="Trend"
                   />
                 )}
+                {showProjectionLine && (
+                  <Line
+                    type="monotone"
+                    dataKey="projection"
+                    stroke="var(--accent)"
+                    strokeWidth={1.5}
+                    strokeDasharray="2 4"
+                    dot={false}
+                    name="Projection"
+                  />
+                )}
               </ComposedChart>
             )}
           </ResponsiveContainer>
+
+          {dataType === 'weight' && (projectionMessage || noDataMessage || projectionErrorMessage) && (
+            <p className="mt-3 text-xs text-text-muted" data-testid="projection-message">
+              {projectionMessage ?? noDataMessage ?? projectionErrorMessage}
+            </p>
+          )}
 
           <div className="flex gap-6 mt-3 pt-3 border-t border-border">
             <div>
@@ -442,6 +789,12 @@ export default function DataTypeClient({ type }: Props) {
               <div>
                 <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Total</p>
                 <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.total)}</p>
+              </div>
+            )}
+            {bmi !== undefined && (
+              <div>
+                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">BMI</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{bmi.toFixed(1)} · {classifyBmi(bmi)}</p>
               </div>
             )}
           </div>

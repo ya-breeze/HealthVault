@@ -1,7 +1,7 @@
 # ADR-002: Goal Weight Modeled as a Metric Type, Not a User Setting
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
@@ -25,4 +25,4 @@ Chosen: **`weight_goal` as a new metric type**, alongside `weight` and `height`,
 ### Consequences
 
 - BMI category bands (WHO thresholds) are a separate, goal-independent feature — they only need the latest `height` record and render regardless of whether a goal is set; they're hidden entirely if no `height` is on file.
-- Nutrition targets in Phase 3 (see ADR-003) read Goal Weight, not the latest measured `weight`, as their weight input — a deliberate choice made explicit there.
+- Nutrition targets in Phase 3 (see ADR-003) split their weight inputs, not "goal weight only": calorie/BMR calculations use the user's latest **measured** `weight` (BMR is a function of actual body mass), while only the **protein** target — a g/kg rate — reads Goal Weight, sized to the body being worked toward. This split is ADR-003's decision, made explicit there; Goal Weight existing as its own metric type is what makes it readable independently of measured weight in the first place.
