@@ -41,21 +41,21 @@
 
 ## 3. Backend: unit tests
 
-- [ ] 3.1 Unit-test the trailing-window exclusion function (task 1.1) against: a day with 0 records
+- [x] 3.1 Unit-test the trailing-window exclusion function (task 1.1) against: a day with 0 records
       at the trailing edge, a day with 0 records in the interior of the window (must be excluded,
       not averaged in as 0), a day with fewer than 500 steps, a day with exactly 500 steps (kept,
       not trimmed), a day with more than 500 steps, a trimmed-then-clean-day sequence (trailing-edge
       trimming stops at the first clean day scanning backward), and a window with exactly 7 valid
       days vs. 6 valid days (`insufficient_activity_data` boundary)
-- [ ] 3.2 Unit-test the tier-boundary mapping (task 1.2) at each exact boundary value (4,999 /
+- [x] 3.2 Unit-test the tier-boundary mapping (task 1.2) at each exact boundary value (4,999 /
       5,000 / 7,499 / 7,500 / 9,999 / 10,000 / 12,499 / 12,500 steps/day)
-- [ ] 3.3 Unit-test the `activity_override` → tier/multiplier resolution (task 2.4) for all 5 enum
+- [x] 3.3 Unit-test the `activity_override` → tier/multiplier resolution (task 2.4) for all 5 enum
       values, specifically asserting `"active"` → 1.725 and `"very_active"` → 1.9 (the two
       non-obvious cases)
-- [ ] 3.4 Unit-test `NutritionTargetHandler`'s 4-reason precondition check ordering (task 2.5),
+- [x] 3.4 Unit-test `NutritionTargetHandler`'s 4-reason precondition check ordering (task 2.5),
       including a case with multiple unmet reasons to confirm only the first-checked one is
       reported
-- [ ] 3.5 Unit-test the computation itself (task 2.6): the standard case, the fat-floor-engaged
+- [x] 3.5 Unit-test the computation itself (task 2.6): the standard case, the fat-floor-engaged
       case, the protein-exceeds-calories case (`carbs_grams` clamped to 0), and malformed
       `birthdate`/`sex` handling (future date, unparsable, age outside 5–120 inclusive, unrecognized
       `sex` value)
