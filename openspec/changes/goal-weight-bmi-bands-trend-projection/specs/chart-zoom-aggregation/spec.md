@@ -152,11 +152,19 @@ never hides the answer.
   height could be added, and the BMI bands and readout are permanently unreachable for exactly
   the users they are gated on.
 
+#### Scenario: Presence-gated affordances are not offered before presence is known
+- **WHEN** the weight page's supporting records (`height`, `weight_goal`, weight history) are
+  still loading
+- **THEN** the "Set height" shortcut SHALL NOT be offered, since it is gated on the *absence* of a
+  height and every load begins with no height loaded yet — offering it in that window presents it
+  to users who already have a height and lets them write a duplicate record
+
 #### Scenario: Projection status is not asserted before it is known
-- **WHEN** the weight history backing the projection is still loading, or its fetch failed
+- **WHEN** the weight page's supporting records are still loading, or their fetch failed
 - **THEN** the chart SHALL NOT display "Not enough data to project yet", since that states a fact
   about the user's records that is not yet known; while loading it SHALL display no projection
-  message, and on failure it SHALL indicate that the history could not be loaded
+  message, and on failure it SHALL indicate that the history could not be loaded — including when
+  the failed fetch is the one that would have supplied the goal itself
 
 #### Scenario: ETA never falls in the past
 - **WHEN** a user's most recent `weight` record is several weeks old and the fitted trend line

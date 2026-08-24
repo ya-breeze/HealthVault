@@ -402,6 +402,12 @@ test.describe('Manual record writes: weight_goal, height, write allowlist', () =
 
     await page.goto('/data/weight/');
     await expect(page.getByText('BMI', { exact: true })).toBeVisible();
+    // Ordering is load-bearing: waiting for the BMI readout first proves the
+    // height fetch has settled, which is what makes this negative assertion
+    // mean something. The shortcut used to render on every load — heightRecords
+    // is [] until the fetch resolves — so a user who already had a height was
+    // offered "Set height" anyway, and clicking it wrote a duplicate.
+    await expect(page.getByTestId('set-height')).toHaveCount(0);
   });
 
   // The test above navigates to /data/height/ by direct URL, so it proves the

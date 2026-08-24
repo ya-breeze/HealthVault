@@ -151,11 +151,17 @@ export default function DataTypeClient({ type }: Props) {
   // "Set goal" shortcut (task 4.2): only meaningful on the weight page,
   // where it opens the same AddRecordForm pre-targeted at `weight_goal`
   // rather than `weight` — a distinct type from the page it's mounted on.
-  // The projection's two inputs both start as [] and both used to collapse a
-  // failed fetch into [] as well, so "still loading", "request failed" and
-  // "genuinely no history" were one value — and the page asserted "Not enough
-  // data to project yet" for all three, permanently on error.
-  const [projectionStatus, setProjectionStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  // Every weight-page extra (height, goal, all-time weights, projection
+  // buckets) starts as [] and used to collapse a failed fetch into [] too, so
+  // "still loading", "request failed" and "genuinely nothing on file" were one
+  // value. Two things went wrong: the page asserted "Not enough data to
+  // project yet" for all three, permanently on error; and "Set height" — which
+  // renders precisely when no height is on file — flashed on every single load
+  // before the fetch resolved, so clicking it in that window wrote a duplicate
+  // height for a user who already had one. One settled tri-state for all four
+  // fetches, because they feed one UI region and all four are only meaningful
+  // once known.
+  const [weightContextStatus, setWeightContextStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showHeightForm, setShowHeightForm] = useState(false);
 
@@ -214,28 +220,28 @@ export default function DataTypeClient({ type }: Props) {
     }
 
     if (dataType === 'weight') {
-      api.data('height', ALL_TIME_FROM, to, userParam)
-        .then(setHeightRecords)
-        .catch(() => setHeightRecords([]));
-      api.data('weight_goal', ALL_TIME_FROM, to, userParam)
-        .then(setGoalRecords)
-        .catch(() => setGoalRecords([]));
       const projectionFrom = new Date(to);
       projectionFrom.setDate(projectionFrom.getDate() - 60);
-      setProjectionStatus('loading');
+      setWeightContextStatus('loading');
       Promise.all([
+        api.data('height', ALL_TIME_FROM, to, userParam),
+        api.data('weight_goal', ALL_TIME_FROM, to, userParam),
         api.data('weight', ALL_TIME_FROM, to, userParam),
         api.data('weight', projectionFrom.toISOString(), to, userParam, 'day'),
       ])
-        .then(([allTime, buckets]) => {
+        .then(([heights, goals, allTime, buckets]) => {
+          setHeightRecords(heights);
+          setGoalRecords(goals);
           setAllTimeWeightRecords(allTime);
           setProjectionBucketRows(buckets);
-          setProjectionStatus('ready');
+          setWeightContextStatus('ready');
         })
         .catch(() => {
+          setHeightRecords([]);
+          setGoalRecords([]);
           setAllTimeWeightRecords([]);
           setProjectionBucketRows([]);
-          setProjectionStatus('error');
+          setWeightContextStatus('error');
         });
     } else {
       setHeightRecords([]);
@@ -482,7 +488,7 @@ export default function DataTypeClient({ type }: Props) {
     const lastDayOffset = points[points.length - 1].x;
     const todayDayOffset = toDayOffset(new Date().toISOString());
 
-    const result = computeProjection({ slope, intercept, goal: latestGoalKg, windowStartEma, latestEma, lastDayOffset, todayDayOffset });
+    const result = computeProjection({ slope, intercept, goal: latestGoalKg, windowStartEma, latestEma, todayDayOffset });
     if (result.status !== 'on-track' || result.crossingDayOffset === undefined) return result;
 
     return {
@@ -503,11 +509,13 @@ export default function DataTypeClient({ type }: Props) {
   // nothing; on failure, say the history could not be loaded rather than
   // stating a false fact about the user's records.
   const noDataMessage = dataType === 'weight' && latestGoalKg !== undefined
-    && projection === undefined && projectionStatus === 'ready'
+    && projection === undefined && weightContextStatus === 'ready'
     ? 'Not enough data to project yet'
     : null;
-  const projectionErrorMessage = dataType === 'weight' && latestGoalKg !== undefined
-    && projectionStatus === 'error'
+  // Deliberately NOT gated on latestGoalKg: the goal is one of the fetches
+  // that just failed, so on error it is always undefined and gating on it
+  // would suppress the very message the failure needs to produce.
+  const projectionErrorMessage = dataType === 'weight' && weightContextStatus === 'error'
     ? "Couldn't load your weight history"
     : null;
 
@@ -588,8 +596,14 @@ export default function DataTypeClient({ type }: Props) {
             link to /data/height and can never add the record that turns BMI
             on. Same shape as "Set goal" above, and it disappears once a
             height exists.
+
+            Gated on 'ready' rather than on !heightExists alone: heightRecords
+            is [] until the fetch resolves, so an ungated shortcut appears on
+            every load — including for users who already have a height — and
+            clicking it in that window writes a duplicate.
           */}
-          {!userParam && dataType === 'weight' && !heightExists && !showHeightForm && (
+          {!userParam && dataType === 'weight' && weightContextStatus === 'ready'
+            && !heightExists && !showHeightForm && (
             <TapTarget
               type="button"
               onClick={() => setShowHeightForm(true)}

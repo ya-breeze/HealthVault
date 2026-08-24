@@ -189,7 +189,7 @@ describe('hasEnoughDataForProjection', () => {
 });
 
 describe('computeProjection', () => {
-  const base = { slope: 0, intercept: 0, goal: 75, windowStartEma: 90, latestEma: 90, lastDayOffset: 100, todayDayOffset: 100 };
+  const base = { slope: 0, intercept: 0, goal: 75, windowStartEma: 90, latestEma: 90, todayDayOffset: 100 };
 
   it('reports not-on-track for a flat trend far from goal', () => {
     expect(computeProjection(base)).toEqual({ status: 'not-on-track' });
@@ -208,12 +208,12 @@ describe('computeProjection', () => {
     const result = computeProjection({ ...base, slope, intercept });
     expect(result.status).toBe('on-track');
     expect(result.crossingDayOffset).toBeCloseTo((base.goal - intercept) / slope, 6);
-    expect(result.crossingDayOffset! - base.lastDayOffset).toBeLessThanOrEqual(365);
+    expect(result.crossingDayOffset! - base.todayDayOffset).toBeLessThanOrEqual(365);
   });
 
   it('reports on-track when the crossing lands at exactly day 365', () => {
     const daysToGoal = 365;
-    const crossingDayOffset = base.lastDayOffset + daysToGoal;
+    const crossingDayOffset = base.todayDayOffset + daysToGoal;
     const slope = -1;
     const intercept = base.goal - slope * crossingDayOffset;
     const result = computeProjection({ ...base, slope, intercept });
@@ -222,7 +222,7 @@ describe('computeProjection', () => {
 
   it('reports not-on-track when the crossing lands at day 366 (beyond horizon)', () => {
     const daysToGoal = 366;
-    const crossingDayOffset = base.lastDayOffset + daysToGoal;
+    const crossingDayOffset = base.todayDayOffset + daysToGoal;
     const slope = -1;
     const intercept = base.goal - slope * crossingDayOffset;
     const result = computeProjection({ ...base, slope, intercept });
@@ -243,19 +243,19 @@ describe('computeProjection', () => {
   it('reports not-on-track when an old lifetime weight sits on the opposite side of the goal from the current flat window', () => {
     // windowStartEma/latestEma (the 30-day window) are both 90, well above goal 75 — the
     // caller must never substitute the lifetime-earliest weight (60) for windowStartEma here.
-    const result = computeProjection({ slope: 0, intercept: 90, goal: 75, windowStartEma: 90, latestEma: 90, lastDayOffset: 100, todayDayOffset: 100 });
+    const result = computeProjection({ slope: 0, intercept: 90, goal: 75, windowStartEma: 90, latestEma: 90, todayDayOffset: 100 });
     expect(result.status).toBe('not-on-track');
   });
 
   it('reports not-on-track (not reached) when windowStartEma equals goal exactly but latestEma has since diverged', () => {
-    const result = computeProjection({ slope: 0, intercept: 80, goal: 75, windowStartEma: 75, latestEma: 80, lastDayOffset: 100, todayDayOffset: 100 });
+    const result = computeProjection({ slope: 0, intercept: 80, goal: 75, windowStartEma: 75, latestEma: 80, todayDayOffset: 100 });
     expect(result.status).toBe('not-on-track');
   });
 });
 
 // Regression coverage for the three defects found reviewing PR #28.
 describe('projection review regressions', () => {
-  const onTrackBase = { goal: 75, windowStartEma: 90, latestEma: 88, lastDayOffset: 100 };
+  const onTrackBase = { goal: 75, windowStartEma: 90, latestEma: 88 };
 
   it('never reports an ETA in the past when the last weigh-in is stale', () => {
     // Line crosses the goal 20 days after the last data point, but that point

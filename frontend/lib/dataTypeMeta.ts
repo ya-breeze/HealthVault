@@ -316,11 +316,10 @@ export function computeProjection(params: {
   intercept: number;
   goal: number;
   windowStartEma: number;
-  latestEma: number;
-  lastDayOffset: number;
   todayDayOffset: number;
+  latestEma: number;
 }): ProjectionResult {
-  const { slope, intercept, goal, windowStartEma, latestEma, lastDayOffset, todayDayOffset } = params;
+  const { slope, intercept, goal, windowStartEma, latestEma, todayDayOffset } = params;
 
   const direction = Math.sign(goal - windowStartEma);
   if (direction !== 0) {
