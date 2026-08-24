@@ -93,20 +93,20 @@
 
 ## 7. E2E: move and extend the settings race test
 
-- [ ] 7.1 Move the `Settings lost-update race` describe block out of `e2e/tests/dashboard.spec.ts`
+- [x] 7.1 Move the `Settings lost-update race` describe block out of `e2e/tests/dashboard.spec.ts`
       into a new `e2e/tests/settings.spec.ts`, updating navigation to `/settings` where the control
       now lives. Delete the `Dashboard card reorder` describe block's `switching language
       mid-reorder keeps the unsaved order` test rather than moving it: it exercises a same-page,
       no-navigation language switch reachable "without leaving edit mode," a premise that no
       longer holds once Display Language moves off the dashboard page — the effect-dependency
       regression it guards against can no longer be triggered this way
-- [ ] 7.2 Extend the race test to a third writer: save the profile form in the same session as a
+- [x] 7.2 Extend the race test to a third writer: save the profile form in the same session as a
       language switch (no navigation between them, both live on `/settings`), assert both persist.
       Separately, verify a dashboard reorder made just before navigating to `/settings` survives
       the trip — client-side navigation only, since `LanguageProvider`'s write queue is mounted at
       the root layout and persists across routes
-- [ ] 7.3 Add coverage for the profile form's own required-field validation and successful save
-- [ ] 7.4 Run full suite against `hcw-wip`
+- [x] 7.3 Add coverage for the profile form's own required-field validation and successful save
+- [x] 7.4 Run full suite against `hcw-wip`
 
 ## 8. Docs
 
