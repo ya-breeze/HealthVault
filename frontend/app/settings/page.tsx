@@ -5,6 +5,7 @@ import { api, UserSettings } from '@/lib/api';
 import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
+import { SUPPORTED_LANGUAGES, LanguageCode } from '@/lib/i18n';
 import { useToast } from '@/components/Toast';
 
 type ActivityOverride = NonNullable<UserSettings['activity_override']>;
@@ -27,7 +28,7 @@ export default function SettingsPage() {
   // LanguageContext's own claim() alongside the Display Language switcher's
   // reads/writes, so the two can't race and silently clobber each other's
   // save. See design.md's "third settings writer" decision.
-  const { updateSettings } = useLanguage();
+  const { t, language, setLanguage, updateSettings } = useLanguage();
   const { showToast } = useToast();
 
   const [birthdate, setBirthdate] = useState('');
@@ -36,6 +37,19 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [changingLanguage, setChangingLanguage] = useState(false);
+
+  const handleLanguageChange = async (code: LanguageCode) => {
+    if (code === language) return;
+    setChangingLanguage(true);
+    try {
+      await setLanguage(code);
+    } catch {
+      showToast(t('header.languageChangeFailed'), 'error');
+    } finally {
+      setChangingLanguage(false);
+    }
+  };
 
   useEffect(() => {
     api.getSettings()
@@ -89,6 +103,27 @@ export default function SettingsPage() {
             <p className="text-sm text-text-muted">Loading…</p>
           ) : (
             <div className="space-y-4">
+              <label className="block">
+                <span className="text-xs text-text-muted" id="display-language-label">
+                  {t('header.language')}
+                </span>
+                <TapTarget
+                  as="select"
+                  id="display-language"
+                  aria-labelledby="display-language-label"
+                  value={language}
+                  disabled={changingLanguage}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                    handleLanguageChange(e.target.value as LanguageCode)
+                  }
+                  className="mt-1 w-full border border-border rounded-md px-3 bg-bg text-text disabled:opacity-60"
+                >
+                  {SUPPORTED_LANGUAGES.map(l => (
+                    <option key={l.code} value={l.code}>{l.label}</option>
+                  ))}
+                </TapTarget>
+              </label>
+
               <label className="block">
                 <span className="text-xs text-text-muted">Birthdate</span>
                 <TapTarget

@@ -86,10 +86,10 @@
 
 ## 6. Frontend: relocate Display Language
 
-- [ ] 6.1 Move the `<select id="display-language">` control and its `handleLanguageChange` wiring
+- [x] 6.1 Move the `<select id="display-language">` control and its `handleLanguageChange` wiring
       from `frontend/components/Header.tsx` into the new `/settings` Profile section, keeping the
       `id` and `setLanguage` call unchanged
-- [ ] 6.2 Replace the removed control in `Header.tsx` with a link/icon to `/settings`
+- [x] 6.2 Replace the removed control in `Header.tsx` with a link/icon to `/settings`
 
 ## 7. E2E: move and extend the settings race test
 
