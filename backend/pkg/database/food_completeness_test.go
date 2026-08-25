@@ -272,3 +272,35 @@ func TestDayRange_ThresholdRecomputedEachCall(t *testing.T) {
 		t.Errorf("threshold 3: got %+v, want state unconfirmed", highThreshold)
 	}
 }
+
+// TestDayRange_NonUTCLocationFindsMeals is a regression test: FoodMeal.LoggedAt
+// is always stored UTC-normalized (backfillFoodMealLoggedAtToUTC, db.go), and
+// go-sqlite3 stores time.Time as TEXT preserving whatever offset it's given
+// rather than normalizing it, so SQLite compares that column as text, not as
+// an instant. Building the day-window bounds from time.ParseInLocation(...,
+// loc) with a non-UTC loc (e.g. America/Los_Angeles) and passing them
+// straight into the query previously produced bounds with a non-zero offset
+// that string-compared incorrectly against the UTC-offset stored rows,
+// silently returning zero meals for a real day even though the underlying
+// instants were ordered correctly.
+func TestDayRange_NonUTCLocationFindsMeals(t *testing.T) {
+	db := newCompletenessTestDB(t)
+	userID, familyID := uuid.New(), uuid.New()
+
+	loc, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+	// 2026-08-21T02:00:00Z is 2026-08-20T19:00:00-07:00 in America/Los_Angeles.
+	ts := time.Date(2026, 8, 21, 2, 0, 0, 0, time.UTC)
+	mustCreateMeal(t, db, userID, familyID, ts)
+	mustCreateMeal(t, db, userID, familyID, ts.Add(2*time.Hour))
+
+	got, err := database.DayRange(db, userID, loc, 2, "2026-08-20", "2026-08-20")
+	if err != nil {
+		t.Fatalf("DayRange: %v", err)
+	}
+	if len(got) != 1 || got[0].OccasionCount != 2 || got[0].State != database.DayStateComplete {
+		t.Errorf("got %+v, want a single complete/2-occasion day for 2026-08-20", got)
+	}
+}

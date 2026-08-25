@@ -67,15 +67,15 @@
 
 ## 4. Backend: completeness range-query endpoint
 
-- [ ] 4.1 Add `GET /api/food/completeness` handler (new file alongside
+- [x] 4.1 Add `GET /api/food/completeness` handler (new file alongside
       `backend/pkg/server/food_meal_detail.go`, e.g. `food_completeness.go`): auth check (401),
       parse `from`/`to` (400 on missing/malformed), clamp `to` to yesterday in the caller's zone
       *first*, then validate `from > to` and the >92-day span against the (possibly clamped) `to`
       (400 on either) — this order matters: a `from` naming today or a future date must fail the
       `from > to` check post-clamp, not resolve to an inverted/empty range — call task 3.4's range
       function, return the JSON array
-- [ ] 4.2 Register the route in `backend/pkg/server/server.go` (`GET /food/completeness`)
-- [ ] 4.3 Tests: full happy path against seeded meals across several days including a zero-meal
+- [x] 4.2 Register the route in `backend/pkg/server/server.go` (`GET /food/completeness`)
+- [x] 4.3 Tests: full happy path against seeded meals across several days including a zero-meal
       day, `to` clamping when `to` names today or a future date, `from` equal to today with `to`
       also today (400, post-clamp inversion caught), each other 400 case, 401 with no auth,
       confirms no `?user=` override is honored (family member's data never leaks in)

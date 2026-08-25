@@ -164,7 +164,15 @@ func DayRange(
 	}
 
 	// Exclusive upper bound: the instant the day after `to` begins in loc.
-	windowStart, windowEnd := fromDate, toDate.AddDate(0, 0, 1)
+	// UTC-normalized before querying: FoodMeal.LoggedAt is always stored
+	// UTC-normalized (backfillFoodMealLoggedAtToUTC, db.go), and go-sqlite3
+	// stores time.Time as TEXT preserving whatever offset it's given rather
+	// than normalizing it, so SQLite compares that column as text, not as
+	// an instant. A non-UTC-offset window bound (e.g. `loc` = a zone with a
+	// non-zero offset) would then string-compare incorrectly against the
+	// UTC-offset stored rows even when the underlying instants are ordered
+	// correctly — silently returning zero meals for a real day.
+	windowStart, windowEnd := fromDate.UTC(), toDate.AddDate(0, 0, 1).UTC()
 
 	var meals []FoodMeal
 	if err := db.Select("logged_at").
