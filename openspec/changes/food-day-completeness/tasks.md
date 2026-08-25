@@ -179,17 +179,17 @@ read-modify-write correctness directly — the regression it guards against (clo
 
 ## 12. E2E
 
-- [ ] 12.1 Extend or add an `e2e/tests/` spec: seed meals producing an `unconfirmed` day, confirm
+- [x] 12.1 Extend or add an `e2e/tests/` spec: seed meals producing an `unconfirmed` day, confirm
       it via the history page's control, reload, confirm the badge persists; retract it and
       confirm the control reverts (also assert a zero-meal day never renders a section, per 8.4)
-- [ ] 12.2 E2E coverage for a day meeting the threshold showing no control at all
-- [ ] 12.3 E2E coverage for the timezone-aware day grouping: set a non-UTC `timezone` via the
+- [x] 12.2 E2E coverage for a day meeting the threshold showing no control at all
+- [x] 12.3 E2E coverage for the timezone-aware day grouping: set a non-UTC `timezone` via the
       settings panel (task 9) for a user with meals that straddle the UTC/zone day boundary, and
       assert the meals now group under the shifted day headers rather than UTC ones
-- [ ] 12.4 E2E coverage for the settings panel (task 9) end to end: open it, change `timezone` and
+- [x] 12.4 E2E coverage for the settings panel (task 9) end to end: open it, change `timezone` and
       `usual_meals_per_day`, save, and confirm both (a) `dashboard_order`/`display_language` are
       unchanged afterward and (b) day grouping/completeness badges update without a page reload
-- [ ] 12.5 Run the full suite against `hcw-wip`
+- [x] 12.5 Run the full suite against `hcw-wip`
 
 ## 13. Verification
 
