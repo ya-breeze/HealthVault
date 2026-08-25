@@ -2,17 +2,30 @@
 
 - [ ] 1.1 Reword the composite-dish-naming paragraph of `recognizeSystemPrompt` in
   `backend/pkg/vision/openai.go` to key the split/merge decision on whether each visible
-  component is an independently identifiable food, not on whether it plays a different role
-  from its neighbor and not on whether components are spatially separated on the plate — a
-  protein-and-side pairing is the common example, but two independently identifiable foods that
-  share a role (e.g. two different cooked vegetable sides plated touching) split the same way.
+  component was ever served as its own separate portion, not on whether it plays a different
+  role from its neighbor, not on whether components are spatially separated on the plate, and
+  not on whether an individual piece can be pointed to and named (an ingredient chunk inside a
+  combined preparation almost always can — that alone must not trigger a split) — a
+  protein-and-side pairing is the common example, but two foods that were each served
+  separately and share a role (e.g. two different cooked vegetable sides plated touching) split
+  the same way. State explicitly that "served as its own separate portion" is judged from what
+  the photo shows, not from unobservable prep history: a piece that visibly keeps its own
+  separately-servable, portion-scale form (an intact fillet, a whole cutlet, a distinct pile)
+  counts as served separately; a piece broken down, mixed, or tossed into one preparation does
+  not. A sauce, glaze, or juices from a neighboring food covering a piece does not by itself turn
+  it into a combined preparation — a fillet coated in sauce still counts as its own
+  separately-servable piece as long as it keeps its own portion-scale shape.
 - [ ] 1.2 Add a worked example pair to the prompt text: a protein served touching or on top of a
   vegetable/starch side (e.g. "fish served on/next to stewed cabbage") should split into two
-  items; a single homogeneous preparation where ingredients are cooked/sauced together and no
-  longer independently identifiable (e.g. a stir-fry, curry, stew, or mixed salad) should remain
-  one item. Also state that a minor garnish or condiment (a lemon wedge, a sprig of herbs, a
-  spoonful of sauce) that isn't itself a portion-sized food stays folded into its main item
-  rather than becoming its own item.
+  items — including when the protein was baked or braised directly in contact with the side
+  (e.g. a fish fillet baked on top of stewed cabbage), so long as it keeps its own portion-scale
+  shape and could be lifted off and served on its own; sharing a pan, pot, or oven dish is not by
+  itself a merge signal — a single preparation whose ingredients were mixed, chopped, or
+  cooked/sauced together into one served dish (e.g. a stir-fry, curry, stew, or mixed salad)
+  should remain one item even though individual ingredient pieces (a lettuce leaf, a carrot
+  chunk) are still visually distinguishable within it. Also state that a minor garnish or
+  condiment (a lemon wedge, a sprig of herbs, a spoonful of sauce) that isn't itself a
+  portion-sized food stays folded into its main item rather than becoming its own item.
 - [ ] 1.3 Re-read the full prompt after editing to confirm the new wording does not contradict or
   weaken the still-desired merge behavior for genuinely homogeneous dishes (the original
   over-decomposition problem this requirement was added to fix), and does not cause garnishes or

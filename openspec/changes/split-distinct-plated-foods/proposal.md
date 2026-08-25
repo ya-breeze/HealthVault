@@ -15,33 +15,43 @@ ingredients (e.g. "beans, corn, tomato" out of a single mixed side) — but the 
 is now also suppressing splits the user does want.
 
 The fix is a boundary change to that same requirement (and the shared Recognize/Clarify prompt
-that implements it), moving the test from *spatial* separation to *identity* separation: split
-when the photo shows two or more foods that are each independently namable, regardless of
-whether they share a role (protein vs. side is the common case, but two different vegetable
+that implements it), moving the test from *spatial* separation to *separate-serving*: split when
+the photo shows two or more foods that were each served as their own separate portion, regardless
+of whether they share a role (protein vs. side is the common case, but two different vegetable
 sides plated touching split the same way) and regardless of whether they are plated apart or
 touching/adjacent — but keep them merged when the visible mass is a single homogeneous
-preparation whose ingredients have no independent identity once cooked together (a stew, curry,
-stir-fry, sauced mixture, mixed salad), which is the case the prior change was protecting. A
-minor garnish or condiment (a lemon wedge, a sprig of herbs, a spoonful of sauce) that isn't
-itself a portion-sized food stays folded into the item it accompanies rather than becoming its
-own item, even though it is technically independently namable.
+preparation whose components were mixed, chopped, or cooked together into one served dish (a
+stew, curry, stir-fry, sauced mixture, mixed salad), which is the case the prior change was
+protecting. Since Recognize only sees the photo, "served as its own separate portion" is judged
+from visible form, not actual prep history: a piece that still keeps its own
+separately-servable, portion-scale shape (an intact fillet, a whole cutlet, a distinct pile)
+counts as served separately, even if a sauce or another food's juices touch or coat it; a piece
+that has been broken down, mixed, or tossed into one preparation does not. The test is not
+whether a piece can be pointed to and named — an ingredient chunk inside a combined preparation
+almost always can be — but whether it was ever served as its own portion rather than combined
+into one dish; naming a piece within a mixed salad or stir-fry does not by itself trigger a
+split. A minor garnish or condiment (a lemon wedge, a sprig of herbs, a spoonful of sauce) that
+isn't itself a portion-sized food stays folded into the item it accompanies rather than becoming
+its own item, even though it is technically independently namable.
 
 ## What Changes
 
 - The "Composite Dish Naming" requirement is amended: the split/merge boundary changes from
-  "spatially separate on the plate" to "independently identifiable foods", so a protein served
-  touching or on top of a vegetable/starch side (e.g. fish on stewed cabbage) is returned as two
-  items, while a single homogeneous preparation (a stew, curry, stir-fry, or sauced/mixed dish
-  where no individual ingredient is separately identifiable) is still returned as one item,
-  exactly as today. The boundary is identity-based, not role-based: two independently namable
-  foods split whether or not they play different roles on the plate. A minor garnish or
-  condiment stays folded into its main item rather than becoming its own item.
+  "spatially separate on the plate" to "was each component served as its own separate portion",
+  so a protein served touching or on top of a vegetable/starch side (e.g. fish on stewed
+  cabbage) is returned as two items, while a single homogeneous preparation (a stew, curry,
+  stir-fry, or sauced/mixed dish whose ingredients were mixed, chopped, or cooked together into
+  one served dish) is still returned as one item, exactly as today — even when individual
+  ingredient pieces within it (a lettuce leaf, a carrot chunk) remain visually distinguishable.
+  The boundary is about separate serving, not role or mere visual distinguishability: two
+  separately-served foods split whether or not they play different roles on the plate. A minor
+  garnish or condiment stays folded into its main item rather than becoming its own item.
 - The shared Recognize/Clarify system prompt (`backend/pkg/vision/openai.go`,
   `recognizeSystemPrompt`) is reworded to state this boundary directly, replacing the
   "distinct piles ... or separate foods placed next to each other" phrasing with guidance keyed
-  on whether each component keeps its own identity, with a worked example distinguishing "fish
-  served on/next to stewed cabbage" (two items) from "a stir-fry where vegetables and protein
-  are cooked and sauced together" (one item).
+  on whether each component was ever served as its own separate portion, with a worked example
+  distinguishing "fish served on/next to stewed cabbage" (two items) from "a stir-fry where
+  vegetables and protein are cooked and sauced together" (one item).
 - No schema, database, or frontend change: `RecognizeResult.Items` is already an array, item
   persistence already loops over N items, and the review UI already renders N items per meal
   (confirmed in this Attempt's research — see Task 1 findings in the originating plan). This is
@@ -59,10 +69,11 @@ own item, even though it is technically independently namable.
 
 ### Modified Capabilities
 
-- `food-photo-recognition`: "Composite Dish Naming" is amended so the item-splitting boundary
-  is identity-based (independently namable foods, regardless of role) rather than purely
-  spatial, while continuing to keep a single homogeneous preparation as one item and folding
-  minor garnishes/condiments into their main item.
+- `food-photo-recognition`: "Composite Dish Naming" is amended so the item-splitting boundary is
+  based on whether each food was served as its own separate portion (regardless of role) rather
+  than purely spatial, while continuing to keep a single homogeneous preparation as one item —
+  even when its ingredient pieces remain individually namable — and folding minor
+  garnishes/condiments into their main item.
 
 ## Impact
 
