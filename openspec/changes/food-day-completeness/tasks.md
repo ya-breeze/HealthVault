@@ -33,10 +33,10 @@
 
 ## 2. Backend: Eating Occasion collapsing
 
-- [ ] 2.1 Add a pure function `collapseOccasions(loggedAt []time.Time) int` (or returning the
+- [x] 2.1 Add a pure function `collapseOccasions(loggedAt []time.Time) int` (or returning the
       grouped slices, whichever the completeness computation in task 3 needs): sort ascending,
       new group when the gap to the previous timestamp exceeds 10 minutes
-- [ ] 2.2 Unit tests: empty input (0 occasions), single timestamp (1), two timestamps 3 minutes
+- [x] 2.2 Unit tests: empty input (0 occasions), single timestamp (1), two timestamps 3 minutes
       apart (1), two timestamps exactly 10 minutes apart (1 — inclusive boundary per design.md),
       two timestamps 10 minutes and 1 second apart (2), the doc's own three-row trap case
       (09:1x/14:39/14:42 → 2), unsorted input (function must sort internally)
