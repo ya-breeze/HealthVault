@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
@@ -44,20 +46,12 @@ func (h *foodHandlers) GetCompleteness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settingsJSON, err := h.storage.GetUserSettings(claims.UserID)
+	loc, threshold, err := h.callerTimezoneAndThreshold(claims.UserID)
 	if err != nil {
-		// "No settings row yet" is the ordinary case for a user who has
-		// never opened settings — same treatment as DisplayLanguage
-		// (display_language.go): fall back to defaults rather than 500.
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.Error("GetCompleteness: read user settings", "err", err, "user_id", claims.UserID)
-			http.Error(w, "query error", http.StatusInternalServerError)
-			return
-		}
-		settingsJSON = ""
+		slog.Error("GetCompleteness: read user settings", "err", err, "user_id", claims.UserID)
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
 	}
-	loc := database.ResolveTimezone(settingsJSON)
-	threshold := database.ResolveUsualMealsPerDay(settingsJSON)
 
 	// Clamp `to` to yesterday in the caller's zone *first* — only then is
 	// `from > to` (using the now-possibly-clamped `to`) validated. This
@@ -96,4 +90,143 @@ func (h *foodHandlers) GetCompleteness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, result)
+}
+
+// callerTimezoneAndThreshold resolves the caller's timezone and
+// usual_meals_per_day threshold from their stored settings. "No settings
+// row yet" is the ordinary case for a user who has never opened settings —
+// same treatment as DisplayLanguage (display_language.go): fall back to
+// defaults rather than surfacing an error. Any other read error is
+// propagated to the caller to turn into a 500.
+func (h *foodHandlers) callerTimezoneAndThreshold(userID uuid.UUID) (*time.Location, int, error) {
+	settingsJSON, err := h.storage.GetUserSettings(userID)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, err
+		}
+		settingsJSON = ""
+	}
+	return database.ResolveTimezone(settingsJSON), database.ResolveUsualMealsPerDay(settingsJSON), nil
+}
+
+// parseCompletenessDate validates the {date} path parameter shared by
+// ConfirmDay and UnconfirmDay: well-formed YYYY-MM-DD, and not naming today
+// or a future date in the caller's zone (design.md §5 "API" — confirmation
+// only applies to a day whose Logged Day has already closed).
+func parseCompletenessDate(r *http.Request, loc *time.Location) (string, bool) {
+	dateStr := mux.Vars(r)["date"]
+	if _, err := time.Parse("2006-01-02", dateStr); err != nil {
+		return "", false
+	}
+	if dateStr >= database.LocalDate(time.Now(), loc) {
+		return "", false
+	}
+	return dateStr, true
+}
+
+// ConfirmDay handles POST /api/food/completeness/{date}/confirm: the
+// caller's assertion that a below-threshold day (Unconfirmed) is
+// nonetheless complete (design.md §5 "API"). Rejects a day that is already
+// Complete (threshold met — nothing to assert) or Incomplete (zero
+// occasions — nothing to confirm). Idempotent: confirming an
+// already-Confirmed-Complete day returns 200 with the existing row rather
+// than erroring or creating a duplicate.
+func (h *foodHandlers) ConfirmDay(w http.ResponseWriter, r *http.Request) {
+	claims := ClaimsFromCtx(r)
+	if claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	loc, threshold, err := h.callerTimezoneAndThreshold(claims.UserID)
+	if err != nil {
+		slog.Error("ConfirmDay: read user settings", "err", err, "user_id", claims.UserID)
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	dateStr, ok := parseCompletenessDate(r, loc)
+	if !ok {
+		http.Error(w, "invalid or ineligible date", http.StatusBadRequest)
+		return
+	}
+
+	entries, err := database.DayRange(h.storage.DB(), claims.UserID, loc, threshold, dateStr, dateStr)
+	if err != nil {
+		slog.Error("ConfirmDay: compute day state", "err", err, "user_id", claims.UserID)
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	if len(entries) != 1 {
+		slog.Error("ConfirmDay: unexpected day range length", "len", len(entries), "user_id", claims.UserID)
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	switch entries[0].State {
+	case database.DayStateIncomplete, database.DayStateComplete:
+		http.Error(w, "day is not eligible for confirmation", http.StatusBadRequest)
+		return
+	}
+
+	var existing database.FoodDayCompletion
+	err = h.storage.DB().
+		Where("user_id = ? AND local_date = ?", claims.UserID, dateStr).
+		First(&existing).Error
+	switch {
+	case err == nil:
+		writeJSONStatus(w, http.StatusOK, existing)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		row := database.FoodDayCompletion{
+			UserID:      claims.UserID,
+			LocalDate:   dateStr,
+			ConfirmedAt: time.Now().UTC(),
+		}
+		if err := h.storage.DB().Create(&row).Error; err != nil {
+			slog.Error("ConfirmDay: create confirmation", "err", err, "user_id", claims.UserID)
+			http.Error(w, "create error", http.StatusInternalServerError)
+			return
+		}
+		writeJSONStatus(w, http.StatusCreated, row)
+	default:
+		slog.Error("ConfirmDay: query confirmation", "err", err, "user_id", claims.UserID)
+		http.Error(w, "query error", http.StatusInternalServerError)
+	}
+}
+
+// UnconfirmDay handles DELETE /api/food/completeness/{date}/confirm:
+// retracts a confirmation (design.md §5 "API"). Always 204, including when
+// no confirmation exists for that date — retracting a non-assertion is a
+// no-op, not an error.
+//
+// Unscoped: FoodDayCompletion embeds TenantModel, so a plain Delete
+// soft-deletes (sets deleted_at) rather than removing the row, and the
+// (user_id, local_date) unique index has no deleted_at clause — a
+// soft-deleted row would permanently block re-confirming that date, the
+// same trap DeleteCustomFood (food_custom.go) already guards against.
+func (h *foodHandlers) UnconfirmDay(w http.ResponseWriter, r *http.Request) {
+	claims := ClaimsFromCtx(r)
+	if claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	loc, _, err := h.callerTimezoneAndThreshold(claims.UserID)
+	if err != nil {
+		slog.Error("UnconfirmDay: read user settings", "err", err, "user_id", claims.UserID)
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	dateStr, ok := parseCompletenessDate(r, loc)
+	if !ok {
+		http.Error(w, "invalid or ineligible date", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.storage.DB().Unscoped().
+		Where("user_id = ? AND local_date = ?", claims.UserID, dateStr).
+		Delete(&database.FoodDayCompletion{}).Error; err != nil {
+		slog.Error("UnconfirmDay: delete confirmation", "err", err, "user_id", claims.UserID)
+		http.Error(w, "delete error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -82,17 +82,17 @@
 
 ## 5. Backend: day-confirmation endpoints
 
-- [ ] 5.1 Add `POST /api/food/completeness/{date}/confirm` handler: auth check (401), parse/
+- [x] 5.1 Add `POST /api/food/completeness/{date}/confirm` handler: auth check (401), parse/
       validate `{date}` (400 on malformed / today-or-future), compute current state, 400 if
       `incomplete` or `complete`, upsert-idempotent `FoodDayCompletion` row (200 if already
       `confirmed_complete`, 201 with the new row otherwise)
-- [ ] 5.2 Add `DELETE /api/food/completeness/{date}/confirm` handler: auth check (401), parse/
+- [x] 5.2 Add `DELETE /api/food/completeness/{date}/confirm` handler: auth check (401), parse/
       validate `{date}` (400 on malformed / today-or-future), `Unscoped().Delete()` any existing
       row for `(user, date)` — a plain `Delete()` soft-deletes and would permanently block
       re-confirming that date via the unique index, mirroring `DeleteCustomFood`'s existing
       `Unscoped()` usage — always 204
-- [ ] 5.3 Register both routes in `backend/pkg/server/server.go`
-- [ ] 5.4 Tests: confirm an eligible unconfirmed day (201), re-confirm an already-confirmed day
+- [x] 5.3 Register both routes in `backend/pkg/server/server.go`
+- [x] 5.4 Tests: confirm an eligible unconfirmed day (201), re-confirm an already-confirmed day
       (200, no duplicate row), confirm a zero-occasion day (400), confirm an already-complete day
       (400), confirm/delete against today or a future date (400 both), delete an existing
       confirmation (204, state reverts correctly), delete a non-existent confirmation (204, no

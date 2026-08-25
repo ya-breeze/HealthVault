@@ -9,10 +9,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
 )
+
+func confirmRequest(method, date string) *http.Request {
+	url := "/api/food/completeness/" + date + "/confirm"
+	r := httptest.NewRequest(method, url, nil)
+	return mux.SetURLVars(r, map[string]string{"date": date})
+}
 
 func completenessRequest(query string) *http.Request {
 	url := "/api/food/completeness"
@@ -233,5 +240,255 @@ func TestGetCompleteness_UnknownUserSettingsFallsBackToDefaults(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 (fail-open with default settings), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestConfirmDay_EligibleUnconfirmedDay(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, yesterday.Add(12*time.Hour))
+	dateStr := yesterday.Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ConfirmDay(w, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var row database.FoodDayCompletion
+	if err := json.NewDecoder(w.Body).Decode(&row); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if row.LocalDate != dateStr || row.UserID != userID {
+		t.Errorf("unexpected confirmation row: %+v", row)
+	}
+}
+
+func TestConfirmDay_ReconfirmAlreadyConfirmedIsIdempotent(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, yesterday.Add(12*time.Hour))
+	dateStr := yesterday.Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	w1 := httptest.NewRecorder()
+	h.ConfirmDay(w1, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("first confirm: expected 201, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	w2 := httptest.NewRecorder()
+	h.ConfirmDay(w2, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("re-confirm: expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	var count int64
+	if err := st.DB().Model(&database.FoodDayCompletion{}).
+		Where("user_id = ? AND local_date = ?", userID, dateStr).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 confirmation row, got %d", count)
+	}
+}
+
+func TestConfirmDay_ZeroOccasionDayRejected(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	dateStr := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ConfirmDay(w, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 (zero occasions), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestConfirmDay_AlreadyCompleteDayRejected(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, yesterday.Add(8*time.Hour))
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, yesterday.Add(13*time.Hour))
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, yesterday.Add(19*time.Hour))
+	dateStr := yesterday.Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ConfirmDay(w, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 (already complete), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestConfirmUnconfirmDay_TodayOrFutureRejected(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	today := time.Now().UTC().Format("2006-01-02")
+	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+
+	for _, dateStr := range []string{today, future} {
+		w := httptest.NewRecorder()
+		h.ConfirmDay(w, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("confirm %s: expected 400, got %d: %s", dateStr, w.Code, w.Body.String())
+		}
+
+		w2 := httptest.NewRecorder()
+		h.UnconfirmDay(w2, withClaims(confirmRequest(http.MethodDelete, dateStr), userID))
+		if w2.Code != http.StatusBadRequest {
+			t.Errorf("unconfirm %s: expected 400, got %d: %s", dateStr, w2.Code, w2.Body.String())
+		}
+	}
+}
+
+func TestUnconfirmDay_DeletesExistingConfirmation(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, yesterday.Add(12*time.Hour))
+	dateStr := yesterday.Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	wc := httptest.NewRecorder()
+	h.ConfirmDay(wc, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+	if wc.Code != http.StatusCreated {
+		t.Fatalf("confirm: expected 201, got %d: %s", wc.Code, wc.Body.String())
+	}
+
+	wd := httptest.NewRecorder()
+	h.UnconfirmDay(wd, withClaims(confirmRequest(http.MethodDelete, dateStr), userID))
+	if wd.Code != http.StatusNoContent {
+		t.Fatalf("unconfirm: expected 204, got %d: %s", wd.Code, wd.Body.String())
+	}
+
+	var count int64
+	if err := st.DB().Model(&database.FoodDayCompletion{}).
+		Where("user_id = ? AND local_date = ?", userID, dateStr).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected confirmation row gone, got count %d", count)
+	}
+
+	// State reverts to unconfirmed now that the confirmation is gone.
+	wg := httptest.NewRecorder()
+	h.GetCompleteness(wg, withClaims(completenessRequest(fmt.Sprintf("from=%s&to=%s", dateStr, dateStr)), userID))
+	var got []database.DayCompleteness
+	if err := json.NewDecoder(wg.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 || got[0].State != database.DayStateUnconfirmed {
+		t.Errorf("expected reverted state unconfirmed, got %+v", got)
+	}
+}
+
+func TestUnconfirmDay_NonExistentConfirmationNoError(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	dateStr := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.UnconfirmDay(w, withClaims(confirmRequest(http.MethodDelete, dateStr), userID))
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestConfirmUnconfirmDay_Unauthorized(t *testing.T) {
+	st := newFoodTestStorage(t)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	dateStr := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+
+	wc := httptest.NewRecorder()
+	h.ConfirmDay(wc, confirmRequest(http.MethodPost, dateStr))
+	if wc.Code != http.StatusUnauthorized {
+		t.Errorf("confirm: expected 401, got %d: %s", wc.Code, wc.Body.String())
+	}
+
+	wd := httptest.NewRecorder()
+	h.UnconfirmDay(wd, confirmRequest(http.MethodDelete, dateStr))
+	if wd.Code != http.StatusUnauthorized {
+		t.Errorf("unconfirm: expected 401, got %d: %s", wd.Code, wd.Body.String())
+	}
+}
+
+func TestConfirmDay_NoUserOverride(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	otherUserID := uuid.New()
+
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	// Give the *other* user 3 occasions (would be Complete, i.e. rejected)
+	// so that if the handler ever honored a ?user= override, confirming
+	// would fail with 400 instead of the caller's own eligible 201.
+	createMealAt(t, st, otherUserID, familyID, database.MealStatusConfirmed, yesterday.Add(8*time.Hour))
+	createMealAt(t, st, otherUserID, familyID, database.MealStatusConfirmed, yesterday.Add(13*time.Hour))
+	createMealAt(t, st, otherUserID, familyID, database.MealStatusConfirmed, yesterday.Add(19*time.Hour))
+	// The caller has exactly 1 occasion — eligible for confirmation.
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, yesterday.Add(12*time.Hour))
+	dateStr := yesterday.Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	r := confirmRequest(http.MethodPost, dateStr)
+	r.URL.RawQuery = "user=" + otherUserID.String()
+	w := httptest.NewRecorder()
+	h.ConfirmDay(w, withClaims(r, userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 using caller's own data, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	if err := st.DB().Model(&database.FoodDayCompletion{}).
+		Where("user_id = ? AND local_date = ?", otherUserID, dateStr).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no confirmation row created for the other user, got count %d", count)
+	}
+}
+
+func TestConfirmDay_ConfirmRetractConfirmAgainSucceeds(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, yesterday.Add(12*time.Hour))
+	dateStr := yesterday.Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	w1 := httptest.NewRecorder()
+	h.ConfirmDay(w1, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("confirm: expected 201, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	w2 := httptest.NewRecorder()
+	h.UnconfirmDay(w2, withClaims(confirmRequest(http.MethodDelete, dateStr), userID))
+	if w2.Code != http.StatusNoContent {
+		t.Fatalf("retract: expected 204, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	w3 := httptest.NewRecorder()
+	h.ConfirmDay(w3, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
+	if w3.Code != http.StatusCreated {
+		t.Fatalf("re-confirm after retract: expected 201 (not a unique-constraint violation), got %d: %s",
+			w3.Code, w3.Body.String())
 	}
 }
