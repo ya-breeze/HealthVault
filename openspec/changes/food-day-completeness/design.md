@@ -201,6 +201,11 @@ chase the user").
   having them silently reattach to the wrong days. Accepted: `timezone` changes are expected to be
   rare (set once, near account creation) and re-confirming a handful of days is a small, visible
   cost compared to a confirmation silently misattaching itself to meals the user never reviewed.
+  The "changed" check compares the raw stored string, so a first-time explicit save of `"UTC"` over
+  a previously-absent or invalid value also triggers this cascade even though the effective zone
+  (UTC either way) didn't actually change. Accepted as the same trade-off: it's a rare, one-time
+  write for most users, and detecting "no *effective* change" would require resolving and comparing
+  zones in a store that's otherwise schema-free by design.
 - **Today's under-13%-auto-complete rate means Phase 4 will mostly show "not enough data" at
   first** — named and accepted in the grilling comment itself as the honest output for 17 days of a
   logging habit still forming, not a defect to design around here.

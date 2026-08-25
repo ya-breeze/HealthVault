@@ -37,7 +37,9 @@ proposal transcribes an already-grilled design into OpenSpec deltas an implement
   count + state, the primitive future rolling-window features query) and
   `POST`/`DELETE /api/food/completeness/{date}/confirm` (set/retract the user's assertion — the
   same control toggles it back off, and a later edit that adds a forgotten meal to an already-
-  confirmed day leaves it confirmed, since the day only became *more* complete).
+  confirmed day leaves it confirmed *so long as occasions stay below `usual_meals_per_day`*; if
+  the edit pushes the day to or past the threshold, it becomes automatically Complete instead,
+  which is a strictly stronger state).
 - **Inline confirmation control on the food history page only** — no dashboard banner, no
   notification, nothing that chases the user after logging a meal. The page's day-grouping key
   also switches from the browser's local timezone to the new stored `timezone` setting, falling
