@@ -338,7 +338,7 @@ func TestConfirmUnconfirmDay_TodayOrFutureRejected(t *testing.T) {
 	today := time.Now().UTC().Format("2006-01-02")
 	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
 
-	for _, dateStr := range []string{today, future} {
+	for _, dateStr := range []string{today, future, "not-a-date"} {
 		w := httptest.NewRecorder()
 		h.ConfirmDay(w, withClaims(confirmRequest(http.MethodPost, dateStr), userID))
 		if w.Code != http.StatusBadRequest {
