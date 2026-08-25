@@ -2,11 +2,13 @@ package database
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/ya-breeze/kin-core/models"
+	"gorm.io/gorm"
 )
 
 // FoodDayCompletion is the user's assertion that a partially-logged day (an
@@ -96,4 +98,119 @@ func ResolveUsualMealsPerDay(settingsJSON string) int {
 // §2 "Local Day boundary").
 func LocalDate(t time.Time, loc *time.Location) string {
 	return t.In(loc).Format("2006-01-02")
+}
+
+// Day Completeness states (design.md §3 "Day Completeness states").
+const (
+	DayStateComplete          = "complete"
+	DayStateConfirmedComplete = "confirmed_complete"
+	DayStateUnconfirmed       = "unconfirmed"
+	DayStateIncomplete        = "incomplete"
+)
+
+// ComputeDayState maps an Eating Occasion count, the caller's
+// usual_meals_per_day threshold, and whether the day has a
+// FoodDayCompletion row to one of the four Day Completeness states, per the
+// table in design.md §3. A day at or above threshold is always Complete,
+// even if a stray confirmation row exists for it — occasionCount is
+// checked before confirmed.
+func ComputeDayState(occasionCount, threshold int, confirmed bool) string {
+	if occasionCount == 0 {
+		return DayStateIncomplete
+	}
+	if occasionCount >= threshold {
+		return DayStateComplete
+	}
+	if confirmed {
+		return DayStateConfirmedComplete
+	}
+	return DayStateUnconfirmed
+}
+
+// DayCompleteness is one day's entry in a completeness range-query result
+// (design.md §5 "API").
+type DayCompleteness struct {
+	Date          string `json:"date"`
+	OccasionCount int    `json:"occasion_count"`
+	State         string `json:"state"`
+}
+
+// DayRange computes, for userID across the inclusive Logged-Day range
+// [from, to] (both YYYY-MM-DD strings in loc — the caller is responsible
+// for clamping `to` to exclude today before calling this, per design.md §5
+// "API"), one DayCompleteness entry per day: occasion count (via
+// CollapseOccasions over that day's FoodMeal.LoggedAt values) and state
+// (via ComputeDayState, using threshold and any existing FoodDayCompletion
+// row for that day).
+//
+// As a side effect, hard-deletes (Unscoped) any FoodDayCompletion row for a
+// day whose occasion count comes back 0 — e.g. every meal on that day was
+// since deleted, or moved off the date via a logged_at edit — so a later
+// unrelated meal on that date doesn't silently inherit the old
+// confirmation (design.md §3, tasks.md 3.4).
+func DayRange(
+	db *gorm.DB, userID uuid.UUID, loc *time.Location, threshold int, from, to string,
+) ([]DayCompleteness, error) {
+	fromDate, err := time.ParseInLocation("2006-01-02", from, loc)
+	if err != nil {
+		return nil, fmt.Errorf("parse from date %q: %w", from, err)
+	}
+	toDate, err := time.ParseInLocation("2006-01-02", to, loc)
+	if err != nil {
+		return nil, fmt.Errorf("parse to date %q: %w", to, err)
+	}
+	if toDate.Before(fromDate) {
+		return nil, nil
+	}
+
+	// Exclusive upper bound: the instant the day after `to` begins in loc.
+	windowStart, windowEnd := fromDate, toDate.AddDate(0, 0, 1)
+
+	var meals []FoodMeal
+	if err := db.Select("logged_at").
+		Where("user_id = ? AND logged_at >= ? AND logged_at < ?", userID, windowStart, windowEnd).
+		Find(&meals).Error; err != nil {
+		return nil, fmt.Errorf("query meals: %w", err)
+	}
+	loggedAtByDate := make(map[string][]time.Time, len(meals))
+	for _, m := range meals {
+		d := LocalDate(m.LoggedAt, loc)
+		loggedAtByDate[d] = append(loggedAtByDate[d], m.LoggedAt)
+	}
+
+	var confirmations []FoodDayCompletion
+	if err := db.Where("user_id = ? AND local_date >= ? AND local_date <= ?", userID, from, to).
+		Find(&confirmations).Error; err != nil {
+		return nil, fmt.Errorf("query confirmations: %w", err)
+	}
+	confirmedDates := make(map[string]bool, len(confirmations))
+	for _, c := range confirmations {
+		confirmedDates[c.LocalDate] = true
+	}
+
+	var staleDates []string
+	result := make([]DayCompleteness, 0, int(toDate.Sub(fromDate).Hours()/24)+1)
+	for d := fromDate; !d.After(toDate); d = d.AddDate(0, 0, 1) {
+		dateStr := d.Format("2006-01-02")
+		occasionCount := CollapseOccasions(loggedAtByDate[dateStr])
+		confirmed := confirmedDates[dateStr]
+		if occasionCount == 0 && confirmed {
+			staleDates = append(staleDates, dateStr)
+		}
+		result = append(result, DayCompleteness{
+			Date:          dateStr,
+			OccasionCount: occasionCount,
+			State:         ComputeDayState(occasionCount, threshold, confirmed),
+		})
+	}
+
+	if len(staleDates) > 0 {
+		if err := db.Unscoped().
+			Where("user_id = ? AND local_date IN ?", userID, staleDates).
+			Delete(&FoodDayCompletion{}).Error; err != nil {
+			return nil, fmt.Errorf("delete stale confirmations: %w", err)
+		}
+	}
+
+	return result, nil
 }

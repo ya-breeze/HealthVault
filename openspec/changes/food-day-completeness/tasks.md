@@ -43,13 +43,13 @@
 
 ## 3. Backend: `FoodDayCompletion` storage + day-completeness computation
 
-- [ ] 3.1 Add `FoodDayCompletion` struct to `backend/pkg/database/models_food.go` per design.md
+- [x] 3.1 Add `FoodDayCompletion` struct to `backend/pkg/database/models_food.go` per design.md
       (`UserID`, `LocalDate` unique per user, `ConfirmedAt`)
-- [ ] 3.2 Add `&FoodDayCompletion{}` to the `AutoMigrate(...)` list in `backend/pkg/database/db.go`
-- [ ] 3.3 Add a `computeDayState(occasionCount int, threshold int, confirmed bool) string` pure
+- [x] 3.2 Add `&FoodDayCompletion{}` to the `AutoMigrate(...)` list in `backend/pkg/database/db.go`
+- [x] 3.3 Add a `computeDayState(occasionCount int, threshold int, confirmed bool) string` pure
       function returning one of `complete`/`confirmed_complete`/`unconfirmed`/`incomplete` per the
       table in design.md §3
-- [ ] 3.4 Add a function computing, for a user and an inclusive Logged-Day date range (already
+- [x] 3.4 Add a function computing, for a user and an inclusive Logged-Day date range (already
       clamped to exclude today), one `{date, occasion_count, state}` entry per day — querying
       `FoodMeal` rows for the range, grouping by Logged Day via the task-1 timezone helper,
       collapsing occasions via task 2, and checking `FoodDayCompletion` for a confirmation per day.
@@ -58,7 +58,7 @@
       (`Unscoped()`) that stale row as part of this computation, same reasoning as the retract
       delete in task 5.2, so a later unrelated meal on that date doesn't silently inherit the old
       confirmation
-- [ ] 3.5 Unit tests: a day with 0 meals (incomplete), a day at/above threshold (complete,
+- [x] 3.5 Unit tests: a day with 0 meals (incomplete), a day at/above threshold (complete,
       regardless of any stray confirmation row for it), a day below threshold with no confirmation
       (unconfirmed), a day below threshold with a confirmation (confirmed_complete), a range
       spanning a threshold change mid-way (confirms task 1.3/3.3 recompute per call, not cached), a
