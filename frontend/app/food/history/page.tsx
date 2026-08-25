@@ -4,6 +4,7 @@ import { api, DayCompletenessState, MealSummary } from '@/lib/api';
 import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
 import DayCompletenessControl from '@/components/food/DayCompletenessControl';
+import HistorySettingsPanel from '@/components/food/HistorySettingsPanel';
 import { useLanguage } from '@/components/LanguageContext';
 import { dateLocaleFor, mealStatusLabel } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
@@ -84,7 +85,16 @@ export default function FoodHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [timezone, setTimezone] = useState<string>('UTC');
+  // The raw stored `timezone` setting (undefined when never set), kept
+  // separate from `timezone` above so the settings panel can prefill the
+  // browser's own zone instead of the grouping default of 'UTC'.
+  const [storedTimezone, setStoredTimezone] = useState<string | undefined>(undefined);
+  const [usualMealsPerDay, setUsualMealsPerDay] = useState<number>(3);
   const [completeness, setCompleteness] = useState<Record<string, DayCompletenessState>>({});
+  // Bumped on every settings-panel save so the completeness effect below
+  // refetches even when only usual_meals_per_day changed (timezone, its
+  // other dependency, may be unchanged) — tasks.md 9.3.
+  const [completenessRefreshKey, setCompletenessRefreshKey] = useState(0);
 
   // Read through a ref, deliberately not listed as a dependency: `t` changes
   // identity on every language switch, and this effect replaces the whole
@@ -98,6 +108,10 @@ export default function FoodHistoryPage() {
     api.getSettings()
       .then(settings => {
         if (settings.timezone) setTimezone(settings.timezone);
+        setStoredTimezone(settings.timezone);
+        if (typeof settings.usual_meals_per_day === 'number' && settings.usual_meals_per_day > 0) {
+          setUsualMealsPerDay(settings.usual_meals_per_day);
+        }
       })
       .catch(() => {
         // Falls back to the 'UTC' default already in state — a settings
@@ -166,10 +180,21 @@ export default function FoodHistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [meals, timezone]);
+  }, [meals, timezone, completenessRefreshKey]);
 
   const handleCompletenessChange = (date: string, state: DayCompletenessState) => {
     setCompleteness(prev => ({ ...prev, [date]: state }));
+  };
+
+  // Settings-panel save handler (tasks.md 9.3): applies the just-saved
+  // values to this page's own state so day grouping (derived from
+  // `timezone` on every render) and the completeness fetch above both pick
+  // up the change immediately, with no reload.
+  const handleSettingsSaved = (next: { timezone: string; usualMealsPerDay: number }) => {
+    setTimezone(next.timezone);
+    setStoredTimezone(next.timezone);
+    setUsualMealsPerDay(next.usualMealsPerDay);
+    setCompletenessRefreshKey(k => k + 1);
   };
 
   const dayGroups = groupByDay(meals, dateLocaleFor(language), timezone);
@@ -180,6 +205,12 @@ export default function FoodHistoryPage() {
 
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('history.title')}</h1>
+
+        <HistorySettingsPanel
+          timezone={storedTimezone}
+          usualMealsPerDay={usualMealsPerDay}
+          onSaved={handleSettingsSaved}
+        />
 
         {loading && <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">{t('review.loading')}</p>}
         {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}

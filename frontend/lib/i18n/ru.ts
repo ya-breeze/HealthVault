@@ -125,6 +125,14 @@ const ru: Dictionary = {
   'completeness.confirmFailed': 'Не удалось отметить день заполненным',
   'completeness.unconfirmFailed': 'Не удалось отменить отметку',
 
+  'historySettings.title': 'Настройки группировки по дням',
+  'historySettings.timezoneLabel': 'Часовой пояс',
+  'historySettings.mealsPerDayLabel': 'Обычное число приёмов пищи в день',
+  'historySettings.save': 'Сохранить',
+  'historySettings.saving': 'Сохранение…',
+  'historySettings.invalidInput': 'Введите целое число не меньше 1',
+  'historySettings.saveFailed': 'Не удалось сохранить настройки',
+
   'customFood.title': 'Свои продукты',
   'customFood.addNew': '+ Добавить продукт',
   'customFood.noneYet': 'Пока нет своих продуктов.',

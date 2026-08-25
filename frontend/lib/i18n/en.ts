@@ -205,6 +205,18 @@ const en = {
   'completeness.confirmFailed': 'Failed to mark day complete',
   'completeness.unconfirmFailed': 'Failed to unconfirm day',
 
+  // Collapsed-by-default settings panel at the top of /food/history for the
+  // two food-day-completeness settings (design.md §2, tasks.md 9.1-9.3):
+  // `timezone` (the Logged Day boundary) and `usual_meals_per_day` (the
+  // completeness threshold). See HistorySettingsPanel.
+  'historySettings.title': 'Day grouping settings',
+  'historySettings.timezoneLabel': 'Timezone',
+  'historySettings.mealsPerDayLabel': 'Usual meals per day',
+  'historySettings.save': 'Save',
+  'historySettings.saving': 'Saving…',
+  'historySettings.invalidInput': 'Enter a whole number of at least 1 meal per day',
+  'historySettings.saveFailed': 'Failed to save settings',
+
   'customFood.title': 'Custom Foods',
   'customFood.addNew': '+ Add Custom Food',
   'customFood.noneYet': 'No custom foods yet.',

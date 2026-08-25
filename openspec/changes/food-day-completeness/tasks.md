@@ -144,14 +144,14 @@
 
 ## 9. Frontend: timezone / usual-meals-per-day settings panel
 
-- [ ] 9.1 Add a collapsed-by-default settings panel at the top of `/food/history` with a
+- [x] 9.1 Add a collapsed-by-default settings panel at the top of `/food/history` with a
       `timezone` `<select>` (options from `Intl.supportedValuesOf('timeZone')` when available,
       prefilled from the browser's own zone via
       `Intl.DateTimeFormat().resolvedOptions().timeZone` but not auto-saved) and a
       `usual_meals_per_day` number input (min 1, default 3)
-- [ ] 9.2 Save both fields through the existing `api.updateSettings` read-modify-write helper, not
+- [x] 9.2 Save both fields through the existing `api.updateSettings` read-modify-write helper, not
       a raw `putSettings` call, so neither field can clobber `dashboard_order`/`display_language`
-- [ ] 9.3 On successful save, refetch the page's grouping (task 7) and completeness data (task 8)
+- [x] 9.3 On successful save, refetch the page's grouping (task 7) and completeness data (task 8)
       so the new setting takes effect without a full page reload
 
 Test coverage for 9.1-9.3 is the E2E settings-panel scenario in task 12.4, which exercises 9.2's
