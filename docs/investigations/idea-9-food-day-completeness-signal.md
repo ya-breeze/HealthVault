@@ -106,13 +106,18 @@ number from too little.
   paragraph already used as an example, so every future consumer (ADR-004,
   #10) inherits one number instead of independently re-deriving or
   disagreeing on it.
-- **Confirmation dates don't follow a later timezone change.** `LocalDate`
-  is computed once at confirm time and stored as a string; changing
-  `timezone` afterwards does not reclassify existing confirmations. Named
-  as an accepted trade-off in design.md's "Risks" — the alternative
-  (recomputing stored confirmations against a new zone) risks silently
-  moving which calendar day a past assertion refers to, which is worse than
-  a confirmation staying pinned to what the user actually typed against.
+- **A `timezone` change deletes existing confirmations, rather than leaving
+  them pinned.** `LocalDate` is computed once at confirm time against
+  whatever `timezone` was current then, while the occasion count behind it
+  is recomputed fresh on every read using the *current* `timezone`. Leaving
+  a stored confirmation in place after a `timezone` change would silently
+  match it against a different set of meals than the ones the user actually
+  reviewed — the same date string means a different 24-hour window under
+  the old and new zone. So changing `timezone` SHALL delete all of that
+  user's existing confirmations instead, per design.md's "Storage" and
+  "Risks" sections — a visible, bounded cost (re-confirm a handful of days)
+  rather than a confirmation silently misattaching itself to the wrong
+  day's data.
 - **API scoping**: `GET /api/food/completeness` and the confirm endpoints
   are scoped strictly to `claims.UserID`, no `?user=` family-member
   override — this is a personal assertion, not shared family data,
@@ -161,7 +166,7 @@ number from too little.
 - **The design rests on an explicit, named, unverified assumption**: that
   photo capture stays the primary logging path and the user's logging
   habit matures over time, so the low current auto-complete rate
-  (2/17 at threshold 3, see design.md's table) self-corrects rather than
+  (2/17 at threshold 3, see design.md's "Risks" section) self-corrects rather than
   permanently starving Phase 4 of usable days. This investigation did not
   and could not test whether that assumption holds — it can only be
   observed over the following weeks of real usage.

@@ -49,8 +49,8 @@ proposal transcribes an already-grilled design into OpenSpec deltas an implement
   rolling-7-day feature (ADR-004's Healthiness Label; Adaptive TDEE) SHALL count only Complete and
   Confirmed Complete days, and SHALL say "not enough data" below 3 valid days in the window rather
   than compute a plausible-looking number from too little. This is what makes today's under-13%
-  auto-complete rate ((see design.md's table) an honest "not enough data" instead of a misleading
-  average once Phase 4 is built on top of this.
+  auto-complete rate (see design.md's "Risks" section) an honest "not enough data" instead of a
+  misleading average once Phase 4 is built on top of this.
 
 ## Not Changing
 
