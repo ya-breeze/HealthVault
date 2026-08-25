@@ -1,12 +1,14 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { api, MealSummary } from '@/lib/api';
+import { api, DayCompletenessState, MealSummary } from '@/lib/api';
 import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
+import DayCompletenessControl from '@/components/food/DayCompletenessControl';
 import { useLanguage } from '@/components/LanguageContext';
 import { dateLocaleFor, mealStatusLabel } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
 import { loggedDayKey } from '@/lib/loggedDay';
+import { splitRangeIntoWindows } from '@/lib/completeness';
 
 const PAGE_SIZE = 50;
 
@@ -82,6 +84,7 @@ export default function FoodHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [timezone, setTimezone] = useState<string>('UTC');
+  const [completeness, setCompleteness] = useState<Record<string, DayCompletenessState>>({});
 
   // Read through a ref, deliberately not listed as a dependency: `t` changes
   // identity on every language switch, and this effect replaces the whole
@@ -131,6 +134,44 @@ export default function FoodHistoryPage() {
     }
   };
 
+  // Fetches Day Completeness state for the currently-loaded range (initial
+  // load and each "load older") whenever it changes, excluding the caller's
+  // current Logged Day — the backend's range endpoint never returns an entry
+  // for it anyway (design.md §6 "Frontend surface"). The loaded range has no
+  // depth limit, so it can exceed the endpoint's 92-day cap; split into
+  // consecutive windows and fetch them in parallel rather than one
+  // (potentially-400ing) oversized call (tasks.md 8.1).
+  useEffect(() => {
+    const todayKey = loggedDayKey(new Date(), timezone);
+    const dateKeys = Array.from(new Set(meals.map(m => loggedDayKey(new Date(m.logged_at), timezone))))
+      .filter(k => k !== todayKey);
+    if (dateKeys.length === 0) return;
+    const from = dateKeys.reduce((a, b) => (a < b ? a : b));
+    const to = dateKeys.reduce((a, b) => (a > b ? a : b));
+
+    let cancelled = false;
+    Promise.all(splitRangeIntoWindows(from, to).map(w => api.getCompleteness(w.from, w.to)))
+      .then(results => {
+        if (cancelled) return;
+        setCompleteness(prev => {
+          const next = { ...prev };
+          for (const window of results) for (const entry of window) next[entry.date] = entry.state;
+          return next;
+        });
+      })
+      .catch(() => {
+        // Best-effort: a failed fetch just leaves those days' badges/controls
+        // unrendered rather than blocking the meal list itself.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [meals, timezone]);
+
+  const handleCompletenessChange = (date: string, state: DayCompletenessState) => {
+    setCompleteness(prev => ({ ...prev, [date]: state }));
+  };
+
   const dayGroups = groupByDay(meals, dateLocaleFor(language), timezone);
 
   return (
@@ -149,7 +190,14 @@ export default function FoodHistoryPage() {
         {dayGroups.map(day => (
           <div key={day.dateKey} className="mb-5">
             <div className="flex items-baseline justify-between mb-2 px-1">
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
+                <DayCompletenessControl
+                  date={day.dateKey}
+                  state={completeness[day.dateKey]}
+                  onChange={handleCompletenessChange}
+                />
+              </div>
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 {Math.round(day.totals.calories)} {t('unit.kcal')} · {t('unit.proteinShort')}{' '}
                 {Math.round(day.totals.protein)}{t('unit.grams')} · {t('unit.carbsShort')}{' '}

@@ -127,18 +127,18 @@
 
 ## 8. Frontend: completeness badges + confirm/retract controls
 
-- [ ] 8.1 Fetch `GET /api/food/completeness` for the range covering the currently-loaded day
+- [x] 8.1 Fetch `GET /api/food/completeness` for the range covering the currently-loaded day
       sections (excluding the caller's current Logged Day) whenever the loaded range changes
       (initial load and each "load older"). Since "load older" has no depth limit, the loaded
       range can exceed the endpoint's 92-day cap — split it into consecutive ≤92-day windows,
       fetch each, and merge the results by date, rather than one call for the whole span
-- [ ] 8.2 Render, per day section: nothing extra for `complete`; a "Complete" badge plus an
+- [x] 8.2 Render, per day section: nothing extra for `complete`; a "Complete" badge plus an
       "unconfirm" control for `confirmed_complete`; a "Mark day complete" button for `unconfirmed`;
       nothing for the current Logged Day's own section
-- [ ] 8.3 Wire the confirm button to `api.confirmDay`, the unconfirm control to `api.unconfirmDay`,
+- [x] 8.3 Wire the confirm button to `api.confirmDay`, the unconfirm control to `api.unconfirmDay`,
       updating that day's local state from the response (or a refetch) on success, and surfacing a
       toast on failure without changing the displayed state
-- [ ] 8.4 Confirm a day with 0 meals never renders a day section at all (it's already excluded
+- [x] 8.4 Confirm a day with 0 meals never renders a day section at all (it's already excluded
       from the meal list itself, so this should require no new code) — add this as an assertion
       in the E2E history-page spec added under task 12, not a separate test file
 

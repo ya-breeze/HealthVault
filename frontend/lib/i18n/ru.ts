@@ -118,6 +118,13 @@ const ru: Dictionary = {
   'history.loadFailed': 'Не удалось загрузить приёмы пищи',
   'history.loadMoreFailed': 'Не удалось загрузить ещё',
 
+  'completeness.completeBadge': 'День заполнен',
+  'completeness.unconfirm': 'Отменить',
+  'completeness.markComplete': 'Отметить день заполненным',
+  'completeness.updating': 'Обновление…',
+  'completeness.confirmFailed': 'Не удалось отметить день заполненным',
+  'completeness.unconfirmFailed': 'Не удалось отменить отметку',
+
   'customFood.title': 'Свои продукты',
   'customFood.addNew': '+ Добавить продукт',
   'customFood.noneYet': 'Пока нет своих продуктов.',

@@ -194,6 +194,17 @@ const en = {
   'history.loadFailed': 'Failed to load meals',
   'history.loadMoreFailed': 'Failed to load more meals',
 
+  // Day Completeness badge/controls on the history page — one below-threshold
+  // day at a time (food-day-completeness capability, design.md §6 "Frontend
+  // surface"). No badge/control renders at all for a `complete` day or the
+  // caller's current Logged Day; see DayCompletenessControl.
+  'completeness.completeBadge': 'Complete',
+  'completeness.unconfirm': 'Unconfirm',
+  'completeness.markComplete': 'Mark day complete',
+  'completeness.updating': 'Updating…',
+  'completeness.confirmFailed': 'Failed to mark day complete',
+  'completeness.unconfirmFailed': 'Failed to unconfirm day',
+
   'customFood.title': 'Custom Foods',
   'customFood.addNew': '+ Add Custom Food',
   'customFood.noneYet': 'No custom foods yet.',
