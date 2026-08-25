@@ -166,15 +166,15 @@ read-modify-write correctness directly — the regression it guards against (clo
 
 ## 11. Docs
 
-- [ ] 11.1 `CONTEXT.md`: add glossary entries for **Eating Occasion**, **Logged Day**, **Usual
+- [x] 11.1 `CONTEXT.md`: add glossary entries for **Eating Occasion**, **Logged Day**, **Usual
       Meals Per Day**, and **Day Completeness** (the four states), per the "Vocabulary introduced"
       section of the idea-forge grilling comment
-- [ ] 11.2 New `docs/adr/ADR-006-<slug>.md` (`Status: Proposed`) recording: Day Completeness as a
+- [x] 11.2 New `docs/adr/ADR-006-<slug>.md` (`Status: Proposed`) recording: Day Completeness as a
       user assertion gated by a heuristic that only decides when to ask; Eating Occasion
       collapsing (10-minute window) over raw meal-count; a dedicated table instead of a metric
       type; the settled open questions (no override of an automatic Complete day; 3-of-7 minimum
       downstream coverage; threshold changes recompute past days on read)
-- [ ] 11.3 `todo.md`: record this change as claimed/shipped in the dashboard/food-tracking
+- [x] 11.3 `todo.md`: record this change as claimed/shipped in the dashboard/food-tracking
       initiative section, referencing this change and ADR-006
 
 ## 12. E2E
