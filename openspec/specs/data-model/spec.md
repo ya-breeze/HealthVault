@@ -125,7 +125,10 @@ The system SHALL store every raw incoming webhook payload in a `webhook_payloads
 
 ### Requirement: Food logging tables
 
-The system SHALL persist user-authored food logging data in five family-scoped tables. Each SHALL embed the shared tenant model (`id`, `created_at`, `updated_at`, `deleted_at`, `family_id`) and carry a `user_id`. None SHALL carry a `source_payload_id`.
+The system SHALL persist user-authored food logging data in five family-scoped tables, plus a
+sixth table for a related but distinct kind of user-authored data: a per-day completeness
+assertion. Each SHALL embed the shared tenant model (`id`, `created_at`, `updated_at`,
+`deleted_at`, `family_id`) and carry a `user_id`. None SHALL carry a `source_payload_id`.
 
 | Table                     | Purpose                                                        | Time anchor    |
 |---------------------------|------------------------------------------------------------------|----------------|
@@ -134,6 +137,7 @@ The system SHALL persist user-authored food logging data in five family-scoped t
 | `CustomFood`              | A user's own per-100g food profile                              | —              |
 | `FoodCalibrationSample`   | A weighed-food ground-truth photo for model benchmarking        | `captured_at`  |
 | `FoodSearchTranslation`   | A user's cached free-text-to-USDA-vocabulary query translation  | —              |
+| `FoodDayCompletion`       | A user's assertion that a partially-logged day is complete (see `food-day-completeness`) | `confirmed_at` |
 
 `FoodMeal.status` SHALL be one of `processing`, `pending_clarification`, `pending_review`, `confirmed`, `failed`, and `FoodMeal.logged_at` SHALL always be non-zero. Nutrient field names SHALL match the existing `Nutrition` model (`dietary_fiber_grams`, `sodium_grams`) so the two are directly comparable.
 
@@ -153,6 +157,8 @@ The system SHALL persist user-authored food logging data in five family-scoped t
 `CustomFood` SHALL be uniquely indexed on `(user_id, name)`, so that name-based precedence over USDA and Open Food Facts entries has exactly one winner.
 
 `FoodSearchTranslation` SHALL be uniquely indexed on `(user_id, original_query)`, where `original_query` is the trimmed, lowercased free-text search string, so that each user has at most one cached translation per normalized query. It carries no reference-source fields (`fdc_id`, `off_code`, `custom_food_id`) and does not participate in the FoodItem reference-source exclusivity rule below — it caches a translated search term, not a bound reference food.
+
+`FoodDayCompletion` SHALL be uniquely indexed on `(user_id, LocalDate)`, using a hard (`Unscoped`) delete when a confirmation is retracted rather than the shared tenant model's default soft delete — the same soft-delete-vs-unique-index conflict already documented for `CustomFood` deletion applies here, and a soft-deleted row would permanently block re-confirming that date. Unlike the other five tables, row presence in `FoodDayCompletion` is itself the data (an assertion, not a measurement or log entry), and it carries no macro or reference-source fields.
 
 There SHALL be no unique constraint on `(user_id, logged_at)` for `FoodMeal`, because a user may legitimately log more than one meal at the same recorded time.
 
@@ -195,4 +201,10 @@ There SHALL be no unique constraint on `(user_id, logged_at)` for `FoodMeal`, be
 
 - **WHEN** a usable photo-derived estimate takes precedence over a fuzzy USDA, Open Food Facts, or ranked-custom-food candidate selected by the model
 - **THEN** the item SHALL use `macro_source = estimated` and SHALL leave `fdc_id`, `off_code`, and `custom_food_id` null
+
+#### Scenario: Retracting and re-confirming a day does not permanently block that date
+
+- **GIVEN** a user confirmed a Logged Day, then retracted that confirmation
+- **WHEN** they confirm the same Logged Day again later
+- **THEN** the confirmation succeeds, since retraction hard-deletes the row rather than leaving a soft-deleted row that the unique index would treat as still occupying that date
 
