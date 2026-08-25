@@ -110,18 +110,18 @@
 
 ## 7. Frontend: timezone-aware day grouping on the history page
 
-- [ ] 7.1 Fetch the caller's settings on `frontend/app/food/history/page.tsx` load (or reuse
+- [x] 7.1 Fetch the caller's settings on `frontend/app/food/history/page.tsx` load (or reuse
       whatever settings fetch already exists on this page) and resolve `timezone` (default
       `'UTC'`)
-- [ ] 7.2 Extract the day-grouping key computation into a small pure function in `frontend/lib/`
+- [x] 7.2 Extract the day-grouping key computation into a small pure function in `frontend/lib/`
       (e.g. `loggedDayKey(d: Date, tz: string): string`), replacing the inline
       `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` key (`page.tsx:44`) with
       `Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d)`, keeping the rest of the
       grouping/merge logic (including the "load older" merge behavior) unchanged
-- [ ] 7.3 Confirm day-section headers render the same `YYYY-MM-DD` grouping key consistently with
+- [x] 7.3 Confirm day-section headers render the same `YYYY-MM-DD` grouping key consistently with
       what the backend's `GET /api/food/completeness` will return for the same day, so task 8's
       merge-by-date is a straightforward lookup
-- [ ] 7.4 Unit tests for 7.2's `loggedDayKey` (mirroring `dataTypeMeta.test.ts`'s pattern): default
+- [x] 7.4 Unit tests for 7.2's `loggedDayKey` (mirroring `dataTypeMeta.test.ts`'s pattern): default
       `UTC`, a zone that shifts the day (design.md's `America/Los_Angeles` /
       `2026-08-21T02:00:00Z` example), and a missing/invalid timezone falling back to `UTC`
 

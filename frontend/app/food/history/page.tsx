@@ -6,6 +6,7 @@ import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import { dateLocaleFor, mealStatusLabel } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
+import { loggedDayKey } from '@/lib/loggedDay';
 
 const PAGE_SIZE = 50;
 
@@ -31,17 +32,19 @@ interface DayGroup {
 // section or appends new sections in the correct place. Totals sum only
 // `confirmed` meals — others have no final nutrition numbers yet (see
 // food-meal-history's "Daily total sums only confirmed meals" scenario).
-// `locale` is threaded in rather than read from a hook, since this runs
-// outside the component. See dateLocaleFor: it is undefined for English, which
-// is exactly what Intl wants in order to keep honouring the browser's regional
-// date preference.
-function groupByDay(meals: MealSummary[], locale: string | undefined): DayGroup[] {
+// `locale` and `timezone` are threaded in rather than read from a hook, since
+// this runs outside the component. See dateLocaleFor: it is undefined for
+// English, which is exactly what Intl wants in order to keep honouring the
+// browser's regional date preference. `timezone` groups by the user's Logged
+// Day (see lib/loggedDay.ts), the same boundary the backend's completeness
+// endpoint uses, so a day section's key lines up with that endpoint's `date`.
+function groupByDay(meals: MealSummary[], locale: string | undefined, timezone: string | undefined): DayGroup[] {
   const groups: DayGroup[] = [];
   const indexByKey = new Map<string, number>();
 
   for (const meal of meals) {
     const d = new Date(meal.logged_at);
-    const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const dateKey = loggedDayKey(d, timezone);
 
     let idx = indexByKey.get(dateKey);
     if (idx === undefined) {
@@ -78,6 +81,7 @@ export default function FoodHistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [timezone, setTimezone] = useState<string>('UTC');
 
   // Read through a ref, deliberately not listed as a dependency: `t` changes
   // identity on every language switch, and this effect replaces the whole
@@ -86,6 +90,17 @@ export default function FoodHistoryPage() {
   // jumped the view back to the top, with no loading indicator to explain it.
   // Found in code review. See lib/useLatest.
   const tRef = useLatest(t);
+
+  useEffect(() => {
+    api.getSettings()
+      .then(settings => {
+        if (settings.timezone) setTimezone(settings.timezone);
+      })
+      .catch(() => {
+        // Falls back to the 'UTC' default already in state — a settings
+        // fetch failure shouldn't block the meal list itself from rendering.
+      });
+  }, []);
 
   useEffect(() => {
     api.listMeals({ limit: PAGE_SIZE })
@@ -116,7 +131,7 @@ export default function FoodHistoryPage() {
     }
   };
 
-  const dayGroups = groupByDay(meals, dateLocaleFor(language));
+  const dayGroups = groupByDay(meals, dateLocaleFor(language), timezone);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
