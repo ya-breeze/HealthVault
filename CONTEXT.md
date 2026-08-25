@@ -18,6 +18,22 @@ _Avoid_: Ingredient (reserve for informal use only — a Food Item can be a whol
 A user's personal, reusable catalog entry for a food — a name plus its macros — created once (typically from a recognition) and then reused across future Food Items instead of re-recognizing or re-matching against a reference database.
 _Avoid_: Recipe, saved food
 
+**Eating Occasion**:
+A group of a Logged Day's Food Meals collapsed by proximity — a new occasion starts whenever the gap to the previous Food Meal's `LoggedAt` exceeds 10 minutes, otherwise it merges into the current one. Exists so a single sitting logged as 2-3 follow-up photos isn't double-counted toward Day Completeness.
+_Avoid_: Meal count, session (too generic)
+
+**Logged Day**:
+The calendar date (`YYYY-MM-DD`) a Food Meal's `LoggedAt` falls on, computed in the user's stored `timezone` setting (absent/invalid → UTC) — not the browser's local zone, and not the same UTC bucketing the general `/api/data/{type}` charts use. "Today" in the user's zone is always excluded from Day Completeness.
+_Avoid_: Day (ambiguous with the unrelated UTC day-bucketing used elsewhere)
+
+**Usual Meals Per Day**:
+The per-user `usual_meals_per_day` setting (positive integer, default 3): the Eating Occasion count a Logged Day must reach to be classified automatically Complete. Read fresh on every Day Completeness computation, not snapshotted, so changing it re-evaluates past days too.
+_Avoid_: Meal target, threshold (informal use only)
+
+**Day Completeness**:
+One of four states computed per completed Logged Day from its Eating Occasion count against Usual Meals Per Day and whether the user has confirmed it: **Incomplete** (0 occasions), **Unconfirmed** (below threshold, unconfirmed), **Confirmed Complete** (below threshold, user-confirmed), **Complete** (at/above threshold). A user assertion gated by a heuristic that only decides *when to ask* — never a judgment of the day's nutrition, and never computed for today.
+_Avoid_: Completion status, logging status
+
 ### Localization
 
 **Display Language**:

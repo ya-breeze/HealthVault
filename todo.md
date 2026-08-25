@@ -59,6 +59,17 @@ average (see ADR-006) with `activity_override` as an explicit escape hatch; and 
 behavior — `weight_goal` is a hard, unconditional dependency for the whole target (no partial
 target, no fallback to measured weight for protein), not just for the protein figure alone.
 
+**Phase 4 prerequisite — Food log completeness signal** is **claimed**, in progress on the
+`food-day-completeness` change ([PR #32](https://github.com/ya-breeze/HealthVault/pull/32); see
+ADR-006, `Status: Proposed`). Grilled from idea #9, separately from the phases-2-4 grilling session
+above. Gives the backend its first concept of a per-user "day" (a new `timezone` setting; a Logged
+Day is a `FoodMeal.LoggedAt` converted into it), collapses same-sitting meal rows into Eating
+Occasions (10-minute gap window) instead of raw row counts, and lets a user confirm/retract a
+below-threshold day as actually complete via a new `FoodDayCompletion` table and
+`/api/food/completeness` endpoints. Exists so Phase 4's rolling-7-day Healthiness Label has a
+queryable per-day completeness signal to consume instead of re-deriving occasion-collapsing itself;
+ADR-006 also settles the 3-of-7 minimum-coverage floor Phase 4's "not enough data" state uses.
+
 ### Phase 4 — Food dashboard Cards + LLM recommendations/chat
 
 Two new Food Cards (per ADR-001's registry, defaulting to visible):

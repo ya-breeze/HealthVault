@@ -266,10 +266,30 @@ func (s *storageImpl) GetUserSettings(userID uuid.UUID) (string, error) {
 }
 
 func (s *storageImpl) UpsertUserSettings(userID, familyID uuid.UUID, settingsJSON string) error {
+	return upsertUserSettings(s.db, userID, familyID, settingsJSON)
+}
+
+func (s *storageImpl) UpsertUserSettingsClearingFoodDayCompletions(
+	userID, familyID uuid.UUID, settingsJSON string,
+) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := upsertUserSettings(tx, userID, familyID, settingsJSON); err != nil {
+			return err
+		}
+		// Unscoped: FoodDayCompletion embeds TenantModel, so a plain Delete
+		// soft-deletes rather than removing the rows. The
+		// (user_id, local_date) unique index has no deleted_at clause, so a
+		// soft-deleted row would permanently block re-confirming that date —
+		// the same CustomFood/DeleteCustomFood trap this mirrors.
+		return tx.Unscoped().Where("user_id = ?", userID).Delete(&FoodDayCompletion{}).Error
+	})
+}
+
+func upsertUserSettings(db *gorm.DB, userID, familyID uuid.UUID, settingsJSON string) error {
 	row := UserSettings{UserID: userID, SettingsJSON: settingsJSON}
 	row.ID = uuid.New()
 	row.FamilyID = familyID
-	return s.db.Clauses(clause.OnConflict{
+	return db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"settings_json", "updated_at"}),
 	}).Create(&row).Error

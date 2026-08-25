@@ -317,6 +317,15 @@ export interface UserSettings {
   // BCP-47-ish code (e.g. "en", "ru") — see the display-language capability.
   // Absent means English. Read/written through components/LanguageContext.tsx.
   display_language?: string;
+  // IANA zone name (e.g. "America/Los_Angeles") used to resolve the Logged
+  // Day / Local Day boundary for food-day-completeness. Absent/invalid
+  // falls back to UTC on the backend — see the "Local Day boundary" section
+  // of openspec/changes/archive/2026-08-25-food-day-completeness/design.md.
+  timezone?: string;
+  // Eating Occasion count per day the backend treats as "day fully logged"
+  // (food-day-completeness capability). Absent/non-positive falls back to
+  // 3 on the backend.
+  usual_meals_per_day?: number;
   // Profile fields feeding GET /users/me/nutrition-target (see
   // user-profile-and-nutrition-target). Malformed/absent values are
   // interpreted as "not set" by the backend, not schema-validated here — the
@@ -329,6 +338,16 @@ export interface UserSettings {
   // "Very active", 'very_active' -> "Extra active").
   activity_override?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
   [key: string]: unknown;
+}
+
+// One day's Day Completeness state (food-day-completeness capability) —
+// mirrors the backend's database.DayCompleteness (food_completeness.go).
+export type DayCompletenessState = 'complete' | 'confirmed_complete' | 'unconfirmed' | 'incomplete';
+
+export interface DayCompleteness {
+  date: string;
+  occasion_count: number;
+  state: DayCompletenessState;
 }
 
 // Both error classes below set `.name` explicitly and restore the prototype
@@ -557,6 +576,23 @@ export const api = {
     }),
   deleteMealItem: (mealId: string, itemId: string) =>
     apiFetch<FoodMeal>(`/food/meals/${mealId}/items/${itemId}`, { method: 'DELETE' }),
+
+  // GET /food/completeness — the caller's per-day Day Completeness states
+  // across an inclusive Logged-Day range (design.md §5 "API"). Capped at 92
+  // days server-side; callers spanning a longer range must split into
+  // consecutive windows themselves (see food-day-completeness tasks.md 8.1).
+  getCompleteness: (from: string, to: string) => {
+    const params = new URLSearchParams({ from, to });
+    return apiFetch<DayCompleteness[]>(`/food/completeness?${params}`);
+  },
+  // POST/DELETE /food/completeness/{date}/confirm — assert/retract that a
+  // below-threshold day is nonetheless complete. Both discard the response
+  // body (200/201 row on confirm, 204 on unconfirm); callers refetch
+  // getCompleteness to pick up the new state.
+  confirmDay: (date: string): Promise<void> =>
+    apiFetchNoBody(`/food/completeness/${date}/confirm`, { method: 'POST' }),
+  unconfirmDay: (date: string): Promise<void> =>
+    apiFetchNoBody(`/food/completeness/${date}/confirm`, { method: 'DELETE' }),
 
   // before_id must be paired with before to get the backend's lossless
   // (logged_at, id) keyset cursor — a before-only request falls back to a

@@ -1,11 +1,15 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { api, MealSummary } from '@/lib/api';
+import { api, DayCompletenessState, MealSummary } from '@/lib/api';
 import Header from '@/components/Header';
 import TapTarget from '@/components/ui/TapTarget';
+import DayCompletenessControl from '@/components/food/DayCompletenessControl';
+import HistorySettingsPanel from '@/components/food/HistorySettingsPanel';
 import { useLanguage } from '@/components/LanguageContext';
 import { dateLocaleFor, mealStatusLabel } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
+import { loggedDayKey, loggedDayLabel } from '@/lib/loggedDay';
+import { splitRangeIntoWindows } from '@/lib/completeness';
 
 const PAGE_SIZE = 50;
 
@@ -31,17 +35,22 @@ interface DayGroup {
 // section or appends new sections in the correct place. Totals sum only
 // `confirmed` meals — others have no final nutrition numbers yet (see
 // food-meal-history's "Daily total sums only confirmed meals" scenario).
-// `locale` is threaded in rather than read from a hook, since this runs
-// outside the component. See dateLocaleFor: it is undefined for English, which
-// is exactly what Intl wants in order to keep honouring the browser's regional
-// date preference.
-function groupByDay(meals: MealSummary[], locale: string | undefined): DayGroup[] {
+// `locale` and `timezone` are threaded in rather than read from a hook, since
+// this runs outside the component. See dateLocaleFor: it is undefined for
+// English, which is exactly what Intl wants in order to keep honouring the
+// browser's regional date preference. `timezone` groups by the user's Logged
+// Day (see lib/loggedDay.ts), the same boundary the backend's completeness
+// endpoint uses, so a day section's key lines up with that endpoint's `date`.
+// The visible label uses the same `timezone` as the key (via loggedDayLabel)
+// rather than the browser's own zone, so a meal near the day boundary is
+// never grouped under one date while its section heading names another.
+function groupByDay(meals: MealSummary[], locale: string | undefined, timezone: string | undefined): DayGroup[] {
   const groups: DayGroup[] = [];
   const indexByKey = new Map<string, number>();
 
   for (const meal of meals) {
     const d = new Date(meal.logged_at);
-    const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const dateKey = loggedDayKey(d, timezone);
 
     let idx = indexByKey.get(dateKey);
     if (idx === undefined) {
@@ -49,7 +58,7 @@ function groupByDay(meals: MealSummary[], locale: string | undefined): DayGroup[
       indexByKey.set(dateKey, idx);
       groups.push({
         dateKey,
-        label: d.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' }),
+        label: loggedDayLabel(d, locale, timezone),
         meals: [],
         totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
       });
@@ -78,6 +87,17 @@ export default function FoodHistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [timezone, setTimezone] = useState<string>('UTC');
+  // The raw stored `timezone` setting (undefined when never set), kept
+  // separate from `timezone` above so the settings panel can prefill the
+  // browser's own zone instead of the grouping default of 'UTC'.
+  const [storedTimezone, setStoredTimezone] = useState<string | undefined>(undefined);
+  const [usualMealsPerDay, setUsualMealsPerDay] = useState<number>(3);
+  const [completeness, setCompleteness] = useState<Record<string, DayCompletenessState>>({});
+  // Bumped on every settings-panel save so the completeness effect below
+  // refetches even when only usual_meals_per_day changed (timezone, its
+  // other dependency, may be unchanged) — tasks.md 9.3.
+  const [completenessRefreshKey, setCompletenessRefreshKey] = useState(0);
 
   // Read through a ref, deliberately not listed as a dependency: `t` changes
   // identity on every language switch, and this effect replaces the whole
@@ -86,6 +106,21 @@ export default function FoodHistoryPage() {
   // jumped the view back to the top, with no loading indicator to explain it.
   // Found in code review. See lib/useLatest.
   const tRef = useLatest(t);
+
+  useEffect(() => {
+    api.getSettings()
+      .then(settings => {
+        if (settings.timezone) setTimezone(settings.timezone);
+        setStoredTimezone(settings.timezone);
+        if (typeof settings.usual_meals_per_day === 'number' && settings.usual_meals_per_day > 0) {
+          setUsualMealsPerDay(settings.usual_meals_per_day);
+        }
+      })
+      .catch(() => {
+        // Falls back to the 'UTC' default already in state — a settings
+        // fetch failure shouldn't block the meal list itself from rendering.
+      });
+  }, []);
 
   useEffect(() => {
     api.listMeals({ limit: PAGE_SIZE })
@@ -116,7 +151,56 @@ export default function FoodHistoryPage() {
     }
   };
 
-  const dayGroups = groupByDay(meals, dateLocaleFor(language));
+  // Fetches Day Completeness state for the currently-loaded range (initial
+  // load and each "load older") whenever it changes, excluding the caller's
+  // current Logged Day — the backend's range endpoint never returns an entry
+  // for it anyway (design.md §6 "Frontend surface"). The loaded range has no
+  // depth limit, so it can exceed the endpoint's 92-day cap; split into
+  // consecutive windows and fetch them in parallel rather than one
+  // (potentially-400ing) oversized call (tasks.md 8.1).
+  useEffect(() => {
+    const todayKey = loggedDayKey(new Date(), timezone);
+    const dateKeys = Array.from(new Set(meals.map(m => loggedDayKey(new Date(m.logged_at), timezone))))
+      .filter(k => k !== todayKey);
+    if (dateKeys.length === 0) return;
+    const from = dateKeys.reduce((a, b) => (a < b ? a : b));
+    const to = dateKeys.reduce((a, b) => (a > b ? a : b));
+
+    let cancelled = false;
+    Promise.all(splitRangeIntoWindows(from, to).map(w => api.getCompleteness(w.from, w.to)))
+      .then(results => {
+        if (cancelled) return;
+        setCompleteness(prev => {
+          const next = { ...prev };
+          for (const window of results) for (const entry of window) next[entry.date] = entry.state;
+          return next;
+        });
+      })
+      .catch(() => {
+        // Best-effort: a failed fetch just leaves those days' badges/controls
+        // unrendered rather than blocking the meal list itself.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [meals, timezone, completenessRefreshKey]);
+
+  const handleCompletenessChange = (date: string, state: DayCompletenessState) => {
+    setCompleteness(prev => ({ ...prev, [date]: state }));
+  };
+
+  // Settings-panel save handler (tasks.md 9.3): applies the just-saved
+  // values to this page's own state so day grouping (derived from
+  // `timezone` on every render) and the completeness fetch above both pick
+  // up the change immediately, with no reload.
+  const handleSettingsSaved = (next: { timezone: string; usualMealsPerDay: number }) => {
+    setTimezone(next.timezone);
+    setStoredTimezone(next.timezone);
+    setUsualMealsPerDay(next.usualMealsPerDay);
+    setCompletenessRefreshKey(k => k + 1);
+  };
+
+  const dayGroups = groupByDay(meals, dateLocaleFor(language), timezone);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -124,6 +208,12 @@ export default function FoodHistoryPage() {
 
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('history.title')}</h1>
+
+        <HistorySettingsPanel
+          timezone={storedTimezone}
+          usualMealsPerDay={usualMealsPerDay}
+          onSaved={handleSettingsSaved}
+        />
 
         {loading && <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">{t('review.loading')}</p>}
         {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
@@ -134,7 +224,14 @@ export default function FoodHistoryPage() {
         {dayGroups.map(day => (
           <div key={day.dateKey} className="mb-5">
             <div className="flex items-baseline justify-between mb-2 px-1">
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
+                <DayCompletenessControl
+                  date={day.dateKey}
+                  state={completeness[day.dateKey]}
+                  onChange={handleCompletenessChange}
+                />
+              </div>
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 {Math.round(day.totals.calories)} {t('unit.kcal')} · {t('unit.proteinShort')}{' '}
                 {Math.round(day.totals.protein)}{t('unit.grams')} · {t('unit.carbsShort')}{' '}

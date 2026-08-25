@@ -85,4 +85,13 @@ type Storage interface {
 	// UpsertUserSettings replaces the user's entire settings document in a
 	// single atomic upsert (no read-modify-write).
 	UpsertUserSettings(userID, familyID uuid.UUID, settingsJSON string) error
+	// UpsertUserSettingsClearingFoodDayCompletions does what UpsertUserSettings
+	// does, plus hard-deletes (Unscoped) every FoodDayCompletion row for
+	// userID, in a single transaction. For use when the caller's timezone
+	// setting is changing: an existing confirmation's LocalDate was computed
+	// under the old zone and can end up matched against a different set of
+	// meals once the zone changes, so every confirmation is dropped rather
+	// than risking a stale one silently misattaching itself — see design.md
+	// §4 "Storage" under openspec/changes/food-day-completeness.
+	UpsertUserSettingsClearingFoodDayCompletions(userID, familyID uuid.UUID, settingsJSON string) error
 }

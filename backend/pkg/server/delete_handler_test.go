@@ -54,6 +54,9 @@ func (m *mockStorage) SummarySleepSeconds(_ uuid.UUID, _ database.TimeRange) (in
 func (m *mockStorage) DB() *gorm.DB                                                           { return nil }
 func (m *mockStorage) GetUserSettings(_ uuid.UUID) (string, error)                            { return "", nil }
 func (m *mockStorage) UpsertUserSettings(_, _ uuid.UUID, _ string) error                       { return nil }
+func (m *mockStorage) UpsertUserSettingsClearingFoodDayCompletions(_, _ uuid.UUID, _ string) error {
+	return nil
+}
 
 // withClaims injects claims into the request context (bypassing JWT middleware for tests).
 func withClaims(r *http.Request, userID uuid.UUID) *http.Request {

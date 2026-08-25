@@ -285,7 +285,25 @@ func PutUserSettingsHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		if err := storage.UpsertUserSettings(claims.UserID, familyID, string(body)); err != nil {
+		// A timezone change invalidates any existing FoodDayCompletion rows
+		// (their LocalDate was computed under the old zone) — see design.md
+		// §4 "Storage" under openspec/changes/food-day-completeness. The
+		// comparison is on the raw stored string, not a resolved zone: see
+		// database.SettingsRawString.
+		oldSettingsJSON, err := storage.GetUserSettings(claims.UserID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "query error", http.StatusInternalServerError)
+			return
+		}
+		timezoneChanged := database.SettingsRawString(oldSettingsJSON, "timezone") !=
+			database.SettingsRawString(string(body), "timezone")
+
+		if timezoneChanged {
+			err = storage.UpsertUserSettingsClearingFoodDayCompletions(claims.UserID, familyID, string(body))
+		} else {
+			err = storage.UpsertUserSettings(claims.UserID, familyID, string(body))
+		}
+		if err != nil {
 			http.Error(w, "save error", http.StatusInternalServerError)
 			return
 		}
