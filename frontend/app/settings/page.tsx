@@ -22,6 +22,56 @@ const ACTIVITY_TIERS: [ActivityOverride, string][] = [
   ['very_active', 'Extra active'],
 ];
 
+const ACTIVITY_OVERRIDE_VALUES = new Set(ACTIVITY_TIERS.map(([value]) => value));
+const BIRTHDATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MIN_PROFILE_AGE_YEARS = 5;
+const MAX_PROFILE_AGE_YEARS = 120;
+
+// Mirrors the backend's parseBirthdate (backend/pkg/server/user_profile.go):
+// strict YYYY-MM-DD (no rollover like 2025-02-31), no future dates, and a
+// calendar age within [5, 120]. Kept in sync so the UI never reports
+// "Profile saved" for a value the backend will silently treat as absent
+// (user-profile spec's "interpreted, not assumed" contract).
+function isValidBirthdate(raw: string): boolean {
+  if (!BIRTHDATE_PATTERN.test(raw)) return false;
+  const [year, month, day] = raw.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return false;
+  }
+
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (date.getTime() > today.getTime()) return false;
+
+  let age = today.getUTCFullYear() - date.getUTCFullYear();
+  const beforeBirthdayThisYear =
+    today.getUTCMonth() < date.getUTCMonth() ||
+    (today.getUTCMonth() === date.getUTCMonth() && today.getUTCDate() < date.getUTCDate());
+  if (beforeBirthdayThisYear) age--;
+
+  return age >= MIN_PROFILE_AGE_YEARS && age <= MAX_PROFILE_AGE_YEARS;
+}
+
+// The settings blob is schema-agnostic at the storage layer (any client can
+// PUT arbitrary JSON), so a fetched value may not match its declared type.
+// Normalize to '' rather than trusting it as a valid typed field — otherwise
+// a stale/invalid value can look "set" to the required-field check even
+// though the backend treats it as absent (see user-profile spec's
+// "interpreted, not assumed" contract).
+function normalizeBirthdate(raw: string | undefined): string {
+  if (!raw || !isValidBirthdate(raw)) return '';
+  return raw;
+}
+
+function normalizeSex(raw: string | undefined): '' | 'male' | 'female' {
+  return raw === 'male' || raw === 'female' ? raw : '';
+}
+
+function normalizeActivityOverride(raw: string | undefined): '' | ActivityOverride {
+  return raw && ACTIVITY_OVERRIDE_VALUES.has(raw as ActivityOverride) ? (raw as ActivityOverride) : '';
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   // updateSettings, not api.updateSettings — queues this form's PUT behind
@@ -54,9 +104,9 @@ export default function SettingsPage() {
   useEffect(() => {
     api.getSettings()
       .then(s => {
-        setBirthdate(s.birthdate ?? '');
-        setSex(s.sex ?? '');
-        setActivityOverride(s.activity_override ?? '');
+        setBirthdate(normalizeBirthdate(s.birthdate));
+        setSex(normalizeSex(s.sex));
+        setActivityOverride(normalizeActivityOverride(s.activity_override));
       })
       .catch(err => {
         if (err instanceof Error && err.message.includes('401')) {
@@ -71,6 +121,10 @@ export default function SettingsPage() {
   const handleSave = async () => {
     if (!birthdate || !sex) {
       setError('Birthdate and sex are required.');
+      return;
+    }
+    if (!isValidBirthdate(birthdate)) {
+      setError('Enter a valid birthdate: not in the future, and implying an age between 5 and 120.');
       return;
     }
     setError(null);

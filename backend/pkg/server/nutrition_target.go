@@ -66,12 +66,14 @@ func NutritionTargetHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		weightKg, hasWeight, err := latestPointValue(storage, "weights", "time", "kilograms", claims.UserID)
+		now := time.Now().UTC()
+
+		weightKg, hasWeight, err := latestPointValue(storage, "weights", "time", "kilograms", claims.UserID, now)
 		if err != nil {
 			writeQueryError(w, "nutrition target: read weight", err, claims.UserID)
 			return
 		}
-		heightM, hasHeight, err := latestPointValue(storage, "heights", "time", "meters", claims.UserID)
+		heightM, hasHeight, err := latestPointValue(storage, "heights", "time", "meters", claims.UserID, now)
 		if err != nil {
 			writeQueryError(w, "nutrition target: read height", err, claims.UserID)
 			return
@@ -81,7 +83,7 @@ func NutritionTargetHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		goalWeightKg, hasGoal, err := latestPointValue(storage, "weight_goals", "time", "kilograms", claims.UserID)
+		goalWeightKg, hasGoal, err := latestPointValue(storage, "weight_goals", "time", "kilograms", claims.UserID, now)
 		if err != nil {
 			writeQueryError(w, "nutrition target: read goal weight", err, claims.UserID)
 			return
@@ -91,7 +93,6 @@ func NutritionTargetHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		now := time.Now().UTC()
 		tierName, multiplier, ok, err := resolveActivityTier(storage, claims.UserID, profile, now)
 		if err != nil {
 			writeQueryError(w, "nutrition target: resolve activity tier", err, claims.UserID)
@@ -211,16 +212,23 @@ func fetchDailySteps(storage database.Storage, userID uuid.UUID, today time.Time
 	return days, nil
 }
 
-// latestPointValue returns the most recent valueCol reading for userID from
-// a point-type table (weights/heights/weight_goals), ordered by timeCol
-// descending. ok is false if the user has no rows in the table at all; the
-// returned error is non-nil only for a genuine storage failure, never for
-// "no rows" (GORM's Find, unlike First, does not error on an empty result).
-func latestPointValue(storage database.Storage, table, timeCol, valueCol string, userID uuid.UUID) (float64, bool, error) {
+// latestPointValue returns the most recent valueCol reading at or before now
+// for userID from a point-type table (weights/heights/weight_goals), ordered
+// by timeCol descending. The now bound matches every other read path's
+// convention of hiding future-dated records (see api.go's CreateRecordHandler
+// and parseTimeRange's default `to`); those rows can still exist, e.g. via
+// the Health Connect/Libra import or webhook ingest paths, which don't
+// reject future timestamps the way manual entry does. ok is false if the
+// user has no matching rows in the table; the returned error is non-nil only
+// for a genuine storage failure, never for "no rows" (GORM's Find, unlike
+// First, does not error on an empty result).
+func latestPointValue(
+	storage database.Storage, table, timeCol, valueCol string, userID uuid.UUID, now time.Time,
+) (float64, bool, error) {
 	var rows []map[string]any
 	err := storage.DB().Table(table).
 		Select(valueCol).
-		Where("user_id = ?", userID).
+		Where("user_id = ? AND "+timeCol+" <= ?", userID, now).
 		Order(timeCol + " DESC").
 		Limit(1).
 		Find(&rows).Error

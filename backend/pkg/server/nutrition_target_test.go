@@ -204,6 +204,85 @@ func TestNutritionTarget_SuccessWithActivityOverride(t *testing.T) {
 	}
 }
 
+// insertFutureRecord seeds a row via storage.InsertRecord directly (bypassing
+// CreateRecordHandler's future-date rejection), simulating the Health
+// Connect/Libra import and webhook ingest paths, none of which validate
+// against future timestamps the way manual entry does.
+func insertFutureRecord(t *testing.T, st database.Storage, userID, familyID uuid.UUID, table, timeCol, valueCol string, ts time.Time, value float64) {
+	t.Helper()
+	if _, err := st.InsertRecord(table, timeCol, valueCol, familyID, userID, ts, value); err != nil {
+		t.Fatalf("insertFutureRecord %s: %v", table, err)
+	}
+}
+
+// A future-dated weight/height/weight_goal row (as can arrive via import or
+// webhook ingest, which don't reject future timestamps) must not count as
+// the "latest" reading: with only future rows present, the endpoint reports
+// the same unmet-precondition reasons as if there were no rows at all.
+func TestNutritionTarget_FutureOnlyMeasurementsAreNotUsed(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male"}`)
+
+	future := time.Now().UTC().AddDate(0, 1, 0)
+	insertFutureRecord(t, st, userID, familyID, "weights", "time", "kilograms", future, 80)
+	insertFutureRecord(t, st, userID, familyID, "heights", "time", "meters", future, 1.80)
+
+	h := server.NutritionTargetHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newNutritionTargetRequest(userID))
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
+	}
+	if reason := decodeUnprocessableReason(t, w); reason != "missing_measurements" {
+		t.Errorf("reason = %q, want missing_measurements", reason)
+	}
+}
+
+// With both a legitimate past-dated row and a bogus future-dated row present,
+// the endpoint must use the past value, not the future one, even though the
+// future row's time sorts later.
+func TestNutritionTarget_IgnoresFutureDatedRowsPreferringPast(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male","activity_override":"moderate"}`)
+
+	createRecord(t, st, userID, "weight", 80)
+	createRecord(t, st, userID, "height", 1.80)
+	createRecord(t, st, userID, "weight_goal", 75)
+
+	future := time.Now().UTC().AddDate(0, 1, 0)
+	insertFutureRecord(t, st, userID, familyID, "weights", "time", "kilograms", future, 999)
+	insertFutureRecord(t, st, userID, familyID, "heights", "time", "meters", future, 2.50)
+	insertFutureRecord(t, st, userID, familyID, "weight_goals", "time", "kilograms", future, 111)
+
+	h := server.NutritionTargetHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newNutritionTargetRequest(userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		MeasuredWeightKg float64 `json:"measured_weight_kg"`
+		GoalWeightKg     float64 `json:"goal_weight_kg"`
+		HeightM          float64 `json:"height_m"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.MeasuredWeightKg != 80 {
+		t.Errorf("measured_weight_kg = %v, want 80 (past row), not the future row's 999", resp.MeasuredWeightKg)
+	}
+	if resp.GoalWeightKg != 75 {
+		t.Errorf("goal_weight_kg = %v, want 75 (past row), not the future row's 111", resp.GoalWeightKg)
+	}
+	if resp.HeightM != 1.80 {
+		t.Errorf("height_m = %v, want 1.80 (past row), not the future row's 2.50", resp.HeightM)
+	}
+}
+
 // calendarAgeForTest duplicates calendarAge's "completed years" rule for use
 // from server_test, which cannot import the unexported function directly.
 func calendarAgeForTest(birthdate, now time.Time) int {
