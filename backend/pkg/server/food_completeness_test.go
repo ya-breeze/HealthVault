@@ -492,3 +492,48 @@ func TestConfirmDay_ConfirmRetractConfirmAgainSucceeds(t *testing.T) {
 			w3.Code, w3.Body.String())
 	}
 }
+
+// TestConfirmDay_DistinctDatesGetDistinctIDs guards against a regression
+// where ConfirmDay built the FoodDayCompletion row without ever setting its
+// primary key: GORM then inserted the zero UUID for every confirmation, so
+// only the first confirmation in the whole table ever succeeded and every
+// later distinct confirmation 500'd on the primary-key unique constraint.
+func TestConfirmDay_DistinctDatesGetDistinctIDs(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	day1 := time.Now().UTC().AddDate(0, 0, -2).Truncate(24 * time.Hour)
+	day2 := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, day1.Add(12*time.Hour))
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, day2.Add(12*time.Hour))
+	date1Str := day1.Format("2006-01-02")
+	date2Str := day2.Format("2006-01-02")
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	w1 := httptest.NewRecorder()
+	h.ConfirmDay(w1, withClaims(confirmRequest(http.MethodPost, date1Str), userID))
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("confirm day1: expected 201, got %d: %s", w1.Code, w1.Body.String())
+	}
+	var row1 database.FoodDayCompletion
+	if err := json.NewDecoder(w1.Body).Decode(&row1); err != nil {
+		t.Fatalf("decode row1: %v", err)
+	}
+
+	w2 := httptest.NewRecorder()
+	h.ConfirmDay(w2, withClaims(confirmRequest(http.MethodPost, date2Str), userID))
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("confirm day2: expected 201, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var row2 database.FoodDayCompletion
+	if err := json.NewDecoder(w2.Body).Decode(&row2); err != nil {
+		t.Fatalf("decode row2: %v", err)
+	}
+
+	if row1.ID == uuid.Nil || row2.ID == uuid.Nil {
+		t.Fatalf("expected non-nil IDs, got row1=%s row2=%s", row1.ID, row2.ID)
+	}
+	if row1.ID == row2.ID {
+		t.Fatalf("expected distinct IDs for distinct confirmations, both got %s", row1.ID)
+	}
+}

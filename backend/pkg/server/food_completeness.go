@@ -180,7 +180,20 @@ func (h *foodHandlers) ConfirmDay(w http.ResponseWriter, r *http.Request) {
 			LocalDate:   dateStr,
 			ConfirmedAt: time.Now().UTC(),
 		}
+		row.ID = uuid.New()
+		row.FamilyID = FamilyIDFromCtx(r)
 		if err := h.storage.DB().Create(&row).Error; err != nil {
+			if isUniqueViolation(err) {
+				// Lost a concurrent create race for the same (user_id,
+				// local_date) pair; the winner's row is the assertion,
+				// so treat this the same as the err == nil branch above.
+				if reErr := h.storage.DB().
+					Where("user_id = ? AND local_date = ?", claims.UserID, dateStr).
+					First(&existing).Error; reErr == nil {
+					writeJSONStatus(w, http.StatusOK, existing)
+					return
+				}
+			}
 			slog.Error("ConfirmDay: create confirmation", "err", err, "user_id", claims.UserID)
 			http.Error(w, "create error", http.StatusInternalServerError)
 			return
