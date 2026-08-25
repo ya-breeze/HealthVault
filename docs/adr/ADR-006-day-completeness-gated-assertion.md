@@ -1,7 +1,7 @@
 # ADR-006: Day Completeness as a Heuristic-Gated User Assertion
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
