@@ -4,7 +4,7 @@
 
 --- openspec/specs/food-day-completeness/spec.md
 +++ openspec/specs/food-day-completeness/spec.md
-@@ -0,0 +1,295 @@
+@@ -0,0 +1,297 @@
 +# food-day-completeness Specification
 +
 +## Purpose
@@ -119,11 +119,13 @@
 +row or change the stored confirmation. A user's confirmation SHALL persist across edits to that
 +day's meals that leave at least one meal in place (e.g. adding a forgotten meal after confirming,
 +or deleting one of several) — the confirmation SHALL NOT be cleared automatically by such an edit.
-+If, however, every meal on a confirmed day is deleted (via the `record-deletion` capability),
-+leaving 0 Eating Occasions, that day's stored confirmation row SHALL also be deleted at the next
-+time that day's state is computed — mirroring the "Cannot confirm a zero-occasion day" rule below
-+— so that a later, unrelated meal logged on that same date starts from `unconfirmed` rather than
-+silently reviving a confirmation the user made against meals that no longer exist. The
++If, however, a confirmed day's Eating Occasion count later computes to 0 — whether because every
++meal on it was deleted (via the `record-deletion` capability) or because its meals were edited away
++from that date (e.g. via the meal-editing capability's `logged_at` update) — that day's stored
++confirmation row SHALL also be deleted at the next time that day's state is computed — mirroring
++the "Cannot confirm a zero-occasion day" rule below — so that a later, unrelated meal logged on
++that same date starts from `unconfirmed` rather than silently reviving a confirmation the user made
++against meals that no longer exist or no longer fall on that day. The
 +same mechanism used to confirm a day SHALL also be able to retract that confirmation, returning the
 +day to whatever state its current occasion count computes to (`unconfirmed`, or `complete` if
 +enough occasions now exist). Retracting a confirmation SHALL fully remove the stored row rather
