@@ -123,7 +123,7 @@ For every rendered day section other than the caller's current Logged Day, the p
 #### Scenario: No timezone set falls back to UTC grouping
 - **GIVEN** the caller has no `timezone` key in their settings
 - **WHEN** they view the history page
-- **THEN** meals are grouped by their UTC calendar date, matching this page's behavior before the `food-day-completeness` change
+- **THEN** meals are grouped by their UTC calendar date — a change from this page's prior browser-local grouping (`getFullYear/getMonth/getDate`) for any caller whose browser is not itself in UTC; a caller who wants their own local grouping back sets `timezone` in the settings panel
 
 #### Scenario: Daily total sums only confirmed meals
 - **GIVEN** a day has one `confirmed` meal and one `pending_review` meal
