@@ -20,7 +20,10 @@
       "Storage": `FoodDayCompletion` embeds `TenantModel`'s `DeletedAt`, and the
       `(UserID, LocalDate)` unique index has no `deleted_at` clause, so a plain `Delete()` here
       would soft-delete every row and permanently block re-confirming any of those dates — the
-      `CustomFood` trap (`food_custom.go`, `DeleteCustomFood`) repeated at a second call site)
+      `CustomFood` trap (`food_custom.go`, `DeleteCustomFood`) repeated at a second call site).
+      Wrap the settings row write and this cascade delete in a single `.Transaction(...)` call so
+      a mid-write failure cannot leave a confirmation tied to a `timezone` the settings row no
+      longer has.
 - [ ] 1.7 Tests for 1.6: writing an unchanged `timezone` leaves existing confirmations intact;
       writing a different `timezone` deletes all of the caller's confirmations and none of another
       user's; writing settings with no `timezone` key present (unchanged) leaves confirmations
@@ -49,11 +52,17 @@
 - [ ] 3.4 Add a function computing, for a user and an inclusive Logged-Day date range (already
       clamped to exclude today), one `{date, occasion_count, state}` entry per day — querying
       `FoodMeal` rows for the range, grouping by Logged Day via the task-1 timezone helper,
-      collapsing occasions via task 2, and checking `FoodDayCompletion` for a confirmation per day
+      collapsing occasions via task 2, and checking `FoodDayCompletion` for a confirmation per day.
+      If a day has 0 occasions but a confirmation row still exists for it (e.g. every meal on that
+      day was since deleted), hard-delete (`Unscoped()`) that stale row as part of this
+      computation, same reasoning as the retract delete in task 5.2, so a later unrelated meal on
+      that date doesn't silently inherit the old confirmation
 - [ ] 3.5 Unit tests: a day with 0 meals (incomplete), a day at/above threshold (complete,
       regardless of any stray confirmation row for it), a day below threshold with no confirmation
       (unconfirmed), a day below threshold with a confirmation (confirmed_complete), a range
-      spanning a threshold change mid-way (confirms task 1.3/3.3 recompute per call, not cached)
+      spanning a threshold change mid-way (confirms task 1.3/3.3 recompute per call, not cached), a
+      day with 0 occasions that still has a stale confirmation row (state computes as `incomplete`
+      and the stale row is deleted as a side effect)
 
 ## 4. Backend: completeness range-query endpoint
 

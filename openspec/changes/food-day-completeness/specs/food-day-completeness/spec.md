@@ -106,9 +106,14 @@ The system SHALL persist a user's assertion that an Unconfirmed day is complete 
 table (one row per confirmed `(user, Logged Day)` pair), separate from the health-metric-type
 registry described in `data-model` — this is a flag on a date, not a time-series measurement.
 Confirming a day already `confirmed_complete` SHALL be idempotent and SHALL NOT create a duplicate
-row or change the stored confirmation. A user's confirmation SHALL persist across later edits to
-that day's meals (e.g. adding a forgotten meal after confirming) — the confirmation SHALL NOT be
-cleared automatically by any such edit, since the day only became more complete, not less. The
+row or change the stored confirmation. A user's confirmation SHALL persist across edits to that
+day's meals that leave at least one meal in place (e.g. adding a forgotten meal after confirming,
+or deleting one of several) — the confirmation SHALL NOT be cleared automatically by such an edit.
+If, however, every meal on a confirmed day is deleted (via the `record-deletion` capability),
+leaving 0 Eating Occasions, that day's stored confirmation row SHALL also be deleted at the next
+time that day's state is computed — mirroring the "Cannot confirm a zero-occasion day" rule below
+— so that a later, unrelated meal logged on that same date starts from `unconfirmed` rather than
+silently reviving a confirmation the user made against meals that no longer exist. The
 same mechanism used to confirm a day SHALL also be able to retract that confirmation, returning the
 day to whatever state its current occasion count computes to (`unconfirmed`, or `complete` if
 enough occasions now exist). Retracting a confirmation SHALL fully remove the stored row rather
@@ -142,6 +147,14 @@ confirmations, so no confirmation survives a change to the timezone it was made 
 - **WHEN** the user confirms that same Logged Day again later
 - **THEN** the confirmation succeeds and the day's state becomes `confirmed_complete`, exactly as
   if it had never been retracted
+
+#### Scenario: Deleting all of a confirmed day's meals clears the stale confirmation
+- **GIVEN** a Logged Day is `confirmed_complete` and the user then deletes every meal logged on
+  that day, leaving 0 Eating Occasions
+- **WHEN** the system next computes that day's state
+- **THEN** the stored confirmation row is deleted and the day reads `incomplete`; if a new,
+  unrelated meal is later logged on that same date, the day starts from `unconfirmed`, not
+  `confirmed_complete`
 
 #### Scenario: Changing timezone invalidates existing confirmations
 - **GIVEN** a user has one or more days with a stored confirmation
