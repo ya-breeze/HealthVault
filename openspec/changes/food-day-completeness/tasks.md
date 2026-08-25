@@ -160,9 +160,9 @@ read-modify-write correctness directly — the regression it guards against (clo
 
 ## 10. i18n
 
-- [ ] 10.1 Add English strings for the completeness badges/controls and the settings panel's
+- [x] 10.1 Add English strings for the completeness badges/controls and the settings panel's
       labels to `frontend/lib/i18n/en.ts`
-- [ ] 10.2 Add the corresponding Russian strings to `frontend/lib/i18n/ru.ts`
+- [x] 10.2 Add the corresponding Russian strings to `frontend/lib/i18n/ru.ts`
 
 ## 11. Docs
 
