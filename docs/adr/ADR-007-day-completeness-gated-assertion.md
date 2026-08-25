@@ -1,4 +1,4 @@
-# ADR-006: Day Completeness as a Heuristic-Gated User Assertion
+# ADR-007: Day Completeness as a Heuristic-Gated User Assertion
 
 ## Status
 Accepted
