@@ -54,9 +54,10 @@
       `FoodMeal` rows for the range, grouping by Logged Day via the task-1 timezone helper,
       collapsing occasions via task 2, and checking `FoodDayCompletion` for a confirmation per day.
       If a day has 0 occasions but a confirmation row still exists for it (e.g. every meal on that
-      day was since deleted), hard-delete (`Unscoped()`) that stale row as part of this
-      computation, same reasoning as the retract delete in task 5.2, so a later unrelated meal on
-      that date doesn't silently inherit the old confirmation
+      day was since deleted, or moved off that date via a `logged_at` edit), hard-delete
+      (`Unscoped()`) that stale row as part of this computation, same reasoning as the retract
+      delete in task 5.2, so a later unrelated meal on that date doesn't silently inherit the old
+      confirmation
 - [ ] 3.5 Unit tests: a day with 0 meals (incomplete), a day at/above threshold (complete,
       regardless of any stray confirmation row for it), a day below threshold with no confirmation
       (unconfirmed), a day below threshold with a confirmation (confirmed_complete), a range
