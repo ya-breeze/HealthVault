@@ -9,8 +9,16 @@ import (
 )
 
 // UserSettings holds a single opaque JSON blob of per-user preferences (e.g.
-// dashboard card order). One row per user, upserted as a whole document — see
-// UpsertUserSettings in storage_impl.go.
+// dashboard card order, display_language). One row per user, upserted as a
+// whole document — see UpsertUserSettings in storage_impl.go.
+//
+// Two more recognized-but-unvalidated-at-write keys, both read via the
+// helpers in food_completeness.go: "timezone" (an IANA zone name, e.g.
+// "Europe/Warsaw" — resolved by ResolveTimezone, falling back to UTC) and
+// "usual_meals_per_day" (a positive integer — resolved by
+// ResolveUsualMealsPerDay, falling back to 3). See design.md ("Local Day
+// boundary", "Day Completeness states") under
+// openspec/changes/food-day-completeness.
 type UserSettings struct {
 	models.TenantModel
 	UserID       uuid.UUID `gorm:"type:uuid;not null;uniqueIndex"`

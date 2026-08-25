@@ -1,19 +1,19 @@
 ## 1. Backend: settings keys + local-day helpers
 
-- [ ] 1.1 Document `timezone` and `usual_meals_per_day` as recognized (but unvalidated-at-write)
+- [x] 1.1 Document `timezone` and `usual_meals_per_day` as recognized (but unvalidated-at-write)
       keys on the `UserSettings` JSON blob, alongside the existing `dashboard_order`/
       `display_language` comment in `backend/pkg/database/models.go` (or wherever the Go-side
       settings-reading helpers already live)
-- [ ] 1.2 Add a `resolveTimezone(settingsJSON string) *time.Location` helper: parses `timezone`,
+- [x] 1.2 Add a `resolveTimezone(settingsJSON string) *time.Location` helper: parses `timezone`,
       falls back to `time.UTC` on missing/empty/`time.LoadLocation` error — never returns an error
       itself
-- [ ] 1.3 Add a `resolveUsualMealsPerDay(settingsJSON string) int` helper: parses
+- [x] 1.3 Add a `resolveUsualMealsPerDay(settingsJSON string) int` helper: parses
       `usual_meals_per_day`, falls back to `3` on missing/non-positive/non-integer
-- [ ] 1.4 Add a `localDate(t time.Time, loc *time.Location) string` helper returning `YYYY-MM-DD`
-- [ ] 1.5 Unit tests for 1.2-1.4: missing key, empty string, invalid zone name, valid zone name
+- [x] 1.4 Add a `localDate(t time.Time, loc *time.Location) string` helper returning `YYYY-MM-DD`
+- [x] 1.5 Unit tests for 1.2-1.4: missing key, empty string, invalid zone name, valid zone name
       (e.g. `America/Los_Angeles` shifting a UTC timestamp across a day boundary), missing/zero/
       negative/non-integer `usual_meals_per_day`
-- [ ] 1.6 In the `PUT /api/users/me/settings` handler, compare the incoming `timezone` value
+- [x] 1.6 In the `PUT /api/users/me/settings` handler, compare the incoming `timezone` value
       against the previously stored one; if it differs, delete all of that user's
       `FoodDayCompletion` rows in the same write, using a hard (`Unscoped()`) delete — same
       requirement and same reason as the retract-confirmation delete in task 5.2 (see design.md §4
@@ -24,7 +24,7 @@
       Wrap the settings row write and this cascade delete in a single `.Transaction(...)` call so
       a mid-write failure cannot leave a confirmation tied to a `timezone` the settings row no
       longer has.
-- [ ] 1.7 Tests for 1.6: writing an unchanged `timezone` leaves existing confirmations intact;
+- [x] 1.7 Tests for 1.6: writing an unchanged `timezone` leaves existing confirmations intact;
       writing a different `timezone` deletes all of the caller's confirmations and none of another
       user's; writing settings with no `timezone` key present (unchanged) leaves confirmations
       intact; confirming a date, changing `timezone`, then confirming that same date string again
