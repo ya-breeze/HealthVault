@@ -129,7 +129,9 @@
 
 - [ ] 8.1 Fetch `GET /api/food/completeness` for the range covering the currently-loaded day
       sections (excluding the caller's current Logged Day) whenever the loaded range changes
-      (initial load and each "load older")
+      (initial load and each "load older"). Since "load older" has no depth limit, the loaded
+      range can exceed the endpoint's 92-day cap — split it into consecutive ≤92-day windows,
+      fetch each, and merge the results by date, rather than one call for the whole span
 - [ ] 8.2 Render, per day section: nothing extra for `complete`; a "Complete" badge plus an
       "unconfirm" control for `confirmed_complete`; a "Mark day complete" button for `unconfirmed`;
       nothing for the current Logged Day's own section

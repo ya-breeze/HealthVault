@@ -187,6 +187,13 @@ chase the user").
   small "Complete" badge for `confirmed_complete` with an unconfirm affordance, and a "Mark day
   complete" button for `unconfirmed`. Today's section (if visible) shows neither, since the range
   endpoint never returns an entry for it.
+- The existing "load older" pagination on this page has no depth limit (`PAGE_SIZE = 50` meals per
+  page, `frontend/app/food/history/page.tsx`), so the loaded range can exceed the endpoint's 92-day
+  cap — trivially for a sparse logger, and eventually for anyone who pages back far enough. The
+  frontend SHALL split the loaded range into consecutive ≤92-day windows and issue one
+  `GET /api/food/completeness` call per window (in parallel), merging the results by date, rather
+  than one call for the whole loaded span. A single oversized call is not an option: it would 400
+  and blank out completeness for every visible section, not just the days beyond the cap.
 - A small settings panel (collapsed by default) at the top of the page for `timezone` (a `<select>`
   populated from `Intl.supportedValuesOf('timeZone')` when available, prefilled — not auto-saved —
   from the browser's own zone via `Intl.DateTimeFormat().resolvedOptions().timeZone`) and
