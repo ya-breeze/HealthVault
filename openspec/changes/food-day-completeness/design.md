@@ -130,9 +130,13 @@ confirmed once `timezone` changes — the same date string means a different 24-
 old and new zone. Leaving the confirmation in place would silently misattribute it to whichever
 meals now fall under that string, not merely "stay pinned harmlessly" as a naive reading of "the
 date doesn't shift" might suggest. To avoid that: **changing `timezone` SHALL delete all of that
-user's existing `FoodDayCompletion` rows** as part of the settings update — every previously
-confirmed day reverts to whatever state its occasion count computes to under the new timezone,
-rather than risking a stale confirmation attaching itself to the wrong day's data. (The threshold,
+user's existing `FoodDayCompletion` rows** as part of the settings update, using the same hard
+(`Unscoped()`) delete required above for retraction — this bulk delete hits the identical
+`(UserID, LocalDate)` unique index with no `deleted_at` clause, so a plain `Delete()` here would
+leave every row soft-deleted and block re-confirming any of those dates going forward, exactly the
+`CustomFood` trap repeated a second time in the same change. Every previously confirmed day reverts
+to whatever state its occasion count computes to under the new timezone, rather than risking a
+stale confirmation attaching itself to the wrong day's data. (The threshold,
 `usual_meals_per_day`, has no equivalent hazard and keeps recomputing freely on every read, per
 above — it is not stored per-day the way a confirmation is.)
 
@@ -206,10 +210,19 @@ chase the user").
 ## Migration Plan
 
 Purely additive: new table, two new keys in an already-opaque settings blob, two new endpoints, no
-change to any existing endpoint's response shape. The only existing behavior that changes is food
-history's day-grouping key (browser-local → stored timezone, default UTC) — for every user who
-never sets `timezone`, day boundaries stay exactly UTC-anchored as before, so this is invisible
-until someone sets the new setting. No rollback hazard: reverting the frontend stops calling the
+change to any existing endpoint's response shape. The one existing behavior that does change, for
+every user regardless of whether they ever touch the new setting: food history's day-grouping key
+moves from the browser's local timezone (`getFullYear/getMonth/getDate`) to the stored `timezone`
+setting, default UTC. For anyone on a non-UTC browser who hasn't set `timezone` yet, this is a real,
+immediate shift in which calendar day a meal near midnight lands under — **not** a preservation of
+current behavior, despite that being the more natural-sounding claim. Accepted: it trades one
+arbitrary boundary (an unspecified browser zone) for another (UTC), and is what resolves the
+pre-existing disagreement between food history's browser-local grouping and the data API's UTC
+bucketing (`storage_impl.go`) named in the "Not doing" note above — the two definitions were
+already inconsistent with each other, so this picks one and applies it consistently rather than
+leaving a user's own history split across two boundaries. Anyone who wants the old browser-local
+split back can set `timezone` to their own zone via the new settings panel immediately after this
+ships. No rollback hazard: reverting the frontend stops calling the
 new endpoints and grouping reverts to browser-local; reverting the backend leaves `FoodDayCompletion`
 as an unused table and the frontend's completeness fetch failing closed (badge/control simply don't
 render — food history's meal list itself doesn't depend on the new endpoint).

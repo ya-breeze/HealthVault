@@ -40,11 +40,15 @@ proposal transcribes an already-grilled design into OpenSpec deltas an implement
   confirmed day leaves it confirmed, since the day only became *more* complete).
 - **Inline confirmation control on the food history page only** — no dashboard banner, no
   notification, nothing that chases the user after logging a meal. The page's day-grouping key
-  also switches from the browser's local timezone to the new stored `timezone` setting (falling
-  back to UTC, preserving today's behaviour for anyone who never sets it) — this is what resolves
+  also switches from the browser's local timezone to the new stored `timezone` setting, falling
+  back to UTC — a real, immediate behavior change for anyone on a non-UTC browser who hasn't set
+  `timezone` yet, not a preservation of today's grouping. Accepted, because this is what resolves
   the existing disagreement between food history's browser-local day grouping
   (`frontend/app/food/history/page.tsx:44`) and the data API's UTC day bucketing
-  (`backend/pkg/database/storage_impl.go:155`), at least for food.
+  (`backend/pkg/database/storage_impl.go:155`), at least for food: the two definitions already
+  disagreed with each other, so replacing one arbitrary boundary with a consistent one is a net
+  improvement even though it isn't behavior-preserving on day one. Setting `timezone` in the new
+  settings panel restores a user's own local grouping immediately.
 - **A downstream coverage contract**, specified now even though nothing consumes it yet: a
   rolling-7-day feature (ADR-004's Healthiness Label; Adaptive TDEE) SHALL count only Complete and
   Confirmed Complete days, and SHALL say "not enough data" below 3 valid days in the window rather

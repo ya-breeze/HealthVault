@@ -15,13 +15,18 @@
       negative/non-integer `usual_meals_per_day`
 - [ ] 1.6 In the `PUT /api/users/me/settings` handler, compare the incoming `timezone` value
       against the previously stored one; if it differs, delete all of that user's
-      `FoodDayCompletion` rows in the same write (see design.md §4 "Storage" — a confirmation
-      keyed by a stale timezone's date string can otherwise misattribute to the wrong day's meals
-      once the timezone changes)
+      `FoodDayCompletion` rows in the same write, using a hard (`Unscoped()`) delete — same
+      requirement and same reason as the retract-confirmation delete in task 5.2 (see design.md §4
+      "Storage": `FoodDayCompletion` embeds `TenantModel`'s `DeletedAt`, and the
+      `(UserID, LocalDate)` unique index has no `deleted_at` clause, so a plain `Delete()` here
+      would soft-delete every row and permanently block re-confirming any of those dates — the
+      `CustomFood` trap (`food_custom.go`, `DeleteCustomFood`) repeated at a second call site)
 - [ ] 1.7 Tests for 1.6: writing an unchanged `timezone` leaves existing confirmations intact;
       writing a different `timezone` deletes all of the caller's confirmations and none of another
       user's; writing settings with no `timezone` key present (unchanged) leaves confirmations
-      intact
+      intact; confirming a date, changing `timezone`, then confirming that same date string again
+      succeeds (200/201, not a unique-constraint violation) — proves the cleanup used `Unscoped()`
+      and didn't leave a soft-deleted row occupying the `(user, date)` slot
 
 ## 2. Backend: Eating Occasion collapsing
 
