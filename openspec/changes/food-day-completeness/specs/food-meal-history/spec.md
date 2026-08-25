@@ -21,7 +21,7 @@ For every rendered day section other than the caller's current Logged Day, the p
 - **WHEN** the user activates "load older" at the bottom of the list
 - **THEN** the system fetches the next page using both `before` and `before_id` and appends it, without losing the meals already shown
 
-#### Scenario: Meals are grouped by the user's stored-timezone Logged Day
+#### Scenario: Meals are grouped by local calendar day
 - **GIVEN** the caller has meals whose `logged_at` values fall on two different Logged Days once converted into their stored `timezone` setting (even if those meals fall on the same calendar date in the browser's own local timezone)
 - **WHEN** they view the history page
 - **THEN** the meals appear under two separate day headers reflecting the stored-timezone boundary, most recent day first, each containing only that day's meals

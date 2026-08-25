@@ -1,6 +1,6 @@
 ## Why
 
-Idea #9 (`docs/investigations/` write-up pending under Task 3 of this same Attempt) found, from
+Idea #9 (see `docs/investigations/idea-9-food-day-completeness-signal.md`) found, from
 production data, that HealthVault's food log cannot tell a fully-logged day from a partially-logged
 one: 616 kcal/day logged against a weight-trend-implied ~2,200 kcal/day true intake — roughly 65%
 of intake never photographed. Phase 4 (ADR-004's Healthiness Label, and the food dashboard cards
@@ -75,6 +75,9 @@ proposal transcribes an already-grilled design into OpenSpec deltas an implement
 - `food-meal-history`: the Meal History Page's day-grouping key moves from browser-local to the
   stored `timezone` setting, and each day section gains a completeness badge/control per the new
   capability's states.
+- `data-model`: the "Food logging tables" requirement's closed enumeration of five tables gains a
+  sixth, `FoodDayCompletion`, since it lives in the same `models_food.go` file and is migrated
+  alongside the other five.
 
 ## Impact
 

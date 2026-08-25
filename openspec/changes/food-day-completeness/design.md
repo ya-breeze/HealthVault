@@ -113,21 +113,40 @@ type FoodDayCompletion struct {
 }
 ```
 
-`LocalDate` is computed once at confirm time using whatever `timezone` is current then. If the user
-later changes `timezone`, existing confirmations keep their stored `LocalDate` string as-is — they
-don't silently shift to a different calendar date. (Unlike the *threshold*, which recomputes freely
-on every read, the *date a confirmation refers to* is data the user typed against, not a live
-derived value — moving it out from under them on a later, unrelated settings change would be a
-correctness bug, not a feature.)
+Retracting a confirmation SHALL use a hard (`Unscoped()`) delete, not GORM's default soft delete.
+`TenantModel` carries a `DeletedAt gorm.DeletedAt` column, and the unique index on
+`(UserID, LocalDate)` has no `deleted_at` clause — the same conflict already hit and fixed for
+`CustomFood` (`backend/pkg/server/food_custom.go`, `DeleteCustomFood`). A plain `Delete()` would
+leave a soft-deleted row occupying that `(user, date)` slot forever, so re-confirming the same
+Logged Day after retracting it would either violate the unique constraint or (if the insert path
+is an upsert) silently revive the soft-deleted row without clearing `deleted_at`, leaving a day
+that looks confirmed in the database but reads back as `unconfirmed` to any default-scoped query.
+
+`LocalDate` is computed once at confirm time using whatever `timezone` is current then. Because the
+day-completeness *range query* recomputes each day's occasion count fresh, on every call, using the
+*current* `timezone` (per "Local Day boundary" above), a stored `LocalDate` string pinned to an old
+timezone can end up matched against a different set of meals than the ones the user actually
+confirmed once `timezone` changes — the same date string means a different 24-hour window under the
+old and new zone. Leaving the confirmation in place would silently misattribute it to whichever
+meals now fall under that string, not merely "stay pinned harmlessly" as a naive reading of "the
+date doesn't shift" might suggest. To avoid that: **changing `timezone` SHALL delete all of that
+user's existing `FoodDayCompletion` rows** as part of the settings update — every previously
+confirmed day reverts to whatever state its occasion count computes to under the new timezone,
+rather than risking a stale confirmation attaching itself to the wrong day's data. (The threshold,
+`usual_meals_per_day`, has no equivalent hazard and keeps recomputing freely on every read, per
+above — it is not stored per-day the way a confirmation is.)
 
 ### 5. API
 
 `GET /api/food/completeness?from=YYYY-MM-DD&to=YYYY-MM-DD` — both required; 400 on missing/malformed
-dates, `from > to`, or a range spanning more than 92 days (guards against a pathological query, no
-real caller needs more — a rolling-7-day feature needs at most a couple of weeks of lookback). `to`
-is silently clamped to yesterday in the caller's stored timezone when it names today or later — the
-caller isn't required to know the server's day-boundary computation precisely to ask for "up to
-whatever's final." Response: a JSON array, one entry per day in the resolved inclusive range
+dates. Validation order matters: `to` is clamped to yesterday in the caller's stored timezone
+*first* (when it names today or later — the caller isn't required to know the server's day-boundary
+computation precisely to ask for "up to whatever's final"), and only then is `from > to` (using the
+now-possibly-clamped `to`) and the >92-day span checked, both 400. This means a `from` that names
+today or a future date always fails the `from > to` check post-clamp — e.g. `from=<today>&to=<today>`
+clamps `to` to yesterday, at which point `from` is after `to` and the request is rejected, rather
+than silently resolving to an inverted or empty range. Response: a JSON array, one entry per day in
+the resolved inclusive range
 (including Incomplete zero-occasion days — the array is the coverage primitive; a consumer needs to
 see the gaps, not just the days with meals):
 
@@ -173,10 +192,11 @@ chase the user").
 
 ## Risks / Trade-offs
 
-- **Confirmation dates don't follow a later timezone change** (per "Storage" above) — a user who
-  confirms a day and then changes timezone keeps that confirmation pinned to the original calendar
-  date string. Accepted: the alternative (recomputing stored confirmations against a new timezone)
-  risks silently moving which calendar day a past assertion refers to, which is worse.
+- **A `timezone` change clears all existing confirmations** (per "Storage" above) — a user who
+  confirms several days and then changes `timezone` loses those confirmations outright rather than
+  having them silently reattach to the wrong days. Accepted: `timezone` changes are expected to be
+  rare (set once, near account creation) and re-confirming a handful of days is a small, visible
+  cost compared to a confirmation silently misattaching itself to meals the user never reviewed.
 - **Today's under-13%-auto-complete rate means Phase 4 will mostly show "not enough data" at
   first** — named and accepted in the grilling comment itself as the honest output for 17 days of a
   logging habit still forming, not a defect to design around here.

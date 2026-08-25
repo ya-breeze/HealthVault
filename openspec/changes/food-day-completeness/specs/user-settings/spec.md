@@ -28,7 +28,7 @@ Neither key SHALL be validated or rejected by the settings write endpoint itself
 
 ### Requirement: Settings read/write API
 
-The system SHALL expose `GET /api/users/me/settings` to return the authenticated user's current settings object, and `PUT /api/users/me/settings` to replace it with a new full settings object. Both endpoints SHALL require authentication and return 401 for unauthenticated requests.
+The system SHALL expose `GET /api/users/me/settings` to return the authenticated user's current settings object, and `PUT /api/users/me/settings` to replace it with a new full settings object. Both endpoints SHALL require authentication and return 401 for unauthenticated requests. When a `PUT` changes the stored `timezone` value to something different from what it was before the write, it SHALL additionally delete all of the caller's existing day confirmations, per the `food-day-completeness` capability's "Day confirmation storage and lifecycle" requirement — this is the one side effect this otherwise schema-free store has on data outside itself.
 
 #### Scenario: Reading current settings
 

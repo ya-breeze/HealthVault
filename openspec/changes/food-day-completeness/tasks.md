@@ -13,6 +13,15 @@
 - [ ] 1.5 Unit tests for 1.2-1.4: missing key, empty string, invalid zone name, valid zone name
       (e.g. `America/Los_Angeles` shifting a UTC timestamp across a day boundary), missing/zero/
       negative/non-integer `usual_meals_per_day`
+- [ ] 1.6 In the `PUT /api/users/me/settings` handler, compare the incoming `timezone` value
+      against the previously stored one; if it differs, delete all of that user's
+      `FoodDayCompletion` rows in the same write (see design.md §4 "Storage" — a confirmation
+      keyed by a stale timezone's date string can otherwise misattribute to the wrong day's meals
+      once the timezone changes)
+- [ ] 1.7 Tests for 1.6: writing an unchanged `timezone` leaves existing confirmations intact;
+      writing a different `timezone` deletes all of the caller's confirmations and none of another
+      user's; writing settings with no `timezone` key present (unchanged) leaves confirmations
+      intact
 
 ## 2. Backend: Eating Occasion collapsing
 
@@ -45,11 +54,15 @@
 
 - [ ] 4.1 Add `GET /api/food/completeness` handler (new file alongside
       `backend/pkg/server/food_meal_detail.go`, e.g. `food_completeness.go`): auth check (401),
-      parse/validate `from`/`to` (400 on missing/malformed/`from > to`/>92-day span), clamp `to`
-      to yesterday in the caller's zone, call task 3.4's range function, return the JSON array
+      parse `from`/`to` (400 on missing/malformed), clamp `to` to yesterday in the caller's zone
+      *first*, then validate `from > to` and the >92-day span against the (possibly clamped) `to`
+      (400 on either) — this order matters: a `from` naming today or a future date must fail the
+      `from > to` check post-clamp, not resolve to an inverted/empty range — call task 3.4's range
+      function, return the JSON array
 - [ ] 4.2 Register the route in `backend/pkg/server/server.go` (`GET /food/completeness`)
 - [ ] 4.3 Tests: full happy path against seeded meals across several days including a zero-meal
-      day, `to` clamping when `to` names today or a future date, each 400 case, 401 with no auth,
+      day, `to` clamping when `to` names today or a future date, `from` equal to today with `to`
+      also today (400, post-clamp inversion caught), each other 400 case, 401 with no auth,
       confirms no `?user=` override is honored (family member's data never leaks in)
 
 ## 5. Backend: day-confirmation endpoints
@@ -59,14 +72,18 @@
       `incomplete` or `complete`, upsert-idempotent `FoodDayCompletion` row (200 if already
       `confirmed_complete`, 201 with the new row otherwise)
 - [ ] 5.2 Add `DELETE /api/food/completeness/{date}/confirm` handler: auth check (401), parse/
-      validate `{date}` (400 on malformed / today-or-future), delete any existing row for
-      `(user, date)`, always 204
+      validate `{date}` (400 on malformed / today-or-future), `Unscoped().Delete()` any existing
+      row for `(user, date)` — a plain `Delete()` soft-deletes and would permanently block
+      re-confirming that date via the unique index, mirroring `DeleteCustomFood`'s existing
+      `Unscoped()` usage — always 204
 - [ ] 5.3 Register both routes in `backend/pkg/server/server.go`
 - [ ] 5.4 Tests: confirm an eligible unconfirmed day (201), re-confirm an already-confirmed day
       (200, no duplicate row), confirm a zero-occasion day (400), confirm an already-complete day
       (400), confirm/delete against today or a future date (400 both), delete an existing
       confirmation (204, state reverts correctly), delete a non-existent confirmation (204, no
-      error), 401 on both endpoints with no auth, confirms no `?user=` override is honored
+      error), 401 on both endpoints with no auth, confirms no `?user=` override is honored,
+      **confirm → retract → confirm the same date again succeeds** (guards against the soft-delete/
+      unique-index trap in 5.2)
 
 ## 6. Frontend: settings keys + API client
 
@@ -81,12 +98,17 @@
 - [ ] 7.1 Fetch the caller's settings on `frontend/app/food/history/page.tsx` load (or reuse
       whatever settings fetch already exists on this page) and resolve `timezone` (default
       `'UTC'`)
-- [ ] 7.2 Replace the `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` grouping key
-      (`page.tsx:44`) with `Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d)`, keeping the
-      rest of the grouping/merge logic (including the "load older" merge behavior) unchanged
+- [ ] 7.2 Extract the day-grouping key computation into a small pure function in `frontend/lib/`
+      (e.g. `loggedDayKey(d: Date, tz: string): string`), replacing the inline
+      `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` key (`page.tsx:44`) with
+      `Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d)`, keeping the rest of the
+      grouping/merge logic (including the "load older" merge behavior) unchanged
 - [ ] 7.3 Confirm day-section headers render the same `YYYY-MM-DD` grouping key consistently with
       what the backend's `GET /api/food/completeness` will return for the same day, so task 8's
       merge-by-date is a straightforward lookup
+- [ ] 7.4 Unit tests for 7.2's `loggedDayKey` (mirroring `dataTypeMeta.test.ts`'s pattern): default
+      `UTC`, a zone that shifts the day (design.md's `America/Los_Angeles` /
+      `2026-08-21T02:00:00Z` example), and a missing/invalid timezone falling back to `UTC`
 
 ## 8. Frontend: completeness badges + confirm/retract controls
 
@@ -100,7 +122,8 @@
       updating that day's local state from the response (or a refetch) on success, and surfacing a
       toast on failure without changing the displayed state
 - [ ] 8.4 Confirm a day with 0 meals never renders a day section at all (it's already excluded
-      from the meal list itself, so this should require no new code, only a test)
+      from the meal list itself, so this should require no new code) — add this as an assertion
+      in the E2E history-page spec added under task 12, not a separate test file
 
 ## 9. Frontend: timezone / usual-meals-per-day settings panel
 
@@ -113,6 +136,10 @@
       a raw `putSettings` call, so neither field can clobber `dashboard_order`/`display_language`
 - [ ] 9.3 On successful save, refetch the page's grouping (task 7) and completeness data (task 8)
       so the new setting takes effect without a full page reload
+
+Test coverage for 9.1-9.3 is the E2E settings-panel scenario in task 12.4, which exercises 9.2's
+read-modify-write correctness directly — the regression it guards against (clobbering
+`dashboard_order`/`display_language`) is exactly what 9.2 was written to prevent.
 
 ## 10. i18n
 
@@ -137,9 +164,15 @@
 
 - [ ] 12.1 Extend or add an `e2e/tests/` spec: seed meals producing an `unconfirmed` day, confirm
       it via the history page's control, reload, confirm the badge persists; retract it and
-      confirm the control reverts
+      confirm the control reverts (also assert a zero-meal day never renders a section, per 8.4)
 - [ ] 12.2 E2E coverage for a day meeting the threshold showing no control at all
-- [ ] 12.3 Run the full suite against `hcw-wip`
+- [ ] 12.3 E2E coverage for the timezone-aware day grouping: set a non-UTC `timezone` via the
+      settings panel (task 9) for a user with meals that straddle the UTC/zone day boundary, and
+      assert the meals now group under the shifted day headers rather than UTC ones
+- [ ] 12.4 E2E coverage for the settings panel (task 9) end to end: open it, change `timezone` and
+      `usual_meals_per_day`, save, and confirm both (a) `dashboard_order`/`display_language` are
+      unchanged afterward and (b) day grouping/completeness badges update without a page reload
+- [ ] 12.5 Run the full suite against `hcw-wip`
 
 ## 13. Verification
 

@@ -111,7 +111,15 @@ that day's meals (e.g. adding a forgotten meal after confirming) — the confirm
 cleared automatically by any such edit, since the day only became more complete, not less. The
 same mechanism used to confirm a day SHALL also be able to retract that confirmation, returning the
 day to whatever state its current occasion count computes to (`unconfirmed`, or `complete` if
-enough occasions now exist).
+enough occasions now exist). Retracting a confirmation SHALL fully remove the stored row rather
+than merely marking it inactive, so that the same Logged Day can be confirmed again later without
+being permanently blocked by the retracted row. A confirmation is keyed by a `YYYY-MM-DD` string
+computed against whatever `timezone` was current at confirm time (see "Local Day boundary"), while
+every other day-completeness computation re-derives that same string fresh against the *current*
+`timezone` on every call — so a stored confirmation could otherwise end up matched against a
+different set of meals than the ones the user actually reviewed, once `timezone` changes. To
+prevent that: changing the caller's `timezone` setting SHALL delete all of that user's existing day
+confirmations, so no confirmation survives a change to the timezone it was made against.
 
 #### Scenario: Confirming an Unconfirmed day
 - **GIVEN** a Logged Day is currently `unconfirmed`
@@ -129,6 +137,18 @@ enough occasions now exist).
 - **THEN** the day's state becomes `unconfirmed` (or `complete`, if its occasion count now meets
   the threshold), and the stored confirmation row no longer exists
 
+#### Scenario: Re-confirming a day after retraction
+- **GIVEN** a Logged Day was confirmed, then retracted
+- **WHEN** the user confirms that same Logged Day again later
+- **THEN** the confirmation succeeds and the day's state becomes `confirmed_complete`, exactly as
+  if it had never been retracted
+
+#### Scenario: Changing timezone invalidates existing confirmations
+- **GIVEN** a user has one or more days with a stored confirmation
+- **WHEN** they change their `timezone` setting to a different value
+- **THEN** all of that user's existing day confirmations are deleted, and each affected day reverts
+  to whatever state its occasion count computes to under the new timezone
+
 #### Scenario: Cannot confirm a zero-occasion day
 - **WHEN** a confirmation is attempted against a Logged Day with 0 Eating Occasions
 - **THEN** the system SHALL reject it — there is nothing to confirm, and the day stays `incomplete`
@@ -142,9 +162,12 @@ enough occasions now exist).
 ### Requirement: Completeness range query API
 The system SHALL expose `GET /api/food/completeness`, requiring authentication (401 if absent),
 accepting required `from` and `to` query parameters (each `YYYY-MM-DD`). A missing or malformed
-`from`/`to`, or `from` after `to`, SHALL return HTTP 400. A range spanning more than 92 days SHALL
-return HTTP 400. A `to` naming the caller's current Logged Day or later SHALL be silently clamped
-to the day immediately before it — the endpoint never returns an entry for today or a future day.
+`from`/`to` SHALL return HTTP 400. A `to` naming the caller's current Logged Day or later SHALL be
+silently clamped to the day immediately before it — the endpoint never returns an entry for today
+or a future day — and this clamp SHALL be applied before evaluating `from` after `to` or the range
+span, so that a `from` naming the caller's current Logged Day or a future date always resolves to
+`from` after the (possibly clamped) `to`. After clamping, `from` after `to` SHALL return HTTP 400,
+and a range spanning more than 92 days SHALL return HTTP 400.
 The response SHALL be a JSON array with exactly one entry per Logged Day in the resolved inclusive
 range, each `{"date": "YYYY-MM-DD", "occasion_count": <integer>, "state": "complete" |
 "confirmed_complete" | "unconfirmed" | "incomplete"}`, ordered ascending by date — including days
@@ -161,9 +184,16 @@ scope strictly to the authenticated caller's own data; it SHALL NOT accept a `?u
 - **WHEN** a caller requests `to` equal to their current Logged Day (or a later date)
 - **THEN** the response covers only up to the day before their current Logged Day, with no error
 
+#### Scenario: from naming today is rejected after the to clamp
+- **GIVEN** a caller requests `from` equal to their current Logged Day and `to` equal to their
+  current Logged Day
+- **WHEN** the system resolves the request
+- **THEN** `to` is clamped to yesterday first, `from` is now after the resolved `to`, and the
+  system returns HTTP 400 rather than an inverted or empty range
+
 #### Scenario: Malformed range is rejected
-- **WHEN** a caller requests a missing `from`/`to`, an unparseable date, `from` after `to`, or a
-  range spanning more than 92 days
+- **WHEN** a caller requests a missing `from`/`to`, an unparseable date, a resolved (post-clamp)
+  `from` after `to`, or a resolved range spanning more than 92 days
 - **THEN** the system returns HTTP 400 and returns no data
 
 #### Scenario: Scoped to the caller only
