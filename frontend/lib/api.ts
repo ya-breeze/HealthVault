@@ -319,13 +319,24 @@ export interface UserSettings {
   display_language?: string;
   // IANA zone name (e.g. "America/Los_Angeles") used to resolve the Logged
   // Day / Local Day boundary for food-day-completeness. Absent/invalid
-  // falls back to UTC on the backend — see design.md §2 "Local Day
-  // boundary" under openspec/changes/food-day-completeness.
+  // falls back to UTC on the backend — see the "Local Day boundary" section
+  // of openspec/changes/archive/2026-08-25-food-day-completeness/design.md.
   timezone?: string;
   // Eating Occasion count per day the backend treats as "day fully logged"
   // (food-day-completeness capability). Absent/non-positive falls back to
   // 3 on the backend.
   usual_meals_per_day?: number;
+  // Profile fields feeding GET /users/me/nutrition-target (see
+  // user-profile-and-nutrition-target). Malformed/absent values are
+  // interpreted as "not set" by the backend, not schema-validated here — the
+  // blob stays opaque at this layer, per user-settings's existing contract.
+  birthdate?: string;
+  sex?: 'male' | 'female';
+  // Manual activity-tier override; unset means "infer from trailing steps".
+  // See design.md's override-value -> tier/multiplier table — the values
+  // below do NOT positionally match their tier display names ('active' ->
+  // "Very active", 'very_active' -> "Extra active").
+  activity_override?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
   [key: string]: unknown;
 }
 
@@ -376,6 +387,42 @@ export class ReanalyzeSupersededError extends Error {
   }
 }
 
+// The four reason codes GET /users/me/nutrition-target's 422 response can
+// carry — see design.md's "Unmet-precondition responses" decision. Checked
+// in this order server-side; only the first unmet one is ever reported.
+export type NutritionTargetUnmetReason =
+  | 'missing_profile'
+  | 'missing_measurements'
+  | 'missing_goal_weight'
+  | 'insufficient_activity_data';
+
+// NutritionTargetUnmetError is thrown for HTTP 422 from
+// GET /users/me/nutrition-target: `reason` lets callers show a specific,
+// actionable message (e.g. "add your profile") instead of a generic error.
+export class NutritionTargetUnmetError extends Error {
+  reason: NutritionTargetUnmetReason;
+  constructor(reason: NutritionTargetUnmetReason, message: string) {
+    super(message);
+    this.name = 'NutritionTargetUnmetError';
+    this.reason = reason;
+    Object.setPrototypeOf(this, NutritionTargetUnmetError.prototype);
+  }
+}
+
+export interface NutritionTarget {
+  calories: number;
+  protein_grams: number;
+  carbs_grams: number;
+  fat_grams: number;
+  measured_weight_kg: number;
+  goal_weight_kg: number;
+  height_m: number;
+  age_years: number;
+  sex: 'male' | 'female';
+  activity_multiplier: number;
+  activity_tier: string;
+}
+
 export const api = {
   login: (username: string, password: string) =>
     apiFetch('/auth/login', {
@@ -390,6 +437,20 @@ export const api = {
   getSettings: () => apiFetch<UserSettings>('/users/me/settings'),
   putSettings: (settings: UserSettings) =>
     apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+
+  // Self-only: no ?user= support, unlike most /data endpoints — see
+  // design.md's "Self-only" decision. Throws NutritionTargetUnmetError on
+  // 422 so callers can branch on the specific unmet reason.
+  getNutritionTarget: async (): Promise<NutritionTarget> => {
+    const res = await apiRawFetch('/users/me/nutrition-target');
+    if (res.status === 422) {
+      const body = await res.json().catch(() => ({}) as { error?: string });
+      const reason = (body.error as NutritionTargetUnmetReason) || 'missing_profile';
+      throw new NutritionTargetUnmetError(reason, reason);
+    }
+    if (!res.ok) throw new ApiError(res.status, (await res.text()) || `${res.status} ${res.statusText}`);
+    return res.json();
+  },
 
   // Read-modify-write: fetches the latest settings, merges patch onto them,
   // and PUTs the result. Shared by every settings-writing feature (dashboard

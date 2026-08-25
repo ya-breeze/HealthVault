@@ -89,6 +89,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/users/me", meHandler(storage)).Methods("GET")
 	api.HandleFunc("/users/me/settings", GetUserSettingsHandler(storage)).Methods("GET")
 	api.HandleFunc("/users/me/settings", PutUserSettingsHandler(storage)).Methods("PUT")
+	api.HandleFunc("/users/me/nutrition-target", NutritionTargetHandler(storage)).Methods("GET")
 	// Note: /data/summary must be registered before /data/{type} to avoid
 	// gorilla/mux routing "summary" as the {type} variable.
 	api.HandleFunc("/data/summary", summaryHandler(storage)).Methods("GET")

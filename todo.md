@@ -41,23 +41,23 @@ candidates 1-3.
 
 ### Phase 3 — User profile (age/sex/activity level) + Nutrition Target
 
-New: a **Nutrition Target** (daily calories + protein/carb/fat grams), split
-between two weight inputs (ADR-003, revised after review 2026-08-21): calories
-come from the full Mifflin-St Jeor BMR formula × an activity-level multiplier,
-using the user's **latest measured weight** (BMR is a function of actual body
-mass — computing it from Goal Weight instead would understate real energy
-needs and risk an unsafely aggressive deficit). **Protein** specifically is a
-g/kg rate applied to **Goal Weight from Phase 2** — sized to the body being
-worked toward, per standard practice. Carb/fat targets fill whatever's left of
-the calorie budget. Requires three new static profile fields that don't exist
-anywhere yet: age (or birthdate), sex, and activity level. Still undecided,
-deferred to this phase's own `opsx:propose`: activity-level tier count and
-multipliers (simple 3-tier vs. standard 5-tier Harris-Benedict-style), and
-what the protein target (and any recommendation text built on it) should show
-when no `weight_goal` is set yet. The calorie/carb/fat targets no longer have
-a hard dependency on Phase 2 — only the protein target does — but Phase 3 is
-still sequenced after Phase 2 so a goal is normally in place before Phase 4
-needs it.
+**Claimed** by the `user-profile-and-nutrition-target` change (see ADR-003 (revised) and
+ADR-006; `openspec/changes/user-profile-and-nutrition-target/`).
+
+A **Nutrition Target** (daily calories + protein/carb/fat grams), split between two weight
+inputs (ADR-003, revised after review 2026-08-21): calories come from the full Mifflin-St Jeor
+BMR formula × an activity-level multiplier, using the user's **latest measured weight** (BMR is
+a function of actual body mass — computing it from Goal Weight instead would understate real
+energy needs and risk an unsafely aggressive deficit). **Protein** specifically is a 1.6 g/kg
+rate applied to **Goal Weight from Phase 2** — sized to the body being worked toward, per
+standard practice; carb/fat split the remaining calorie budget 50/50 by kcal with a 0.8 g/kg fat
+floor (also basis Goal Weight). Adds three new static profile fields: `birthdate`, `sex`, and an
+optional `activity_override`. Settled by this phase's `opsx:propose`: a standard 5-tier
+activity scheme (Sedentary/Lightly active/Moderately active/Very active/Extra active,
+multipliers 1.2/1.375/1.55/1.725/1.9), inferred by default from a trailing 28-day `steps`
+average (see ADR-006) with `activity_override` as an explicit escape hatch; and the no-goal
+behavior — `weight_goal` is a hard, unconditional dependency for the whole target (no partial
+target, no fallback to measured weight for protein), not just for the protein figure alone.
 
 **Phase 4 prerequisite — Food log completeness signal** is **claimed**, in progress on the
 `food-day-completeness` change ([PR #32](https://github.com/ya-breeze/HealthVault/pull/32); see

@@ -42,6 +42,7 @@ const en = {
   'header.logout': 'Logout',
   'header.language': 'Language',
   'header.languageChangeFailed': 'Could not save your language preference. Try again.',
+  'header.settings': 'Settings',
 
   'status.processing': 'Analyzing…',
   'status.pending_clarification': 'Needs clarification',

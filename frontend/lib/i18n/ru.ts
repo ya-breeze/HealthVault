@@ -13,6 +13,7 @@ const ru: Dictionary = {
   'header.logout': 'Выйти',
   'header.language': 'Язык',
   'header.languageChangeFailed': 'Не удалось сохранить язык. Попробуйте ещё раз.',
+  'header.settings': 'Настройки',
 
   'status.processing': 'Анализ…',
   'status.pending_clarification': 'Требуется уточнение',

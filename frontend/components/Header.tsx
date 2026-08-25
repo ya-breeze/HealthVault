@@ -3,11 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { LinkIcon, ImportIcon, LogoutIcon } from '@/components/icons';
+import { LinkIcon, ImportIcon, LogoutIcon, SettingsIcon } from '@/components/icons';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
-import { SUPPORTED_LANGUAGES, LanguageCode } from '@/lib/i18n';
-import { useToast } from '@/components/Toast';
 
 /**
  * Shared header/nav rendered on every authenticated page (dashboard, data
@@ -17,25 +15,11 @@ import { useToast } from '@/components/Toast';
  */
 export default function Header() {
   const router = useRouter();
-  const { t, language, setLanguage } = useLanguage();
-  const { showToast } = useToast();
+  const { t } = useLanguage();
   const [me, setMe] = useState<{ id: string; username: string; family_id: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [showWebhook, setShowWebhook] = useState(false);
-  const [changingLanguage, setChangingLanguage] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
-
-  const handleLanguageChange = async (code: LanguageCode) => {
-    if (code === language) return;
-    setChangingLanguage(true);
-    try {
-      await setLanguage(code);
-    } catch {
-      showToast(t('header.languageChangeFailed'), 'error');
-    } finally {
-      setChangingLanguage(false);
-    }
-  };
 
   useEffect(() => {
     api.me()
@@ -93,25 +77,6 @@ export default function Header() {
           HealthVault
         </Link>
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="sr-only" htmlFor="display-language">{t('header.language')}</label>
-          <select
-            id="display-language"
-            value={language}
-            disabled={changingLanguage}
-            onChange={e => handleLanguageChange(e.target.value as LanguageCode)}
-            // min-h-12 (48px), matching TapTarget's minimum rather than the
-            // 44px this started at: the header is named explicitly in
-            // openspec/specs/mobile-touch-targets "Minimum Tap Target Size",
-            // and this is an interactive control in it. Not TapTarget itself —
-            // that renders a single element and a <select> owns its own
-            // options, so wrapping would put the tap target on a box around
-            // the control rather than on the control. Found in code review.
-            className="text-sm font-medium border border-border rounded-md px-2 py-2.5 min-h-12 bg-bg text-text-muted hover:text-text disabled:opacity-60"
-          >
-            {SUPPORTED_LANGUAGES.map(l => (
-              <option key={l.code} value={l.code}>{l.label}</option>
-            ))}
-          </select>
           {me && (
             <span className="font-[family-name:var(--font-data)] text-xs uppercase tracking-wide text-text-muted border border-border rounded-md px-2.5 py-2.5 min-h-12 flex items-center bg-bg">
               {me.username}
@@ -159,6 +124,14 @@ export default function Header() {
           >
             <ImportIcon className="w-4 h-4" />
             {t('header.import')}
+          </TapTarget>
+          <TapTarget
+            as={Link}
+            href="/settings"
+            className="flex items-center justify-center gap-1.5 text-sm text-text-muted hover:text-text font-medium px-2 transition-colors"
+            title={t('header.settings')}
+          >
+            <SettingsIcon className="w-4 h-4" />
           </TapTarget>
           <TapTarget
             onClick={handleLogout}

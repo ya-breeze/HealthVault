@@ -1,7 +1,7 @@
 # ADR-003: Nutrition Targets Split Between Measured Weight (calories) and Goal Weight (protein)
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
@@ -25,5 +25,18 @@ Chosen: **split**. Daily calories = Mifflin-St Jeor BMR (from the latest measure
 
 ### Consequences
 
-- This is a softer dependency on Phase 2 than an all-goal-weight design would have been: the calorie target only needs measured `weight` (already available from existing vitals), while only the protein target specifically needs `weight_goal`. Phase 3's own `opsx:propose` still needs to decide what happens to the protein target — and any recommendation text derived from it — when no `weight_goal` is set yet (e.g. fall back to measured weight for protein too, or mark protein as "not yet available" until a goal exists).
-- Phase 4's target-comparison and recommendation cards must be able to show calories/carbs/fat even when protein specifically is unavailable, rather than treating the whole Nutrition Target as all-or-nothing.
+- This is a **hard** dependency on Phase 2, not a softer one: `GET /api/users/me/nutrition-target`
+  requires a `weight_goal` record unconditionally (`missing_goal_weight`, one of its four 422
+  precondition reasons) — there is no fallback to measured weight for protein when no goal is set.
+  A user with no goal weight gets no target at all, not a partial one.
+- The whole Nutrition Target is all-or-nothing: there is no partial response (e.g. calories without
+  protein). Carb/fat targets are computed from whatever calorie budget remains once protein is
+  fixed, so a response missing protein would have nothing left to compute carbs/fat from either —
+  Phase 4's cards therefore render the full four-value target or none of it, never a subset.
+- The three profile fields and the activity-tier scheme this ADR deferred are now settled (see
+  [ADR-006](ADR-006-steps-inferred-activity-level.md) for the activity-level mechanism): 5 tiers
+  (Sedentary/Lightly active/Moderately active/Very active/Extra active, multipliers
+  1.2/1.375/1.55/1.725/1.9), a protein rate of 1.6 g/kg applied to `weight_goal`, and a carb/fat
+  split of the remaining calories 50/50 by kcal with a 0.8 g/kg fat floor (also basis
+  `weight_goal`). `birthdate`, `sex`, and an optional `activity_override` are the three new
+  `UserSettings` profile fields.

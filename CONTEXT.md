@@ -81,8 +81,25 @@ The user's target body weight, stored as its own metric (latest-record-wins), di
 _Avoid_: Target weight, ideal weight (informal use only)
 
 **Nutrition Target**:
-A user's daily calorie/protein/carb/fat goal. Calories come from the Mifflin-St Jeor formula using the user's measured weight, height, age, sex, and activity level; protein is a rate applied to Goal Weight instead, since protein is sized to the body being worked toward, not the current one. What food intake is compared against on Food Cards.
+A user's daily calorie/protein/carb/fat goal, computed on read by `GET
+/api/users/me/nutrition-target` from the user's measured weight/height, Goal Weight, and two new
+profile fields (`birthdate`, `sex`) plus Activity Level — not stored. Calories come from the
+Mifflin-St Jeor formula (measured weight/height/age/sex) times the Activity Level multiplier;
+protein is a g/kg rate applied to Goal Weight instead, since protein is sized to the body being
+worked toward, not the current one; carbs/fat split whatever calorie budget remains. Requires a
+goal weight unconditionally — there is no partial target, and no fallback to measured weight when
+no goal is set (see ADR-003). What food intake is compared against on Food Cards.
 _Avoid_: Goal (ambiguous with Goal Weight), macro goal
+
+**Activity Level**:
+One of 5 standard tiers (Sedentary / Lightly active / Moderately active / Very active / Extra
+active, multipliers 1.2/1.375/1.55/1.725/1.9) feeding the Nutrition Target's calorie calculation.
+Inferred by default from a trailing 28-day average of the user's `steps` records (excluding
+zero-record days anywhere in the window and trimming a sub-500-step run only from the trailing
+edge), or taken verbatim from an optional `activity_override` profile field when set — the two
+signals are never blended. Fewer than 7 valid trailing days with no override set makes the
+Nutrition Target uncomputable (`insufficient_activity_data`). See ADR-006.
+_Avoid_: Activity multiplier alone (that's the numeric output, not the tier), exercise level
 
 **Healthiness Label**:
 A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment.
