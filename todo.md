@@ -41,8 +41,8 @@ candidates 1-3.
 
 ### Phase 3 — User profile (age/sex/activity level) + Nutrition Target
 
-**Claimed** by the `user-profile-and-nutrition-target` change (see ADR-003 (revised) and
-ADR-006; `openspec/changes/user-profile-and-nutrition-target/`).
+**Shipped** by the `user-profile-and-nutrition-target` change (see ADR-003 (revised) and
+ADR-006; archived at `openspec/changes/archive/2026-08-25-user-profile-and-nutrition-target/`).
 
 A **Nutrition Target** (daily calories + protein/carb/fat grams), split between two weight
 inputs (ADR-003, revised after review 2026-08-21): calories come from the full Mifflin-St Jeor
@@ -59,16 +59,17 @@ average (see ADR-006) with `activity_override` as an explicit escape hatch; and 
 behavior — `weight_goal` is a hard, unconditional dependency for the whole target (no partial
 target, no fallback to measured weight for protein), not just for the protein figure alone.
 
-**Phase 4 prerequisite — Food log completeness signal** is **claimed**, in progress on the
+**Phase 4 prerequisite — Food log completeness signal** is **shipped** by the
 `food-day-completeness` change ([PR #32](https://github.com/ya-breeze/HealthVault/pull/32); see
-ADR-006, `Status: Proposed`). Grilled from idea #9, separately from the phases-2-4 grilling session
+ADR-007; archived at `openspec/changes/archive/2026-08-25-food-day-completeness/`). Grilled from
+idea #9, separately from the phases-2-4 grilling session
 above. Gives the backend its first concept of a per-user "day" (a new `timezone` setting; a Logged
 Day is a `FoodMeal.LoggedAt` converted into it), collapses same-sitting meal rows into Eating
 Occasions (10-minute gap window) instead of raw row counts, and lets a user confirm/retract a
 below-threshold day as actually complete via a new `FoodDayCompletion` table and
 `/api/food/completeness` endpoints. Exists so Phase 4's rolling-7-day Healthiness Label has a
 queryable per-day completeness signal to consume instead of re-deriving occasion-collapsing itself;
-ADR-006 also settles the 3-of-7 minimum-coverage floor Phase 4's "not enough data" state uses.
+ADR-007 also settles the 3-of-7 minimum-coverage floor Phase 4's "not enough data" state uses.
 
 ### Phase 4 — Food dashboard Cards + LLM recommendations/chat
 
