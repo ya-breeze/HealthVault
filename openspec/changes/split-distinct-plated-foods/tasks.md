@@ -2,16 +2,21 @@
 
 - [ ] 1.1 Reword the composite-dish-naming paragraph of `recognizeSystemPrompt` in
   `backend/pkg/vision/openai.go` to key the split/merge decision on whether each visible
-  component is an independently identifiable food of a different role (e.g. a protein vs. a
-  vegetable/starch side), not on whether they are spatially separated on the plate.
+  component is an independently identifiable food, not on whether it plays a different role
+  from its neighbor and not on whether components are spatially separated on the plate — a
+  protein-and-side pairing is the common example, but two independently identifiable foods that
+  share a role (e.g. two different cooked vegetable sides plated touching) split the same way.
 - [ ] 1.2 Add a worked example pair to the prompt text: a protein served touching or on top of a
   vegetable/starch side (e.g. "fish served on/next to stewed cabbage") should split into two
   items; a single homogeneous preparation where ingredients are cooked/sauced together and no
   longer independently identifiable (e.g. a stir-fry, curry, stew, or mixed salad) should remain
-  one item.
+  one item. Also state that a minor garnish or condiment (a lemon wedge, a sprig of herbs, a
+  spoonful of sauce) that isn't itself a portion-sized food stays folded into its main item
+  rather than becoming its own item.
 - [ ] 1.3 Re-read the full prompt after editing to confirm the new wording does not contradict or
   weaken the still-desired merge behavior for genuinely homogeneous dishes (the original
-  over-decomposition problem this requirement was added to fix).
+  over-decomposition problem this requirement was added to fix), and does not cause garnishes or
+  condiments to split out as their own items.
 
 ## 2. Spec update
 
@@ -39,6 +44,12 @@
 - [ ] 4.2 Add or extend a prompt-level test (if the project has one, e.g. a snapshot/golden test
   of `recognizeSystemPrompt`, or otherwise skip this) confirming the reworded prompt text is
   present as expected; otherwise rely on 4.1 plus manual verification against real photos.
+- [ ] 4.3 Add a unit test fixture exercising the `Clarify` path (using `vision.Fake`'s
+  `ClarifyResult`/`ClarifyResults`, mirroring the existing
+  `TestCreateMeal_ClarificationQuestionsSetPendingClarification` test in
+  `backend/pkg/server/food_upload_test.go`) constructing a multi-item `Clarify` response and
+  asserting persistence creates one `FoodItem` per item — covering the risk task 3.1 identifies
+  but does not itself add a repeatable check for.
 
 ## 5. Validation
 
