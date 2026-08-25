@@ -193,7 +193,7 @@ read-modify-write correctness directly — the regression it guards against (clo
 
 ## 13. Verification
 
-- [ ] 13.1 `make lint`
-- [ ] 13.2 `make test`
-- [ ] 13.3 `npx tsc --noEmit` in `frontend/`
-- [ ] 13.4 `openspec validate food-day-completeness --strict`
+- [x] 13.1 `make lint`
+- [x] 13.2 `make test`
+- [x] 13.3 `npx tsc --noEmit` in `frontend/`
+- [x] 13.4 `openspec validate food-day-completeness --strict`
