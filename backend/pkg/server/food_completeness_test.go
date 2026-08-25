@@ -257,12 +257,18 @@ func TestConfirmDay_EligibleUnconfirmedDay(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
-	var row database.FoodDayCompletion
-	if err := json.NewDecoder(w.Body).Decode(&row); err != nil {
+	// design.md §5 "API": "A fresh confirmation returns 201 with
+	// {date, state, confirmed_at}" — not the raw persistence model.
+	var body struct {
+		Date        string    `json:"date"`
+		State       string    `json:"state"`
+		ConfirmedAt time.Time `json:"confirmed_at"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if row.LocalDate != dateStr || row.UserID != userID {
-		t.Errorf("unexpected confirmation row: %+v", row)
+	if body.Date != dateStr || body.State != database.DayStateConfirmedComplete || body.ConfirmedAt.IsZero() {
+		t.Errorf("unexpected confirmation response: %+v", body)
 	}
 }
 
@@ -515,19 +521,23 @@ func TestConfirmDay_DistinctDatesGetDistinctIDs(t *testing.T) {
 	if w1.Code != http.StatusCreated {
 		t.Fatalf("confirm day1: expected 201, got %d: %s", w1.Code, w1.Body.String())
 	}
-	var row1 database.FoodDayCompletion
-	if err := json.NewDecoder(w1.Body).Decode(&row1); err != nil {
-		t.Fatalf("decode row1: %v", err)
-	}
 
 	w2 := httptest.NewRecorder()
 	h.ConfirmDay(w2, withClaims(confirmRequest(http.MethodPost, date2Str), userID))
 	if w2.Code != http.StatusCreated {
 		t.Fatalf("confirm day2: expected 201, got %d: %s", w2.Code, w2.Body.String())
 	}
-	var row2 database.FoodDayCompletion
-	if err := json.NewDecoder(w2.Body).Decode(&row2); err != nil {
-		t.Fatalf("decode row2: %v", err)
+
+	// The response body is the {date, state, confirmed_at} contract
+	// (design.md §5 "API") and no longer exposes the row's primary key, so
+	// the regression this test guards against — every confirmation sharing
+	// the zero UUID PK — is checked against the stored rows directly.
+	var row1, row2 database.FoodDayCompletion
+	if err := st.DB().Where("user_id = ? AND local_date = ?", userID, date1Str).First(&row1).Error; err != nil {
+		t.Fatalf("load row1: %v", err)
+	}
+	if err := st.DB().Where("user_id = ? AND local_date = ?", userID, date2Str).First(&row2).Error; err != nil {
+		t.Fatalf("load row2: %v", err)
 	}
 
 	if row1.ID == uuid.Nil || row2.ID == uuid.Nil {

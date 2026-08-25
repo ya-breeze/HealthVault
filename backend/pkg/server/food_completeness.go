@@ -124,6 +124,25 @@ func parseCompletenessDate(r *http.Request, loc *time.Location) (string, bool) {
 	return dateStr, true
 }
 
+// confirmDayResponse is the body of a successful ConfirmDay response
+// (design.md §5 "API": "A fresh confirmation returns 201 with
+// `{date, state, confirmed_at}`") — deliberately not the raw
+// database.FoodDayCompletion persistence model, whose Go field names
+// (LocalDate, no State at all) don't match that contract.
+type confirmDayResponse struct {
+	Date        string    `json:"date"`
+	State       string    `json:"state"`
+	ConfirmedAt time.Time `json:"confirmed_at"`
+}
+
+func newConfirmDayResponse(row database.FoodDayCompletion) confirmDayResponse {
+	return confirmDayResponse{
+		Date:        row.LocalDate,
+		State:       database.DayStateConfirmedComplete,
+		ConfirmedAt: row.ConfirmedAt,
+	}
+}
+
 // ConfirmDay handles POST /api/food/completeness/{date}/confirm: the
 // caller's assertion that a below-threshold day (Unconfirmed) is
 // nonetheless complete (design.md §5 "API"). Rejects a day that is already
@@ -173,7 +192,7 @@ func (h *foodHandlers) ConfirmDay(w http.ResponseWriter, r *http.Request) {
 		First(&existing).Error
 	switch {
 	case err == nil:
-		writeJSONStatus(w, http.StatusOK, existing)
+		writeJSONStatus(w, http.StatusOK, newConfirmDayResponse(existing))
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		row := database.FoodDayCompletion{
 			UserID:      claims.UserID,
@@ -190,7 +209,7 @@ func (h *foodHandlers) ConfirmDay(w http.ResponseWriter, r *http.Request) {
 				if reErr := h.storage.DB().
 					Where("user_id = ? AND local_date = ?", claims.UserID, dateStr).
 					First(&existing).Error; reErr == nil {
-					writeJSONStatus(w, http.StatusOK, existing)
+					writeJSONStatus(w, http.StatusOK, newConfirmDayResponse(existing))
 					return
 				}
 			}
@@ -198,7 +217,7 @@ func (h *foodHandlers) ConfirmDay(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "create error", http.StatusInternalServerError)
 			return
 		}
-		writeJSONStatus(w, http.StatusCreated, row)
+		writeJSONStatus(w, http.StatusCreated, newConfirmDayResponse(row))
 	default:
 		slog.Error("ConfirmDay: query confirmation", "err", err, "user_id", claims.UserID)
 		http.Error(w, "query error", http.StatusInternalServerError)

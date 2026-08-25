@@ -12,3 +12,17 @@ export function loggedDayKey(d: Date, tz: string | undefined): string {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(d);
   }
 }
+
+// Human-readable label for the same Logged Day `loggedDayKey` computes, so a
+// day section's visible heading always names the calendar day its meals were
+// actually grouped under (the stored `timezone`), rather than diverging from
+// it by falling back to the browser's own zone. Same invalid-zone fallback as
+// loggedDayKey.
+export function loggedDayLabel(d: Date, locale: string | undefined, tz: string | undefined): string {
+  const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'short', day: 'numeric' };
+  try {
+    return d.toLocaleDateString(locale, { ...options, timeZone: tz || 'UTC' });
+  } catch {
+    return d.toLocaleDateString(locale, { ...options, timeZone: 'UTC' });
+  }
+}

@@ -86,8 +86,14 @@ func ResolveUsualMealsPerDay(settingsJSON string) int {
 		return defaultUsualMealsPerDay
 	}
 	// encoding/json decodes every JSON number into map[string]any as float64.
+	// The upper bound guards against converting an out-of-int-range value
+	// (e.g. 1e100) to int below — that conversion is implementation-defined
+	// per the Go spec and on amd64 produces a large negative number, which
+	// would make every nonzero-occasion day compute as "complete" (threshold
+	// negative, so occasionCount >= threshold trivially holds). No realistic
+	// threshold approaches this bound, so the cap never affects a real value.
 	f, ok := v.(float64)
-	if !ok || f != math.Trunc(f) || f < 1 {
+	if !ok || f != math.Trunc(f) || f < 1 || f > math.MaxInt32 {
 		return defaultUsualMealsPerDay
 	}
 	return int(f)

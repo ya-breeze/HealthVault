@@ -2,7 +2,12 @@ import { test, expect, type Page, type APIRequestContext, type Locator } from '@
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8888';
+// Unlike this suite's other spec files, these tests PUT settings that change
+// `timezone` — which cascades to hard-deleting the caller's FoodDayCompletion
+// rows (design.md §4 "Storage") — so a no-env run must never land on the prod
+// stack (8888) by accident. Defaults to the WIP stack instead; override with
+// BASE_URL to target something else deliberately.
+const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8892';
 
 async function login(page: Page) {
   await page.goto('/login/');
@@ -198,15 +203,15 @@ test.describe('Day completeness', () => {
   // 12.3: switching the account's timezone via the settings panel reshuffles
   // which Logged Day a meal near a UTC/zone boundary groups under.
   //
-  // The day heading text itself (`day.label` in page.tsx) is formatted via
-  // `Date.toLocaleDateString` with no explicit `timeZone`, so it always
-  // reflects the *browser's* local zone, not the account's chosen one — only
-  // the grouping *key* (`loggedDayKey`, tasks.md 7.2) uses the account
-  // timezone. Comparing label text before/after switching would therefore
-  // prove nothing. Instead this seeds two meals that fall on different UTC
+  // The day heading text (`day.label` in page.tsx) is formatted via
+  // `loggedDayLabel`, the same account-`timezone`-aware helper the grouping
+  // *key* (`loggedDayKey`, tasks.md 7.2) uses, so both move together when the
+  // account timezone changes. This test still asserts on section membership
+  // rather than label text: it seeds two meals that fall on different UTC
   // calendar days but the *same* America/Los_Angeles calendar day, and
   // asserts they move from two separate day sections into one merged
-  // section — a change only the grouping key, not the label, can produce.
+  // section — a more direct proof of the regrouping than comparing label
+  // strings would be.
   test('a non-UTC timezone regroups meals straddling the UTC boundary under the shifted day', async ({
     page,
     request,

@@ -69,6 +69,11 @@ func TestResolveUsualMealsPerDay(t *testing.T) {
 		{"malformed json", `not json`, 3},
 		{"valid positive integer", `{"usual_meals_per_day":5}`, 5},
 		{"valid integer as whole float", `{"usual_meals_per_day":4.0}`, 4},
+		// int(f) for a float64 outside int range is implementation-defined
+		// (on amd64, it produces a large negative number) — must fall back to
+		// the default rather than yield a threshold that makes every
+		// nonzero-occasion day compute as "complete".
+		{"overflows int on conversion", `{"usual_meals_per_day":1e100}`, 3},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

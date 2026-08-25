@@ -8,7 +8,7 @@ import HistorySettingsPanel from '@/components/food/HistorySettingsPanel';
 import { useLanguage } from '@/components/LanguageContext';
 import { dateLocaleFor, mealStatusLabel } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
-import { loggedDayKey } from '@/lib/loggedDay';
+import { loggedDayKey, loggedDayLabel } from '@/lib/loggedDay';
 import { splitRangeIntoWindows } from '@/lib/completeness';
 
 const PAGE_SIZE = 50;
@@ -41,6 +41,9 @@ interface DayGroup {
 // browser's regional date preference. `timezone` groups by the user's Logged
 // Day (see lib/loggedDay.ts), the same boundary the backend's completeness
 // endpoint uses, so a day section's key lines up with that endpoint's `date`.
+// The visible label uses the same `timezone` as the key (via loggedDayLabel)
+// rather than the browser's own zone, so a meal near the day boundary is
+// never grouped under one date while its section heading names another.
 function groupByDay(meals: MealSummary[], locale: string | undefined, timezone: string | undefined): DayGroup[] {
   const groups: DayGroup[] = [];
   const indexByKey = new Map<string, number>();
@@ -55,7 +58,7 @@ function groupByDay(meals: MealSummary[], locale: string | undefined, timezone: 
       indexByKey.set(dateKey, idx);
       groups.push({
         dateKey,
-        label: d.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' }),
+        label: loggedDayLabel(d, locale, timezone),
         meals: [],
         totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
       });
