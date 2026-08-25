@@ -102,9 +102,9 @@
 
 ## 6. Frontend: settings keys + API client
 
-- [ ] 6.1 Add `timezone?: string` and `usual_meals_per_day?: number` to the `UserSettings`
+- [x] 6.1 Add `timezone?: string` and `usual_meals_per_day?: number` to the `UserSettings`
       interface in `frontend/lib/api.ts`, documented the same way as the existing keys
-- [ ] 6.2 Add `api.getCompleteness(from, to)` (`GET /food/completeness`) and
+- [x] 6.2 Add `api.getCompleteness(from, to)` (`GET /food/completeness`) and
       `api.confirmDay(date)` / `api.unconfirmDay(date)` (`POST`/`DELETE
       /food/completeness/{date}/confirm`) to `frontend/lib/api.ts`
 
