@@ -35,11 +35,19 @@ in `kin-core`. This proposal is that prerequisite, not a request to add the Bypa
   zone rate-limiting rule — all infra/other-repo work per the idea-forge decision.
 - Phase 4's actual recommendation computation — `recommendation` is modeled as nullable and always
   null here; nothing in this change computes it.
-- A dedicated "issue me a bearer token in the JSON body" login variant. `RequireAuth` already
-  accepts `Authorization: Bearer <token>` as an alternative to the cookie (no backend change
-  needed); the Android app is expected to read the token out of the existing `Set-Cookie` response
-  headers on login/refresh. Changing the login response body shape is a separate concern this
-  change does not touch.
+- A dedicated "issue me a bearer token in the JSON body" login variant, and any change to
+  `RequireAuth` itself. **Correction to an earlier assumption in this proposal:** `RequireAuth`
+  today validates the `kin_access` cookie only — the pinned `kin-core` v0.1.0's
+  `middleware.ValidateRequest` calls `cookies.GetAccessToken(r)` exclusively and has no
+  `Authorization: Bearer` header path, even though the pre-existing (unrelated to this change)
+  `openspec/specs/authentication/spec.md` "RequireAuth middleware" requirement already claims
+  header support — that claim is stale against the pinned dependency version. The Android app is
+  still expected to read the token out of the existing `Set-Cookie` response headers on
+  login/refresh and replay it as a cookie on subsequent requests (an HTTP client that keeps a
+  cookie jar handles this without new backend work). Adding real `Authorization: Bearer` support to
+  `RequireAuth` — a `kin-core` version bump or a HealthVault-local shim — is a prerequisite only if
+  the Android app's HTTP layer turns out unable to replay cookies on background requests, and is
+  left as a follow-up decision for whoever starts `healthvault-android`, not this change.
 - Any change to `POST /api/auth/refresh` or `POST /api/auth/logout` — the lockout applies to
   `/api/auth/login` only; a locked-out username's existing valid access/refresh tokens keep working
   through `RequireAuth` and `Refresh` unaffected (see design.md for why).

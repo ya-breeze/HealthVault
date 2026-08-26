@@ -2,17 +2,19 @@
 
 ### Requirement: Login attempt limiting
 
-The system SHALL track failed `POST /api/auth/login` attempts per username (case-insensitively,
-matching how `FindUserByName` resolves accounts) in a trailing 15-minute sliding window. An unknown
-username and a known username with an incorrect password SHALL be recorded identically, so that
-whether a lockout is in effect for a given username SHALL NOT be usable to infer whether that
-username exists.
+The system SHALL track failed `POST /api/auth/login` attempts per username (case-insensitively —
+an accepted defense-in-depth simplification, not a claim that account lookup itself is
+case-insensitive) in a trailing 15-minute sliding window. An unknown username and a known username
+with an incorrect password SHALL be recorded identically, so that whether a lockout is in effect
+for a given username SHALL NOT be usable to infer whether that username exists.
 
 When 5 failed attempts accumulate for a username within the window, that username SHALL enter a
 lockout: further `POST /api/auth/login` requests for that username, including ones presenting
 correct credentials, SHALL be rejected with HTTP 429 and a JSON body of
 `{"error": "too_many_attempts", "retry_after_seconds": <n>}`, with no cookies set, until the
-lockout expires.
+lockout expires. Entering a lockout SHALL clear that username's trailing-window failure count (but
+not its backoff level), so that escalation to the next lockout duration requires a fresh batch of 5
+failed attempts recorded after the previous lockout expires.
 
 Lockout duration SHALL start at 1 minute and double on each subsequent lockout triggered for the
 same username without an intervening successful login, capped at 30 minutes, and SHALL reset to

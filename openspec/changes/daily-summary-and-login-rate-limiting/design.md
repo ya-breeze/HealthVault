@@ -105,19 +105,34 @@ comment, not the day-completeness capability's derived metric.
 "updated Xh ago" even before recognition finishes, matching the plan's requirement that a
 `~60s follow-up` refresh after returning from the Custom Tab has something to observe.
 
-A new `database.TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location) (TodaySummaryRow,
-error)` function in `food_completeness.go`'s package computes the UTC window bounds for today the
-same way `DayRange` does for an arbitrary day (`fromDate.UTC()` / `fromDate.AddDate(0,0,1).UTC()`,
-required because `FoodMeal.LoggedAt` is stored UTC-normalized and SQLite compares it as text), then
-does one query for all of today's `FoodMeal` rows and folds them into counts/sums/max in Go — no
-new SQL aggregation needed at this row volume.
+A new `database.TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now time.Time)
+(TodaySummaryRow, error)` function in `food_completeness.go`'s package computes the UTC window
+bounds for today the same way `DayRange` does for an arbitrary day (`fromDate.UTC()` /
+`fromDate.AddDate(0,0,1).UTC()`, required because `FoodMeal.LoggedAt` is stored UTC-normalized and
+SQLite compares it as text), then does one query for all of today's `FoodMeal` rows and folds them
+into counts/sums/max in Go — no new SQL aggregation needed at this row volume. `now` is threaded in
+explicitly (matching `computeUserNutritionTarget(storage, userID, now)` and how `LocalDate(t, loc)`
+already takes an explicit `t` rather than calling `time.Now()` internally) so `SummaryTodayHandler`
+computes `now` once and passes the same value into both `TodaySummary` and
+`computeUserNutritionTarget` — keeping the reported `date` and the aggregated query window
+consistent with each other at the exact local-midnight boundary — and so the boundary test in
+`tasks.md` (today-vs-yesterday around local midnight) can use a fixed, deterministic `now` instead
+of depending on wall-clock time.
 
 ### 2. Login attempt limiting
 
 **In-memory, per-username, sliding window + exponential backoff.** A package-level, mutex-guarded
-map keyed by the lowercased username (matching how `FindUserByName` already resolves accounts —
-usernames aren't case-sensitive identity in this codebase's existing lookup, so limiter state must
-key the same way or a case-varied login attempt would bypass its own lockout):
+map keyed by the lowercased username. **Correction to an earlier assumption:** `FindUserByName`
+(`backend/pkg/database/storage_impl.go`) does a plain `Where("username = ?", ...)` lookup with no
+`COLLATE NOCASE`, and `kin-core`'s `User.Username` column has no case-insensitive collation either
+— account lookup in this codebase is case-sensitive, so two accounts named e.g. `alice` and `Alice`
+can coexist as distinct users. Lowercased keying is kept anyway, as defense-in-depth against
+case-varied guessing against the *same* intended account, but this is an explicit, accepted
+trade-off, not a "matches existing identity" guarantee: a failed-attempt run against `Alice` and
+one against `alice` share one lockout bucket, so an attacker guessing one case variant of a
+username can also lock out a different, legitimately-existing account spelled with different
+casing. At this project's few-accounts-ever scale this is judged an acceptable cost for the
+simplicity of one lookup rule, not a scenario worth adding real per-account case tracking for.
 
 - **Window**: 15 minutes, trailing. Failed attempts (unknown username **or** wrong password —
   identical treatment, so lockout presence/absence can never be used as a username-existence
@@ -130,6 +145,14 @@ key the same way or a case-varied login attempt would bypass its own lockout):
   long break.
 - **Reset on success**: a successful login clears the username's failure counter and backoff
   level entirely.
+- **Reset on lockout trip**: tripping a lockout also clears the trailing-window failure count (but
+  **not** the backoff level — that only resets via the success or 24h-quiet paths above). Without
+  this, the sliding window's 15-minute lifetime would outlast most lockout durations (1m-30m), so
+  the very next failed attempt after a lockout expires would see the window still holding the prior
+  5 failures and re-trip immediately — contradicting the "5 more failed attempts" framing of
+  escalation below. Clearing the count on trip means each escalation step genuinely requires a
+  fresh batch of 5 failures after the previous lockout expires, while the backoff *level* still
+  remembers the escalation history.
 - **Scope of the lock**: blocks new calls to `POST /api/auth/login` for that username only, while
   locked. It does **not** touch `POST /api/auth/refresh`, `POST /api/auth/logout`, or
   `RequireAuth` — an already-issued access/refresh token pair keeps working normally through a
@@ -145,12 +168,19 @@ key the same way or a case-varied login attempt would bypass its own lockout):
   assumption.
 - **429 response**: `{"error": "too_many_attempts", "retry_after_seconds": <n>}`, `n` rounded up to
   the nearest second remaining in the lockout. No cookies are set.
-- **No background goroutine.** Per `openspec/config.yaml`'s existing constraint ("no background job
-  infrastructure... `ListenAndServe` is the only goroutine"), stale map entries (a username with no
-  failures for well past the 24h reset window) are evicted lazily on next access to that key, not
-  via a ticker. At this project's user count (a handful of accounts, ever) the map never grows
-  large enough for unbounded growth to matter even without eviction, but lazy cleanup costs nothing
-  extra to add.
+- **No background goroutine, but bounded map size.** Per `openspec/config.yaml`'s existing
+  constraint ("no background job infrastructure... `ListenAndServe` is the only goroutine"), stale
+  map entries (a username with no failures for well past the 24h reset window) are evicted lazily —
+  but *not* only on next access to that same key, since the map is keyed by attacker-supplied
+  username strings recorded before `FindUserByName` is even consulted: an attacker submitting a
+  distinct, never-repeated username per request would create an entry that is never accessed again,
+  so pure "evict on next access to that key" cleanup can never reclaim it, and the map would grow
+  without bound on exactly the endpoint this change exists to protect from being placed on the open
+  internet. Instead, `recordFailure` sweeps a bounded number of the oldest expired entries (by last
+  activity) on every call — cheap, no ticker, no per-key dependency — and the map additionally
+  enforces a hard size ceiling (an order of magnitude above this project's realistic account count)
+  past which the oldest entry is evicted to make room for a new one, so worst-case memory use stays
+  bounded regardless of how many distinct usernames an attacker cycles through.
 - **Constants, not env config.** Unlike ports/paths (`deployment-config`'s existing env-var
   contract), the threshold/window/backoff schedule are Go constants. This is deliberately
   inconsistent with "protection travels with the software for any self-hoster" only in the sense
