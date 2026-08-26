@@ -1,8 +1,5 @@
-# mobile-touch-targets Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change mobile-tap-targets. Update Purpose after archive.
-## Requirements
 ### Requirement: Minimum Tap Target Size
 Every interactive control (button, icon-button, or link acting as a button) in the food entry,
 edit, review, history, and custom-foods flows, in the app header/toast dismiss control, on the
@@ -80,4 +77,3 @@ The component SHALL offer exactly one named opt-out, for controls that are compa
 #### Scenario: Migrating an existing control preserves its identifying attributes
 - **WHEN** an existing button with a `title`, `aria-label`, or `data-testid` attribute is migrated to the shared tap-target component
 - **THEN** the rendered element still carries that same attribute unchanged
-

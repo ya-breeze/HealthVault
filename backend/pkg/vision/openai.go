@@ -21,13 +21,41 @@ const openAIChatCompletionsURL = "https://api.openai.com/v1/chat/completions"
 // schema, so they share a prompt.
 const recognizeSystemPrompt = `You are a nutrition assistant identifying foods in a photo of a meal.
 
-Default to naming what you see as a single whole dish (e.g. "Mexican
-vegetable mix", "chicken curry", "mixed salad") rather than breaking it into
-its individual ingredients — a homogeneous composite dish is one item even
-when you know it contains several ingredients. Only return multiple items
-when the photo shows clearly separate components: distinct piles on a plate,
-or separate foods placed next to each other (e.g. a portion of rice, a piece
-of grilled protein, and a side salad plated apart).
+Return one item per food that was served as its own separate portion, and
+merge components into a single item only when they were mixed, chopped,
+tossed, or cooked/sauced together into one combined preparation (e.g. a
+curry, a stew, a stir-fry, a mixed salad, a pre-mixed side) — a homogeneous
+composite dish is one item even when individual ingredient pieces within it
+(a piece of lettuce, a chunk of carrot) remain visually distinguishable. The
+test is whether each visible component was ever served as its own separate
+portion — not whether it plays a different role from its neighbor (a protein
+and a side split the same way as two different vegetable sides plated
+touching), not whether components are spatially separated on the plate, and
+not whether an individual piece can be pointed to and named, since an
+ingredient chunk inside a combined preparation almost always can be and that
+alone must not trigger a split. Judge "served as its own separate portion"
+from visible photo evidence, not from unobservable prep history: a piece
+that visibly keeps its own separately-servable, portion-scale form (an
+intact fillet, a whole cutlet, a distinct pile) counts as served separately;
+a piece broken down, mixed, or tossed into one preparation does not. A
+sauce, glaze, or juices from a neighboring food covering a piece does not by
+itself turn it into a combined preparation — a fillet coated in sauce still
+counts as its own separately-servable piece as long as it keeps its own
+portion-scale shape.
+
+For example, a protein served touching or on top of a vegetable/starch side
+(e.g. fish served on or next to stewed cabbage) splits into two items — even
+when the protein was baked or braised directly in contact with the side
+(e.g. a fish fillet baked on top of stewed cabbage) — so long as it keeps
+its own portion-scale shape and could be lifted off and served on its own;
+sharing a pan, pot, or oven dish is not by itself a merge signal. By
+contrast, a single preparation whose ingredients were mixed, chopped, or
+cooked/sauced together into one served dish (e.g. a stir-fry, a curry, a
+stew, or a mixed salad) remains one item even though individual ingredient
+pieces (a lettuce leaf, a carrot chunk) are still visually distinguishable
+within it. A minor garnish or condiment (a lemon wedge, a sprig of herbs, a
+spoonful of sauce) that isn't itself a portion-sized food stays folded into
+its main item rather than becoming its own item.
 
 For each item, estimate its display_name, canonical_name, preparation, state,
 brand, weight in grams, and your confidence (0-1). display_name is the food's
@@ -474,8 +502,12 @@ func (c *OpenAIClient) Clarify(ctx context.Context, priorItems []Item, history [
 	messages := []chatMessage{
 		{Role: "system", Content: recognizeSystemPrompt + languageDirective(displayLanguage)},
 		{Role: "user", Content: "Here is what was previously recognized and the clarification " +
-			"answers given so far. Update the items accordingly, or ask further " +
-			"clarification_questions if still unsure:\n" + string(contextJSON)},
+			"answers given so far. No new photo is attached to this message, so you have no new " +
+			"visual evidence about item boundaries — keep the previously_recognized_items split " +
+			"exactly as given (do not merge or re-split them) unless a clarification answer " +
+			"explicitly says two of them are actually one food or that one is actually two. " +
+			"Update the items' other fields accordingly, or ask further clarification_questions " +
+			"if still unsure:\n" + string(contextJSON)},
 	}
 	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
 	if err != nil {
