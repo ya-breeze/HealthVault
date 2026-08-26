@@ -182,7 +182,7 @@
 
 ## 5. Documentation
 
-- [ ] 5.1 New `docs/adr/ADR-008-<slug>.md` (`Status: Proposed`) recording the decision to
+- [x] 5.1 New `docs/adr/ADR-008-<slug>.md` (`Status: Proposed`) recording the decision to
       implement login attempt limiting as an in-memory, per-process, HealthVault-local mechanism
       rather than extending `kin-core/authdb`'s token blacklist — the sliding-window +
       exponential-backoff design, the bounded-map-size/no-IP-tracking scoping, and the
