@@ -146,6 +146,58 @@ func TestCreateMeal_NoMatchLeavesItemUnresolved(t *testing.T) {
 	}
 }
 
+// Regression coverage for split-distinct-plated-foods: the multi-item
+// Recognize path (one FoodItem persisted per recognized item) is
+// structurally supported by resolveItems/processRecognition but previously
+// had no test exercising more than a single item end to end.
+func TestCreateMeal_MultiItemRecognizeCreatesOneFoodItemPerItem(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{
+				{Name: "stewed cabbage", WeightGrams: 150, Confidence: 0.7},
+				{Name: "baked white fish", WeightGrams: 120, Confidence: 0.7},
+			},
+			Model: "fake-model", Raw: `{"items":[{"name":"stewed cabbage"},{"name":"baked white fish"}]}`,
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var meal database.FoodMeal
+	if err := json.NewDecoder(w.Body).Decode(&meal); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if meal.Status != database.MealStatusPendingReview {
+		t.Errorf("expected pending_review, got %s", meal.Status)
+	}
+	if len(meal.Items) != 2 {
+		t.Fatalf("expected two persisted items, one per recognized item, got %+v", meal.Items)
+	}
+	names := map[string]bool{}
+	for _, it := range meal.Items {
+		names[it.Name] = true
+	}
+	if !names["stewed cabbage"] || !names["baked white fish"] {
+		t.Errorf("expected both recognized items to be persisted by name, got %+v", meal.Items)
+	}
+
+	var count int64
+	if err := st.DB().Model(&database.FoodItem{}).Where("meal_id = ?", meal.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count items: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 FoodItem rows persisted, got %d", count)
+	}
+}
+
 func TestCreateMeal_USDAMatchViaSelect(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)

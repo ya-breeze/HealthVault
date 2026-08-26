@@ -293,6 +293,59 @@ func TestClarifyMeal_ReorderedItemsDoNotMisattributeEstimates(t *testing.T) {
 	}
 }
 
+// Regression coverage for split-distinct-plated-foods (tasks.md 3.1/4.3): a
+// Clarify response is free to return a different item count than the prior
+// items it was given (e.g. clarification reveals a single "some sauce" item
+// was actually two distinct plated foods), and processRecognition persists
+// one FoodItem per item in that response — there is no separate item-count
+// guidance elsewhere in the clarify path that would re-merge them back down
+// to the prior count.
+func TestClarifyMeal_MultiItemClarifyResponseCreatesOneFoodItemPerItem(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	meal := createPendingClarificationMeal(t, st, userID, familyID)
+
+	fake := &vision.Fake{
+		ClarifyResult: &vision.RecognizeResult{
+			Items: []vision.Item{
+				{Name: "stewed cabbage", WeightGrams: 150, Confidence: 0.8},
+				{Name: "baked white fish", WeightGrams: 120, Confidence: 0.8},
+			},
+		},
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w := httptest.NewRecorder()
+	h.ClarifyMeal(w, withClaims(clarifyRequest(meal.ID.String(), []string{"It's cabbage and fish, not just sauce"}), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got database.FoodMeal
+	json.NewDecoder(w.Body).Decode(&got) //nolint:errcheck
+	if got.Status != database.MealStatusPendingReview {
+		t.Errorf("expected pending_review, got %s", got.Status)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("expected two persisted items, one per clarified item, got %+v", got.Items)
+	}
+	names := map[string]bool{}
+	for _, it := range got.Items {
+		names[it.Name] = true
+	}
+	if !names["stewed cabbage"] || !names["baked white fish"] {
+		t.Errorf("expected both clarified items to be persisted by name, got %+v", got.Items)
+	}
+
+	var count int64
+	if err := st.DB().Model(&database.FoodItem{}).Where("meal_id = ?", meal.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count items: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 FoodItem rows persisted, got %d", count)
+	}
+}
+
 // Regression (design.md Risks / tasks.md 4.4, 6.5): the clarification-round
 // reconstruction in food_clarify.go previously rebuilt vision.Item from the
 // stored FoodItem without carrying Brand forward, silently downgrading a

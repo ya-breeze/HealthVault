@@ -58,20 +58,34 @@
 
 ## 4. Tests
 
-- [ ] 4.1 Add a unit test fixture to `backend/pkg/server/food_upload_test.go` (or the vision
+- [x] 4.1 Add a unit test fixture to `backend/pkg/server/food_upload_test.go` (or the vision
   package, whichever already covers prompt-adjacent behavior) constructing a multi-item
   `Recognize` response and asserting the persistence path creates one `FoodItem` per item in the
   response — the multi-item path is structurally supported today but has no existing test
   (confirmed in this change's research).
-- [ ] 4.2 Add or extend a prompt-level test (if the project has one, e.g. a snapshot/golden test
+
+  Added `TestCreateMeal_MultiItemRecognizeCreatesOneFoodItemPerItem` in
+  `backend/pkg/server/food_upload_test.go`: a two-item `Recognize` result (stewed cabbage +
+  baked white fish) asserts both the decoded response and the persisted `FoodItem` row count.
+- [x] 4.2 Add or extend a prompt-level test (if the project has one, e.g. a snapshot/golden test
   of `recognizeSystemPrompt`, or otherwise skip this) confirming the reworded prompt text is
   present as expected; otherwise rely on 4.1 plus manual verification against real photos.
-- [ ] 4.3 Add a unit test fixture exercising the `Clarify` path (using `vision.Fake`'s
+
+  No snapshot/golden prompt test exists in `backend/pkg/vision` (confirmed by inspection of
+  `openai_test.go`/`vision_test.go`) — skipped per the task's own fallback; covered by 4.1 plus
+  manual verification (task 5.3).
+- [x] 4.3 Add a unit test fixture exercising the `Clarify` path (using `vision.Fake`'s
   `ClarifyResult`/`ClarifyResults`, mirroring the existing
   `TestCreateMeal_ClarificationQuestionsSetPendingClarification` test in
   `backend/pkg/server/food_upload_test.go`) constructing a multi-item `Clarify` response and
   asserting persistence creates one `FoodItem` per item — covering the risk task 3.1 identifies
   but does not itself add a repeatable check for.
+
+  Added `TestClarifyMeal_MultiItemClarifyResponseCreatesOneFoodItemPerItem` in
+  `backend/pkg/server/food_clarify_test.go`: a single-item pending-clarification meal answered
+  with a two-item `ClarifyResult` (stewed cabbage + baked white fish) asserts the response and
+  persisted `FoodItem` row count both land at 2, confirming a clarify round can grow the item
+  count and processRecognition does not re-merge back to the prior count.
 
 ## 5. Validation
 
