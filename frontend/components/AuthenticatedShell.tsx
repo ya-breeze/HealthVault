@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, type Me } from '@/lib/api';
+import { cachedSession, rememberSession } from '@/lib/session';
 import Header from '@/components/Header';
 import BottomNav from '@/components/BottomNav';
 import MoreSheet from '@/components/MoreSheet';
@@ -41,15 +42,42 @@ export default function AuthenticatedShell({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [me, setMe] = useState<Me | null>(null);
+  // Seeded from the module-level cache, which is populated the first time a
+  // page resolves the session. This shell lives inside each page component,
+  // so every client-side navigation remounts it; starting from `null` each
+  // time would blank the header and the bar on every tap until `/users/me`
+  // answered. See lib/session.
+  const [me, setMe] = useState<Me | null>(cachedSession);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Still runs on every mount even when the cache seeded the render above:
+  // this is also the app's auth check, and a session that expired between
+  // navigations has to redirect.
   useEffect(() => {
     api.me()
-      .then(setMe)
+      .then(m => {
+        rememberSession(m);
+        setMe(m);
+      })
       .catch(() => router.push('/login'));
   }, [router]);
+
+  // The More sheet is a mobile surface, and nothing else closes it when the
+  // viewport crosses the breakpoint — a phone rotated to landscape is past
+  // `sm`, where the header carries these same five controls itself and the
+  // More destination that owns `aria-expanded` is display:none. Asks the DOM
+  // whether that destination is still rendered rather than restating the
+  // breakpoint in JS, so this cannot drift from the `sm:hidden` that decides
+  // it.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onResize = () => {
+      if (moreButtonRef.current?.getClientRects().length === 0) setMoreOpen(false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [moreOpen]);
 
   const closeMore = () => {
     setMoreOpen(false);

@@ -1,12 +1,12 @@
 'use client';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, type Me } from '@/lib/api';
+import { type Me } from '@/lib/api';
 import { ImportIcon, LinkIcon, LogoutIcon, SettingsIcon } from '@/components/icons';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import { useCopyToClipboard } from '@/lib/useCopyToClipboard';
+import { useLogout } from '@/components/useLogout';
 import { SHED_CONTROL_IDS, type ShedControlId } from '@/components/nav';
 
 const ROW_CLASSES =
@@ -32,17 +32,15 @@ export default function MoreSheet({
   me: Me;
   onClose: () => void;
 }) {
-  const router = useRouter();
   const { t } = useLanguage();
   const { copied, copy } = useCopyToClipboard();
+  const handleLogout = useLogout();
   const panelRef = useRef<HTMLDivElement>(null);
+  // Whether the gesture that is about to produce a click started on the
+  // backdrop — see the dismiss handler at the bottom of this file.
+  const pressedBackdrop = useRef(false);
 
   const webhookUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/webhook/${me.username}`;
-
-  const handleLogout = async () => {
-    await api.logout();
-    router.push('/login');
-  };
 
   // Escape closes; Tab is confined to the panel. Both are here rather than
   // on the panel element itself because focus can legitimately be on the
@@ -61,10 +59,18 @@ export default function MoreSheet({
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       const active = document.activeElement;
-      if (e.shiftKey && (active === first || !panelRef.current.contains(active))) {
+      // Both branches also catch focus having left the panel entirely, which
+      // is not a hypothetical: the webhook `<code>` block is `select-all` and
+      // invites a click, and clicking a non-focusable element moves
+      // `activeElement` to `<body>`. Without the `contains` test on this
+      // branch too, the next Tab matched neither case, nothing called
+      // preventDefault, and focus landed on the first focusable element in
+      // the document — a header control behind an `aria-modal` dialog.
+      const outside = !panelRef.current.contains(active);
+      if (e.shiftKey && (active === first || outside)) {
         e.preventDefault();
         last.focus();
-      } else if (!e.shiftKey && active === last) {
+      } else if (!e.shiftKey && (active === last || outside)) {
         e.preventDefault();
         first.focus();
       }
@@ -165,7 +171,14 @@ export default function MoreSheet({
     <div
       data-testid="more-sheet-backdrop"
       className="fixed inset-0 z-50 bg-black/50 flex items-end"
-      onClick={onClose}
+      // Dismiss only for a press *and* release both on the backdrop itself.
+      // `e.target === e.currentTarget` alone is not enough: a drag that
+      // starts inside the panel and ends on the backdrop — exactly what
+      // selecting the `select-all` webhook URL does — dispatches its click at
+      // the common ancestor, which is this element, and closed the sheet
+      // mid-selection.
+      onPointerDown={e => { pressedBackdrop.current = e.target === e.currentTarget; }}
+      onClick={e => { if (pressedBackdrop.current && e.target === e.currentTarget) onClose(); }}
     >
       <div
         ref={panelRef}
@@ -173,9 +186,9 @@ export default function MoreSheet({
         aria-modal="true"
         aria-label={t('nav.moreTitle')}
         data-testid="more-sheet"
-        // Stops a click inside the panel from reaching the backdrop's
-        // dismiss handler above.
-        onClick={e => e.stopPropagation()}
+        // No `stopPropagation` here: the backdrop's handler above already
+        // tests that the press and the release were both on the backdrop
+        // element itself, which a click inside the panel never is.
         className="w-full bg-bg-elevated border-t border-border rounded-t-2xl px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[85vh] overflow-y-auto flex flex-col gap-2"
       >
         <div className="flex items-center justify-between mb-1">

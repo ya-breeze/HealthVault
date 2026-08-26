@@ -41,6 +41,7 @@ const en = {
   'header.copied': 'Copied!',
   'header.copyToClipboard': 'Copy to clipboard',
   'header.logout': 'Logout',
+  'header.logoutFailed': 'Could not log you out. Try again.',
   'header.language': 'Language',
   'header.languageChangeFailed': 'Could not save your language preference. Try again.',
   'header.settings': 'Settings',

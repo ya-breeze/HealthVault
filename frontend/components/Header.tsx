@@ -1,12 +1,12 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, type Me } from '@/lib/api';
+import { type Me } from '@/lib/api';
 import { LinkIcon, ImportIcon, LogoutIcon, SettingsIcon } from '@/components/icons';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import { useCopyToClipboard } from '@/lib/useCopyToClipboard';
+import { useLogout } from '@/components/useLogout';
 import { SHED_CONTROL_IDS, type ShedControlId } from '@/components/nav';
 
 /**
@@ -25,8 +25,8 @@ import { SHED_CONTROL_IDS, type ShedControlId } from '@/components/nav';
  * same response. See that component for why.
  */
 export default function Header({ me }: { me: Me }) {
-  const router = useRouter();
   const { t } = useLanguage();
+  const handleLogout = useLogout();
   const { copied, copy } = useCopyToClipboard();
   const [showWebhook, setShowWebhook] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -41,11 +41,6 @@ export default function Header({ me }: { me: Me }) {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showWebhook]);
-
-  const handleLogout = async () => {
-    await api.logout();
-    router.push('/login');
-  };
 
   const webhookUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/webhook/${me.username}`;
 
@@ -144,11 +139,18 @@ export default function Header({ me }: { me: Me }) {
             covered by mobile-touch-targets' "every interactive control the
             header still renders at that width" rather than sitting outside
             the enumeration the way it did when it was one of seven. The row
-            is already 48px tall on the badge's account, so nothing moves. */}
+            is already 48px tall on the badge's account, so nothing moves.
+
+            `shrink-0` because that same TapTarget applies `min-w-12`, which
+            replaces the `min-width: auto` that previously stopped this flex
+            item shrinking below its own text. Without it a long username at
+            320px shrinks both items and, since the title has no `truncate`,
+            spills across the badge — the badge is meant to be the element
+            that gives way, per the note below. */}
         <TapTarget
           as={Link}
           href="/"
-          className="flex items-center text-xl font-extrabold tracking-tight text-text"
+          className="shrink-0 flex items-center text-xl font-extrabold tracking-tight text-text"
         >
           HealthVault
         </TapTarget>

@@ -11,13 +11,13 @@ import { NAV_DESTINATIONS, isSameRoute } from '@/components/nav';
  * the viewport below the `sm` breakpoint. See mobile-navigation's "Mobile
  * bottom navigation bar".
  *
- * Hidden with `sm:hidden` rather than mounted on a `matchMedia` result. The
- * app is statically exported, so a JS-evaluated media test would bake one
- * viewport's navigation into the served HTML and correct itself only after
- * hydration — a visible flash on every load, and the wrong branch entirely
- * for a client that never hydrates. The cost is that the markup ships at
- * every width; for five links that is negligible, and it is what makes the
- * transition on resize instant.
+ * Hidden with `sm:hidden` rather than mounted on a `matchMedia` result: the
+ * width test then lives in the same stylesheet as every other `sm:` in the
+ * app, resize is handled by the browser with no listener and no second
+ * render, and the bar is correct on the first frame after `me` resolves
+ * rather than after a state update that a media query effect would need.
+ * The cost is that the markup exists at every width; for five links that is
+ * negligible.
  *
  * `z-40` puts the bar above the two pages' submit bars (`z-30`) and below
  * the full-screen overlays and toasts (`z-50`), which are meant to cover it.

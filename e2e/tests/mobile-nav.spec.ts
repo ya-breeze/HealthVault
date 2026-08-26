@@ -125,6 +125,73 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
       expect(await page.evaluate(() => window.scrollY), `scroll position on ${route}`).toBe(0);
     }
   });
+
+  // AuthenticatedShell is rendered inside each page component, not in a
+  // layout, so every client-side navigation remounts it and re-runs its
+  // session fetch. It seeds its state from a module-level cache precisely so
+  // that the chrome it gates does not blink out for the length of that
+  // request — the bar vanishing under the finger that just tapped it, and the
+  // body jumping up by the header's height and back. Samples every animation
+  // frame rather than polling: the gap this guards against spans a network
+  // round-trip, which is many frames, but a `toBeVisible` between navigations
+  // would auto-retry straight past it. Found in code review.
+  test('the header and the bar never blink out during a navigation', async ({ page }) => {
+    await login(page);
+    await expect(bar(page)).toBeVisible();
+
+    await page.evaluate(() => {
+      const w = window as unknown as { __framesWithoutChrome?: number };
+      w.__framesWithoutChrome = 0;
+      const sample = () => {
+        const hasBar = !!document.querySelector('[data-testid="bottom-nav"]');
+        const hasHeader = !!document.querySelector('header');
+        if (!hasBar || !hasHeader) w.__framesWithoutChrome!++;
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+
+    for (const [id, url] of [
+      ['history', '/food/history/'],
+      ['manual', '/food/manual/'],
+      ['home', '/'],
+    ] as const) {
+      await destination(page, id).click();
+      await expect(page).toHaveURL(url);
+    }
+
+    const missed = await page.evaluate(
+      () => (window as unknown as { __framesWithoutChrome: number }).__framesWithoutChrome
+    );
+    expect(missed, 'frames rendered without a header or without the bar').toBe(0);
+  });
+
+  // `TapTarget` gives the app title `min-w-12`, which displaces the
+  // `min-width: auto` that otherwise stops a flex item shrinking below its
+  // own text — and the mobile row is `flex-nowrap`. The username is the
+  // variable-length half of the row, so it is substituted here rather than
+  // waiting for a user whose name happens to be long enough. Found in code
+  // review.
+  test('a long username crowds the badge, never the app title', async ({ page }) => {
+    await page.route('**/users/me', async route => {
+      const response = await route.fetch();
+      const body = await response.json();
+      await route.fulfill({ response, json: { ...body, username: 'a-rather-long-username-indeed' } });
+    });
+    await login(page);
+    await page.setViewportSize({ width: 320, height: 844 });
+
+    const title = page.locator('header a[href="/"]').first();
+    const badge = page.getByTestId('user-badge');
+    await expect(title).toBeVisible();
+    const titleBox = await boxOf(title, 'app title');
+    const badgeBox = await boxOf(badge, 'user badge');
+
+    expect(intersects(titleBox, badgeBox), 'title and badge should not overlap').toBe(false);
+    expect(titleBox.x + titleBox.width, 'title right edge').toBeLessThanOrEqual(320);
+    const header = await boxOf(page.locator('header'), 'header');
+    expect(header.height, 'header height with a long username').toBeLessThan(HEADER_HEIGHT_CEILING);
+  });
 });
 
 test.describe('Mobile bottom navigation — desktop viewport', () => {
@@ -246,6 +313,78 @@ test.describe('More sheet', () => {
     expect(page.url()).toBe(urlBefore);
   });
 
+  // The sheet is `aria-modal`, so focus must not reach the header behind it.
+  // The webhook block is `select-all` and invites a click, and clicking a
+  // non-focusable element parks `activeElement` on <body> — the case the
+  // forward half of the trap originally did not handle. Found in code review.
+  test('keeps focus inside itself after a click on non-focusable content', async ({ page }) => {
+    await login(page);
+    await destination(page, 'more').click();
+    const sheet = page.getByTestId('more-sheet');
+    await expect(sheet).toBeVisible();
+
+    await sheet.locator('code').click();
+    for (const key of ['Tab', 'Tab', 'Shift+Tab']) {
+      await page.keyboard.press(key);
+      const inside = await sheet.evaluate(el => el.contains(document.activeElement));
+      expect(inside, `focus should stay in the sheet after ${key}`).toBe(true);
+    }
+  });
+
+  // A drag that starts in the panel and ends on the backdrop dispatches its
+  // click at their common ancestor — the backdrop — so selecting the webhook
+  // URL used to dismiss the sheet mid-selection. Found in code review.
+  test('a drag-selection released over the backdrop does not dismiss it', async ({ page }) => {
+    await login(page);
+    await destination(page, 'more').click();
+    const sheet = page.getByTestId('more-sheet');
+    await expect(sheet).toBeVisible();
+
+    const code = await boxOf(sheet.locator('code'), 'webhook URL');
+    await page.mouse.move(code.x + 4, code.y + code.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(code.x + code.width - 4, code.y + code.height / 2, { steps: 5 });
+    // Up on the backdrop, well above the panel.
+    await page.mouse.move(MOBILE_VIEWPORT.width / 2, 20, { steps: 5 });
+    await page.mouse.up();
+
+    await expect(sheet).toBeVisible();
+  });
+
+  // Nothing else closes the sheet when the viewport crosses the breakpoint,
+  // and a phone rotated to landscape is past `sm` — where the header carries
+  // these same five controls itself. Found in code review.
+  test('closes when the viewport crosses to a width that has no More destination', async ({ page }) => {
+    await login(page);
+    await destination(page, 'more').click();
+    await expect(page.getByTestId('more-sheet')).toBeVisible();
+
+    await page.setViewportSize({ width: 844, height: 390 });
+
+    await expect(page.getByTestId('more-sheet')).toHaveCount(0);
+    await expect(page.locator('header [data-nav-control="settings"]')).toBeVisible();
+  });
+
+  // api.logout throws on any non-2xx and both logout controls await it before
+  // routing, so without a catch a failure was an unhandled rejection: no
+  // navigation, no message, and nothing to tell the user they are still
+  // logged in. Found in code review.
+  test('reports a failed logout instead of failing silently', async ({ page }) => {
+    await login(page);
+    await page.route('**/auth/logout', route => route.fulfill({ status: 500, body: 'nope' }));
+
+    await destination(page, 'more').click();
+    await page.getByTestId('more-sheet').locator('[data-nav-control="logout"]').click();
+
+    await expect(page.getByRole('status')).toBeVisible();
+    await expect(page).not.toHaveURL(/\/login/);
+    // The session is untouched, so the app still works.
+    await page.unroute('**/auth/logout');
+    await page.keyboard.press('Escape');
+    await destination(page, 'history').click();
+    await expect(page).toHaveURL('/food/history/');
+  });
+
   test('logout ends the session and lands on /login', async ({ page }) => {
     await login(page);
     await destination(page, 'more').click();
@@ -310,6 +449,42 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     expect(intersects(await boxOf(toast, 'toast'), navBox),
       'toast overlaps the navigation bar').toBe(false);
     await expect(toast.getByRole('button', { name: /dismiss/i })).toBeVisible();
+  });
+
+  // mobile-navigation's "End of a long scrolled list is fully visible" — the
+  // in-flow half of the clearance, which the two submit-bar cases above do
+  // not exercise because both of those are `position: fixed`. The tall block
+  // is injected rather than relying on the seeded account happening to have
+  // enough history to overflow the fold; it is ordinary in-flow content of
+  // the page either way. Asserts against the content edge rather than a last
+  // element, so it holds whatever the page renders.
+  test('the end of a page scrolled to its limit clears the bar', async ({ page }) => {
+    await login(page);
+    await page.goto('/food/history/');
+    await expect(bar(page)).toBeVisible();
+
+    await page.evaluate(() => {
+      const marker = document.createElement('div');
+      marker.id = 'scroll-extent-marker';
+      marker.style.cssText = 'height:2000px;background:linear-gradient(#0000,#0001)';
+      document.querySelector('[data-testid="shell-content"]')!.appendChild(marker);
+    });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    expect(await page.evaluate(() => window.scrollY), 'page should have scrolled').toBeGreaterThan(0);
+
+    const { contentBottom, navTop } = await page.evaluate(() => {
+      const shell = document.querySelector('[data-testid="shell-content"]')!;
+      const rect = shell.getBoundingClientRect();
+      // The reserved space is padding on this element, so the last pixel of
+      // content is its padding box bottom less that padding.
+      const padding = parseFloat(getComputedStyle(shell).paddingBottom);
+      return {
+        contentBottom: rect.bottom - padding,
+        navTop: document.querySelector('[data-testid="bottom-nav"]')!.getBoundingClientRect().top,
+      };
+    });
+    expect(contentBottom, 'bottom of the page\'s own content at full scroll')
+      .toBeLessThanOrEqual(navTop + 0.5);
   });
 
   // tasks.md 4.7: the tokens resolve as intended in both regimes. With a
