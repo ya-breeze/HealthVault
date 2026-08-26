@@ -1,18 +1,18 @@
 ## 1. Backend: Daily Totals endpoint
 
-- [ ] 1.1 Add `GET /api/food/daily-totals` handler (new file alongside
+- [x] 1.1 Add `GET /api/food/daily-totals` handler (new file alongside
       `backend/pkg/server/food_completeness.go`, e.g. `food_daily_totals.go`): auth check (401),
       parse `from`/`to` (400 on missing/malformed), clamp `to` to yesterday in the caller's zone
       *first* (reuse `callerTimezoneAndThreshold`'s timezone half, or extract a shared
       `callerTimezone` helper), then validate `from > to` and the >92-day span against the
       (possibly clamped) `to` — same order as `GetCompleteness`
-- [ ] 1.2 Add a function computing, for a user and an inclusive Logged-Day date range, one
+- [x] 1.2 Add a function computing, for a user and an inclusive Logged-Day date range, one
       `{date, calories}` entry per day — querying `confirmed`-status `FoodMeal` rows for the range,
       grouping by Logged Day via the existing timezone helper, summing `calories` only (no
       protein/carbs/fat — no consumer of this change reads them); a day with no confirmed rows gets
       a zero entry
-- [ ] 1.3 Register the route in `backend/pkg/server/server.go` (`GET /food/daily-totals`)
-- [ ] 1.4 Tests: happy path across several days including a zero-meal day, unconfirmed/failed/
+- [x] 1.3 Register the route in `backend/pkg/server/server.go` (`GET /food/daily-totals`)
+- [x] 1.4 Tests: happy path across several days including a zero-meal day, unconfirmed/failed/
       processing meals excluded from sums, `to` clamping when `to` names today or a future date,
       `from` equal to today with `to` also today (400, post-clamp inversion caught), the >92-day
       cap, 401 with no auth, confirms no `?user=` override is honored

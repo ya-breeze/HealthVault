@@ -99,14 +99,37 @@ func (h *foodHandlers) GetCompleteness(w http.ResponseWriter, r *http.Request) {
 // defaults rather than surfacing an error. Any other read error is
 // propagated to the caller to turn into a 500.
 func (h *foodHandlers) callerTimezoneAndThreshold(userID uuid.UUID) (*time.Location, int, error) {
+	settingsJSON, err := h.callerSettingsJSON(userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return database.ResolveTimezone(settingsJSON), database.ResolveUsualMealsPerDay(settingsJSON), nil
+}
+
+// callerTimezone resolves just the caller's timezone from their stored
+// settings — the half of callerTimezoneAndThreshold that GetFoodDailyTotals
+// needs, which has no usual_meals_per_day threshold to resolve.
+func (h *foodHandlers) callerTimezone(userID uuid.UUID) (*time.Location, error) {
+	settingsJSON, err := h.callerSettingsJSON(userID)
+	if err != nil {
+		return nil, err
+	}
+	return database.ResolveTimezone(settingsJSON), nil
+}
+
+// callerSettingsJSON reads the caller's raw UserSettings JSON blob, treating
+// "no settings row yet" as the ordinary case for a user who has never opened
+// settings (same fail-open precedent as DisplayLanguage) rather than an
+// error.
+func (h *foodHandlers) callerSettingsJSON(userID uuid.UUID) (string, error) {
 	settingsJSON, err := h.storage.GetUserSettings(userID)
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, 0, err
+			return "", err
 		}
-		settingsJSON = ""
+		return "", nil
 	}
-	return database.ResolveTimezone(settingsJSON), database.ResolveUsualMealsPerDay(settingsJSON), nil
+	return settingsJSON, nil
 }
 
 // parseCompletenessDate validates the {date} path parameter shared by

@@ -120,6 +120,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/food/meals/{id}/items/{item_id}", fh.DeleteMealItem).Methods("DELETE")
 	api.HandleFunc("/food/calibration-samples/{id}/photo", fh.CalibrationSamplePhoto).Methods("GET")
 	api.HandleFunc("/food/completeness", fh.GetCompleteness).Methods("GET")
+	api.HandleFunc("/food/daily-totals", fh.GetFoodDailyTotals).Methods("GET")
 	api.HandleFunc("/food/completeness/{date}/confirm", fh.ConfirmDay).Methods("POST")
 	api.HandleFunc("/food/completeness/{date}/confirm", fh.UnconfirmDay).Methods("DELETE")
 
