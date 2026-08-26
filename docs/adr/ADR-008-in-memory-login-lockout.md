@@ -1,7 +1,7 @@
 # ADR-008: In-Memory, Per-Process Login Attempt Limiting
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
