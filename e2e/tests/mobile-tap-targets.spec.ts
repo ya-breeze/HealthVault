@@ -191,3 +191,69 @@ test.describe('Mobile tap targets — header and toast', () => {
     await assertMinTapTarget(toast.getByRole('button', { name: 'Dismiss notification' }), 'toast dismiss control');
   });
 });
+
+// Mocks every /api/data/<type> read the data detail page makes, so the record
+// table always renders a fixed set of rows. The page defaults to a `week`
+// zoom whose range is only the last 7 days, so a case relying on real records
+// would start skipping — silently, and permanently — as soon as the chosen
+// type stopped receiving recent data. See data-page-tap-targets/design.md.
+async function mockDataRecords(page: Page, type: string, rows: Record<string, unknown>[]) {
+  await page.route('**/api/data/**', route => {
+    const url = new URL(route.request().url());
+    // Bucketed reads feed the chart only; an empty result there is explicitly
+    // non-fatal in DataTypeClient, and the chart is not what's being measured.
+    if (url.searchParams.has('bucket')) return route.fulfill({ json: [] });
+    return route.fulfill({ json: url.pathname.endsWith(`/data/${type}`) ? rows : [] });
+  });
+}
+
+function weightRow(id: string, kg: number, daysAgo: number) {
+  const at = new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+  return { id, kilograms: kg, time: at, created_at: at, updated_at: at };
+}
+
+// Covers the data detail route, which the original mobile-tap-targets change
+// scoped out entirely — see openspec/specs/mobile-touch-targets "Data detail
+// record delete control meets the minimum" and its three sibling scenarios.
+test.describe('Mobile tap targets — data detail page', () => {
+  test.use({ viewport: MOBILE_VIEWPORT });
+
+  test('record delete, its confirmation, and the zoom tabs meet the 48px minimum', async ({ page }) => {
+    await login(page);
+    await mockDataRecords(page, 'weight', [
+      weightRow('rec-1', 80.5, 1),
+      weightRow('rec-2', 80.1, 2),
+    ]);
+
+    await page.goto('/data/weight/');
+
+    const deleteControls = page.getByRole('button', { name: 'Delete record' });
+    await expect(deleteControls.first()).toBeVisible();
+    await expect(deleteControls).toHaveCount(2);
+    await assertMinTapTarget(deleteControls.first(), 'record delete control');
+
+    for (const z of ['Day', 'Week', 'Month', 'Year']) {
+      await assertMinTapTarget(page.getByRole('button', { name: z, exact: true }), `${z} zoom tab`);
+    }
+
+    // Activating one row's delete swaps that cell into its inline
+    // confirm/cancel state; both replacements need the minimum too.
+    await deleteControls.first().click();
+    const confirm = page.getByRole('button', { name: 'Confirm', exact: true });
+    const cancel = page.getByRole('button', { name: 'Cancel', exact: true });
+    await expect(confirm).toBeVisible();
+    await assertMinTapTarget(confirm, 'delete confirm control');
+    await assertMinTapTarget(cancel, 'delete cancel control');
+  });
+
+  test('nutrition macro tabs meet the 48px minimum', async ({ page }) => {
+    await login(page);
+    await mockDataRecords(page, 'nutrition', []);
+
+    await page.goto('/data/nutrition/');
+
+    for (const m of ['Calories', 'Protein', 'Carbs', 'Fat', 'Sugar', 'Sodium', 'Fiber']) {
+      await assertMinTapTarget(page.getByRole('button', { name: m, exact: true }), `${m} macro tab`);
+    }
+  });
+});
