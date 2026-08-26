@@ -615,15 +615,16 @@ export default function DataTypeClient({ type }: Props) {
           )}
           <div className="flex gap-1 bg-bg-elevated border border-border rounded-lg p-1">
             {ZOOMS.map(z => (
-              <button
+              <TapTarget
                 key={z.key}
+                compactOnMouse
                 onClick={() => setZoom(z.key)}
                 className={`font-[family-name:var(--font-data)] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ${
                   zoom === z.key ? 'bg-border text-accent' : 'text-text-muted hover:text-text'
                 }`}
               >
                 {z.label}
-              </button>
+              </TapTarget>
             ))}
           </div>
         </div>
@@ -649,15 +650,16 @@ export default function DataTypeClient({ type }: Props) {
         {isNutrition && (
           <div className="flex gap-1.5 flex-wrap mb-4">
             {NUTRITION_MACROS.map(m => (
-              <button
+              <TapTarget
                 key={m.key}
+                compactOnMouse
                 onClick={() => setMacro(m.key)}
                 className={`font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md border transition-colors ${
                   macro === m.key ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text'
                 }`}
               >
                 {m.label}
-              </button>
+              </TapTarget>
             ))}
           </div>
         )}
@@ -840,29 +842,29 @@ export default function DataTypeClient({ type }: Props) {
                         <td className="px-4 py-3">
                           {isPending ? (
                             <span className="flex items-center gap-2">
-                              <button
+                              <TapTarget
                                 onClick={() => handleConfirmDelete(id)}
                                 disabled={deleting}
                                 className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 {deleting ? '…' : 'Confirm'}
-                              </button>
-                              <button
+                              </TapTarget>
+                              <TapTarget
                                 onClick={() => setPendingDeleteId(null)}
                                 disabled={deleting}
                                 className="text-xs px-2 py-1 rounded bg-border text-text hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Cancel
-                              </button>
+                              </TapTarget>
                             </span>
                           ) : (
-                            <button
+                            <TapTarget
                               onClick={() => { setDeleteError(null); setPendingDeleteId(id); }}
                               aria-label="Delete record"
                               className="text-text-muted hover:text-red-500 transition-colors"
                             >
                               🗑
-                            </button>
+                            </TapTarget>
                           )}
                         </td>
                       )}
