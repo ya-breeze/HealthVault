@@ -52,9 +52,17 @@
   1:1 from `meal.Items` with no count constraint, and `carryForwardPriorFields` only copies
   fields across matching indices when counts already match — it never merges/drops items.
   `processRecognition`/`unresolvedItemsFrom`/`resolveItems` in `food_upload.go` map
-  `recognized.Items` to persisted rows 1:1 for both `Recognize` and `Clarify`. No code change
-  needed beyond the shared prompt from task 1. Full detail recorded in
+  `recognized.Items` to persisted rows 1:1 for both `Recognize` and `Clarify`. No code-level
+  count-collapsing logic exists. Full detail recorded in
   `openspec/changes/split-distinct-plated-foods/design.md` under "Open Questions".
+
+  Follow-up (code review): the code-level check above doesn't cover the model-level risk that
+  `Clarify`'s text-only call reuses photo-dependent prompt wording ("judge ... from what the
+  photo shows") without a photo attached, which could lead the model to second-guess and
+  re-merge a split `Recognize` already made. Addressed by softening that sentence to not assert
+  photo presence and by adding an explicit instruction to `Clarify`'s user message
+  (`backend/pkg/vision/openai.go`) to keep `previously_recognized_items`' split as-is unless a
+  clarification answer explicitly says otherwise.
 
 ## 4. Tests
 

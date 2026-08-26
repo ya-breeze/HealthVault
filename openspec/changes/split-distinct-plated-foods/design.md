@@ -98,7 +98,14 @@ item even though a user logging the meal thinks of them as two foods with separa
   direction).
 - [Risk] `Clarify` shares the prompt but runs as a text-only follow-up call; nothing currently
   tests that a multi-item `Clarify` response persists all items rather than silently collapsing
-  them. → Task 4.3 adds that coverage using `vision.Fake`'s `ClarifyResult`/`ClarifyResults`.
+  them. → Task 4.3 adds that coverage using `vision.Fake`'s `ClarifyResult`/`ClarifyResults`,
+  which exercises the persistence path but not the real model's prompt-following behavior. To
+  reduce the model-level risk (the shared prompt asks the model to judge split/merge from photo
+  evidence it doesn't have on this call), the "since you only see the photo" phrasing was
+  softened to not assert photo presence, and `Clarify`'s user message now explicitly instructs
+  the model to keep `previously_recognized_items`' split as-is unless a clarification answer
+  says otherwise — this is a prompt-level mitigation, not a hard guarantee, since the model could
+  still deviate.
 - [Risk] Without a repeatable check, a later unrelated prompt edit could quietly reintroduce
   over-decomposition of homogeneous dishes (the original failure mode). → Task 5.3's control
   photo of a homogeneous dish exists precisely to catch this at implementation time; there's no

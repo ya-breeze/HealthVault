@@ -33,15 +33,15 @@ and a side split the same way as two different vegetable sides plated
 touching), not whether components are spatially separated on the plate, and
 not whether an individual piece can be pointed to and named, since an
 ingredient chunk inside a combined preparation almost always can be and that
-alone must not trigger a split. Since you only see the photo, judge "served
-as its own separate portion" from what it shows, not from unobservable prep
-history: a piece that visibly keeps its own separately-servable,
-portion-scale form (an intact fillet, a whole cutlet, a distinct pile)
-counts as served separately; a piece broken down, mixed, or tossed into one
-preparation does not. A sauce, glaze, or juices from a neighboring food
-covering a piece does not by itself turn it into a combined preparation — a
-fillet coated in sauce still counts as its own separately-servable piece as
-long as it keeps its own portion-scale shape.
+alone must not trigger a split. Judge "served as its own separate portion"
+from visible photo evidence, not from unobservable prep history: a piece
+that visibly keeps its own separately-servable, portion-scale form (an
+intact fillet, a whole cutlet, a distinct pile) counts as served separately;
+a piece broken down, mixed, or tossed into one preparation does not. A
+sauce, glaze, or juices from a neighboring food covering a piece does not by
+itself turn it into a combined preparation — a fillet coated in sauce still
+counts as its own separately-servable piece as long as it keeps its own
+portion-scale shape.
 
 For example, a protein served touching or on top of a vegetable/starch side
 (e.g. fish served on or next to stewed cabbage) splits into two items — even
@@ -502,8 +502,12 @@ func (c *OpenAIClient) Clarify(ctx context.Context, priorItems []Item, history [
 	messages := []chatMessage{
 		{Role: "system", Content: recognizeSystemPrompt + languageDirective(displayLanguage)},
 		{Role: "user", Content: "Here is what was previously recognized and the clarification " +
-			"answers given so far. Update the items accordingly, or ask further " +
-			"clarification_questions if still unsure:\n" + string(contextJSON)},
+			"answers given so far. No new photo is attached to this message, so you have no new " +
+			"visual evidence about item boundaries — keep the previously_recognized_items split " +
+			"exactly as given (do not merge or re-split them) unless a clarification answer " +
+			"explicitly says two of them are actually one food or that one is actually two. " +
+			"Update the items' other fields accordingly, or ask further clarification_questions " +
+			"if still unsure:\n" + string(contextJSON)},
 	}
 	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
 	if err != nil {
