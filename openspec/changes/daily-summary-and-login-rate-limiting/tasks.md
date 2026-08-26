@@ -73,39 +73,39 @@
 
 ## 2. Backend: login limiting unit tests
 
-- [ ] 2.1 Unit-test the 5th-failure lockout trip, and that a 6th attempt with correct credentials
+- [x] 2.1 Unit-test the 5th-failure lockout trip, and that a 6th attempt with correct credentials
       is still rejected with 429
-- [ ] 2.2 Unit-test that an unknown username accumulates failures identically to a known username
+- [x] 2.2 Unit-test that an unknown username accumulates failures identically to a known username
       with wrong password (same lockout behavior)
-- [ ] 2.3 Unit-test that a successful login clears the failure count and backoff level
-- [ ] 2.4 Unit-test backoff escalation across two consecutive lockouts (1m then 2m) and the 24h
+- [x] 2.3 Unit-test that a successful login clears the failure count and backoff level
+- [x] 2.4 Unit-test backoff escalation across two consecutive lockouts (1m then 2m) and the 24h
       reset back to 1m
-- [ ] 2.5 Unit-test that username matching is case-insensitive (lockout on `Alice` blocks `alice`)
-- [ ] 2.6 Unit-test that `Refresh`, `Logout`, and a `RequireAuth`-protected request are unaffected
+- [x] 2.5 Unit-test that username matching is case-insensitive (lockout on `Alice` blocks `alice`)
+- [x] 2.6 Unit-test that `Refresh`, `Logout`, and a `RequireAuth`-protected request are unaffected
       by a concurrent lockout on the same username
-- [ ] 2.7 Unit-test that a failed attempt older than 15 minutes does not count toward the
+- [x] 2.7 Unit-test that a failed attempt older than 15 minutes does not count toward the
       5-attempt threshold (4 recent failures plus 1 that has aged out of the window does not trip
       a lockout), and that `retry_after_seconds` in a 429 response reflects the actual remaining
       lockout duration (rounded up), not a fixed constant
-- [ ] 2.8 Unit-test that tripping a lockout clears the failure count so a single failed attempt
+- [x] 2.8 Unit-test that tripping a lockout clears the failure count so a single failed attempt
       immediately after the lockout expires does not itself re-trigger a lockout (distinguishing
       this from the escalation scenario in 2.4, which requires 5 fresh failures)
-- [ ] 2.9 Unit-test that flooding the map with distinct, never-repeated throwaway usernames past
+- [x] 2.9 Unit-test that flooding the map with distinct, never-repeated throwaway usernames past
       the hard size ceiling does not evict a different username's active lockout or nonzero
       failure count — the flood's own entries (or, if none are evictable, the newest flood entry)
       are dropped/evicted instead, per the "never evict a live entry" rule in 1.2
-- [ ] 2.10 Unit-test the fail-closed ceiling path: once the map is saturated with live (non-expired)
+- [x] 2.10 Unit-test the fail-closed ceiling path: once the map is saturated with live (non-expired)
       entries, `admitAttempt` for a brand-new username SHALL return `allowed = false` with a 429
       shape, not `allowed = true` unrecorded — i.e. the new username's own attempt is also
       rate-limited under sustained flood, not silently let through
-- [ ] 2.11 Unit-test that `admitAttempt` is safe under concurrency: firing many goroutines'
+- [x] 2.11 Unit-test that `admitAttempt` is safe under concurrency: firing many goroutines'
       `admitAttempt` calls for the same never-locked-before username concurrently admits at most 5
       before the 6th (and later) see the in-flight capacity rejection — i.e. the in-flight count is
       reserved atomically at admission, not after a simulated slow credential-verification step
-- [ ] 2.12 Unit-test that `Login` with an unknown username still calls `auth.VerifyPassword` against
+- [x] 2.12 Unit-test that `Login` with an unknown username still calls `auth.VerifyPassword` against
       `auth.DummyHash` (e.g. by asserting comparable timing, or by asserting the call happens via a
       test seam) so an unknown-username 401 is not measurably faster than a wrong-password 401
-- [ ] 2.13 Unit-test that concurrent *correct*-password login requests never trip a real lockout,
+- [x] 2.13 Unit-test that concurrent *correct*-password login requests never trip a real lockout,
       using the 1.5 `afterAdmitHook` test seam to make the overlap deterministic instead of relying
       on goroutine-scheduling timing: set the hook to signal a channel and then block each admitted
       goroutine on a second, test-controlled channel; launch exactly 5 concurrent `Login` calls for
@@ -125,7 +125,7 @@
       work around) — issuing it only after the barrier confirms all 5 slots are held is what makes
       that outcome deterministic rather than a race between the 6th request's arrival and the first
       5 resolving
-- [ ] 2.14 Unit-test that an entry with an in-flight attempt is never evicted by the sweep or the
+- [x] 2.14 Unit-test that an entry with an in-flight attempt is never evicted by the sweep or the
       ceiling while that attempt's credential verification is still pending: admit a brand-new
       username's very first attempt (so it has zero confirmed failures, no lockout, and an unset
       last-activity timestamp) without resolving it, then drive the sweep and separately saturate
