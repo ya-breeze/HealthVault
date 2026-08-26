@@ -28,7 +28,21 @@
       selected-state styling and the macro each one sets
 - [x] 2.5 Confirm no sizing utility classes were added at any call site — the minimum must come from
       `TapTarget` alone (per the design's first decision)
-      → the `DataTypeClient.tsx` diff is exactly ten tag swaps; no `className` value changed
+      → still holds after 2.6: the two compact groups pass a named `mobileOnly` prop, and no
+      `className` value in `DataTypeClient.tsx` changed at any point
+
+## 2b. Reversal: keep the compact controls small on desktop
+
+Operator reversed the "grow at every width" call on review (see design.md's superseded alternative).
+
+- [x] 2.6 Add a `mobileOnly` prop to `TapTarget` that releases the minimum at `sm` via
+      `sm:min-h-0 sm:min-w-0`, destructured so it is never spread onto the DOM element
+- [x] 2.7 Pass `mobileOnly` on the zoom tabs and the nutrition macro tabs — both, since they render
+      together on `/data/nutrition` and releasing only one would mix 28 px and 48 px controls in one
+      view. The delete/confirm/cancel controls deliberately keep the minimum at every width.
+- [x] 2.8 Confirm Tailwind actually emits the variant from the template-literal class string
+      → `.sm\:min-h-0{min-height:0}` present inside `@media (min-width:40rem)`, and positioned
+      after the base `min-h-12` rule in source order, so it wins above 640 px
 
 > Note: `DataTypeClient.tsx` already imports `TapTarget` (used by the "Set goal" / "Set height"
 > controls), so no new import is needed.
@@ -51,6 +65,9 @@
       and the macro tabs still fit their `flex-wrap` container without clipping
       → all six combinations match the baseline exactly. Delete 14×20 → 48×48; zoom tabs
       48/52/59/52 × 48; macro tabs all ≥48×48, container reports no clipping.
+- [ ] 3.8 Re-run 3.4–3.6 after the 2b reversal, and additionally confirm at a **desktop** viewport
+      (≥640 px) that the zoom and macro tabs are back to their compact height while the delete
+      control still meets 48×48
 - [x] 3.7 Confirm the table's column set and horizontal-scroll behaviour are unchanged from `main`
       → verified by A/B on one build (neutralising only what `TapTarget` adds). Also checked the
       transient pending-delete state: Actions grows 86 → 155 and scrollWidth 513 → 581, but that is

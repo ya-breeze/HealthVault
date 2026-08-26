@@ -50,9 +50,26 @@ keep working — the archived change already relied on that guarantee.
 *Alternative considered:* add `min-h-12 min-w-12` inline at each call site. Rejected — identical
 rendered result, but it re-creates the per-call-site pattern that produced the gap.
 
-**Grow the zoom tabs at every width, not only mobile.** A responsive-only bump (`min-h-12` under a
-breakpoint) would leave two geometries to reason about and to test, for a control whose desktop size
-carries no meaning worth preserving. A 48 px segmented control is unremarkable on desktop.
+**Release the compact segmented controls at `sm`, keeping their desktop size.** The zoom tabs and
+the nutrition macro tabs are deliberately compact on desktop (28 and 27 px), where the tap-target
+problem they would solve does not exist. Growing them to 48 px everywhere makes desktop chunkier for
+no benefit, so they take the minimum only below `sm` (640 px).
+
+This is expressed as a named `mobileOnly` prop on `TapTarget`, not as opt-out utility classes at the
+call site. Sizing still lives in exactly one place — a call site asks for the behaviour by name and
+never spells out its own dimensions — so the property this change is built on ("the minimum is
+structural, not re-created per call site") survives intact.
+
+Both compact groups get the same treatment, because they render together on `/data/nutrition`:
+releasing one and not the other would put a 28 px control next to a 48 px one in the same view.
+
+The record delete control and its confirm/cancel siblings are deliberately **not** `mobileOnly`.
+They are not compact-by-design — the delete target was 14×20, which is too small for a mouse as
+well as a thumb, and it is the control whose mis-tap destroys a record.
+
+*Superseded alternative:* an earlier draft of this design grew the zoom tabs at every width, on the
+grounds that one geometry is simpler to reason about and to test. The operator reversed that call on
+review; the trade it bought (uniform geometry) was not worth a visibly worse desktop.
 
 **Mock the data API in the new e2e case** rather than depending on seeded records. Every other case
 in `mobile-tap-targets.spec.ts` mocks its API (`page.route('**/api/food/…')`), and the page defaults
@@ -79,13 +96,16 @@ redesign of the interaction, and belongs to the upcoming visual change, not to a
   go 65 → 73 px; `/data/steps` rows are unchanged at 85 px because their timestamps already wrap.
   This is the intended outcome, not a regression: a row shorter than 48 px cannot host a compliant
   control.
-- **A 48 px-tall segmented control is visibly chunkier on desktop** → Accepted deliberately (see
-  the decision above); it is the same trade the food flows already made. This is the one call in
-  this change that is a matter of taste rather than measurement, and it is easy to reverse with a
-  `sm:` variant if the wider look is unwelcome.
+- **Two geometries now exist for the compact controls, so their size is viewport-dependent** →
+  Accepted; this is the cost of the decision above. The e2e assertions run at the suite's
+  `MOBILE_VIEWPORT`, below `sm`, so they continue to assert the 48 px minimum where it applies. A
+  regression that dropped the minimum at *all* widths would still turn them red, because `sm:`
+  utilities do not apply below 640 px.
+- **Desktop size is now unasserted for these two groups** → Accepted. It is a cosmetic preference,
+  not a requirement; encoding "must stay small on desktop" in the spec would freeze a taste call.
 - **Seven macro tabs at 48 px tall will wrap onto more rows on `/data/nutrition`** → Their container
-  is already `flex-wrap`, so this changes how many rows they occupy, not whether they fit. Verified
-  in task 3.6 rather than assumed.
+  is already `flex-wrap`, so this changes how many rows they occupy, not whether they fit. Below
+  `sm` only. Verified in task 3.6 rather than assumed.
 - **The table's horizontal scroll is unpleasant on mobile** → Real, but out of scope and untouched
   by this change; it belongs to the visual redesign. Noted here so it is not mistaken for something
   this change introduces.
