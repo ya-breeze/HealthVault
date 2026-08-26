@@ -1,0 +1,82 @@
+## ADDED Requirements
+
+### Requirement: Login attempt limiting
+
+The system SHALL track failed `POST /api/auth/login` attempts per username (case-insensitively,
+matching how `FindUserByName` resolves accounts) in a trailing 15-minute sliding window. An unknown
+username and a known username with an incorrect password SHALL be recorded identically, so that
+whether a lockout is in effect for a given username SHALL NOT be usable to infer whether that
+username exists.
+
+When 5 failed attempts accumulate for a username within the window, that username SHALL enter a
+lockout: further `POST /api/auth/login` requests for that username, including ones presenting
+correct credentials, SHALL be rejected with HTTP 429 and a JSON body of
+`{"error": "too_many_attempts", "retry_after_seconds": <n>}`, with no cookies set, until the
+lockout expires.
+
+Lockout duration SHALL start at 1 minute and double on each subsequent lockout triggered for the
+same username without an intervening successful login, capped at 30 minutes, and SHALL reset to
+1 minute after 24 hours have passed with no failed attempts recorded for that username. A
+successful login for a username SHALL immediately clear its failure count and backoff level.
+
+A lockout in effect for a username SHALL NOT affect that username's existing, already-issued
+access or refresh tokens: `POST /api/auth/refresh`, `POST /api/auth/logout`, and `RequireAuth`
+-protected requests SHALL continue to work normally regardless of any concurrent lockout on
+`POST /api/auth/login` for the same user.
+
+This limiter SHALL be maintained in-process (no new database table or `kin-core` dependency) and
+SHALL NOT require any background goroutine to expire or evict its state.
+
+#### Scenario: Fifth failed attempt trips the lockout
+
+- **GIVEN** a username has had 4 failed login attempts within the last 15 minutes
+- **WHEN** a 5th failed attempt is made for that username
+- **THEN** the system SHALL reject that attempt as usual (HTTP 401) and SHALL reject any further
+  login attempt for that username with HTTP 429 until the lockout expires
+
+#### Scenario: Correct credentials during a lockout are still rejected
+
+- **GIVEN** a username is currently locked out
+- **WHEN** a login request for that username presents the correct password
+- **THEN** the system SHALL return HTTP 429 with `{"error": "too_many_attempts", ...}` rather than
+  succeeding
+
+#### Scenario: Unknown username counts toward the same limiter
+
+- **GIVEN** a username that does not exist has had 4 failed login attempts within the last 15
+  minutes
+- **WHEN** a 5th login attempt is made for that same username string
+- **THEN** the system SHALL apply the same lockout as it would for a real account with 5 failed
+  password attempts
+
+#### Scenario: Successful login resets the counter
+
+- **GIVEN** a username has 3 failed login attempts recorded within the window
+- **WHEN** that username then logs in successfully
+- **THEN** the system SHALL clear its failure count and backoff level, so a subsequent single
+  failed attempt does not immediately re-trigger a lockout
+
+#### Scenario: Backoff escalates on repeated lockouts
+
+- **GIVEN** a username has already triggered and served one 1-minute lockout, with no successful
+  login since
+- **WHEN** that username accumulates 5 more failed attempts and trips a second lockout
+- **THEN** the second lockout's duration SHALL be 2 minutes, not 1
+
+#### Scenario: Existing session survives a lockout on the same account
+
+- **GIVEN** a user is already logged in (holds a valid access/refresh token pair) and their
+  username subsequently becomes locked out due to failed login attempts (e.g. an attacker guessing
+  their password)
+- **WHEN** the user's app makes an authenticated request or calls `POST /api/auth/refresh` using
+  their existing tokens
+- **THEN** the system SHALL serve that request normally, unaffected by the concurrent login
+  lockout on their username
+
+#### Scenario: Backoff resets after a quiet day
+
+- **GIVEN** a username triggered a lockout more than 24 hours ago and has had no failed attempts
+  since
+- **WHEN** that username next accumulates 5 failed attempts and trips a new lockout
+- **THEN** the new lockout's duration SHALL be 1 minute, not a continuation of the previous
+  escalated backoff
