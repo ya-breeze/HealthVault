@@ -1,6 +1,6 @@
 ## 1. Settings model (`frontend/lib/api.ts`)
 
-- [ ] 1.1 Add `more_data_hidden?: boolean` to the `UserSettings` interface, documented alongside its neighboring keys (`dashboard_order`, `display_language`, etc.); no shape migration needed since an absent key means "not hidden."
+- [x] 1.1 Add `more_data_hidden?: boolean` to the `UserSettings` interface, documented alongside its neighboring keys (`dashboard_order`, `display_language`, etc.); no shape migration needed since an absent key means "not hidden."
 
 ## 2. Dashboard page state and persistence (`frontend/app/page.tsx`)
 
