@@ -25,7 +25,7 @@
 
 ## 3. Frontend: Logging Gap computation library
 
-- [ ] 3.1 Add `frontend/lib/loggingGap.ts`. Add `rejectOutliers(records: {day: number, value:
+- [x] 3.1 Add `frontend/lib/loggingGap.ts`. Add `rejectOutliers(records: {day: number, value:
       number}[]): { kept: {day: number, value: number}[], rejected: {day: number, value: number}[],
       bootstrapSiblingAmbiguous: boolean }` — chronological walk, rejects a record whose implied
       rate from the last **kept** record exceeds 2.0 kg/day per design.md decision 2; a rejected
@@ -49,7 +49,7 @@
       not derived from `kept`/`rejected` day overlap by the caller (see 3.7: overlap between the two
       arrays can also arise from an unrelated main-walk case with no same-day-sibling relationship,
       so it is not a valid proxy for this condition)
-- [ ] 3.2 Unit tests for 3.1: a single implausible mid-series reading is excluded and does not
+- [x] 3.2 Unit tests for 3.1: a single implausible mid-series reading is excluded and does not
       affect evaluation of the following reading; a gradual multi-day change (≤2 kg/day rate) is
       never rejected; an empty/single-record input passes through unchanged; two consecutive
       rejections in a row (both compared against the same last-kept point); a bad *leading* record
@@ -77,20 +77,20 @@
       `rejected` record sharing day 2's calendar day, yet `bootstrapSiblingAmbiguous` is `false`,
       proving that a shared day between the two output arrays is not by itself evidence of this
       condition
-- [ ] 3.3 Add `slopeStandardError(points: {x: number, y: number}[], slope: number, intercept:
+- [x] 3.3 Add `slopeStandardError(points: {x: number, y: number}[], slope: number, intercept:
       number): number | null` — standard OLS slope SE from the regression's own residuals; returns
       `null` when fewer than 3 distinct points are given (design.md decision 3's `n < 3` case)
-- [ ] 3.4 Unit tests for 3.3: a known small dataset with a hand-computed expected SE; exactly 2
+- [x] 3.4 Unit tests for 3.3: a known small dataset with a hand-computed expected SE; exactly 2
       points returns `null`; exactly 3 points returns a defined (non-null) value; residuals of zero
       (perfectly linear input) do not throw or divide by zero unexpectedly for `n >= 3`
-- [ ] 3.5 Add a pure `resolveLoggingGapWindow(now, timezone)` (or equivalent) function deriving the
+- [x] 3.5 Add a pure `resolveLoggingGapWindow(now, timezone)` (or equivalent) function deriving the
       28-day window (ending yesterday in the caller's Logged Day) and the wider lead-in-extended
       range to fetch, so this boundary arithmetic is unit-testable on its own rather than living only
       inside the card component (5.1)
-- [ ] 3.6 Unit tests for 3.5: window ends at yesterday regardless of time-of-day; a weigh-in landing
+- [x] 3.6 Unit tests for 3.5: window ends at yesterday regardless of time-of-day; a weigh-in landing
       exactly on the window's first or last calendar day is included; the lead-in range is wider than
       the visible 28-day window
-- [ ] 3.7 Add two pure functions to `loggingGap.ts`, split so the hard floor (design.md decision 5)
+- [x] 3.7 Add two pure functions to `loggingGap.ts`, split so the hard floor (design.md decision 5)
       can be evaluated without ever constructing a regression — matching spec.md's "Before computing
       anything else ... SHALL NOT compute a slope" ordering for the hard-floor conditions, and
       avoiding calling `emaSeries`/`linearRegression` on too few points in the first place:
@@ -126,7 +126,7 @@
       `slopeStandardError` and call `computeLoggingGap` when it returns `false` — never the reverse
       order, so a regression is never attempted on the too-few-points cases the hard floor exists to
       catch
-- [ ] 3.8 Unit tests for 3.7's `checkHardFloor`, called with `kept`/`rejected`/`bootstrapSiblingAmbiguous`/
+- [x] 3.8 Unit tests for 3.7's `checkHardFloor`, called with `kept`/`rejected`/`bootstrapSiblingAmbiguous`/
       per-day window data — no regression or SE constructed anywhere in these cases, proving the gate
       genuinely doesn't need one: fewer than 2 weigh-ins → `true`; exactly 2 raw survivors that share a
       calendar day (one EMA day, two `kept` records) does not trip the `n < 2` floor → `false`,
@@ -150,7 +150,7 @@
       rejected and 91.2 independently kept, `bootstrapSiblingAmbiguous: false`) → `false` even though
       day 2 appears in both `kept` and `rejected`, proving the gate does not treat array overlap
       itself as the trigger
-- [ ] 3.8b Unit tests for 3.7's `computeLoggingGap`, called only with a regression/SE already
+- [x] 3.8b Unit tests for 3.7's `computeLoggingGap`, called only with a regression/SE already
       constructed (as callers would after `checkHardFloor` returns `false`): a gap whose interval
       covers zero → `not_enough_data`; a gap exactly equal to its interval → `not_enough_data` (`<=`
       comparison, per spec — zero sits on the range's own boundary); a gap clearly outside its
@@ -165,7 +165,7 @@
       weigh-in on the window's last day, but this is a tendency, not the safety mechanism — the case
       that actually catches a stale-but-narrow-SE series is 3.8's freshness-gate test, which fires
       before `computeLoggingGap` is ever called
-- [ ] 3.9 Add an `excludedOutlierCount` (or boolean) output alongside 3.7's result (whichever of
+- [x] 3.9 Add an `excludedOutlierCount` (or boolean) output alongside 3.7's result (whichever of
       `checkHardFloor`/`computeLoggingGap` the caller last ran), counting only exclusions within the
       28-day window itself (not the lead-in extension used to converge the EMA — the same count
       `checkHardFloor` uses for the rejection cap), so the card can render the outlier note (spec's
