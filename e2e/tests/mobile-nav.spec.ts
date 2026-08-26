@@ -85,6 +85,28 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
     expect(header.height).toBeLessThan(HEADER_HEIGHT_CEILING);
   });
 
+  // dashboard-ui's "Mobile header is reduced to title and user", whose
+  // single-row guarantee runs down to 320px — the narrowest supported width,
+  // and where the old seven-control row wrapped worst.
+  test('the header is one row of title and user at 320px, with the shed controls gone', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await login(page);
+
+    const title = await boxOf(page.getByRole('link', { name: 'HealthVault' }), 'app title');
+    const badge = await boxOf(page.getByTestId('user-badge'), 'user badge');
+    // Same row, not merely both present: a wrapped header would put the
+    // badge a full row below the title while both stayed visible.
+    expect(Math.abs((title.y + title.height / 2) - (badge.y + badge.height / 2)),
+      'title and badge should share a row').toBeLessThan(4);
+
+    const header = await boxOf(page.locator('header').first(), 'header');
+    expect(header.height).toBeLessThan(HEADER_HEIGHT_CEILING);
+
+    for (const id of ['webhook', 'custom-foods', 'import', 'settings', 'logout']) {
+      await expect(page.locator(`header [data-nav-control="${id}"]`), `header ${id}`).toBeHidden();
+    }
+  });
+
   // The second of the two defects the audit measured: "log a meal by photo"
   // sat 1.04 folds down in the dashboard body, and existed on no other
   // screen at all. Asserted from a page that is not the dashboard as well as
@@ -331,6 +353,10 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     await login(page);
     await expect(page.locator('meta[name="viewport"]'))
       .toHaveAttribute('content', /viewport-fit=cover/);
+    // The shell withholds its chrome until the session resolves, so the bar
+    // is not in the document the instant the dashboard URL settles. The
+    // evaluate below is a one-shot read with no auto-retry of its own.
+    await expect(bar(page)).toBeVisible();
 
     const usesEnv = await page.evaluate(() => {
       const el = document.querySelector('[data-testid="bottom-nav"]');

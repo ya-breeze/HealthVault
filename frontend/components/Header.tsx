@@ -158,7 +158,7 @@ export default function Header({ me }: { me: Me }) {
               than pushing the row to a second line at 320px. The inner span
               is what carries `truncate`: text-overflow has no effect on the
               flex container that supplies the 48px height. */}
-          <span className="font-[family-name:var(--font-data)] text-xs uppercase tracking-wide text-text-muted border border-border rounded-md px-2.5 py-2.5 min-h-12 flex items-center bg-bg min-w-0">
+          <span data-testid="user-badge" className="font-[family-name:var(--font-data)] text-xs uppercase tracking-wide text-text-muted border border-border rounded-md px-2.5 py-2.5 min-h-12 flex items-center bg-bg min-w-0">
             <span className="truncate min-w-0">{me.username}</span>
           </span>
           {SHED_CONTROL_IDS.map(id => shedControls[id])}

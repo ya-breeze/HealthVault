@@ -50,7 +50,6 @@ export default function MoreSheet({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        e.stopPropagation();
         onClose();
         return;
       }
