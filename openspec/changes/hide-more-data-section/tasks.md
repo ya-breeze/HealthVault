@@ -38,4 +38,4 @@
 
 ## 7. Docs
 
-- [ ] 7.1 `CONTEXT.md`: update the "Dashboard Card" glossary entry — the More Data row gains a section-level, persisted, user-configurable hide/show preference, so it is no longer accurate to describe it (alongside the needs-attention banner and Log Food row) as a fixed, "not user-configurable" section.
+- [x] 7.1 `CONTEXT.md`: update the "Dashboard Card" glossary entry — the More Data row gains a section-level, persisted, user-configurable hide/show preference, so it is no longer accurate to describe it (alongside the needs-attention banner and Log Food row) as a fixed, "not user-configurable" section.

@@ -59,7 +59,7 @@ _Avoid_: Expert mode (lowercase "mode" reads as the toggle), component mode
 ### Dashboard
 
 **Dashboard Card**:
-An individual, independently showable/hideable and reorderable unit on the main dashboard — a Vital Card or a Food Card. Distinct from the dashboard's other sections (the needs-attention banner, Log Food row, More Data row), which are fixed JSX blocks, not Cards, and are not user-configurable.
+An individual, independently showable/hideable and reorderable unit on the main dashboard — a Vital Card or a Food Card. Distinct from the dashboard's other sections (the needs-attention banner, Log Food row, More Data row), which are fixed JSX blocks, not Cards. The needs-attention banner and Log Food row are not user-configurable; the More Data row is the exception — it has its own persisted, user-configurable hide/show preference (`more_data_hidden`), independent of the per-Card `hidden` flag, though it remains a single fixed block rather than a reorderable Card.
 _Avoid_: Widget, panel, section (reserve "section" for the fixed non-Card blocks)
 
 **Vital Card**:
