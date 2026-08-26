@@ -216,7 +216,13 @@ function weightRow(id: string, kg: number, daysAgo: number) {
 // scoped out entirely — see openspec/specs/mobile-touch-targets "Data detail
 // record delete control meets the minimum" and its three sibling scenarios.
 test.describe('Mobile tap targets — data detail page', () => {
-  test.use({ viewport: MOBILE_VIEWPORT });
+  // hasTouch matters here, not just the viewport: the zoom and macro tabs take
+  // the minimum via TapTarget's `touchOnly`, which is keyed off
+  // `(pointer: fine)`. The suite's project is devices['Desktop Chrome'], which
+  // reports a fine pointer at any viewport size, so without this these two
+  // groups would be measured in their compact mouse rendering and the case
+  // would assert the wrong thing.
+  test.use({ viewport: MOBILE_VIEWPORT, hasTouch: true });
 
   test('record delete, its confirmation, and the zoom tabs meet the 48px minimum', async ({ page }) => {
     await login(page);
@@ -255,5 +261,33 @@ test.describe('Mobile tap targets — data detail page', () => {
     for (const m of ['Calories', 'Protein', 'Carbs', 'Fat', 'Sugar', 'Sodium', 'Fiber']) {
       await assertMinTapTarget(page.getByRole('button', { name: m, exact: true }), `${m} macro tab`);
     }
+  });
+});
+
+// The delete control and its confirm/cancel siblings are deliberately NOT
+// `touchOnly` — 14x20 was too small for a mouse as well as a thumb, and it is
+// the control whose mis-tap destroys a health record. Everything above runs on
+// a coarse pointer, where `touchOnly` and plain TapTarget render identically,
+// so nothing there would notice if someone added `touchOnly` to the delete
+// control for consistency with the two tab groups in the same file. This pins
+// that distinction: on a fine pointer the tabs go compact and the delete
+// control must not follow them.
+test.describe('Data detail page — mouse pointer', () => {
+  test.use({ viewport: { width: 1280, height: 900 }, hasTouch: false });
+
+  test('delete control keeps the 48px minimum while the compact tabs are released', async ({ page }) => {
+    await login(page);
+    await mockDataRecords(page, 'weight', [weightRow('rec-1', 80.5, 1)]);
+
+    await page.goto('/data/weight/');
+
+    const del = page.getByRole('button', { name: 'Delete record' });
+    await expect(del).toBeVisible();
+    await assertMinTapTarget(del, 'record delete control (mouse)');
+
+    const week = page.getByRole('button', { name: 'Week', exact: true });
+    const weekBox = await week.boundingBox();
+    expect(weekBox, 'zoom tab should have a bounding box').not.toBeNull();
+    expect(weekBox!.height, 'zoom tab height on a fine pointer').toBeLessThan(MIN_TAP_TARGET);
   });
 });

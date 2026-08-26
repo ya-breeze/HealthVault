@@ -50,12 +50,20 @@ keep working — the archived change already relied on that guarantee.
 *Alternative considered:* add `min-h-12 min-w-12` inline at each call site. Rejected — identical
 rendered result, but it re-creates the per-call-site pattern that produced the gap.
 
-**Release the compact segmented controls at `sm`, keeping their desktop size.** The zoom tabs and
-the nutrition macro tabs are deliberately compact on desktop (28 and 27 px), where the tap-target
-problem they would solve does not exist. Growing them to 48 px everywhere makes desktop chunkier for
-no benefit, so they take the minimum only below `sm` (640 px).
+**Release the compact segmented controls for mouse users, keyed off pointer type.** The zoom tabs
+and the nutrition macro tabs are deliberately compact where the pointer is precise (28 and 27 px),
+and the tap-target problem they would solve does not exist there. Growing them to 48 px for a mouse
+makes the UI chunkier for no benefit, so they take the minimum only on a coarse pointer, via
+`pointer-fine:min-h-0 pointer-fine:min-w-0`.
 
-This is expressed as a named `mobileOnly` prop on `TapTarget`, not as opt-out utility classes at the
+**Pointer type, not viewport width.** A width test is the obvious implementation and it is wrong:
+a 375×667 phone rotated to landscape is 667 CSS px wide, so a `sm:`-based release (≥640 px) hands
+the fix straight back on the exact device this change was filed for — and a tablet in portrait
+(768 px) never gets it at all. `(pointer: fine)` asks the question actually being asked, "is this a
+mouse?", and it fails safe: a device reporting no fine pointer keeps the minimum. An earlier
+iteration of this change did use `sm:`; it was caught in review.
+
+This is expressed as a named `touchOnly` prop on `TapTarget`, not as opt-out utility classes at the
 call site. Sizing still lives in exactly one place — a call site asks for the behaviour by name and
 never spells out its own dimensions — so the property this change is built on ("the minimum is
 structural, not re-created per call site") survives intact.
@@ -63,13 +71,13 @@ structural, not re-created per call site") survives intact.
 Both compact groups get the same treatment, because they render together on `/data/nutrition`:
 releasing one and not the other would put a 28 px control next to a 48 px one in the same view.
 
-The record delete control and its confirm/cancel siblings are deliberately **not** `mobileOnly`.
+The record delete control and its confirm/cancel siblings are deliberately **not** `touchOnly`.
 They are not compact-by-design — the delete target was 14×20, which is too small for a mouse as
 well as a thumb, and it is the control whose mis-tap destroys a record.
 
 *Superseded alternative:* an earlier draft of this design grew the zoom tabs at every width, on the
 grounds that one geometry is simpler to reason about and to test. The operator reversed that call on
-review; the trade it bought (uniform geometry) was not worth a visibly worse desktop.
+review; the trade it bought (uniform geometry) was not worth a visibly worse mouse rendering.
 
 **Mock the data API in the new e2e case** rather than depending on seeded records. Every other case
 in `mobile-tap-targets.spec.ts` mocks its API (`page.route('**/api/food/…')`), and the page defaults
@@ -96,13 +104,16 @@ redesign of the interaction, and belongs to the upcoming visual change, not to a
   go 65 → 73 px; `/data/steps` rows are unchanged at 85 px because their timestamps already wrap.
   This is the intended outcome, not a regression: a row shorter than 48 px cannot host a compliant
   control.
-- **Two geometries now exist for the compact controls, so their size is viewport-dependent** →
-  Accepted; this is the cost of the decision above. The e2e assertions run at the suite's
-  `MOBILE_VIEWPORT`, below `sm`, so they continue to assert the 48 px minimum where it applies. A
-  regression that dropped the minimum at *all* widths would still turn them red, because `sm:`
-  utilities do not apply below 640 px.
-- **Desktop size is now unasserted for these two groups** → Accepted. It is a cosmetic preference,
-  not a requirement; encoding "must stay small on desktop" in the spec would freeze a taste call.
+- **Two geometries now exist for the compact controls, so their size is pointer-dependent** →
+  Accepted; this is the cost of the decision above. The suite's project is
+  `devices['Desktop Chrome']`, which reports a *fine* pointer at every viewport size, so the
+  data-detail cases set `hasTouch: true` explicitly — without it they would measure the compact
+  mouse rendering and assert the wrong thing.
+- **A regression could add `touchOnly` to the delete control** — an easy consistency mistake, since
+  its two tab neighbours in the same file have it — returning the highest-consequence control on the
+  page to 14×20 for mouse users → Guarded by a dedicated fine-pointer case that asserts the delete
+  control still measures 48×48 while the zoom tabs go compact. Every other assertion runs on a
+  coarse pointer, where `touchOnly` and plain `TapTarget` are indistinguishable.
 - **Seven macro tabs at 48 px tall will wrap onto more rows on `/data/nutrition`** → Their container
   is already `flex-wrap`, so this changes how many rows they occupy, not whether they fit. Below
   `sm` only. Verified in task 3.6 rather than assumed.

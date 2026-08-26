@@ -28,21 +28,25 @@
       selected-state styling and the macro each one sets
 - [x] 2.5 Confirm no sizing utility classes were added at any call site — the minimum must come from
       `TapTarget` alone (per the design's first decision)
-      → still holds after 2.6: the two compact groups pass a named `mobileOnly` prop, and no
+      → still holds after 2.6: the two compact groups pass a named `touchOnly` prop, and no
       `className` value in `DataTypeClient.tsx` changed at any point
 
-## 2b. Reversal: keep the compact controls small on desktop
+## 2b. Reversal: keep the compact controls small for mouse users
 
 Operator reversed the "grow at every width" call on review (see design.md's superseded alternative).
 
-- [x] 2.6 Add a `mobileOnly` prop to `TapTarget` that releases the minimum at `sm` via
-      `sm:min-h-0 sm:min-w-0`, destructured so it is never spread onto the DOM element
-- [x] 2.7 Pass `mobileOnly` on the zoom tabs and the nutrition macro tabs — both, since they render
-      together on `/data/nutrition` and releasing only one would mix 28 px and 48 px controls in one
-      view. The delete/confirm/cancel controls deliberately keep the minimum at every width.
+- [x] 2.6 Add a `touchOnly` prop to `TapTarget` that releases the minimum on a fine pointer via
+      `pointer-fine:min-h-0 pointer-fine:min-w-0`, destructured so it is never spread onto the DOM
+      element
+- [x] 2.7 Pass `touchOnly` on the zoom tabs and the nutrition macro tabs — both, since they render
+      together on `/data/nutrition` and releasing only one would mix compact and 48 px controls in
+      one view. The delete/confirm/cancel controls deliberately keep the minimum unconditionally.
 - [x] 2.8 Confirm Tailwind actually emits the variant from the template-literal class string
-      → `.sm\:min-h-0{min-height:0}` present inside `@media (min-width:40rem)`, and positioned
-      after the base `min-h-12` rule in source order, so it wins above 640 px
+- [x] 2.9 Key the release off **pointer type, not viewport width**. A `sm:`-based release was the
+      first implementation and was caught in review: a 375×667 phone in landscape is 667 px wide, so
+      it would hand the fix back on the very device this change was filed for, and a tablet in
+      portrait (768 px) would never receive it. Verified `hasTouch: true` flips
+      `matchMedia('(pointer: coarse)')` in Playwright, so the condition is testable.
 
 > Note: `DataTypeClient.tsx` already imports `TapTarget` (used by the "Set goal" / "Set height"
 > controls), so no new import is needed.
@@ -65,21 +69,10 @@ Operator reversed the "grow at every width" call on review (see design.md's supe
       and the macro tabs still fit their `flex-wrap` container without clipping
       → all six combinations match the baseline exactly. Delete 14×20 → 48×48; zoom tabs
       48/52/59/52 × 48; macro tabs all ≥48×48, container reports no clipping.
-- [x] 3.8 Re-run 3.4–3.6 after the 2b reversal, and additionally confirm at a **desktop** viewport
-      (≥640 px) that the zoom and macro tabs are back to their compact height while the delete
-      control still meets 48×48
-      → full suite 8/8 again. Swept across the breakpoint:
-
-      | viewport | zoom tab h | macro tab h | delete | weight columns |
-      |---|---|---|---|---|
-      | 375 | 48 | 48 | 48×48 | 110/102/104/110/86 |
-      | 390 | 48 | 48 | 48×48 | 110/102/104/110/86 |
-      | 639 | 48 | 48 | 48×48 | unchanged |
-      | 640 | **28** | **27** | 48×48 | unchanged |
-      | 1280 | **28** | **27** | 48×48 | unchanged |
-
-      The flip lands exactly on `sm`, and 28/27 are the original desktop heights, so desktop is
-      byte-for-byte what it was before this change.
+- [ ] 3.8 Re-run 3.4–3.6 after the 2b reversal, and additionally confirm on a **fine pointer** that
+      the zoom and macro tabs are back to their compact height while the delete control still meets
+      48×48 — and on a **coarse pointer at a landscape-phone width (667 px)** that both tab groups
+      still meet the minimum, which is the case the superseded `sm:` implementation got wrong
 - [x] 3.7 Confirm the table's column set and horizontal-scroll behaviour are unchanged from `main`
       → verified by A/B on one build (neutralising only what `TapTarget` adds). Also checked the
       transient pending-delete state: Actions grows 86 → 155 and scrollWidth 513 → 581, but that is

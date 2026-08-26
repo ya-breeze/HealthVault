@@ -9,17 +9,27 @@ import { ComponentPropsWithoutRef, ElementType } from 'react';
 // Tailwind's default (unmodified) spacing scale.
 const MIN_TAP_TARGET_CLASSES = 'min-h-12 min-w-12';
 
-// Same minimum on touch-sized viewports, released at `sm` (>=640px). For
-// compact segmented controls whose desktop rendering is deliberately small
-// and where a 48px control would just look chunky — the tap-target problem
-// they solve only exists on a phone. Kept here rather than as opt-out classes
-// at the call site, so sizing still lives in exactly one place; a call site
-// asks for the behaviour by name and never spells out its own dimensions.
-const MOBILE_ONLY_CLASSES = `${MIN_TAP_TARGET_CLASSES} sm:min-h-0 sm:min-w-0`;
+// Same minimum, released only where the primary pointing device is a mouse.
+// For compact segmented controls whose pointer-precise rendering is
+// deliberately small, and where a 48px control would just look chunky.
+//
+// Keyed off pointer type, NOT viewport width. A width test is the obvious
+// implementation and it is wrong: a 375x667 phone in landscape is 667 CSS px
+// wide, so any `sm:`-style release (>=640px) hands the fix back on exactly the
+// device this change was filed for, as does a tablet in portrait at 768px.
+// `pointer: fine` asks the question actually being asked — "is this a mouse?"
+// — and it fails safe, since a device that reports no fine pointer keeps the
+// minimum.
+//
+// Kept here rather than as opt-out classes at the call site, so sizing still
+// lives in exactly one place; a call site asks for the behaviour by name and
+// never spells out its own dimensions.
+const TOUCH_ONLY_CLASSES = `${MIN_TAP_TARGET_CLASSES} pointer-fine:min-h-0 pointer-fine:min-w-0`;
 
 type TapTargetProps<T extends ElementType> = {
   as?: T;
-  mobileOnly?: boolean;
+  /** Take the 48px minimum only on coarse (touch) pointers; compact for a mouse. */
+  touchOnly?: boolean;
 } & ComponentPropsWithoutRef<T>;
 
 // Spreads all other props through unchanged (title, aria-label, data-testid,
@@ -29,12 +39,12 @@ type TapTargetProps<T extends ElementType> = {
 export default function TapTarget<T extends ElementType = 'button'>({
   as,
   className,
-  mobileOnly,
+  touchOnly,
   ...rest
 }: TapTargetProps<T>) {
   const Component = (as ?? 'button') as ElementType;
   // Destructured above so it is never spread onto the DOM element below.
-  const minClasses = mobileOnly ? MOBILE_ONLY_CLASSES : MIN_TAP_TARGET_CLASSES;
+  const minClasses = touchOnly ? TOUCH_ONLY_CLASSES : MIN_TAP_TARGET_CLASSES;
   const mergedClassName = className ? `${minClasses} ${className}` : minClasses;
   // Spread before {...rest} below, so an explicit `type` in rest overrides this default.
   const defaultType = Component === 'button' ? { type: 'button' as const } : undefined;
