@@ -2,14 +2,30 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ya-breeze/kin-core/auth"
 	"github.com/ya-breeze/kin-core/authdb"
 	"github.com/ya-breeze/kin-core/cookies"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"gorm.io/gorm"
+)
+
+const (
+	// maxLoginBodyBytes bounds the request body read before decoding, so an
+	// oversized payload is rejected before any JSON parsing work.
+	maxLoginBodyBytes = 4 * 1024
+	// maxLoginUsernameLength bounds the username accepted for login. The
+	// login limiter (login_limiter.go) retains a normalized copy of the
+	// username for up to 24h and caps the number of tracked entries at
+	// loginMapCeiling, but that count cap alone does not bound an entry's
+	// size — without this check, an attacker submitting distinct oversized
+	// usernames could still inflate the limiter's memory footprint well
+	// beyond what the entry-count ceiling assumes.
+	maxLoginUsernameLength = 254
 )
 
 type authHandlers struct {
@@ -32,11 +48,22 @@ func writeTooManyAttempts(w http.ResponseWriter, retryAfter time.Duration) {
 }
 
 func (h *authHandlers) Login(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
+
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if utf8.RuneCountInString(req.Username) > maxLoginUsernameLength {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -52,6 +79,15 @@ func (h *authHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.storage.FindUserByName(req.Username)
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			// An operational DB error (not "no such user") is not a
+			// credential failure: release the reserved in-flight slot
+			// without recording a failure, so a transient outage can't
+			// contribute toward locking out a legitimate account.
+			releaseAttempt(req.Username)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 		// Run the same bcrypt cost as a wrong-password 401 so an
 		// unknown-username response is not measurably faster (closes a
 		// username-enumeration timing oracle, per design.md).

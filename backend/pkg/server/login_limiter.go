@@ -268,6 +268,26 @@ func (l *loginLimiter) recordSuccess(username string) {
 	entry.lockedUntil = time.Time{}
 }
 
+// releaseAttempt resolves one admitted attempt as neither a confirmed
+// failure nor a success: it only decrements the in-flight counter. Used when
+// credential verification could not run at all (e.g. an operational DB
+// error), so a transient outage never counts toward a username's lockout
+// threshold or clears its existing failure/backoff state.
+func (l *loginLimiter) releaseAttempt(username string) {
+	key := normalizeLoginUsername(username)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	entry, ok := l.entries[key]
+	if !ok {
+		return
+	}
+	if entry.inFlight > 0 {
+		entry.inFlight--
+	}
+}
+
 // ceilRetryAfter converts a duration to whole seconds, rounded up.
 func ceilRetryAfter(d time.Duration) int {
 	if d <= 0 {
