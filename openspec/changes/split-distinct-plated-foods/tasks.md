@@ -33,7 +33,7 @@
 
 ## 2. Spec update
 
-- [ ] 2.1 Confirm the "Composite Dish Naming" requirement delta under
+- [x] 2.1 Confirm the "Composite Dish Naming" requirement delta under
   `openspec/changes/split-distinct-plated-foods/specs/food-photo-recognition/spec.md` (already
   drafted in this change) matches the final prompt wording from task 1; adjust either if they
   drift during implementation.
