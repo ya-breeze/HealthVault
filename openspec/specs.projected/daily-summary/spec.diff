@@ -4,7 +4,7 @@
 
 --- openspec/specs/daily-summary/spec.md
 +++ openspec/specs/daily-summary/spec.md
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,90 @@
 +# daily-summary Specification
 +
 +## Purpose
@@ -29,8 +29,11 @@
 +  fields are not populated until confirmation).
 +- `meal_count`: a count of the caller's `FoodMeal` rows whose Logged Day is today, regardless of
 +  `status`.
-+- `last_updated`: the maximum `logged_at` among the caller's `FoodMeal` rows whose Logged Day is
-+  today, regardless of `status`, or `null` if there are none.
++- `last_logged_at`: the maximum `logged_at` among the caller's `FoodMeal` rows whose Logged Day is
++  today, regardless of `status`, or `null` if there are none. This reflects when the caller last
++  logged a meal, not when this response's values last changed — every field in this response is
++  computed fresh on each call, never cached, so confirming an already-logged row later the same day
++  can change `calories_consumed`/the macro sums without moving `last_logged_at`.
 +- `display_language`: the caller's current `display_language` setting, using its existing
 +  resolution/default rules (see `display-language`).
 +- `target`: an embedded object, either `{"available": true, "calories", "protein_grams",
@@ -64,14 +67,14 @@
 +  summary
 +- **THEN** the system SHALL return HTTP 200 with `calories_consumed = 0`,
 +  `protein_grams_consumed = 0`, `carbs_grams_consumed = 0`, `fat_grams_consumed = 0`,
-+  `meal_count = 0`, and `last_updated = null`
++  `meal_count = 0`, and `last_logged_at = null`
 +
 +#### Scenario: Target unavailable does not fail the request
 +
 +- **GIVEN** a user has never saved a `birthdate` or `sex`
 +- **WHEN** they request their summary
 +- **THEN** the system SHALL return HTTP 200 (not 422) with `target = {"available": false, "reason":
-+  "missing_profile"}`, and `calories_consumed`/`meal_count`/`last_updated` SHALL still reflect
++  "missing_profile"}`, and `calories_consumed`/`meal_count`/`last_logged_at` SHALL still reflect
 +  today's actual meals
 +
 +#### Scenario: Recommendation is always null
@@ -84,11 +87,11 @@
 +- **WHEN** a request to `GET /api/summary/today` carries no valid token
 +- **THEN** the system SHALL return HTTP 401
 +
-+#### Scenario: A processing meal still updates last_updated and meal_count
++#### Scenario: A processing meal still updates last_logged_at and meal_count
 +
 +- **GIVEN** a user has a single meal logged today whose status is `processing` (photo uploaded,
 +  recognition not yet complete)
 +- **WHEN** they request their summary
-+- **THEN** `meal_count = 1` and `last_updated` equals that meal's `logged_at`, even though
++- **THEN** `meal_count = 1` and `last_logged_at` equals that meal's `logged_at`, even though
 +  `calories_consumed = 0` because the meal is not yet `confirmed`
 +

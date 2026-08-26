@@ -140,6 +140,29 @@ access or refresh tokens: `POST /api/auth/refresh`, `POST /api/auth/logout`, and
 This limiter SHALL be maintained in-process (no new database table or `kin-core` dependency) and
 SHALL NOT require any background goroutine to expire or evict its state.
 
+The check for whether a username is currently permitted to attempt login, and the reservation of
+capacity for this attempt, SHALL happen as a single atomic operation performed before credential
+verification begins. Credential verification (bcrypt) SHALL NOT be completed, in whole or in part,
+before this admission check, so that multiple concurrent login requests for the same username can
+never collectively have more than 5 attempts undergoing credential verification at once, regardless
+of how long credential verification takes. Only an attempt whose credential verification actually
+fails SHALL be recorded against that username's failure count and be capable of tripping a lockout;
+an admitted attempt that succeeds SHALL NOT be counted as a failure, even transiently, and a burst
+of concurrent successful logins for a username SHALL NOT be capable of triggering a lockout for
+that username.
+
+The limiter's state SHALL be bounded in size. When admitting a new, not-yet-tracked username would
+exceed that bound and no existing tracked username is eligible for eviction (i.e. every tracked
+username currently has an active lockout, a nonzero recent-failure count, an attempt currently
+undergoing credential verification, or recent activity), the system SHALL reject the new
+username's login attempt with the same HTTP 429 lockout response rather than admitting it
+untracked. An established username's lockout, failure count, or in-flight verification attempt
+SHALL NOT be evicted to make room for a different, newly-seen username.
+
+A login attempt for a username that does not exist SHALL still perform a bcrypt comparison
+(against a fixed placeholder hash) before returning HTTP 401, so that an unknown-username response
+is not measurably faster than a known-username/wrong-password response.
+
 #### Scenario: Fifth failed attempt trips the lockout
 
 - **GIVEN** a username has had 4 failed login attempts within the last 15 minutes
@@ -193,4 +216,50 @@ SHALL NOT require any background goroutine to expire or evict its state.
 - **WHEN** that username next accumulates 5 failed attempts and trips a new lockout
 - **THEN** the new lockout's duration SHALL be 1 minute, not a continuation of the previous
   escalated backoff
+
+#### Scenario: Concurrent attempts cannot exceed the threshold
+
+- **GIVEN** a username has no failed attempts recorded and is not locked out
+- **WHEN** more than 5 login requests for that username arrive concurrently, all with incorrect
+  passwords, and credential verification for each takes measurable time
+- **THEN** at most 5 of them SHALL be admitted to attempt credential verification, and every
+  request beyond the 5th SHALL be rejected with HTTP 429, even though all requests observed the
+  username as not-yet-locked at the moment they arrived
+
+#### Scenario: Concurrent correct-password attempts never trip a lockout
+
+- **GIVEN** a username has no failed attempts recorded and is not locked out
+- **WHEN** 5 or more login requests for that username arrive concurrently, all with the correct
+  password, and credential verification for each takes measurable time
+- **THEN** none of them SHALL result in a lockout being triggered, and any request rejected while
+  credential-verification capacity was temporarily full SHALL NOT count toward the username's
+  failure total — a login attempt for that username made immediately after all concurrent requests
+  finish SHALL succeed rather than being rejected with HTTP 429
+
+#### Scenario: A saturated limiter fails closed for new usernames
+
+- **GIVEN** the limiter's tracked-username state is at its size bound and every tracked username
+  currently has an active lockout, a nonzero recent-failure count, an in-flight (currently
+  verifying) attempt, or recent activity
+- **WHEN** a login attempt is made for a username with no existing tracked state
+- **THEN** the system SHALL reject that attempt with HTTP 429, rather than admitting it without
+  recording or rate-limiting it
+
+#### Scenario: An in-flight attempt is never evicted while credential verification is pending
+
+- **GIVEN** a username has just been admitted for its very first login attempt (zero confirmed
+  failures, no lockout, no prior recorded activity) and that attempt's credential verification is
+  still in progress
+- **WHEN** the limiter's lazy sweep or ceiling eviction runs concurrently, for any reason including
+  the map being at its size bound
+- **THEN** that username's entry SHALL NOT be evicted, and the in-flight attempt SHALL resolve
+  (via `recordFailure` or `recordSuccess`) against the same entry it was admitted into
+
+#### Scenario: Unknown username takes comparable time to a wrong password
+
+- **GIVEN** a username that does not exist in the system
+- **WHEN** a login attempt is made for that username
+- **THEN** the system SHALL perform a bcrypt comparison before returning HTTP 401, so that the
+  response is not measurably faster than a login attempt for an existing username with an
+  incorrect password
 
