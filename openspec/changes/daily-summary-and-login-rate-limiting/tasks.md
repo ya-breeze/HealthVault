@@ -165,17 +165,17 @@
 
 ## 4. Backend: daily summary unit tests
 
-- [ ] 4.1 Unit-test `database.TodaySummary`: confirmed-only sums, all-status meal count, all-status
+- [x] 4.1 Unit-test `database.TodaySummary`: confirmed-only sums, all-status meal count, all-status
       max `logged_at`, and the zero-meals-today case
-- [ ] 4.2 Unit-test that a `processing`/`pending_review`/`pending_clarification`/`failed` meal
+- [x] 4.2 Unit-test that a `processing`/`pending_review`/`pending_clarification`/`failed` meal
       contributes to `meal_count` and `last_logged_at` but not to the consumed macro sums
-- [ ] 4.3 Unit-test `SummaryTodayHandler`'s target embedding for each of: an available target, and
+- [x] 4.3 Unit-test `SummaryTodayHandler`'s target embedding for each of: an available target, and
       each of the 4 `nutrition-target` unavailable reasons — asserting HTTP 200 in every case, not
       422
-- [ ] 4.4 Unit-test that `GET /api/summary/today` ignores any `?user=` query parameter (self-only,
+- [x] 4.4 Unit-test that `GET /api/summary/today` ignores any `?user=` query parameter (self-only,
       matching `nutrition-target`'s existing test coverage pattern) and returns 401 with no valid
       token
-- [ ] 4.5 Unit-test the Local Day boundary reuse: a meal logged just before/after local midnight in
+- [x] 4.5 Unit-test the Local Day boundary reuse: a meal logged just before/after local midnight in
       a non-UTC `timezone` setting lands in the correct day's summary (mirrors
       `food-day-completeness`'s existing timezone-boundary test cases), using a fixed `now` passed
       into `database.TodaySummary` rather than depending on wall-clock time

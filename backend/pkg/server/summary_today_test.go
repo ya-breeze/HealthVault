@@ -1,0 +1,184 @@
+package server_test
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/ya-breeze/healthvault/pkg/database"
+	"github.com/ya-breeze/healthvault/pkg/server"
+)
+
+func newSummaryTodayRequest(userID uuid.UUID, query string) *http.Request {
+	url := "/api/summary/today"
+	if query != "" {
+		url += "?" + query
+	}
+	return withClaims(httptest.NewRequest(http.MethodGet, url, nil), userID)
+}
+
+type summaryTodayTestResponse struct {
+	Date                 string     `json:"date"`
+	CaloriesConsumed     float64    `json:"calories_consumed"`
+	ProteinGramsConsumed float64    `json:"protein_grams_consumed"`
+	CarbsGramsConsumed   float64    `json:"carbs_grams_consumed"`
+	FatGramsConsumed     float64    `json:"fat_grams_consumed"`
+	MealCount            int        `json:"meal_count"`
+	LastLoggedAt         *time.Time `json:"last_logged_at"`
+	DisplayLanguage      string     `json:"display_language"`
+	Target               struct {
+		Available    bool   `json:"available"`
+		Reason       string `json:"reason"`
+		Calories     int    `json:"calories"`
+		ProteinGrams int    `json:"protein_grams"`
+		CarbsGrams   int    `json:"carbs_grams"`
+		FatGrams     int    `json:"fat_grams"`
+	} `json:"target"`
+	Recommendation any `json:"recommendation"`
+}
+
+func decodeSummaryToday(t *testing.T, w *httptest.ResponseRecorder) summaryTodayTestResponse {
+	t.Helper()
+	var body summaryTodayTestResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return body
+}
+
+func TestSummaryToday_Unauthenticated(t *testing.T) {
+	st := newFoodTestStorage(t)
+	h := server.SummaryTodayHandler(st)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/summary/today", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
+// TestSummaryToday_TargetUnavailableReasons covers 4.3: every one of
+// nutrition-target's four unmet-precondition reasons must still surface as
+// HTTP 200 here (never 422, unlike GET /api/users/me/nutrition-target
+// itself), with target.available=false and the same reason code.
+func TestSummaryToday_TargetUnavailableReasons(t *testing.T) {
+	cases := []struct {
+		name       string
+		setup      func(t *testing.T, st database.Storage, userID, familyID uuid.UUID)
+		wantReason string
+	}{
+		{
+			name:       "missing_profile",
+			setup:      func(t *testing.T, st database.Storage, userID, familyID uuid.UUID) {},
+			wantReason: "missing_profile",
+		},
+		{
+			name: "missing_measurements",
+			setup: func(t *testing.T, st database.Storage, userID, familyID uuid.UUID) {
+				setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male"}`)
+			},
+			wantReason: "missing_measurements",
+		},
+		{
+			name: "missing_goal_weight",
+			setup: func(t *testing.T, st database.Storage, userID, familyID uuid.UUID) {
+				setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male"}`)
+				createRecord(t, st, userID, "weight", 80)
+				createRecord(t, st, userID, "height", 1.80)
+			},
+			wantReason: "missing_goal_weight",
+		},
+		{
+			name: "insufficient_activity_data",
+			setup: func(t *testing.T, st database.Storage, userID, familyID uuid.UUID) {
+				setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male"}`)
+				createRecord(t, st, userID, "weight", 80)
+				createRecord(t, st, userID, "height", 1.80)
+				createRecord(t, st, userID, "weight_goal", 75)
+			},
+			wantReason: "insufficient_activity_data",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newFoodTestStorage(t)
+			userID, familyID := seedFoodUser(t, st)
+			tc.setup(t, st, userID, familyID)
+
+			h := server.SummaryTodayHandler(st)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, newSummaryTodayRequest(userID, ""))
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			resp := decodeSummaryToday(t, w)
+			if resp.Target.Available {
+				t.Errorf("target.available = true, want false")
+			}
+			if resp.Target.Reason != tc.wantReason {
+				t.Errorf("target.reason = %q, want %q", resp.Target.Reason, tc.wantReason)
+			}
+		})
+	}
+}
+
+// TestSummaryToday_TargetAvailable covers 4.3's success case: with every
+// nutrition-target precondition met, the endpoint embeds the computed target
+// with available=true and no reason.
+func TestSummaryToday_TargetAvailable(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male","activity_override":"moderate"}`)
+	createRecord(t, st, userID, "weight", 80)
+	createRecord(t, st, userID, "height", 1.80)
+	createRecord(t, st, userID, "weight_goal", 75)
+
+	h := server.SummaryTodayHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSummaryTodayRequest(userID, ""))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := decodeSummaryToday(t, w)
+	if !resp.Target.Available {
+		t.Fatalf("target.available = false, want true: %+v", resp.Target)
+	}
+	if resp.Target.Reason != "" {
+		t.Errorf("target.reason = %q, want empty when available", resp.Target.Reason)
+	}
+	if resp.Target.Calories <= 0 || resp.Target.ProteinGrams <= 0 {
+		t.Errorf("expected positive target calories/protein, got %+v", resp.Target)
+	}
+	if resp.Recommendation != nil {
+		t.Errorf("recommendation = %v, want null", resp.Recommendation)
+	}
+}
+
+// TestSummaryToday_IgnoresUserQueryParam covers 4.4's self-only half: a
+// ?user= override naming a different user with data of its own must not
+// change the caller's own (empty) result.
+func TestSummaryToday_IgnoresUserQueryParam(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	otherUserID := uuid.New()
+
+	createMealAt(t, st, otherUserID, familyID, database.MealStatusConfirmed, time.Now().UTC())
+
+	h := server.SummaryTodayHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSummaryTodayRequest(userID, "user="+otherUserID.String()))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := decodeSummaryToday(t, w)
+	if resp.MealCount != 0 {
+		t.Errorf("meal_count = %d, want 0 (caller's own data, not the other user's)", resp.MealCount)
+	}
+}
