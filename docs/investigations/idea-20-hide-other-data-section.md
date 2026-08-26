@@ -113,7 +113,7 @@ icon) — as opposed to per-type toggles or a separate settings page.
   from the vitals grid's per-card row controls (which live inside each
   `VitalCard`, not at a section-header level — no existing component to
   copy verbatim, though the icon asset itself already exists in
-  `frontend/components/icons` from Phase 1).
+  `frontend/components/icons.tsx` from Phase 1).
   Confirmed while reading `page.tsx`: the "log food" action row (photo/
   manual/history) sits *between* the vitals grid and the More Data heading,
   and the needs-attention banner sits between the grid and that row —

@@ -14,7 +14,7 @@
 
 ## 3. UI control
 
-- [ ] 3.1 Add a show/hide (eye/eye-off) control to the More Data section heading, visible only in edit mode, wired to `toggleMoreDataHidden()`. Reuse the eye/eye-off icon asset from `frontend/components/icons` (added in Phase 1) rather than adding a new one.
+- [ ] 3.1 Add a show/hide (eye/eye-off) control to the More Data section heading, visible only in edit mode, wired to `toggleMoreDataHidden()`. Reuse the eye/eye-off icon asset from `frontend/components/icons.tsx` (added in Phase 1) rather than adding a new one.
 - [ ] 3.2 Disable the new control while `saving` is true, mirroring `VitalCard`'s existing `controlsDisabled={saving}` — `handleDone`'s write closes over state at click time, so a toggle clicked mid-save would otherwise be silently dropped (the same bug class Phase 1 had to fix for the per-card controls).
 
 ## 4. Localization
