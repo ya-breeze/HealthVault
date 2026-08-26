@@ -32,7 +32,9 @@
 
 ## 6. Manual verification against WIP
 
-- [ ] 6.1 Deploy the branch to the HealthVault WIP stack per CLAUDE.md's dry-run/E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review. Record the pass count here.
+- [x] 6.1 Deploy the branch to the HealthVault WIP stack per CLAUDE.md's dry-run/E2E rules, then run the full `e2e/tests/dashboard.spec.ts` suite (including the new cases) against it before requesting review. Record the pass count here.
+
+  Deployed `feature/idea-20-hide` (commit `86d7582`) to the `hcw-wip` stack (`wip` class, no dry-run gate required) and ran the full suite against `http://192.168.1.54:8892`: **32/32 passed**.
 
 ## 7. Docs
 
