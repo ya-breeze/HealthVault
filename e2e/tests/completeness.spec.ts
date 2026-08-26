@@ -49,9 +49,18 @@ async function deleteMeal(request: APIRequestContext, cookies: string, id: strin
 
 async function deleteMeals(request: APIRequestContext, cookies: string, ids: string[]): Promise<void> {
   const results = await Promise.allSettled(ids.map(id => deleteMeal(request, cookies, id)));
-  const failedIds = results.flatMap((r, i) => (r.status === 'rejected' ? [ids[i]] : []));
-  if (failedIds.length > 0) {
-    throw new Error(`failed to clean up ${failedIds.length}/${ids.length} meals: ${failedIds.join(', ')}`);
+  // Carries each rejection's own message, not just the id. The previous
+  // version reported only "failed to clean up 3/3 meals: <uuids>", which is
+  // the one thing that cannot be acted on: a cleanup failure leaves meals
+  // behind that go on to break *other* days' tests, and the status code that
+  // would say why (401? 409? a timeout?) was discarded at exactly the moment
+  // it mattered. Observed once on 2026-08-26 with no server-side log to
+  // match it against.
+  const failures = results.flatMap((r, i) =>
+    r.status === 'rejected' ? [`${ids[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`] : []
+  );
+  if (failures.length > 0) {
+    throw new Error(`failed to clean up ${failures.length}/${ids.length} meals:\n  ${failures.join('\n  ')}`);
   }
 }
 
@@ -75,6 +84,40 @@ async function unconfirmDate(request: APIRequestContext, cookies: string, date: 
   await request.delete(`${BASE_URL}/api/food/completeness/${date}/confirm`, { headers: { Cookie: cookies } }).catch(() => {});
 }
 
+// The Eating Occasion count the API currently reports for a local date.
+//
+// Asks the app rather than assuming: these tests run against a shared
+// account whose history accumulates meals from every other spec file (and
+// from runs killed before their cleanup), so a date this test picks may
+// already hold occasions it did not create. A test that needs its day to sit
+// *below* threshold must therefore derive the threshold from what the day
+// actually holds — see thresholdLeavingDayBelow.
+async function occasionCount(request: APIRequestContext, cookies: string, date: string): Promise<number> {
+  const res = await request.get(`${BASE_URL}/api/food/completeness?from=${date}&to=${date}`, {
+    headers: { Cookie: cookies },
+  });
+  if (!res.ok()) throw new Error(`failed to read completeness for ${date}: ${res.status()} ${await res.text()}`);
+  const days = (await res.json()) as Array<{ date: string; occasion_count: number }>;
+  return days.find(d => d.date === date)?.occasion_count ?? 0;
+}
+
+// A usual_meals_per_day value that leaves `date` exactly one occasion short
+// of its threshold, so the day is Unconfirmed and renders its "Mark day
+// complete" control. Call it after seeding, since the seeded meals count too.
+//
+// Hardcoding 3 here instead is what made this suite's failures a matter of
+// which dates happened to be clean: on 2026-08-26 the day seven days back
+// already held 3 occasions (two stray meals plus four leftover 'E2E Edit
+// Meal' rows collapsing into one), so it was already Complete and the
+// control the test waited for was correctly absent.
+async function thresholdLeavingDayBelow(
+  request: APIRequestContext,
+  cookies: string,
+  date: string
+): Promise<number> {
+  return (await occasionCount(request, cookies, date)) + 1;
+}
+
 // Runs `action` and waits for the settings PUT it triggers to actually land,
 // not just for the click that starts it — mirrors dashboard.spec.ts's
 // withSettingsSave (the settings panel here does the same GET-then-PUT via
@@ -95,6 +138,15 @@ function daySection(page: Page, mealName: string): Locator {
   return page.locator('div.mb-5').filter({ hasText: mealName });
 }
 
+// Distinguishes this run's seeded meals from an earlier run's leftovers.
+//
+// Without it, a run that fails to clean up poisons the *next* run in a way
+// unrelated to what is being tested: the names collide, `getByText(name,
+// { exact: true })` resolves to two elements, and Playwright fails on strict
+// mode instead of on the assertion. That is what turned one transient
+// cleanup failure into a red retry on 2026-08-26.
+const RUN_TAG = Math.random().toString(36).slice(2, 8);
+
 function isoAtUTC(daysAgo: number, hour: number, minute = 0): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - daysAgo);
@@ -113,16 +165,28 @@ test.describe('Day completeness', () => {
     await login(page);
     const cookies = await cookieHeader(page);
     const original = await getSettings(request, cookies);
-    // Force a known baseline: UTC + the default threshold, so a single meal
-    // reliably lands below threshold regardless of whatever this shared
-    // account's settings happened to hold from an earlier run.
+    // Force a known baseline: UTC, so the date arithmetic below matches the
+    // account's day boundaries regardless of what an earlier run left in its
+    // settings. The threshold is set after seeding, once the day's real
+    // occasion count is known.
     await putSettings(request, cookies, { ...original, timezone: 'UTC', usual_meals_per_day: 3 });
 
-    const mealName = 'E2E Completeness Unconfirmed Day';
+    const mealName = `E2E Completeness Unconfirmed Day ${RUN_TAG}`;
     const meal = await createMealAt(request, cookies, mealName, isoAtUTC(2, 12));
     const date = isoAtUTC(2, 12).slice(0, 10);
 
     try {
+      // This test asserts the day starts Unconfirmed, which requires both
+      // that it sits below threshold and that no confirmation row survives
+      // from an earlier run — a stray row would render "Complete"/"Unconfirm"
+      // instead of the control this waits for.
+      await unconfirmDate(request, cookies, date);
+      await putSettings(request, cookies, {
+        ...original,
+        timezone: 'UTC',
+        usual_meals_per_day: await thresholdLeavingDayBelow(request, cookies, date),
+      });
+
       await page.goto('/food/history/');
       await expect(page.getByText(mealName)).toBeVisible();
       const section = daySection(page, mealName);
@@ -168,7 +232,7 @@ test.describe('Day completeness', () => {
     const original = await getSettings(request, cookies);
     await putSettings(request, cookies, { ...original, timezone: 'UTC', usual_meals_per_day: 3 });
 
-    const mealName = 'E2E Completeness At-Threshold Day';
+    const mealName = `E2E Completeness At-Threshold Day ${RUN_TAG}`;
     // Three occasions at least 10 minutes apart (the Eating Occasion
     // collapsing window), meeting the default threshold of 3.
     const created = [
@@ -228,8 +292,8 @@ test.describe('Day completeness', () => {
     // America/Los_Angeles that's 15:00-16:00 the *same* dayX-1.
     // So under UTC the two are on different calendar days; under
     // America/Los_Angeles both land on dayX-1.
-    const earlyName = 'E2E Completeness TZ Merge Early';
-    const lateName = 'E2E Completeness TZ Merge Late';
+    const earlyName = `E2E Completeness TZ Merge Early ${RUN_TAG}`;
+    const lateName = `E2E Completeness TZ Merge Late ${RUN_TAG}`;
     const early = await createMealAt(request, cookies, earlyName, isoAtUTC(5, 1, 0));
     const late = await createMealAt(request, cookies, lateName, isoAtUTC(6, 23, 0));
 
@@ -280,24 +344,48 @@ test.describe('Day completeness', () => {
       display_language: 'en',
     });
 
-    const earlyName = 'E2E Completeness Settings Panel Early';
-    const lateName = 'E2E Completeness Settings Panel Late';
+    const earlyName = `E2E Completeness Settings Panel Early ${RUN_TAG}`;
+    const lateName = `E2E Completeness Settings Panel Late ${RUN_TAG}`;
     const early = await createMealAt(request, cookies, earlyName, isoAtUTC(7, 1, 0));
     const late = await createMealAt(request, cookies, lateName, isoAtUTC(8, 23, 0));
+    const earlyDate = isoAtUTC(7, 1, 0).slice(0, 10);
+    const lateDate = isoAtUTC(8, 23, 0).slice(0, 10);
 
     try {
+      // Both days must start Unconfirmed for the "before" half to mean
+      // anything: below threshold, and with no confirmation row left over.
+      // The threshold is derived from what the early day actually holds
+      // rather than fixed at 3 — this shared account had already accumulated
+      // 3 occasions on that date from other specs, which is exactly what made
+      // this test fail while asserting something true about the app.
+      await unconfirmDate(request, cookies, earlyDate);
+      await unconfirmDate(request, cookies, lateDate);
+      await putSettings(request, cookies, {
+        ...original,
+        timezone: 'UTC',
+        usual_meals_per_day: await thresholdLeavingDayBelow(request, cookies, earlyDate),
+        dashboard_order: ['weight', 'steps'],
+        display_language: 'en',
+      });
+
       await page.goto('/food/history/');
       await expect(page.getByText(earlyName, { exact: true })).toBeVisible();
       await expect(page.getByText(lateName, { exact: true })).toBeVisible();
       const earlySection = daySection(page, earlyName);
-      // Under UTC, each is its own single-occasion day: below threshold 3,
-      // unconfirmed, so each shows its own "Mark day complete" button.
+      // Under UTC the two meals fall on separate days, and the threshold set
+      // above leaves the early one exactly one occasion short — so it is
+      // Unconfirmed and shows its own "Mark day complete" button.
       await expect(earlySection.getByRole('button', { name: 'Mark day complete' })).toBeVisible({ timeout: 10_000 });
       await expect(earlySection).not.toContainText(lateName);
 
       await page.getByText('Day grouping settings').click();
       await page.getByLabel('Timezone').selectOption('America/Los_Angeles');
-      await page.getByLabel('Usual meals per day').fill('2');
+      // 1, not a fixed 2: any day with at least one occasion meets a
+      // threshold of 1, so "the merged day now meets threshold" holds
+      // whatever else this shared account happens to have logged that day.
+      // That the merge itself happened is asserted separately below, by the
+      // merged section containing the late meal.
+      await page.getByLabel('Usual meals per day').fill('1');
       await withSettingsSave(page, async () => {
         await page.getByRole('button', { name: 'Save', exact: true }).click();
       });
@@ -307,14 +395,16 @@ test.describe('Day completeness', () => {
       expect(afterSave.dashboard_order).toEqual(['weight', 'steps']);
       expect(afterSave.display_language).toBe('en');
       expect(afterSave.timezone).toBe('America/Los_Angeles');
-      expect(afterSave.usual_meals_per_day).toBe(2);
+      expect(afterSave.usual_meals_per_day).toBe(1);
 
       // (b) grouping merged, live, no reload...
       const mergedSection = daySection(page, earlyName);
       await expect(mergedSection).toContainText(lateName);
 
-      // ...and with the merged day now at 2 occasions meeting the new
-      // threshold of 2, its completeness control disappeared entirely.
+      // ...and with the merged day meeting the new threshold, its
+      // completeness control disappeared entirely — neither the button nor
+      // the confirmed badge, since a day at or above threshold is Complete
+      // outright and offers nothing to confirm.
       await expect(mergedSection.getByRole('button', { name: 'Mark day complete' })).toHaveCount(0);
       await expect(mergedSection.getByText('Complete', { exact: true })).toHaveCount(0);
     } finally {
