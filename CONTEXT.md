@@ -91,6 +91,16 @@ goal weight unconditionally — there is no partial target, and no fallback to m
 no goal is set (see ADR-003). What food intake is compared against on Food Cards.
 _Avoid_: Goal (ambiguous with Goal Weight), macro goal
 
+**Daily Summary**:
+The single self-only, computed-on-read aggregate exposed at `GET /api/summary/today`: today's
+consumed calories/protein/carbs/fat (confirmed Food Meals only), a raw meal count and
+last-logged timestamp (any status), the caller's Display Language, and an embedded Nutrition
+Target (or its unavailable-reason code — never a 422 here, since an unavailable target is a
+normal state on this endpoint). Exists so a thin client gets one call instead of composing
+Nutrition Target and food history itself.
+_Avoid_: Today's summary (informal), dashboard summary (distinct from the dashboard's own Food
+Card rendering, which is a separate read path)
+
 **Activity Level**:
 One of 5 standard tiers (Sedentary / Lightly active / Moderately active / Very active / Extra
 active, multipliers 1.2/1.375/1.55/1.725/1.9) feeding the Nutrition Target's calorie calculation.

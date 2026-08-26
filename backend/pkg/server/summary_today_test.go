@@ -160,6 +160,64 @@ func TestSummaryToday_TargetAvailable(t *testing.T) {
 	}
 }
 
+// TestSummaryToday_ReflectsCallersOwnMeals covers the endpoint's core happy
+// path: with confirmed meals logged today, the handler's JSON response
+// carries the caller's aggregated macros, meal_count, and a non-nil
+// last_logged_at through to serialization — exercising the
+// TodaySummaryRow-to-summaryTodayResponse wiring (including the
+// HasLastLoggedAt pointer branch in summary_today.go) that
+// TestSummaryToday_IgnoresUserQueryParam and the zero-meal cases above never
+// touch.
+func TestSummaryToday_ReflectsCallersOwnMeals(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	loggedAt := time.Now().UTC().Add(-1 * time.Hour)
+	confirmed := database.FoodMeal{
+		UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: loggedAt,
+		Name: "Lunch", Calories: 500, ProteinGrams: 30, CarbsGrams: 40, FatGrams: 15,
+	}
+	confirmed.ID = uuid.New()
+	confirmed.FamilyID = familyID
+	if err := st.DB().Create(&confirmed).Error; err != nil {
+		t.Fatalf("create confirmed meal: %v", err)
+	}
+	// A non-confirmed meal logged later: counts toward meal_count and
+	// last_logged_at, but must not contribute to the macro sums.
+	pending := database.FoodMeal{
+		UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: loggedAt.Add(time.Minute),
+		Name: "Snack", Calories: 999, ProteinGrams: 99, CarbsGrams: 99, FatGrams: 99,
+	}
+	pending.ID = uuid.New()
+	pending.FamilyID = familyID
+	if err := st.DB().Create(&pending).Error; err != nil {
+		t.Fatalf("create pending meal: %v", err)
+	}
+
+	h := server.SummaryTodayHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSummaryTodayRequest(userID, ""))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := decodeSummaryToday(t, w)
+	if resp.MealCount != 2 {
+		t.Errorf("meal_count = %d, want 2 (both statuses count)", resp.MealCount)
+	}
+	if resp.CaloriesConsumed != 500 || resp.ProteinGramsConsumed != 30 ||
+		resp.CarbsGramsConsumed != 40 || resp.FatGramsConsumed != 15 {
+		t.Errorf("macro sums = %+v, want only the confirmed meal's macros", resp)
+	}
+	if resp.LastLoggedAt == nil {
+		t.Fatalf("last_logged_at = nil, want non-nil")
+	}
+	wantLastLoggedAt := pending.LoggedAt
+	if !resp.LastLoggedAt.Equal(wantLastLoggedAt) {
+		t.Errorf("last_logged_at = %v, want %v (the later, pending meal)", resp.LastLoggedAt, wantLastLoggedAt)
+	}
+}
+
 // TestSummaryToday_IgnoresUserQueryParam covers 4.4's self-only half: a
 // ?user= override naming a different user with data of its own must not
 // change the caller's own (empty) result.
