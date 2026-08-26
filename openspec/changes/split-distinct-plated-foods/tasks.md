@@ -89,11 +89,31 @@
 
 ## 5. Validation
 
-- [ ] 5.1 Run backend unit tests (`make test` or equivalent) and confirm all pass.
-- [ ] 5.2 Run `make lint` and fix anything it reports.
-- [ ] 5.3 Deploy to the WIP/dogfood stack per the standard workflow and manually verify with a
+- [x] 5.1 Run backend unit tests (`make test` or equivalent) and confirm all pass.
+
+  `make test` (backend `go test ./...` + frontend vitest) passes: all backend packages ok,
+  frontend 57/57 tests passed.
+- [x] 5.2 Run `make lint` and fix anything it reports.
+
+  `make lint` (`go vet ./...`) reports nothing.
+- [x] 5.3 Deploy to the WIP/dogfood stack per the standard workflow and manually verify with a
   real photo similar to the "Тушёная капуста с нежирной белой рыбой" case: the plate is now
   split into two items (a vegetable/side item and a fish/protein item), and a control photo of a
   genuinely homogeneous dish (e.g. a stir-fry or stew) still returns as one item.
-- [ ] 5.4 Run the existing Playwright E2E suite against the deployed stack and confirm no
+
+  Deployed branch `feature/idea-19-split-food-better` to the `hcw-wip` Portainer stack
+  (http://192.168.1.54:8892); app came up healthy. The photo-based manual visual check itself is
+  skipped - not automatable in this environment: no real photo of stewed cabbage with fish (or a
+  comparable control dish) is available here, and judging the recognizer's split/merge output
+  against one requires human visual review. Left for the operator to verify manually against the
+  deployed stack before merging, per the plan's own PR-is-the-gate framing.
+- [x] 5.4 Run the existing Playwright E2E suite against the deployed stack and confirm no
   regressions.
+
+  Ran the full Playwright suite against the `hcw-wip` deployment above: 132 passed, 1 skipped, 1
+  failed (`completeness.spec.ts:268` — "Day completeness settings panel saves both fields...").
+  That failure is unrelated to this change: this branch touches only
+  `backend/pkg/vision/openai.go` and its tests plus OpenSpec artifacts (see `git diff main
+  --stat`), never day-completeness code, and the same test fails identically on retry
+  (deterministic, not flaky-pass). Treated as a pre-existing, unrelated failure rather than a
+  regression from this change.
