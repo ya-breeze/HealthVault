@@ -74,7 +74,7 @@ export default function AuthenticatedShell({
           bars and the toast stack offset themselves by the same token
           instead. `--nav-block` is `0px` at and above the breakpoint, so
           this reserves nothing on desktop. */}
-      <div className="pb-[var(--nav-block)]">{children}</div>
+      <div data-testid="shell-content" className="pb-[var(--nav-block)]">{children}</div>
       {me && (
         <BottomNav
           moreOpen={moreOpen}

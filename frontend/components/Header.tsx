@@ -139,9 +139,19 @@ export default function Header({ me }: { me: Me }) {
           control set can still wrap between 640px and ~768px, which predates
           this change and is out of its scope. */}
       <div className="max-w-4xl mx-auto flex justify-between items-center flex-nowrap sm:flex-wrap gap-3">
-        <Link href="/" className="text-xl font-extrabold tracking-tight text-text">
+        {/* A TapTarget now: with the nav controls gone below the breakpoint
+            this and the badge are all the header renders, so this link is
+            covered by mobile-touch-targets' "every interactive control the
+            header still renders at that width" rather than sitting outside
+            the enumeration the way it did when it was one of seven. The row
+            is already 48px tall on the badge's account, so nothing moves. */}
+        <TapTarget
+          as={Link}
+          href="/"
+          className="flex items-center text-xl font-extrabold tracking-tight text-text"
+        >
           HealthVault
-        </Link>
+        </TapTarget>
         <div className="flex items-center gap-2 flex-nowrap sm:flex-wrap min-w-0">
           {/* The badge is the widest variable-length element the mobile
               header still carries, so it is the one that gives way rather
