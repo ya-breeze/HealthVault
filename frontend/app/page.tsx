@@ -324,7 +324,7 @@ export default function Dashboard() {
             except when there's nothing present to show at all, in which case
             neither mode renders the section or its toggle. */}
         {presentSecondaryTypes.length > 0 && (editing || !moreDataHidden) && (
-          <div data-testid="more-data">
+          <div data-testid="more-data" data-hidden={moreDataHidden ? 'true' : 'false'}>
             <div className="flex items-center justify-between mb-3">
               <p className={`font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent${editing && moreDataHidden ? ' opacity-40' : ''}`}>
                 {t('dashboard.moreData')}
