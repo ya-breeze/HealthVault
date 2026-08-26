@@ -796,13 +796,16 @@ test.describe('Data-type presence filtering', () => {
 // real client write would.
 async function putRawSettings(page: Page, patch: Record<string, unknown>) {
   await page.evaluate(async (patch) => {
-    const current = await fetch('/api/users/me/settings', { credentials: 'include' }).then(r => r.json());
-    await fetch('/api/users/me/settings', {
+    const getRes = await fetch('/api/users/me/settings', { credentials: 'include' });
+    if (!getRes.ok) throw new Error(`GET settings failed: ${getRes.status}`);
+    const current = await getRes.json();
+    const putRes = await fetch('/api/users/me/settings', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...current, ...patch }),
     });
+    if (!putRes.ok) throw new Error(`PUT settings failed: ${putRes.status}`);
   }, patch);
 }
 
