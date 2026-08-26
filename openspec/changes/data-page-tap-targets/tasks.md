@@ -65,9 +65,21 @@ Operator reversed the "grow at every width" call on review (see design.md's supe
       and the macro tabs still fit their `flex-wrap` container without clipping
       → all six combinations match the baseline exactly. Delete 14×20 → 48×48; zoom tabs
       48/52/59/52 × 48; macro tabs all ≥48×48, container reports no clipping.
-- [ ] 3.8 Re-run 3.4–3.6 after the 2b reversal, and additionally confirm at a **desktop** viewport
+- [x] 3.8 Re-run 3.4–3.6 after the 2b reversal, and additionally confirm at a **desktop** viewport
       (≥640 px) that the zoom and macro tabs are back to their compact height while the delete
       control still meets 48×48
+      → full suite 8/8 again. Swept across the breakpoint:
+
+      | viewport | zoom tab h | macro tab h | delete | weight columns |
+      |---|---|---|---|---|
+      | 375 | 48 | 48 | 48×48 | 110/102/104/110/86 |
+      | 390 | 48 | 48 | 48×48 | 110/102/104/110/86 |
+      | 639 | 48 | 48 | 48×48 | unchanged |
+      | 640 | **28** | **27** | 48×48 | unchanged |
+      | 1280 | **28** | **27** | 48×48 | unchanged |
+
+      The flip lands exactly on `sm`, and 28/27 are the original desktop heights, so desktop is
+      byte-for-byte what it was before this change.
 - [x] 3.7 Confirm the table's column set and horizontal-scroll behaviour are unchanged from `main`
       → verified by A/B on one build (neutralising only what `TapTarget` adds). Also checked the
       transient pending-delete state: Actions grows 86 → 155 and scrollWidth 513 → 581, but that is
