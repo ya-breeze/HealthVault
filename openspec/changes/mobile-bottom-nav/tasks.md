@@ -215,7 +215,7 @@
   `grep -n logout` returns nothing in either. Re-run `grep -rln 'Custom Foods\|Logout\|getByTitle('\''Settings'\'')' e2e/tests`
   to confirm the affected set before editing.)
 - [x] 5.7 Run the full suite against the deployed `hcw-wip` stack. All green before the change is
-  reported done. **158 passed, 1 skipped, 1 failed** — the failure is
+  reported done. **159 passed, 1 skipped, 1 failed** — the failure is
   `completeness.spec.ts:268` ("the settings panel saves both fields without clobbering unrelated
   settings, and updates the page live"), and it is **pre-existing**: it fails identically with
   `main` deployed to the same stack, checked by redeploying `main` and re-running that file. Not
