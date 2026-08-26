@@ -41,7 +41,18 @@ that route are outside this requirement's scope.
 
 #### Scenario: Header and toast controls meet the minimum
 - **WHEN** the app header or a toast notification with a dismiss control is rendered at a mobile viewport width
-- **THEN** the dismiss/nav controls have a bounding box of at least 48×48 pixels
+- **THEN** the toast's dismiss control has a bounding box of at least 48×48 pixels
+- **AND** every interactive control the header still renders at that width has a bounding box of at
+  least 48×48 pixels
+- **AND** the header's nav controls are not asserted here, because below the breakpoint the header
+  no longer carries them — they move to the bottom navigation bar and the More sheet, each covered
+  by its own scenario below, and to the desktop-width scenario that follows
+
+#### Scenario: Header nav controls meet the minimum where the header renders them
+- **WHEN** the app header is rendered at a viewport width at or above the mobile navigation
+  breakpoint, where it carries its full control set
+- **THEN** the webhook, custom foods, import, settings and logout controls each have a bounding box
+  of at least 48×48 pixels
 
 #### Scenario: Bottom navigation destinations meet the minimum
 - **WHEN** the bottom navigation bar is rendered at any viewport width it renders at, down to 320px
