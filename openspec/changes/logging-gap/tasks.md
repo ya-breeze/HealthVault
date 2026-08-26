@@ -19,7 +19,7 @@
 
 ## 2. Frontend: API client
 
-- [ ] 2.1 Add a `DailyTotal` interface (`date`, `calories`) and `api.getFoodDailyTotals(from, to)`
+- [x] 2.1 Add a `DailyTotal` interface (`date`, `calories`) and `api.getFoodDailyTotals(from, to)`
       (`GET /food/daily-totals`) to `frontend/lib/api.ts`, documented the same way as
       `getCompleteness`
 
