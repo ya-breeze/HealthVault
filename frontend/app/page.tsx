@@ -11,7 +11,7 @@ import { useLatest } from '@/lib/useLatest';
 import Header from '@/components/Header';
 import VitalCard from '@/components/VitalCard';
 import TapTarget from '@/components/ui/TapTarget';
-import { CameraIcon, PencilIcon, HistoryIcon } from '@/components/icons';
+import { CameraIcon, PencilIcon, HistoryIcon, EyeIcon, EyeOffIcon } from '@/components/icons';
 
 const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type === t));
 
@@ -42,6 +42,11 @@ export default function Dashboard() {
   // with no in-page way back. Found in code review.
   const [settingsAttempt, setSettingsAttempt] = useState(0);
   const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
+  // Strict `=== true`, not `?? false`: settings is opaque, unvalidated JSON,
+  // and a malformed stored value (e.g. the string "false", or 1) must read as
+  // "not hidden" rather than being coerced into truthy-hidden. Mirrors
+  // reconcileMetricOrder's `entry.hidden === true` check in lib/vitals.ts.
+  const [moreDataHidden, setMoreDataHidden] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   // `null` means "not resolved yet" (initial state) *and* "fetch failed" —
@@ -65,6 +70,7 @@ export default function Dashboard() {
     api.getSettings()
       .then(s => {
         setOrder(reconcileMetricOrder(s.dashboard_order));
+        setMoreDataHidden(s.more_data_hidden === true);
         setSettingsStatus('loaded');
       })
       .catch(() => {
@@ -157,12 +163,11 @@ export default function Dashboard() {
   // there's nothing present to hide.
   const noPrimaryData = presentOrder.length === 0;
   const allHidden = presentOrder.length > 0 && presentOrder.every(m => m.hidden);
-  // Gated on presenceReady (not just filtered unconditionally) so a pending
-  // fetch never flashes every secondary type before presence is known — the
-  // section renders nothing at all until it resolves, same as the vitals
-  // grid's dashboardReady gate. See design.md, "More Data collapses, not
-  // renders empty".
-  const presentSecondaryTypes = presenceReady ? SECONDARY_TYPES.filter(type => hasPresence(presence, type)) : [];
+  // Gated on dashboardReady (not just presenceReady) so a section the user
+  // hid can't flash unhidden before the saved more_data_hidden preference has
+  // loaded — the same reasoning as the vitals grid's own dashboardReady gate.
+  // See design.md, "More Data collapses, not renders empty".
+  const presentSecondaryTypes = dashboardReady ? SECONDARY_TYPES.filter(type => hasPresence(presence, type)) : [];
 
   function toggleHidden(index: number) {
     setOrder(prev => {
@@ -172,10 +177,17 @@ export default function Dashboard() {
     });
   }
 
+  function toggleMoreDataHidden() {
+    setMoreDataHidden(prev => !prev);
+  }
+
   async function handleDone() {
     setSaving(true);
     try {
-      await updateSettings({ dashboard_order: order.map(m => ({ type: m.type, hidden: m.hidden })) });
+      await updateSettings({
+        dashboard_order: order.map(m => ({ type: m.type, hidden: m.hidden })),
+        more_data_hidden: moreDataHidden,
+      });
       setEditing(false);
     } catch {
       showToast(t('dashboard.orderSaveFailed'), 'error');
@@ -306,12 +318,30 @@ export default function Dashboard() {
           </a>
         </div>
 
-        {presentSecondaryTypes.length > 0 && (
-          <div data-testid="more-data">
-            <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-              {t('dashboard.moreData')}
-            </p>
-            <div className="flex flex-wrap gap-2">
+        {/* Read-only: hidden when the user chose to hide it. Edit mode: always
+            rendered (dimmed when hidden) so the section can be found and
+            re-shown, mirroring the vitals grid's hidden-card treatment —
+            except when there's nothing present to show at all, in which case
+            neither mode renders the section or its toggle. */}
+        {presentSecondaryTypes.length > 0 && (editing || !moreDataHidden) && (
+          <div data-testid="more-data" data-hidden={moreDataHidden ? 'true' : 'false'}>
+            <div className="flex items-center justify-between mb-3">
+              <p className={`font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent${editing && moreDataHidden ? ' opacity-40' : ''}`}>
+                {t('dashboard.moreData')}
+              </p>
+              {editing && (
+                <TapTarget
+                  onClick={toggleMoreDataHidden}
+                  disabled={saving}
+                  aria-label={t(moreDataHidden ? 'dashboard.showMoreData' : 'dashboard.hideMoreData')}
+                  data-testid="more-data-visibility"
+                  className="flex items-center justify-center rounded-md border border-border bg-bg text-text disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  {moreDataHidden ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                </TapTarget>
+              )}
+            </div>
+            <div className={`flex flex-wrap gap-2${editing && moreDataHidden ? ' opacity-40' : ''}`}>
               {presentSecondaryTypes.map(type => (
                 <a
                   key={type}
