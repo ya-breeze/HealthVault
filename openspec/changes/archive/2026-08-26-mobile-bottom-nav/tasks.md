@@ -284,8 +284,22 @@
 
   Full suite after the fixes: **166 passed, 1 skipped, 1 failed** — the failure being
   `completeness.spec.ts:268`, which fails identically on `main` and is unrelated to this change.
-- [ ] 6.4 On the user's approval, archive the change on the feature branch
+- [x] 6.4 On the user's approval, archive the change on the feature branch
   (`openspec archive mobile-bottom-nav --yes`), regenerate projected specs as a separate commit,
   and validate `openspec validate --specs --strict`.
-- [ ] 6.4a In that same finishing step, flip ADR-008 from `Proposed` to `Accepted` — per CLAUDE.md,
+
+  Archived clean on the first run — `+ 5 added, ~ 2 modified` across `mobile-navigation` (new),
+  `dashboard-ui` and `mobile-touch-targets` — so the diff is reviewed content changing location,
+  with no hand-authored prose written to make the command succeed. `openspec validate --specs
+  --strict`: 30 passed, 0 failed. Projected specs emptied in the following commit, per the
+  two-commit shape the generator's `HEAD`-based discovery requires.
+
+  One thing this branch needed that the flow does not mention: `main` gained #35 after the branch
+  was cut, and `drift-check` runs against the *merge result*, so the projected specs were stale
+  through no fault of this change. Merging `main` in and regenerating was the fix.
+- [x] 6.4a In that same finishing step, flip ADR-008 from `Proposed` to `Accepted` — per CLAUDE.md,
   never leave a merged feature's ADR as `Proposed`.
+
+**Still open after this change merges:** 6.2a, the manual notched-device pass. It is the only
+task here that no amount of CI can close, and it is deliberately left unchecked rather than
+ticked on the strength of the headless run.
