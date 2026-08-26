@@ -72,7 +72,9 @@
 - [ ] 3.3 Add `backend/pkg/server/summary_today.go`: `SummaryTodayHandler(storage)` —
       self-only (`ClaimsFromCtx`, no `?user=`), resolves the caller's timezone via
       `database.ResolveTimezone` (reusing `callerTimezoneAndThreshold`'s settings-read pattern or a
-      shared helper), computes `now := time.Now()` once and passes that same value into both
+      shared helper), computes `now := time.Now().UTC()` once (matching `NutritionTargetHandler`'s
+      existing convention — bare `time.Now()` would silently regress `latestPointValue`'s SQLite
+      text comparison on a non-UTC host, per design.md) and passes that same value into both
       `database.TodaySummary` and `computeUserNutritionTarget` (so `date` and the aggregated
       window never disagree at a local-midnight boundary), reads `display_language` via the
       existing resolver, and assembles the response per design.md's shape (`date`,

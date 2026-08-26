@@ -113,11 +113,20 @@ SQLite compares it as text), then does one query for all of today's `FoodMeal` r
 into counts/sums/max in Go — no new SQL aggregation needed at this row volume. `now` is threaded in
 explicitly (matching `computeUserNutritionTarget(storage, userID, now)` and how `LocalDate(t, loc)`
 already takes an explicit `t` rather than calling `time.Now()` internally) so `SummaryTodayHandler`
-computes `now` once and passes the same value into both `TodaySummary` and
+computes `now := time.Now().UTC()` once — matching `NutritionTargetHandler`'s existing convention,
+not bare `time.Now()` — and passes that same value into both `TodaySummary` and
 `computeUserNutritionTarget` — keeping the reported `date` and the aggregated query window
 consistent with each other at the exact local-midnight boundary — and so the boundary test in
 `tasks.md` (today-vs-yesterday around local midnight) can use a fixed, deterministic `now` instead
-of depending on wall-clock time.
+of depending on wall-clock time. The `.UTC()` matters beyond convention: `computeUserNutritionTarget`
+threads `now` into `latestPointValue`'s raw `Where(timeCol+" <= ?", now)` comparison against
+`weights`/`heights`/`weight_goals` columns that are always stored UTC-normalized, and — per
+`DayRange`'s own documented reasoning above — go-sqlite3 stores `time.Time` as TEXT preserving
+whatever offset it's given, so SQLite compares it as text, not as an instant. A non-UTC `now` (Go's
+`time.Now()` defaults to the process's Local location, and nothing in this project's Dockerfiles
+pins `TZ=UTC`) would string-compare incorrectly against those UTC-offset rows, silently regressing
+`GET /api/users/me/nutrition-target` itself (via the shared `computeUserNutritionTarget`) on any
+non-UTC host — a behavior change Task 3.1 explicitly promises not to make.
 
 ### 2. Login attempt limiting
 
