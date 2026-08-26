@@ -175,6 +175,18 @@ const ru: Dictionary = {
   'vitals.moveUp': 'Переместить «{metric}» вверх',
   'vitals.moveDown': 'Переместить «{metric}» вниз',
 
+  'loggingGap.title': 'Разрыв в учёте',
+  'loggingGap.loading': 'Вычисляем разрыв в учёте…',
+  'loggingGap.notEnoughData': 'Пока недостаточно данных',
+  'loggingGap.retrievalError': 'Временно недоступно',
+  'loggingGap.targetUnmet': 'Заполните профиль и целевой вес, чтобы увидеть разрыв в учёте.',
+  'loggingGap.targetUnmetLink': 'Заполнить',
+  'loggingGap.unlogged': '{range} ккал/день не учтено',
+  'loggingGap.loggedMore': '{range} ккал/день учтено больше, чем предполагает тренд',
+  'loggingGap.outlierNote': 'Одно или несколько измерений веса были исключены как выбросы.',
+  'loggingGap.caveatPhoto': 'Учтённые калории оцениваются по фото и могут иметь собственную погрешность.',
+  'loggingGap.caveatActivity': 'Эта оценка отдельно не учитывает погрешность коэффициента активности — неверная оценка активности может выглядеть как неучтённые (или избыточно учтённые) калории.',
+
   'metric.steps': 'Шаги',
   'metric.heart_rate': 'Пульс',
   'metric.heart_rate_variability': 'ВСР',

@@ -227,10 +227,10 @@
 
 ## 6. i18n
 
-- [ ] 6.1 Add English strings for the card's title, the four content states (including
+- [x] 6.1 Add English strings for the card's title, the four content states (including
       "temporarily unavailable"), the outlier note, and the two caveats (photo estimation, activity
       multiplier) to `frontend/lib/i18n/en.ts`
-- [ ] 6.2 Add the corresponding Russian strings to `frontend/lib/i18n/ru.ts`
+- [x] 6.2 Add the corresponding Russian strings to `frontend/lib/i18n/ru.ts`
 
 ## 7. Docs
 
