@@ -335,10 +335,17 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     const usesEnv = await page.evaluate(() => {
       const el = document.querySelector('[data-testid="bottom-nav"]');
       if (!el) return null;
+      // Every style rule, at any nesting depth. Note a CSSStyleRule also
+      // carries a (usually empty) `cssRules` these days, now that CSS
+      // nesting exists — so "has cssRules" cannot be the test for whether a
+      // rule is a container, or every style rule is discarded and this
+      // silently finds nothing.
       const collect = (rules: CSSRuleList): CSSStyleRule[] =>
-        [...rules].flatMap(r =>
-          'cssRules' in r ? collect((r as CSSGroupingRule).cssRules) : [r as CSSStyleRule]
-        );
+        [...rules].flatMap(r => [
+          ...((r as CSSStyleRule).selectorText !== undefined && (r as CSSStyleRule).style
+            ? [r as CSSStyleRule] : []),
+          ...((r as CSSGroupingRule).cssRules ? collect((r as CSSGroupingRule).cssRules) : []),
+        ]);
       return [...document.styleSheets]
         .flatMap(sheet => { try { return collect(sheet.cssRules); } catch { return []; } })
         .some(rule => {

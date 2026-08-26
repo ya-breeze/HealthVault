@@ -41,9 +41,15 @@ export default function BottomNav({
     <nav
       aria-label={t('nav.label')}
       data-testid="bottom-nav"
-      className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-bg-elevated border-t border-border pb-[env(safe-area-inset-bottom)]"
+      // The bar's own height is `--nav-block` — the very token everything
+      // else offsets by — rather than `--nav-bar-h` plus whatever its border
+      // and inset padding add on top. Sizing it any other way makes the bar
+      // taller than the space reserved for it, and a page's bottom-anchored
+      // element then overlaps it by exactly the difference (a border-width,
+      // in the first version of this).
+      className="sm:hidden fixed bottom-0 inset-x-0 z-40 h-[var(--nav-block)] bg-bg-elevated border-t border-border pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="flex h-[var(--nav-bar-h)] items-stretch">
+      <ul className="flex h-full items-stretch">
         {NAV_DESTINATIONS.map(({ id, href, labelKey, Icon }) => {
           const active = isSameRoute(pathname, href);
           return (

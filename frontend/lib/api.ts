@@ -439,7 +439,13 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
 
-  logout: () => apiFetch('/auth/logout', { method: 'POST' }),
+  // `apiFetchNoBody`, not `apiFetch`: the endpoint answers 204 with an empty
+  // body, so parsing it as JSON throws — and every caller awaits this before
+  // routing to /login, so the rejection meant logout cleared the session
+  // server-side and then left the user sitting on the authenticated page.
+  // Surfaced by the More sheet's logout e2e case, which is the first test
+  // to assert on what happens after the click rather than on the control.
+  logout: () => apiFetchNoBody('/auth/logout', { method: 'POST' }),
 
   me: () => apiFetch<Me>('/users/me'),
 
