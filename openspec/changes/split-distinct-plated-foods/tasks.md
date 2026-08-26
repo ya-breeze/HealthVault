@@ -1,6 +1,6 @@
 ## 1. Prompt wording
 
-- [ ] 1.1 Reword the composite-dish-naming paragraph of `recognizeSystemPrompt` in
+- [x] 1.1 Reword the composite-dish-naming paragraph of `recognizeSystemPrompt` in
   `backend/pkg/vision/openai.go` to key the split/merge decision on whether each visible
   component was ever served as its own separate portion, not on whether it plays a different
   role from its neighbor, not on whether components are spatially separated on the plate, and
@@ -15,7 +15,7 @@
   not. A sauce, glaze, or juices from a neighboring food covering a piece does not by itself turn
   it into a combined preparation — a fillet coated in sauce still counts as its own
   separately-servable piece as long as it keeps its own portion-scale shape.
-- [ ] 1.2 Add a worked example pair to the prompt text: a protein served touching or on top of a
+- [x] 1.2 Add a worked example pair to the prompt text: a protein served touching or on top of a
   vegetable/starch side (e.g. "fish served on/next to stewed cabbage") should split into two
   items — including when the protein was baked or braised directly in contact with the side
   (e.g. a fish fillet baked on top of stewed cabbage), so long as it keeps its own portion-scale
@@ -26,7 +26,7 @@
   chunk) are still visually distinguishable within it. Also state that a minor garnish or
   condiment (a lemon wedge, a sprig of herbs, a spoonful of sauce) that isn't itself a
   portion-sized food stays folded into its main item rather than becoming its own item.
-- [ ] 1.3 Re-read the full prompt after editing to confirm the new wording does not contradict or
+- [x] 1.3 Re-read the full prompt after editing to confirm the new wording does not contradict or
   weaken the still-desired merge behavior for genuinely homogeneous dishes (the original
   over-decomposition problem this requirement was added to fix), and does not cause garnishes or
   condiments to split out as their own items.
