@@ -157,6 +157,10 @@ Two consequences to be aware of when reviewing the diff:
 
 ### One vertical budget token; every bottom-anchored element reads it
 
+> Recorded as **[ADR-008](../../../docs/adr/ADR-008-bottom-clearance-as-a-css-token.md)**, because
+> the rule below binds future code that this change never touches. The reasoning is here; the ADR
+> is where it stays reachable once this change is archived.
+
 Padding on the shell reserves space for **in-flow** content, which is what the scroll-to-bottom case
 needs. It does nothing for a `position: fixed` descendant — padding on an ancestor does not move a
 fixed element, because a fixed element is out of flow relative to the viewport, not the ancestor.

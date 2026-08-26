@@ -223,6 +223,14 @@
 
 ## 6. Finalize
 
+- [x] 6.0 Write `docs/adr/ADR-008-bottom-clearance-as-a-css-token.md` at **Status: Proposed**.
+  Added after the spec was approved, at the user's call: the `--nav-block` / `--edge-inset-b`
+  convention places a standing obligation on any *future* bottom-anchored element, and nothing
+  enforces it mechanically — the e2e overlap cases guard the three sites that exist, not a fourth
+  added later on a page they never visit. That is the class of decision `docs/adr/` exists for, and
+  this change's `design.md` is archived out of the repo's front door when the change is archived.
+  The `AuthenticatedShell` session-ownership pattern was considered for its own ADR and left out:
+  `grep -rn "<Header"` returning nothing outside the shell makes it self-evident from the code.
 - [x] 6.1 Self-review every modified file per CLAUDE.md's mandatory review step.
 - [x] 6.2 Disclose explicitly what is NOT e2e-covered: headless Chromium reports a zero
   `env(safe-area-inset-bottom)` and offers no way to set a non-zero one, so 5.4b asserts the
@@ -246,3 +254,5 @@
 - [ ] 6.4 On the user's approval, archive the change on the feature branch
   (`openspec archive mobile-bottom-nav --yes`), regenerate projected specs as a separate commit,
   and validate `openspec validate --specs --strict`.
+- [ ] 6.4a In that same finishing step, flip ADR-008 from `Proposed` to `Accepted` — per CLAUDE.md,
+  never leave a merged feature's ADR as `Proposed`.
