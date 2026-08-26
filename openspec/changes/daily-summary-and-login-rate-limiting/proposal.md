@@ -1,21 +1,16 @@
 ## Why
 
 Idea #12's Android Widget needs one cheap, self-contained read to draw a home-screen calorie count
-from — a widget refresh should not have to make 3-4 separate authenticated calls (nutrition target,
-today's meals, display language) just to render one number. Nothing today aggregates "how am I
-doing today" into one response; `GET /api/users/me/nutrition-target` computes the target alone,
-and today's consumed totals aren't exposed anywhere.
+— not 3-4 separate authenticated calls per refresh. Nothing today aggregates "how am I doing
+today"; `GET /api/users/me/nutrition-target` computes the target alone, and consumed totals aren't
+exposed anywhere.
 
-Separately, the widget's own architecture (see the idea-forge decision this proposal implements)
-requires putting `/api/*` behind a Cloudflare Access **Bypass** policy so a background refresh can
-authenticate with a username/password call instead of an interactive Google login. That change is
-explicitly **not** part of this repo (it's Cloudflare zone config, tracked outside `openspec/`
-here) — but it cannot land anywhere until this repo's login endpoint can survive being placed on
-the open internet. Today it can't: there is no rate limiting, lockout, or backoff anywhere in the
-backend or in `kin-core`, the shared library HealthVault's auth is built on. `POST
-/api/auth/login` currently has unlimited attempts as its only gate, hidden solely by Access sitting
-in front of it. This proposal is the prerequisite that unblocks the Bypass policy, not a request to
-add it here.
+Separately, the widget's auth design (see the idea-forge decision this implements) requires a
+Cloudflare Access **Bypass** policy on `/api/*` so a background refresh can log in with
+username/password instead of an interactive Google flow. That policy is Cloudflare zone config,
+tracked outside this repo — but it can't land until login can survive being placed on the open
+internet. Today it can't: there is no rate limiting, lockout, or backoff anywhere in the backend or
+in `kin-core`. This proposal is that prerequisite, not a request to add the Bypass policy here.
 
 ## What Changes
 

@@ -1,0 +1,94 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Regenerate with: make projected-specs
+     See openspec/specs.projected.README.md for details. -->
+
+--- openspec/specs/daily-summary/spec.md
++++ openspec/specs/daily-summary/spec.md
+@@ -0,0 +1,87 @@
++# daily-summary Specification
++
++## Purpose
++TBD - created by archiving change daily-summary-and-login-rate-limiting. Update Purpose after archive.
++## Requirements
++### Requirement: Daily summary endpoint
++
++The system SHALL expose `GET /api/summary/today` (requires authentication). It SHALL NOT accept a
++`?user=<username>` parameter and SHALL always compute the summary for the authenticated caller
++only (`ClaimsFromCtx`), the same self-only scoping as `nutrition-target`'s endpoint, since its
++inputs include the caller's own settings and food log.
++
++"Today" SHALL be the caller's current Local Day as defined by `food-day-completeness`'s "Local Day
++boundary" requirement (the caller's stored `timezone` setting, UTC fallback for a missing or
++invalid value) — this endpoint SHALL NOT define "today" any other way.
++
++On success the system SHALL return HTTP 200 with:
++- `date`: the resolved Local Day, `YYYY-MM-DD`.
++- `calories_consumed`, `protein_grams_consumed`, `carbs_grams_consumed`, `fat_grams_consumed`: the
++  sum of those fields across the caller's `FoodMeal` rows whose Logged Day is today and whose
++  `status` is `confirmed`. Rows in any other status SHALL be excluded from these sums (their macro
++  fields are not populated until confirmation).
++- `meal_count`: a count of the caller's `FoodMeal` rows whose Logged Day is today, regardless of
++  `status`.
++- `last_updated`: the maximum `logged_at` among the caller's `FoodMeal` rows whose Logged Day is
++  today, regardless of `status`, or `null` if there are none.
++- `display_language`: the caller's current `display_language` setting, using its existing
++  resolution/default rules (see `display-language`).
++- `target`: an embedded object, either `{"available": true, "calories", "protein_grams",
++  "carbs_grams", "fat_grams"}` computed identically to `nutrition-target`'s "Nutrition Target
++  computation" requirement, or `{"available": false, "reason": "<reason>"}` using the same four
++  reason codes and precondition ordering as `nutrition-target`'s endpoint requirement
++  (`missing_profile`, `missing_measurements`, `missing_goal_weight`,
++  `insufficient_activity_data`). This endpoint SHALL NOT return HTTP 422 for an unavailable
++  target — an unavailable target is a normal, expected state on this endpoint, and the response
++  SHALL still be HTTP 200 with `target.available = false`, so the caller can render
++  `calories_consumed` regardless of whether a target exists.
++- `recommendation`: always `null` in this change. No requirement in this change computes a
++  non-null value for this field.
++
++#### Scenario: Full summary with an available target
++
++- **WHEN** an authenticated user with two confirmed meals logged today (combined 1,450 kcal) and a
++  fully computable nutrition target requests their summary
++- **THEN** the system SHALL return HTTP 200 with `calories_consumed = 1450`, `meal_count = 2`,
++  `target.available = true`, and the four target fields populated
++
++#### Scenario: Consumed totals exclude unconfirmed meals
++
++- **GIVEN** a user has one `confirmed` meal (500 kcal) and one `pending_review` meal logged today
++- **WHEN** the system computes `calories_consumed`
++- **THEN** the result is 500, not the sum including the unconfirmed meal, and `meal_count` is 2
++
++#### Scenario: No meals logged today
++
++- **WHEN** an authenticated user with no `FoodMeal` rows on today's Local Day requests their
++  summary
++- **THEN** the system SHALL return HTTP 200 with `calories_consumed = 0`,
++  `protein_grams_consumed = 0`, `carbs_grams_consumed = 0`, `fat_grams_consumed = 0`,
++  `meal_count = 0`, and `last_updated = null`
++
++#### Scenario: Target unavailable does not fail the request
++
++- **GIVEN** a user has never saved a `birthdate` or `sex`
++- **WHEN** they request their summary
++- **THEN** the system SHALL return HTTP 200 (not 422) with `target = {"available": false, "reason":
++  "missing_profile"}`, and `calories_consumed`/`meal_count`/`last_updated` SHALL still reflect
++  today's actual meals
++
++#### Scenario: Recommendation is always null
++
++- **WHEN** any authenticated user requests their summary
++- **THEN** the response's `recommendation` field SHALL be `null`
++
++#### Scenario: Unauthenticated request rejected
++
++- **WHEN** a request to `GET /api/summary/today` carries no valid token
++- **THEN** the system SHALL return HTTP 401
++
++#### Scenario: A processing meal still updates last_updated and meal_count
++
++- **GIVEN** a user has a single meal logged today whose status is `processing` (photo uploaded,
++  recognition not yet complete)
++- **WHEN** they request their summary
++- **THEN** `meal_count = 1` and `last_updated` equals that meal's `logged_at`, even though
++  `calories_consumed = 0` because the meal is not yet `confirmed`
++
