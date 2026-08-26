@@ -24,10 +24,15 @@ The More Data section SHALL list only secondary (non-primary) registered types f
 - **WHEN** the presence fetch fails, and the user has not hidden the More Data section
 - **THEN** the system SHALL render every secondary type in the More Data section, as if every type had presence
 
-#### Scenario: More Data section waits for presence and saved preference before rendering
+#### Scenario: More Data section waits for presence before rendering
 
-- **WHEN** the presence fetch has not yet resolved (and has not failed), or the user's saved hide/show preference has not yet loaded (or failed to load)
-- **THEN** the dashboard SHALL NOT render the More Data section as filtered-in until both the presence fetch and the saved preference have resolved
+- **WHEN** the presence fetch has not yet resolved (and has not failed)
+- **THEN** the dashboard SHALL NOT render the More Data section as filtered-in by presence until the fetch resolves or fails
+
+#### Scenario: More Data section waits for the saved hide/show preference before rendering
+
+- **WHEN** the user's saved hide/show preference has not yet loaded (or failed to load)
+- **THEN** the dashboard SHALL NOT render the More Data section as filtered-in until the saved preference has resolved
 
 ## ADDED Requirements
 
