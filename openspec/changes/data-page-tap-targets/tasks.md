@@ -96,6 +96,12 @@ Operator reversed the "grow at every width" call on review (see design.md's supe
       transient pending-delete state: Actions grows 86 → 155 and scrollWidth 513 → 581, but that is
       **identical before and after** this change — confirm/cancel were already wider than 48, only
       their height (24 → 48) was deficient. The four data columns never move.
+- [x] 3.9 Re-run the sweep after the `min-*-0` → `min-*-auto` switch, adding tab **widths** and a
+      per-button clipping check (`scrollWidth > width`), plus a 320 px fine-pointer row — the width
+      at which a squeezed flex item would show first
+      → every row identical to 3.8, `clipped=0` in all twelve combinations. Zoom widths are
+      45/52/59/52 on a fine pointer (content width, `min-width: auto`) and 48/52/59/52 on a coarse
+      one (floored by `min-w-12`), which is exactly the pre-change split. Suite still **9/9**.
 
 ## 4. Finalize
 
