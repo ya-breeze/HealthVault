@@ -56,6 +56,16 @@ Operator reversed the "grow at every width" call on review (see design.md's supe
 > Note: `DataTypeClient.tsx` already imports `TapTarget` (used by the "Set goal" / "Set height"
 > controls), so no new import is needed.
 
+## 2c. Second review round
+
+- [x] 2.10 Widen the spec delta to also MODIFY *Shared Tap Target Enforcement Component* — this
+      change introduces the first sanctioned way for a `TapTarget` call site to render below the
+      minimum, and left alone that requirement would land on `main` contradicting the one this
+      change adds the pointer qualifier to
+- [x] 2.11 Add a visibility gate to the nutrition macro case before measuring — `boundingBox()`
+      auto-waits for *attached*, not *visible*, and the non-null assertion does not retry, so
+      without it the case fails hard where the two sibling cases would wait
+
 ## 3. Verification
 
 - [x] 3.1 Run `make lint` and fix anything it reports → passes, but it is **backend-only**
@@ -111,19 +121,12 @@ Operator reversed the "grow at every width" call on review (see design.md's supe
       `node_modules/`, which does not match a symlink); now excluded locally. Final diff touches
       only the two intended source files plus the OpenSpec artifacts.
 - [x] 4.2 Push the branch and open the PR
-## 2c. Second review round
-
-- [x] 2.10 Widen the spec delta to also MODIFY *Shared Tap Target Enforcement Component* — this
-      change introduces the first sanctioned way for a `TapTarget` call site to render below the
-      minimum, and left alone that requirement would land on `main` contradicting the one this
-      change adds the pointer qualifier to
-- [x] 2.11 Add a visibility gate to the nutrition macro case before measuring — `boundingBox()`
-      auto-waits for *attached*, not *visible*, and the non-null assertion does not retry, so
-      without it the case fails hard where the two sibling cases would wait
-
-- [ ] 4.3 Ask the user to run `/code-review` on the branch and address findings
-- [ ] 4.4 After approval to finalize, archive the change with `openspec archive data-page-tap-targets --yes`
-      and validate with `openspec validate --specs --strict`
-- [ ] 4.5 Regenerate the projected-specs artifact as a **second, separate commit** — the
+- [x] 4.3 Ask the user to run `/code-review` on the branch and address findings
+      → two rounds. Round one (7 findings) reversed the "grow at every width" call and corrected an
+      unsound claim in design.md about the table's scroll width. Round two (4 findings) is section
+      2c above. The operator elected to finalize without a third round.
+- [x] 4.4 After approval to finalize, archive the change with `openspec archive data-page-tap-targets --yes`
+      and validate with `openspec validate --specs --strict` → 29 specs pass
+- [x] 4.5 Regenerate the projected-specs artifact as a **second, separate commit** — the
       `openspec-projected-specs` workflow regenerates and hard-fails on any diff under
       `openspec/specs.projected/`, so this is mandatory, not conditional
