@@ -1,17 +1,30 @@
-import type { DataType } from '@/lib/api';
-import type { Dictionary } from '@/lib/i18n';
-import { formatMetricValue, toDisplayUnit } from '@/lib/dataTypeMeta';
+import type { DataType } from './api';
+import type { Dictionary } from './i18n';
+import { formatMetricValue, toDisplayUnit } from './dataTypeMeta';
 
 /**
- * The 8 metrics shown as full vitals-grid cards on the dashboard, in display
- * order.
+ * A dashboard card's identifier: either a `DataType`-backed Vital Card, or a
+ * card with no presence signal of its own — currently just the Logging Gap
+ * Card (design.md decision 8). This union is a small, additive widening over
+ * the old `DataType`-only registry, kept deliberately narrow rather than a
+ * general "card kind" system: if a future card needs a third shape, the union
+ * grows again then.
+ */
+export type CardId = DataType | 'logging_gap';
+
+/**
+ * The metrics shown as full vitals-grid cards on the dashboard, in display
+ * order. Includes the Logging Gap Card, the registry's first non-`DataType`
+ * entry (design.md decision 8) — it has no `/api/data/{type}` presence to
+ * gate on, so it's always eligible to render, subject only to the user's own
+ * hidden/visible choice (see `hasCardPresence`).
  *
  * Type only, no label: display names now come from the `metric.<type>` keys in
  * lib/i18n so they can be translated. Keeping an English label here as well
  * would give each metric two names with nothing keeping them in step, and the
  * one the dashboard actually renders would be the other one.
  */
-export const PRIMARY_METRICS: { type: DataType }[] = [
+export const PRIMARY_METRICS: { type: CardId }[] = [
   { type: 'steps' },
   { type: 'heart_rate' },
   { type: 'sleep' },
@@ -20,15 +33,16 @@ export const PRIMARY_METRICS: { type: DataType }[] = [
   { type: 'weight' },
   { type: 'blood_pressure' },
   { type: 'oxygen_saturation' },
+  { type: 'logging_gap' },
 ];
 
 /**
- * One vitals-grid card as the user has arranged it: which metric, and whether
+ * One vitals-grid card as the user has arranged it: which card, and whether
  * they've hidden it. `hidden` cards keep their position in this list so that
  * re-showing one restores it where it was rather than appending it at the end.
  */
 export interface DashboardCardPref {
-  type: DataType;
+  type: CardId;
   hidden: boolean;
 }
 
@@ -75,7 +89,7 @@ export function reconcileMetricOrder(saved: StoredCardPref[] | undefined): Dashb
     }
     if (typeof type !== 'string' || !known.has(type) || seen.has(type)) continue;
     seen.add(type);
-    ordered.push({ type: type as DataType, hidden });
+    ordered.push({ type: type as CardId, hidden });
   }
 
   const missing = PRIMARY_METRICS.filter(m => !seen.has(m.type)).map(m => ({ type: m.type, hidden: false }));
@@ -94,6 +108,32 @@ export function hasPresence(presence: Record<string, boolean> | null, type: stri
   if (!presence) return true;
   const value = presence[type];
   return value === undefined ? true : value;
+}
+
+/**
+ * Presence gate for a dashboard card (`CardId`, not just `DataType`).
+ * `'logging_gap'` has no presence signal of its own (design.md decision 8) —
+ * this SHALL NOT fall through to `hasPresence` for it, so a presence
+ * response that omits it, or one that (incorrectly) returns `false` for it,
+ * has no effect on whether the card is eligible to render. Every other
+ * `CardId` delegates to `hasPresence` unchanged.
+ */
+export function hasCardPresence(presence: Record<string, boolean> | null, type: CardId): boolean {
+  if (type === 'logging_gap') return true;
+  return hasPresence(presence, type);
+}
+
+/**
+ * The non-primary data types shown in the dashboard's "More Data" section:
+ * every `DataType` not already registered as a primary vitals-grid card.
+ * Takes the full `DataType` list as a parameter (rather than importing
+ * `DATA_TYPES` itself) purely so callers can pass a fixture in tests;
+ * `'logging_gap'` is never a candidate since it isn't a member of `allTypes`
+ * to begin with — this filter can't accidentally surface it as a secondary
+ * type.
+ */
+export function secondaryTypes(allTypes: readonly DataType[]): DataType[] {
+  return allTypes.filter(t => !PRIMARY_METRICS.some(m => m.type === t));
 }
 
 export interface VitalResult {

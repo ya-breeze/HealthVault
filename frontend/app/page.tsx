@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, DATA_TYPES } from '@/lib/api';
+import { api, DATA_TYPES, DataType } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, DashboardCardPref, VitalResult } from '@/lib/vitals';
+import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, hasCardPresence, secondaryTypes, DashboardCardPref, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
@@ -13,7 +13,7 @@ import VitalCard from '@/components/VitalCard';
 import TapTarget from '@/components/ui/TapTarget';
 import { CameraIcon, PencilIcon, HistoryIcon } from '@/components/icons';
 
-const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type === t));
+const SECONDARY_TYPES = secondaryTypes(DATA_TYPES);
 
 export default function Dashboard() {
   const router = useRouter();
@@ -94,11 +94,16 @@ export default function Dashboard() {
     })();
     const to = new Date().toISOString();
 
+    // 'logging_gap' has no /api/data/{type} backing (design.md decision 8) —
+    // it fetches and computes its own state (task 5's LoggingGapCard), so it's
+    // excluded here rather than passed to api.data/extractVital, which are
+    // DataType-only.
+    const dataMetrics = PRIMARY_METRICS.filter((m): m is { type: DataType } => m.type !== 'logging_gap');
     Promise.all(
-      PRIMARY_METRICS.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
+      dataMetrics.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
     ).then(results => {
       const next: Record<string, VitalResult | null> = {};
-      PRIMARY_METRICS.forEach((m, i) => {
+      dataMetrics.forEach((m, i) => {
         next[m.type] = extractVital(m.type, results[i]);
       });
       setVitals(next);
@@ -129,7 +134,7 @@ export default function Dashboard() {
   // untouched (they may gain presence on a later load).
   function moveCard(index: number, direction: -1 | 1) {
     setOrder(prev => {
-      const visibleTypes = prev.filter(m => hasPresence(presence, m.type)).map(m => m.type);
+      const visibleTypes = prev.filter(m => hasCardPresence(presence, m.type)).map(m => m.type);
       const target = index + direction;
       if (target < 0 || target >= visibleTypes.length) return prev;
       const idxA = prev.findIndex(m => m.type === visibleTypes[index]);
@@ -150,7 +155,7 @@ export default function Dashboard() {
   // mode) — see design.md, "Presence excludes a type from the customizable
   // set entirely". A zero-presence metric never appears here, regardless of
   // its stored `hidden` flag.
-  const presentOrder = order.filter(m => hasPresence(presence, m.type));
+  const presentOrder = order.filter(m => hasCardPresence(presence, m.type));
   // "No data at all" (nothing to show, Customize can't help) is distinct from
   // "user hid everything that does have data" (allHidden, below) — see the
   // two-empty-states decision in design.md. allHidden must not fire when
@@ -166,7 +171,7 @@ export default function Dashboard() {
 
   function toggleHidden(index: number) {
     setOrder(prev => {
-      const visibleTypes = prev.filter(m => hasPresence(presence, m.type)).map(m => m.type);
+      const visibleTypes = prev.filter(m => hasCardPresence(presence, m.type)).map(m => m.type);
       const type = visibleTypes[index];
       return prev.map(m => (m.type === type ? { ...m, hidden: !m.hidden } : m));
     });
@@ -243,6 +248,12 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
             {presentOrder.map((m, i) => (editing || !m.hidden) && (
+              // 'logging_gap' has no Vital Card rendering yet — wired in by
+              // task 5 (LoggingGapCard). Keeping it out of the DataType-only
+              // metricLabel/VitalCard path here so the registry widening in
+              // this task type-checks without a placeholder that lies about
+              // what's actually shown.
+              m.type === 'logging_gap' ? null : (
               <VitalCard
                 key={m.type}
                 type={m.type}
@@ -257,6 +268,7 @@ export default function Dashboard() {
                 onToggleHidden={() => toggleHidden(i)}
                 controlsDisabled={saving}
               />
+              )
             ))}
           </div>
         )}

@@ -173,19 +173,19 @@
 
 ## 4. Frontend: dashboard card registry generalization
 
-- [ ] 4.1 In `frontend/lib/vitals.ts`: introduce a `CardId = DataType | 'logging_gap'` type; widen
+- [x] 4.1 In `frontend/lib/vitals.ts`: introduce a `CardId = DataType | 'logging_gap'` type; widen
       `PRIMARY_METRICS`'s entry type and `DashboardCardPref.type` to `CardId`; add a
       `{ type: 'logging_gap' }` entry to `PRIMARY_METRICS` in the desired default position
-- [ ] 4.2 Update `reconcileMetricOrder`'s `known` set construction to include `'logging_gap'`
+- [x] 4.2 Update `reconcileMetricOrder`'s `known` set construction to include `'logging_gap'`
       (already derived from `PRIMARY_METRICS`, so this should require no logic change — verify with
       a test) so a saved order containing it round-trips correctly
-- [ ] 4.3 In `frontend/app/page.tsx`: ensure `SECONDARY_TYPES` (`DATA_TYPES.filter(...)`) is
+- [x] 4.3 In `frontend/app/page.tsx`: ensure `SECONDARY_TYPES` (`DATA_TYPES.filter(...)`) is
       unaffected by the new `'logging_gap'` member (it isn't a `DataType`, so the existing filter
       logic should already exclude it correctly — verify with a test rather than assuming) and that
       the presence-based hide/show logic (`hasPresence`, zero-presence exclusion from Edit mode) is
       never evaluated for the `'logging_gap'` entry — it is always eligible to render in both the
       read-only grid and Edit mode, gated only by its own `hidden` preference
-- [ ] 4.4 Unit tests for 4.1-4.3: a saved order including `logging_gap` reorders correctly; a saved
+- [x] 4.4 Unit tests for 4.1-4.3: a saved order including `logging_gap` reorders correctly; a saved
       order predating this change (missing `logging_gap` entirely) appends it visible at the
       default position, same as any other newly-added metric per "Saved order tolerates the default
       metric set changing"; hiding `logging_gap` persists and is respected on next load; a presence
