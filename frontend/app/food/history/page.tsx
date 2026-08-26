@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api, DayCompletenessState, MealSummary } from '@/lib/api';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
 import DayCompletenessControl from '@/components/food/DayCompletenessControl';
 import HistorySettingsPanel from '@/components/food/HistorySettingsPanel';
@@ -203,9 +203,7 @@ export default function FoodHistoryPage() {
   const dayGroups = groupByDay(meals, dateLocaleFor(language), timezone);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header />
-
+    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('history.title')}</h1>
 
@@ -276,6 +274,6 @@ export default function FoodHistoryPage() {
           </TapTarget>
         )}
       </main>
-    </div>
+    </AuthenticatedShell>
   );
 }

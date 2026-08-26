@@ -13,7 +13,7 @@ import {
   last30DayEmaWindow, hasEnoughDataForProjection, computeProjection, projectionPoints,
   ProjectionResult,
 } from '@/lib/dataTypeMeta';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 import AddRecordForm from '@/components/AddRecordForm';
 import TapTarget from '@/components/ui/TapTarget';
 
@@ -570,9 +570,7 @@ export default function DataTypeClient({ type }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-bg">
-      <Header />
-
+    <AuthenticatedShell className="min-h-screen bg-bg">
       <main className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <h1 className="text-xl font-bold capitalize text-text flex items-center gap-2">
@@ -879,6 +877,6 @@ export default function DataTypeClient({ type }: Props) {
           )}
         </div>
       </main>
-    </div>
+    </AuthenticatedShell>
   );
 }

@@ -8,7 +8,7 @@ import ReanalyzeControl from '@/components/food/ReanalyzeControl';
 import MealMetaEditor from '@/components/food/MealMetaEditor';
 import MacroSummary from '@/components/food/MacroSummary';
 import DeleteMealControl from '@/components/food/DeleteMealControl';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { mealStatusLabel } from '@/lib/i18n';
@@ -158,20 +158,18 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Header />
+      <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">{t('review.loading')}</p>
-      </div>
+      </AuthenticatedShell>
     );
   }
   if (loadError || !meal) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Header />
+      <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="p-6 text-center">
           <p className="text-sm text-red-600 dark:text-red-400">{loadError ?? t('review.mealNotFound')}</p>
         </div>
-      </div>
+      </AuthenticatedShell>
     );
   }
 
@@ -188,9 +186,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     (meal.status === 'failed' || meal.status === 'pending_review' || meal.status === 'confirmed');
 
   return (
-    <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 ${showConfirmBar ? 'pb-24' : ''}`}>
-      <Header />
-
+    <AuthenticatedShell className={`min-h-screen bg-gray-50 dark:bg-gray-900 ${showConfirmBar ? 'pb-24' : ''}`}>
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
           {meal.name || t('review.mealFallbackName')}
@@ -299,8 +295,11 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         )}
       </main>
 
+      {/* The submit bar below is the same markup, and takes the same
+          navigation-bar offset, as the manual-entry page's — see the comment
+          there. */}
       {showConfirmBar && (
-        <div className="fixed bottom-0 left-0 right-0 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="fixed bottom-[var(--nav-block)] left-0 right-0 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+var(--edge-inset-b))]">
           <div className="max-w-md mx-auto">
             <TapTarget
               onClick={handleConfirm}
@@ -320,6 +319,6 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
           deleteControl={<DeleteMealControl mealId={mealId} queueDelete={queueDelete} />}
         />
       )}
-    </div>
+    </AuthenticatedShell>
   );
 }

@@ -42,6 +42,39 @@
   --c-bone_mass: #6b7280;
   --c-speed: #2f7cc2;
   --c-food_meal: #b8722f;
+
+  /* Mobile bottom navigation's vertical budget — see mobile-navigation's
+     "Bar does not occlude page content" requirement. Defined here once;
+     no component restates the bar's height.
+
+     --nav-bar-h  the bar's own content height: 48px of tap target plus a
+                  label line, rounded to the 4px spacing scale.
+     --nav-block  the space the bar actually occupies, safe-area inset
+                  included. Everything that must clear the bar reads this,
+                  whether by padding (in-flow content) or by being anchored
+                  at `bottom: var(--nav-block)` (fixed elements, which an
+                  ancestor's padding does not move).
+     --edge-inset-b  the inset an element anchored at bottom:var(--nav-block)
+                  must still absorb itself. Below the breakpoint that is
+                  none of it — the bar is underneath and has absorbed it
+                  already; above the breakpoint the bar is gone and the
+                  element is flush to the screen edge again, so it absorbs
+                  the inset itself. A handheld in landscape is both above
+                  the breakpoint and a device with a home indicator, so both
+                  regimes are real and one token cannot serve both. */
+  --nav-bar-h: 4rem;
+  --nav-block: calc(var(--nav-bar-h) + env(safe-area-inset-bottom));
+  --edge-inset-b: 0px;
+}
+
+/* `theme(--breakpoint-sm)` reads Tailwind v4's own breakpoint variable, so
+   this query and every `sm:` variant in the app derive from one definition
+   and cannot drift apart. */
+@media (width >= theme(--breakpoint-sm)) {
+  :root {
+    --nav-block: 0px;
+    --edge-inset-b: env(safe-area-inset-bottom);
+  }
 }
 
 @theme inline {

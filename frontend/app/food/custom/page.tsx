@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, CustomFood, CustomFoodInput } from '@/lib/api';
 import CustomFoodModal from '@/components/food/CustomFoodModal';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import ExpertModeToggle from '@/components/food/ExpertModeToggle';
@@ -54,9 +54,7 @@ export default function CustomFoodsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header />
-
+    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('customFood.title')}</h1>
         <TapTarget
@@ -138,6 +136,6 @@ export default function CustomFoodsPage() {
           onClose={() => setEditing(null)}
         />
       )}
-    </div>
+    </AuthenticatedShell>
   );
 }

@@ -8,7 +8,7 @@ import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 import VitalCard from '@/components/VitalCard';
 import TapTarget from '@/components/ui/TapTarget';
 import { CameraIcon, PencilIcon, HistoryIcon } from '@/components/icons';
@@ -185,9 +185,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-bg">
-      <Header />
-
+    <AuthenticatedShell className="min-h-screen bg-bg">
       <main className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-3">
           <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent">
@@ -327,6 +325,6 @@ export default function Dashboard() {
           </div>
         )}
       </main>
-    </div>
+    </AuthenticatedShell>
   );
 }

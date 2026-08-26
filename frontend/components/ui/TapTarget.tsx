@@ -1,4 +1,4 @@
-import { ComponentPropsWithoutRef, ElementType } from 'react';
+import { ComponentPropsWithRef, ElementType } from 'react';
 
 // Minimum interactive-control size for the food flow: 48x48 CSS px, the
 // Android Material Design guideline (see openspec/changes/mobile-tap-targets
@@ -41,11 +41,16 @@ type TapTargetProps<T extends ElementType> = {
    * device that reports no pointer at all.
    */
   compactOnMouse?: boolean;
-} & ComponentPropsWithoutRef<T>;
+  // `ComponentPropsWithRef`, not `…WithoutRef`: BottomNav's More destination
+  // has to be re-focused when the sheet it opens closes, so a caller must be
+  // able to hold a ref to the rendered element. React 19 passes `ref`
+  // through as an ordinary prop for function components, so the spread below
+  // delivers it without a forwardRef wrapper — only the type had to widen.
+} & ComponentPropsWithRef<T>;
 
 // Spreads all other props through unchanged (title, aria-label, data-testid,
-// disabled, onClick, href, ...) — several existing controls are located by
-// these attributes in e2e/tests/food.spec.ts, and migrating a control to
+// disabled, onClick, href, ref, ...) — several existing controls are located
+// by these attributes in e2e/tests/food.spec.ts, and migrating a control to
 // TapTarget must not change how it's identified by other code.
 export default function TapTarget<T extends ElementType = 'button'>({
   as,
