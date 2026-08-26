@@ -276,6 +276,8 @@ const en = {
   'dashboard.manual': 'Manual',
   'dashboard.history': 'History',
   'dashboard.moreData': 'More data',
+  'dashboard.hideMoreData': 'Hide More data section',
+  'dashboard.showMoreData': 'Show More data section',
 
   'vitals.noData': 'No data',
   'vitals.trend7d': '7d trend',

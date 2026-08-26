@@ -85,6 +85,10 @@ async function restoreAllVisible(page: Page) {
     restored++;
   }
 
+  // The independent more_data_hidden flag needs no separate cleanup: its
+  // toggle's testid ("more-data-visibility") already matches the generic
+  // loop above, same as dashboard.spec.ts's restoreAllVisible.
+
   if (restored === 0 && enteredEditMode) {
     await page.goto('/').catch(() => {});
     return;

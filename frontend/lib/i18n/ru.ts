@@ -181,6 +181,8 @@ const ru: Dictionary = {
   'dashboard.manual': 'Вручную',
   'dashboard.history': 'История',
   'dashboard.moreData': 'Другие данные',
+  'dashboard.hideMoreData': 'Скрыть раздел «Другие данные»',
+  'dashboard.showMoreData': 'Показать раздел «Другие данные»',
 
   'vitals.noData': 'Нет данных',
   'vitals.trend7d': 'тренд за 7 дней',
