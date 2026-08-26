@@ -5,7 +5,8 @@
 // openspec/changes/russian-localization/design.md decision 6 and Non-Goals.
 //
 // What is covered, precisely, so this doesn't quietly overstate itself:
-// the header/navigation, the dashboard (its vitals grid, meal-attention
+// the header/navigation — including the mobile bottom navigation bar and
+// the More sheet it opens — the dashboard (its vitals grid, meal-attention
 // line, log-food actions and secondary-metric links), the meal review screen
 // (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
 // custom-food catalog list, and the Expert Mode toggle.
@@ -40,9 +41,26 @@ const en = {
   'header.copied': 'Copied!',
   'header.copyToClipboard': 'Copy to clipboard',
   'header.logout': 'Logout',
+  'header.logoutFailed': 'Could not log you out. Try again.',
   'header.language': 'Language',
   'header.languageChangeFailed': 'Could not save your language preference. Try again.',
   'header.settings': 'Settings',
+
+  // Mobile bottom navigation. Deliberately short: five destinations divide a
+  // 320px viewport into 64px columns, and the Russian labels below are the
+  // binding constraint on what fits there — not the tap targets, which clear
+  // 48px on both axes at that width.
+  'nav.label': 'Main',
+  'nav.home': 'Home',
+  'nav.photo': 'Photo',
+  'nav.manual': 'Manual',
+  'nav.history': 'History',
+  'nav.more': 'More',
+  // The More sheet reuses the header.* strings for the controls it inherits
+  // (webhook, custom foods, import, settings, logout) rather than
+  // duplicating them under nav.* — one control, one label, in both places.
+  'nav.moreTitle': 'More',
+  'nav.close': 'Close',
 
   'status.processing': 'Analyzing…',
   'status.pending_clarification': 'Needs clarification',

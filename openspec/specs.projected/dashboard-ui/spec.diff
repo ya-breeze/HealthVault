@@ -1,0 +1,59 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Regenerate with: make projected-specs
+     See openspec/specs.projected.README.md for details. -->
+
+--- openspec/specs/dashboard-ui/spec.md
++++ openspec/specs/dashboard-ui/spec.md
+@@ -4,20 +4,49 @@
+ TBD - created by archiving change dashboard-instrument-panel. Update Purpose after archive.
+ ## Requirements
+ ### Requirement: Shared instrument-panel header
+-The system SHALL render a single shared header/navigation component (app name, active user, webhook link, custom foods link, import link, logout) on every authenticated page — the dashboard, every data page, the food logging flow, and the import page. Only one header implementation SHALL exist in the frontend; pages SHALL NOT each render their own copy.
++The system SHALL render a single shared header/navigation component on every authenticated page — the dashboard, every data page, the food logging flow, and the import page. Only one header implementation SHALL exist in the frontend; pages SHALL NOT each render their own copy.
++
++The header's control set is conditional on viewport width, governed by the same single breakpoint definition as the mobile navigation bar:
++
++- **At and above the breakpoint**, the header SHALL carry app name, active user, webhook link, custom foods link, import link, settings link, and logout — its full set, with its existing wrapping behaviour unchanged.
++- **Below the breakpoint**, the header SHALL carry only the app name and the active user, and SHALL occupy a single row down to a 320px viewport width. The remaining controls SHALL be reachable through the mobile navigation shell instead, which is responsible for leaving none of them stranded.
++
++The single-row guarantee is scoped to below the breakpoint deliberately. The desktop header's
++wrapping is a pre-existing behaviour of the same shared container, and this change does not alter
++it: between the breakpoint and roughly 768px the full seven-control set can still wrap to a second
++row, more readily with Russian labels. That is out of scope here — narrowing it would be a desktop
++change, and this change's premise is that desktop rendering is untouched. It is recorded rather
++than silently left, so a later change can take it up.
++
++Reducing the mobile control set is what stops the header consuming 21% of the fold on a 390px viewport; it is not a removal of functionality, because the navigation shell's own requirements mandate that every shed control remains reachable.
++
++Note on the desktop enumeration: it now names the **settings link**, which the previous wording
++omitted although `Header.tsx` has rendered it since the Display Language control was relocated to
++`/settings`. That is a correction to a stale enumeration, not a control this change adds — the
++"Desktop header is unchanged" scenario below still holds literally.
+ 
+ #### Scenario: Header present on the dashboard
+ - **WHEN** an authenticated user loads the dashboard
+-- **THEN** the shared header SHALL be visible with the active user, webhook, custom foods, import, and logout controls
++- **THEN** the shared header SHALL be visible with the active user, and — at a desktop viewport width — the webhook, custom foods, import, settings and logout controls
+ 
+ #### Scenario: Header present on a data page
+ - **WHEN** an authenticated user loads `/data/steps`
+-- **THEN** the same shared header component SHALL be visible, unchanged in structure from the dashboard's header
++- **THEN** the same shared header component SHALL be visible, unchanged in structure from the dashboard's header at the same viewport width
+ 
+ #### Scenario: Header present on food logging and import pages
+ - **WHEN** an authenticated user loads the photo upload, manual entry, or import page
+ - **THEN** the shared header SHALL be visible, even though the page content below it is unchanged by this capability
+ 
++#### Scenario: Mobile header is reduced to title and user
++- **WHEN** an authenticated user loads any authenticated page at a viewport width below the breakpoint
++- **THEN** the header SHALL show the app name and the active user
++- **AND** it SHALL NOT render the webhook, custom foods, import, settings or logout controls
++- **AND** it SHALL occupy a single row
++
++#### Scenario: Desktop header is unchanged
++- **WHEN** an authenticated user loads any authenticated page at a viewport width at or above the breakpoint
++- **THEN** the header SHALL carry its full control set exactly as before this change
++
+ ### Requirement: Dashboard vitals grid
+ 
+ The dashboard SHALL replace the 3-card summary and separate "Browse Data" grid with a single vitals grid covering the 8 primary metrics: `steps`, `heart_rate`, `sleep`, `heart_rate_variability`, `distance`, `weight`, `blood_pressure`, `oxygen_saturation`. Each card SHALL show the metric's current value, a 7-day sparkline, and a trend indicator, and SHALL link to that metric's data page. Which of those 8 cards actually render is governed by the "Customizable vitals grid order and visibility" requirement and the "Presence-based visibility of vitals grid cards" requirement.
