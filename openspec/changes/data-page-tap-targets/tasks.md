@@ -69,10 +69,23 @@ Operator reversed the "grow at every width" call on review (see design.md's supe
       and the macro tabs still fit their `flex-wrap` container without clipping
       → all six combinations match the baseline exactly. Delete 14×20 → 48×48; zoom tabs
       48/52/59/52 × 48; macro tabs all ≥48×48, container reports no clipping.
-- [ ] 3.8 Re-run 3.4–3.6 after the 2b reversal, and additionally confirm on a **fine pointer** that
+- [x] 3.8 Re-run 3.4–3.6 after the 2b reversal, and additionally confirm on a **fine pointer** that
       the zoom and macro tabs are back to their compact height while the delete control still meets
       48×48 — and on a **coarse pointer at a landscape-phone width (667 px)** that both tab groups
       still meet the minimum, which is the case the superseded `sm:` implementation got wrong
+      → full suite **9/9**. Swept pointer type against viewport:
+
+      | device | pointer | zoom tab h | macro tab h | delete |
+      |---|---|---|---|---|
+      | phone portrait 375×667 | coarse | 48 | 48 | 48×48 |
+      | phone landscape 667×375 | coarse | **48** | **48** | 48×48 |
+      | tablet portrait 768×1024 | coarse | **48** | **48** | 48×48 |
+      | mouse 1280×900 | fine | 28 | 27 | 48×48 |
+      | mouse narrow 375×667 | fine | 28 | 27 | 48×48 |
+
+      The two bold rows are the ones the superseded `sm:` implementation got wrong — both sit above
+      640 px, and that build measured 28 px at 640. The delete control holds 48×48 in every
+      combination, and the mouse rendering (28/27) is the original pre-change size.
 - [x] 3.7 Confirm the table's column set and horizontal-scroll behaviour are unchanged from `main`
       → verified by A/B on one build (neutralising only what `TapTarget` adds). Also checked the
       transient pending-delete state: Actions grows 86 → 155 and scrollWidth 513 → 581, but that is
