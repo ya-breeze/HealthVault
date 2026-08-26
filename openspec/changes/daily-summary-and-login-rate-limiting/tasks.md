@@ -1,6 +1,6 @@
 ## 1. Backend: login attempt limiting
 
-- [ ] 1.1 Add `backend/pkg/server/login_limiter.go`: a mutex-guarded, package-level map keyed by
+- [x] 1.1 Add `backend/pkg/server/login_limiter.go`: a mutex-guarded, package-level map keyed by
       lowercased username, tracking **confirmed** failed-attempt timestamps (15-minute trailing
       window), an in-flight counter (admitted attempts currently inside credential verification,
       not yet resolved), current backoff level, lockout-expiry time, and a last-activity timestamp
@@ -9,7 +9,7 @@
       below is defined against: an entry is expired only if `lastActivity` is well past the 24h
       reset window **and** its in-flight counter is zero), per design.md's "Login attempt limiting"
       decision
-- [ ] 1.2 Implement `admitAttempt(username string) (allowed bool, retryAfter time.Duration)`,
+- [x] 1.2 Implement `admitAttempt(username string) (allowed bool, retryAfter time.Duration)`,
       `recordFailure(username string)`, and `recordSuccess(username string)`. `admitAttempt` SHALL
       run under the map's single mutex and, atomically: reject with the existing lockout's
       `retryAfter` if already locked; else reject with a fixed `retryAfter` of 1 second (not tied
@@ -45,12 +45,12 @@
       forces it out; and admitting-unrecorded at the ceiling would let an attacker who keeps the map
       saturated with live throwaway entries permanently disable the limiter for every other
       never-before-seen username, including real accounts
-- [ ] 1.3 Implement the exponential backoff schedule: 1m/2m/4m/8m/16m/30m-cap, doubling per
+- [x] 1.3 Implement the exponential backoff schedule: 1m/2m/4m/8m/16m/30m-cap, doubling per
       lockout since the last successful login, resetting to 1m after 24h with no failures.
       Tripping a lockout SHALL clear the username's trailing-window failure count (not its backoff
       level) per design.md's "Reset on lockout trip" note, so escalation requires a fresh 5
       failures after each lockout expires
-- [ ] 1.4 Wire into `backend/pkg/server/auth.go`'s `Login`: call `admitAttempt` before verifying
+- [x] 1.4 Wire into `backend/pkg/server/auth.go`'s `Login`: call `admitAttempt` before verifying
       credentials; if `allowed = false`, reject with 429 immediately, no cookies set, without
       touching `FindUserByName`/`auth.VerifyPassword` at all. If `allowed = true`, verify
       credentials: on unknown username, call `auth.VerifyPassword(req.Password, auth.DummyHash)`
@@ -60,12 +60,12 @@
       `recordFailure`; on success call `recordSuccess`. A locked username SHALL be rejected with 429
       even when credentials in the request are correct — do not verify credentials before the
       `admitAttempt` check
-- [ ] 1.5 Add an unexported test seam, `var afterAdmitHook func()`, called by `Login` immediately
+- [x] 1.5 Add an unexported test seam, `var afterAdmitHook func()`, called by `Login` immediately
       after a successful admission and before credential verification begins; `nil` in production.
       Per design.md's "Test seam for deterministic concurrency tests" note, this lets 2.13 hold a
       known number of admitted goroutines open (in-flight counter pinned) before issuing the next
       request, instead of relying on goroutine-scheduling timing to produce an overlap
-- [ ] 1.6 Return `{"error": "too_many_attempts", "retry_after_seconds": <n>}` with HTTP 429 and no
+- [x] 1.6 Return `{"error": "too_many_attempts", "retry_after_seconds": <n>}` with HTTP 429 and no
       cookies set when locked (`n` = seconds remaining until `lockedUntil`, rounded up), when
       rejected by the ceiling fail-closed path, or when rejected by `admitAttempt`'s in-flight
       capacity check (`n` = fixed at 1 in both of the latter two cases, per design.md's "429

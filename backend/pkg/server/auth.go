@@ -19,6 +19,18 @@ type authHandlers struct {
 	cookieCfg cookies.Config
 }
 
+// writeTooManyAttempts writes the 429 response shape shared by all three
+// login-limiter rejection cases (real lockout, in-flight capacity, ceiling
+// fail-closed). No cookies are set.
+func writeTooManyAttempts(w http.ResponseWriter, retryAfter time.Duration) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusTooManyRequests)
+	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		"error":               "too_many_attempts",
+		"retry_after_seconds": ceilRetryAfter(retryAfter),
+	})
+}
+
 func (h *authHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
@@ -28,15 +40,33 @@ func (h *authHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+
+	allowed, retryAfter := admitAttempt(req.Username)
+	if !allowed {
+		writeTooManyAttempts(w, retryAfter)
+		return
+	}
+	if afterAdmitHook != nil {
+		afterAdmitHook()
+	}
+
 	user, err := h.storage.FindUserByName(req.Username)
 	if err != nil {
+		// Run the same bcrypt cost as a wrong-password 401 so an
+		// unknown-username response is not measurably faster (closes a
+		// username-enumeration timing oracle, per design.md).
+		auth.VerifyPassword(req.Password, auth.DummyHash)
+		recordFailure(req.Username)
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
 	if !auth.VerifyPassword(req.Password, user.PasswordHash) {
+		recordFailure(req.Username)
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
+	recordSuccess(req.Username)
+
 	accessToken, err := auth.GenerateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
