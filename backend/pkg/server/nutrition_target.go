@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
@@ -23,11 +24,14 @@ const (
 	kcalPerGramFat         = 9.0
 )
 
-// nutritionTargetResponse is the 200 response body for
-// GET /api/users/me/nutrition-target: the computed target plus every input
-// that fed it (design.md: computed on read, never cached, so the caller
-// always sees what produced the numbers).
-type nutritionTargetResponse struct {
+// nutritionTargetValues is the computed target plus every input that fed it
+// (design.md: computed on read, never cached, so the caller always sees what
+// produced the numbers). It is both the 200 response body for
+// GET /api/users/me/nutrition-target and the value `computeUserNutritionTarget`
+// hands to any other caller that needs to embed a target (e.g. the daily
+// summary endpoint), so `NutritionTargetHandler`'s response shape and every
+// embedder's inputs can never drift apart.
+type nutritionTargetValues struct {
 	Calories           int     `json:"calories"`
 	ProteinGrams       int     `json:"protein_grams"`
 	CarbsGrams         int     `json:"carbs_grams"`
@@ -42,12 +46,10 @@ type nutritionTargetResponse struct {
 }
 
 // NutritionTargetHandler computes GET /api/users/me/nutrition-target fresh on
-// every call (design.md "Computed on read, never stored") from the caller's
-// profile, latest weight/height/weight_goal records, and activity tier.
-// Unlike summaryHandler it is self-only — no ?user= — since its inputs
-// include UserSettings fields that user-settings scopes to the authenticated
-// user only (see design.md's "Self-only" decision). Exported for use in
-// tests.
+// every call (design.md "Computed on read, never stored"). Unlike
+// summaryHandler it is self-only — no ?user= — since its inputs include
+// UserSettings fields that user-settings scopes to the authenticated user
+// only (see design.md's "Self-only" decision). Exported for use in tests.
 func NutritionTargetHandler(storage database.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims := ClaimsFromCtx(r)
@@ -56,72 +58,90 @@ func NutritionTargetHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		profile, err := readUserProfile(storage, claims.UserID)
-		if err != nil {
-			writeQueryError(w, "nutrition target: read user profile", err, claims.UserID)
-			return
-		}
-		if !profile.HasBirthdate || !profile.HasSex {
-			writeUnprocessable(w, "missing_profile")
-			return
-		}
-
 		now := time.Now().UTC()
-
-		weightKg, hasWeight, err := latestPointValue(storage, "weights", "time", "kilograms", claims.UserID, now)
+		values, unavailableReason, err := computeUserNutritionTarget(storage, claims.UserID, now)
 		if err != nil {
-			writeQueryError(w, "nutrition target: read weight", err, claims.UserID)
+			writeQueryError(w, "nutrition target: compute", err, claims.UserID)
 			return
 		}
-		heightM, hasHeight, err := latestPointValue(storage, "heights", "time", "meters", claims.UserID, now)
-		if err != nil {
-			writeQueryError(w, "nutrition target: read height", err, claims.UserID)
+		if unavailableReason != "" {
+			writeUnprocessable(w, unavailableReason)
 			return
 		}
-		if !hasWeight || !hasHeight {
-			writeUnprocessable(w, "missing_measurements")
-			return
-		}
-
-		goalWeightKg, hasGoal, err := latestPointValue(storage, "weight_goals", "time", "kilograms", claims.UserID, now)
-		if err != nil {
-			writeQueryError(w, "nutrition target: read goal weight", err, claims.UserID)
-			return
-		}
-		if !hasGoal {
-			writeUnprocessable(w, "missing_goal_weight")
-			return
-		}
-
-		tierName, multiplier, ok, err := resolveActivityTier(storage, claims.UserID, profile, now)
-		if err != nil {
-			writeQueryError(w, "nutrition target: resolve activity tier", err, claims.UserID)
-			return
-		}
-		if !ok {
-			writeUnprocessable(w, "insufficient_activity_data")
-			return
-		}
-
-		ageYears := calendarAge(profile.Birthdate, now)
-		calories, proteinGrams, carbsGrams, fatGrams := computeNutritionTarget(
-			weightKg, heightM, ageYears, profile.Sex, multiplier, goalWeightKg,
-		)
-
-		writeJSON(w, nutritionTargetResponse{
-			Calories:           roundToInt(calories),
-			ProteinGrams:       roundToInt(proteinGrams),
-			CarbsGrams:         roundToInt(carbsGrams),
-			FatGrams:           roundToInt(fatGrams),
-			MeasuredWeightKg:   weightKg,
-			GoalWeightKg:       goalWeightKg,
-			HeightM:            heightM,
-			AgeYears:           ageYears,
-			Sex:                profile.Sex,
-			ActivityMultiplier: multiplier,
-			ActivityTier:       tierName,
-		})
+		writeJSON(w, values)
 	}
+}
+
+// computeUserNutritionTarget runs every precondition check
+// (`NutritionTargetHandler`'s original body) and, if all are met, the
+// Mifflin-St Jeor computation itself, from the caller's profile, latest
+// weight/height/weight_goal records, and activity tier. `now` is an explicit
+// parameter (not `time.Now()` internally) so callers can pin it — in
+// particular so `SummaryTodayHandler` can pass the same `now` it uses for
+// `database.TodaySummary`, keeping the reported day and the target computation
+// consistent with each other at a local-midnight boundary.
+//
+// unavailableReason is one of nutrition-target's four reason codes
+// (non-empty) when a precondition isn't met — a normal, expected outcome, not
+// an error — in which case values is the zero value and err is nil. err is
+// non-nil only for a genuine storage failure.
+func computeUserNutritionTarget(
+	storage database.Storage, userID uuid.UUID, now time.Time,
+) (values nutritionTargetValues, unavailableReason string, err error) {
+	profile, err := readUserProfile(storage, userID)
+	if err != nil {
+		return nutritionTargetValues{}, "", fmt.Errorf("read user profile: %w", err)
+	}
+	if !profile.HasBirthdate || !profile.HasSex {
+		return nutritionTargetValues{}, "missing_profile", nil
+	}
+
+	weightKg, hasWeight, err := latestPointValue(storage, "weights", "time", "kilograms", userID, now)
+	if err != nil {
+		return nutritionTargetValues{}, "", fmt.Errorf("read weight: %w", err)
+	}
+	heightM, hasHeight, err := latestPointValue(storage, "heights", "time", "meters", userID, now)
+	if err != nil {
+		return nutritionTargetValues{}, "", fmt.Errorf("read height: %w", err)
+	}
+	if !hasWeight || !hasHeight {
+		return nutritionTargetValues{}, "missing_measurements", nil
+	}
+
+	goalWeightKg, hasGoal, err := latestPointValue(storage, "weight_goals", "time", "kilograms", userID, now)
+	if err != nil {
+		return nutritionTargetValues{}, "", fmt.Errorf("read goal weight: %w", err)
+	}
+	if !hasGoal {
+		return nutritionTargetValues{}, "missing_goal_weight", nil
+	}
+
+	tierName, multiplier, ok, err := resolveActivityTier(storage, userID, profile, now)
+	if err != nil {
+		return nutritionTargetValues{}, "", fmt.Errorf("resolve activity tier: %w", err)
+	}
+	if !ok {
+		return nutritionTargetValues{}, "insufficient_activity_data", nil
+	}
+
+	ageYears := calendarAge(profile.Birthdate, now)
+	calories, proteinGrams, carbsGrams, fatGrams := computeNutritionTarget(
+		weightKg, heightM, ageYears, profile.Sex, multiplier, goalWeightKg,
+	)
+
+	return nutritionTargetValues{
+		Calories:           roundToInt(calories),
+		ProteinGrams:       roundToInt(proteinGrams),
+		CarbsGrams:         roundToInt(carbsGrams),
+		FatGrams:           roundToInt(fatGrams),
+		MeasuredWeightKg:   weightKg,
+		GoalWeightKg:       goalWeightKg,
+		HeightM:            heightM,
+		AgeYears:           ageYears,
+		Sex:                profile.Sex,
+		ActivityMultiplier: multiplier,
+		ActivityTier:       tierName,
+	}, "", nil
 }
 
 // computeNutritionTarget implements design.md's Mifflin-St Jeor + activity

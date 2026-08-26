@@ -135,12 +135,12 @@
 
 ## 3. Backend: daily summary computation
 
-- [ ] 3.1 Extract `nutrition_target.go`'s precondition checks and computation into a single
+- [x] 3.1 Extract `nutrition_target.go`'s precondition checks and computation into a single
       reusable function (e.g. `computeUserNutritionTarget(storage, userID, now) (target
       nutritionTargetValues, unavailableReason string, err error)`), called by both the existing
       `NutritionTargetHandler` (422s on non-empty `unavailableReason`, no behavior change) and the
       new summary handler
-- [ ] 3.2 Add `database.TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now
+- [x] 3.2 Add `database.TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now
       time.Time) (TodaySummaryRow, error)` in the `food_completeness.go` package: compute today's
       Local Day via `database.LocalDate(now, loc)`, derive UTC window bounds the same way
       `DayRange` does for a single day, query all of today's `FoodMeal` rows for the user, and fold
@@ -149,7 +149,7 @@
       across all statuses (or a zero/absent value when there are no rows). `now` is an explicit
       parameter (not `time.Now()` internally) so callers and tests can pin it, matching
       `computeUserNutritionTarget`'s pattern
-- [ ] 3.3 Add `backend/pkg/server/summary_today.go`: `SummaryTodayHandler(storage)` —
+- [x] 3.3 Add `backend/pkg/server/summary_today.go`: `SummaryTodayHandler(storage)` —
       self-only (`ClaimsFromCtx`, no `?user=`), resolves the caller's timezone via
       `database.ResolveTimezone` (reusing `callerTimezoneAndThreshold`'s settings-read pattern or a
       shared helper), computes `now := time.Now().UTC()` once (matching `NutritionTargetHandler`'s
@@ -160,7 +160,7 @@
       existing resolver, and assembles the response per design.md's shape (`date`,
       `calories_consumed`, `protein_grams_consumed`, `carbs_grams_consumed`, `fat_grams_consumed`,
       `meal_count`, `last_logged_at`, `display_language`, `target`, `recommendation: null`)
-- [ ] 3.4 Register `GET /api/summary/today` in `backend/pkg/server/server.go`, behind the existing
+- [x] 3.4 Register `GET /api/summary/today` in `backend/pkg/server/server.go`, behind the existing
       `api.Use(RequireAuth(...))` middleware, alongside `/users/me/nutrition-target`
 
 ## 4. Backend: daily summary unit tests
