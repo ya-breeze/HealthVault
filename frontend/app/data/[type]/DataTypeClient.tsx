@@ -617,7 +617,7 @@ export default function DataTypeClient({ type }: Props) {
             {ZOOMS.map(z => (
               <TapTarget
                 key={z.key}
-                touchOnly
+                compactOnMouse
                 onClick={() => setZoom(z.key)}
                 className={`font-[family-name:var(--font-data)] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ${
                   zoom === z.key ? 'bg-border text-accent' : 'text-text-muted hover:text-text'
@@ -652,7 +652,7 @@ export default function DataTypeClient({ type }: Props) {
             {NUTRITION_MACROS.map(m => (
               <TapTarget
                 key={m.key}
-                touchOnly
+                compactOnMouse
                 onClick={() => setMacro(m.key)}
                 className={`font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md border transition-colors ${
                   macro === m.key ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text'

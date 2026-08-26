@@ -53,8 +53,15 @@ rendered result, but it re-creates the per-call-site pattern that produced the g
 **Release the compact segmented controls for mouse users, keyed off pointer type.** The zoom tabs
 and the nutrition macro tabs are deliberately compact where the pointer is precise (28 and 27 px),
 and the tap-target problem they would solve does not exist there. Growing them to 48 px for a mouse
-makes the UI chunkier for no benefit, so they take the minimum only on a coarse pointer, via
-`pointer-fine:min-h-0 pointer-fine:min-w-0`.
+makes the UI chunkier for no benefit, so they take the minimum only off a fine pointer, via
+`pointer-fine:min-h-auto pointer-fine:min-w-auto`.
+
+**Release to `auto`, not `0`.** `auto` is what `min-height`/`min-width` computed to on these
+controls before `TapTarget` was applied, so the release restores the original rendering exactly.
+`min-width: 0` looks equivalent and is not: for a flex item it *also* switches off the automatic
+minimum size, and both call sites are flex children. That would let a cramped row shrink a label
+below its own content width instead of leaving it intact — a behaviour change this fix never
+intended to make, on the one pointer type where it is meant to change nothing at all.
 
 **Pointer type, not viewport width.** A width test is the obvious implementation and it is wrong:
 a 375×667 phone rotated to landscape is 667 CSS px wide, so a `sm:`-based release (≥640 px) hands
@@ -63,15 +70,23 @@ the fix straight back on the exact device this change was filed for — and a ta
 mouse?", and it fails safe: a device reporting no fine pointer keeps the minimum. An earlier
 iteration of this change did use `sm:`; it was caught in review.
 
-This is expressed as a named `touchOnly` prop on `TapTarget`, not as opt-out utility classes at the
-call site. Sizing still lives in exactly one place — a call site asks for the behaviour by name and
-never spells out its own dimensions — so the property this change is built on ("the minimum is
-structural, not re-created per call site") survives intact.
+This is expressed as a named `compactOnMouse` prop on `TapTarget`, not as opt-out utility classes at
+the call site. Sizing still lives in exactly one place — a call site asks for the behaviour by name
+and never spells out its own dimensions — so the property this change is built on ("the minimum is
+structural, not re-created per call site") survives intact. The prop is named for the condition it
+actually tests: an earlier `touchOnly` claimed the minimum applied to touch, while the
+implementation keys off the *negation* of `pointer: fine`, so a device reporting no pointer at all
+also keeps it.
+
+Because this is the first sanctioned way for a `TapTarget` call site to render below the minimum,
+the capability's *Shared Tap Target Enforcement Component* requirement is modified in the same
+delta. Left alone it would keep asserting the minimum unconditionally, and the two requirements
+would contradict each other the moment this change archived.
 
 Both compact groups get the same treatment, because they render together on `/data/nutrition`:
 releasing one and not the other would put a 28 px control next to a 48 px one in the same view.
 
-The record delete control and its confirm/cancel siblings are deliberately **not** `touchOnly`.
+The record delete control and its confirm/cancel siblings are deliberately **not** `compactOnMouse`.
 They are not compact-by-design — the delete target was 14×20, which is too small for a mouse as
 well as a thumb, and it is the control whose mis-tap destroys a record.
 
@@ -109,11 +124,11 @@ redesign of the interaction, and belongs to the upcoming visual change, not to a
   `devices['Desktop Chrome']`, which reports a *fine* pointer at every viewport size, so the
   data-detail cases set `hasTouch: true` explicitly — without it they would measure the compact
   mouse rendering and assert the wrong thing.
-- **A regression could add `touchOnly` to the delete control** — an easy consistency mistake, since
+- **A regression could add `compactOnMouse` to the delete control** — an easy consistency mistake, since
   its two tab neighbours in the same file have it — returning the highest-consequence control on the
   page to 14×20 for mouse users → Guarded by a dedicated fine-pointer case that asserts the delete
   control still measures 48×48 while the zoom tabs go compact. Every other assertion runs on a
-  coarse pointer, where `touchOnly` and plain `TapTarget` are indistinguishable.
+  coarse pointer, where `compactOnMouse` and plain `TapTarget` are indistinguishable.
 - **Seven macro tabs at 48 px tall will wrap onto more rows on `/data/nutrition`** → Their container
   is already `flex-wrap`, so this changes how many rows they occupy, not whether they fit. Below
   `sm` only. Verified in task 3.6 rather than assumed.

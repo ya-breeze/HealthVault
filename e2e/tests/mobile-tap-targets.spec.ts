@@ -217,7 +217,7 @@ function weightRow(id: string, kg: number, daysAgo: number) {
 // record delete control meets the minimum" and its three sibling scenarios.
 test.describe('Mobile tap targets — data detail page', () => {
   // hasTouch matters here, not just the viewport: the zoom and macro tabs take
-  // the minimum via TapTarget's `touchOnly`, which is keyed off
+  // the minimum via TapTarget's `compactOnMouse`, which is keyed off
   // `(pointer: fine)`. The suite's project is devices['Desktop Chrome'], which
   // reports a fine pointer at any viewport size, so without this these two
   // groups would be measured in their compact mouse rendering and the case
@@ -258,6 +258,10 @@ test.describe('Mobile tap targets — data detail page', () => {
 
     await page.goto('/data/nutrition/');
 
+    // boundingBox() waits for attached, not visible, and the null check below
+    // does not retry — so gate on visibility first, as the sibling cases do.
+    await expect(page.getByRole('button', { name: 'Calories', exact: true })).toBeVisible();
+
     for (const m of ['Calories', 'Protein', 'Carbs', 'Fat', 'Sugar', 'Sodium', 'Fiber']) {
       await assertMinTapTarget(page.getByRole('button', { name: m, exact: true }), `${m} macro tab`);
     }
@@ -265,10 +269,10 @@ test.describe('Mobile tap targets — data detail page', () => {
 });
 
 // The delete control and its confirm/cancel siblings are deliberately NOT
-// `touchOnly` — 14x20 was too small for a mouse as well as a thumb, and it is
-// the control whose mis-tap destroys a health record. Everything above runs on
-// a coarse pointer, where `touchOnly` and plain TapTarget render identically,
-// so nothing there would notice if someone added `touchOnly` to the delete
+// `compactOnMouse` — 14x20 was too small for a mouse as well as a thumb, and it
+// is the control whose mis-tap destroys a health record. Everything above runs
+// on a coarse pointer, where `compactOnMouse` and plain TapTarget render
+// identically, so nothing there would notice if someone added it to the delete
 // control for consistency with the two tab groups in the same file. This pins
 // that distinction: on a fine pointer the tabs go compact and the delete
 // control must not follow them.

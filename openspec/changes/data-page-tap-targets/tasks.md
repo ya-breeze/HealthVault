@@ -28,17 +28,22 @@
       selected-state styling and the macro each one sets
 - [x] 2.5 Confirm no sizing utility classes were added at any call site — the minimum must come from
       `TapTarget` alone (per the design's first decision)
-      → still holds after 2.6: the two compact groups pass a named `touchOnly` prop, and no
+      → still holds after 2.6: the two compact groups pass a named `compactOnMouse` prop, and no
       `className` value in `DataTypeClient.tsx` changed at any point
 
 ## 2b. Reversal: keep the compact controls small for mouse users
 
 Operator reversed the "grow at every width" call on review (see design.md's superseded alternative).
 
-- [x] 2.6 Add a `touchOnly` prop to `TapTarget` that releases the minimum on a fine pointer via
-      `pointer-fine:min-h-0 pointer-fine:min-w-0`, destructured so it is never spread onto the DOM
-      element
-- [x] 2.7 Pass `touchOnly` on the zoom tabs and the nutrition macro tabs — both, since they render
+- [x] 2.6 Add a `compactOnMouse` prop to `TapTarget` that releases the minimum on a fine pointer via
+      `pointer-fine:min-h-auto pointer-fine:min-w-auto`, destructured so it is never spread onto the
+      DOM element
+      → releases to `auto`, not `0`: `0` would additionally switch off a flex item's automatic
+      minimum size (both call sites are flex children), letting a cramped row shrink a label below
+      its own content width. `auto` is the exact pre-`TapTarget` computed value.
+      Prop named for the condition it tests — an earlier `touchOnly` mis-described a rule keyed off
+      the negation of `(pointer: fine)`, which also covers `pointer: none`.
+- [x] 2.7 Pass `compactOnMouse` on the zoom tabs and the nutrition macro tabs — both, since they render
       together on `/data/nutrition` and releasing only one would mix compact and 48 px controls in
       one view. The delete/confirm/cancel controls deliberately keep the minimum unconditionally.
 - [x] 2.8 Confirm Tailwind actually emits the variant from the template-literal class string
@@ -100,6 +105,16 @@ Operator reversed the "grow at every width" call on review (see design.md's supe
       `node_modules/`, which does not match a symlink); now excluded locally. Final diff touches
       only the two intended source files plus the OpenSpec artifacts.
 - [x] 4.2 Push the branch and open the PR
+## 2c. Second review round
+
+- [x] 2.10 Widen the spec delta to also MODIFY *Shared Tap Target Enforcement Component* — this
+      change introduces the first sanctioned way for a `TapTarget` call site to render below the
+      minimum, and left alone that requirement would land on `main` contradicting the one this
+      change adds the pointer qualifier to
+- [x] 2.11 Add a visibility gate to the nutrition macro case before measuring — `boundingBox()`
+      auto-waits for *attached*, not *visible*, and the non-null assertion does not retry, so
+      without it the case fails hard where the two sibling cases would wait
+
 - [ ] 4.3 Ask the user to run `/code-review` on the branch and address findings
 - [ ] 4.4 After approval to finalize, archive the change with `openspec archive data-page-tap-targets --yes`
       and validate with `openspec validate --specs --strict`

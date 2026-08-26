@@ -24,12 +24,23 @@ const MIN_TAP_TARGET_CLASSES = 'min-h-12 min-w-12';
 // Kept here rather than as opt-out classes at the call site, so sizing still
 // lives in exactly one place; a call site asks for the behaviour by name and
 // never spells out its own dimensions.
-const TOUCH_ONLY_CLASSES = `${MIN_TAP_TARGET_CLASSES} pointer-fine:min-h-0 pointer-fine:min-w-0`;
+//
+// Releases to `auto`, not `0`: `auto` is what these properties computed to
+// before this component was applied, so the release restores the original
+// rendering exactly. `min-width: 0` would go further and also switch off a
+// flex item's automatic minimum size — both call sites are flex children, and
+// that would let a cramped row shrink a label below its own content width
+// instead of leaving it intact.
+const COMPACT_ON_MOUSE_CLASSES = `${MIN_TAP_TARGET_CLASSES} pointer-fine:min-h-auto pointer-fine:min-w-auto`;
 
 type TapTargetProps<T extends ElementType> = {
   as?: T;
-  /** Take the 48px minimum only on coarse (touch) pointers; compact for a mouse. */
-  touchOnly?: boolean;
+  /**
+   * Render at the control's natural size where the primary pointing device is
+   * fine (a mouse); take the 48px minimum everywhere else, including on a
+   * device that reports no pointer at all.
+   */
+  compactOnMouse?: boolean;
 } & ComponentPropsWithoutRef<T>;
 
 // Spreads all other props through unchanged (title, aria-label, data-testid,
@@ -39,12 +50,12 @@ type TapTargetProps<T extends ElementType> = {
 export default function TapTarget<T extends ElementType = 'button'>({
   as,
   className,
-  touchOnly,
+  compactOnMouse,
   ...rest
 }: TapTargetProps<T>) {
   const Component = (as ?? 'button') as ElementType;
   // Destructured above so it is never spread onto the DOM element below.
-  const minClasses = touchOnly ? TOUCH_ONLY_CLASSES : MIN_TAP_TARGET_CLASSES;
+  const minClasses = compactOnMouse ? COMPACT_ON_MOUSE_CLASSES : MIN_TAP_TARGET_CLASSES;
   const mergedClassName = className ? `${minClasses} ${className}` : minClasses;
   // Spread before {...rest} below, so an explicit `type` in rest overrides this default.
   const defaultType = Component === 'button' ? { type: 'button' as const } : undefined;
