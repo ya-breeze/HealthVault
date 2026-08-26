@@ -194,7 +194,7 @@
 
 ## 5. Frontend: Logging Gap Card
 
-- [ ] 5.1 Add a `LoggingGapCard` component: on mount (and whenever the dashboard's data range
+- [x] 5.1 Add a `LoggingGapCard` component: on mount (and whenever the dashboard's data range
       changes), use task 3.5's `resolveLoggingGapWindow` to get the window and lead-in range, fetch
       the `weight` series over that range (`api.data('weight', ...)`, reusing the existing lead-in
       pattern from the weight Trend Projection code in
@@ -210,7 +210,7 @@
       from `{kind: 'not_enough_data'}` per design.md decision 6's revised reasoning (this card's four
       requests are its own, not `app/page.tsx`'s shared `dataMap`, so a failure here does not
       correlate with any other card's state)
-- [ ] 5.2 Render the card's states per the spec: a loading state while 5.1's requests are in flight;
+- [x] 5.2 Render the card's states per the spec: a loading state while 5.1's requests are in flight;
       then exactly one of the four content states — a kcal/day range (never a bare point estimate)
       for `{kind: 'gap', ...}`, direction-aware copy for a negative `value` (logged intake exceeding
       implied intake, rendered with the absolute range, never a negative-to-negative range); "not
@@ -218,11 +218,11 @@
       `{kind: 'retrieval_error'}` from 5.1; and catch `NutritionTargetUnmetError` from
       `getNutritionTarget()` to render the distinct "complete your profile/goal weight" state
       (design.md decision 6), linking to the relevant profile/goal-weight settings location
-- [ ] 5.3 Render the outlier-excluded note (task 3.7's output) alongside whichever of the four
+- [x] 5.3 Render the outlier-excluded note (task 3.7's output) alongside whichever of the four
       states is showing, and the two static caveats — photo-estimated intake bias, and the
       activity multiplier's unquantified error — per spec's "Logging Gap Card content and
       placement" requirement
-- [ ] 5.4 Wire the card into `app/page.tsx`'s dashboard render alongside the vitals grid, respecting
+- [x] 5.4 Wire the card into `app/page.tsx`'s dashboard render alongside the vitals grid, respecting
       the task-4 registry's order/visibility for the `'logging_gap'` entry
 
 ## 6. i18n

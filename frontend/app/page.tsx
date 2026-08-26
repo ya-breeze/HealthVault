@@ -10,6 +10,7 @@ import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
 import Header from '@/components/Header';
 import VitalCard from '@/components/VitalCard';
+import LoggingGapCard from '@/components/LoggingGapCard';
 import TapTarget from '@/components/ui/TapTarget';
 import { CameraIcon, PencilIcon, HistoryIcon } from '@/components/icons';
 
@@ -248,12 +249,22 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
             {presentOrder.map((m, i) => (editing || !m.hidden) && (
-              // 'logging_gap' has no Vital Card rendering yet — wired in by
-              // task 5 (LoggingGapCard). Keeping it out of the DataType-only
-              // metricLabel/VitalCard path here so the registry widening in
-              // this task type-checks without a placeholder that lies about
-              // what's actually shown.
-              m.type === 'logging_gap' ? null : (
+              // 'logging_gap' has no /api/data/{type} presence or VitalCard
+              // rendering — LoggingGapCard (task 5) owns its own fetch
+              // lifecycle and content states instead of reading `vitals`.
+              m.type === 'logging_gap' ? (
+                <LoggingGapCard
+                  key={m.type}
+                  editing={editing}
+                  onMoveUp={() => moveCard(i, -1)}
+                  onMoveDown={() => moveCard(i, 1)}
+                  moveUpDisabled={i === 0}
+                  moveDownDisabled={i === presentOrder.length - 1}
+                  hidden={m.hidden}
+                  onToggleHidden={() => toggleHidden(i)}
+                  controlsDisabled={saving}
+                />
+              ) : (
               <VitalCard
                 key={m.type}
                 type={m.type}
