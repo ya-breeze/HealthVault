@@ -5,11 +5,13 @@ but its requirement is scoped by an explicit list of routes: the food flows, the
 and `/settings`. The data detail route (`/data/[type]`) was never in that list, so its controls were
 never brought up to the minimum and nothing guards them.
 
-Measured on `hcw-wip` at a 390×844 viewport, that gap is live:
+Measured on `hcw-wip` at a 375×667 viewport (the width the e2e suite asserts at; sizes are the same
+at 390×844):
 
 - the per-record delete control renders **14×20 px** with `padding: 0` — roughly a twelfth of the
   required area, in a dense table where the adjacent row's delete control is ~52 px away
 - the Day / Week / Month / Year zoom tabs render **28 px** tall — the most-used control on the page
+- on `/data/nutrition`, the seven macro selector tabs render **27 px** tall
 
 A mis-tap on the delete control destroys a health record, so this is the highest-consequence
 instance of the gap rather than a cosmetic one.
@@ -17,18 +19,22 @@ instance of the gap rather than a cosmetic one.
 ## What Changes
 
 - Extend the existing `Minimum Tap Target Size` requirement's route scope to include the data
-  detail route (`/data/[type]`).
+  detail route (`/data/[type]`), with an exhaustive list of the controls covered.
 - Bring that route's controls to the 48×48 minimum by migrating them to the existing `TapTarget`
   component rather than hand-sizing each call site:
   - the per-record delete control (`aria-label="Delete record"`)
   - the confirm and cancel controls of that delete's inline confirmation step
   - the Day / Week / Month / Year zoom range tabs
-- Extend `e2e/tests/mobile-tap-targets.spec.ts` with a data-detail-route case that fails against
-  today's code, using the spec file's existing `assertMinTapTarget` helper.
+  - the nutrition macro selector tabs on `/data/nutrition`
+- Extend `e2e/tests/mobile-tap-targets.spec.ts` with data-detail cases that fail against today's
+  code, using the spec file's existing `assertMinTapTarget` helper and mocking the data API the way
+  the file's other cases already do.
 
-Explicitly **out of scope**: the table's layout, its column set, the nested horizontal scroll, and
-the wider mobile visual redesign. Those belong to a separate upcoming change; this one moves only
-tap-target geometry so it can ship independently and be reviewed on its own terms.
+Explicitly **out of scope**: the table's layout, its column set, the nested horizontal scroll, the
+record-entry form's inputs (`AddRecordForm`, ~34 px tall — form-field sizing is a separate concern,
+and the spec delta names this exclusion so it is not left ambiguous), and the wider mobile visual
+redesign. Those belong to separate changes; this one moves only tap-target geometry so it can ship
+independently and be reviewed on its own terms.
 
 ## Capabilities
 
@@ -40,12 +46,13 @@ None.
 
 - `mobile-touch-targets`: the `Minimum Tap Target Size` requirement's enumerated route scope gains
   the data detail route (`/data/[type]`), with scenarios covering its record delete control, that
-  control's confirmation step, and the zoom range tabs.
+  control's confirmation step, the zoom range tabs, and the nutrition macro tabs.
 
 ## Impact
 
-- `frontend/app/data/[type]/DataTypeClient.tsx` — delete, confirm/cancel and zoom-tab controls
-  migrate to `TapTarget`; layout of the surrounding table is untouched.
-- `e2e/tests/mobile-tap-targets.spec.ts` — one new data-detail-route case.
+- `frontend/app/data/[type]/DataTypeClient.tsx` — delete, confirm/cancel, zoom-tab and macro-tab
+  controls migrate to `TapTarget` (the file already imports it); layout of the surrounding table is
+  untouched.
+- `e2e/tests/mobile-tap-targets.spec.ts` — new data-detail-route cases.
 - `openspec/specs/mobile-touch-targets/spec.md` — updated on archive.
 - No backend, API, schema, or dependency changes. No visual redesign.
