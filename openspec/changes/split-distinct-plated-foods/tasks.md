@@ -40,12 +40,21 @@
 
 ## 3. Clarify interaction
 
-- [ ] 3.1 Verify `Clarify` (`backend/pkg/vision/openai.go`), which shares
+- [x] 3.1 Verify `Clarify` (`backend/pkg/vision/openai.go`), which shares
   `recognizeSystemPrompt`, does not have any separate item-count guidance elsewhere (e.g. in how
   its request is constructed or in `food_upload.go`'s handling of the clarify response) that
   would re-merge items an initial `Recognize` pass already split. If none is found, no code
   change is needed here beyond the shared prompt from task 1 — record that finding in the PR
   description.
+
+  Finding: none found. `Clarify` sends `recognizeSystemPrompt` unmodified (same string
+  `Recognize` uses). `ClarifyMeal` (`backend/pkg/server/food_clarify.go`) builds `priorItems`
+  1:1 from `meal.Items` with no count constraint, and `carryForwardPriorFields` only copies
+  fields across matching indices when counts already match — it never merges/drops items.
+  `processRecognition`/`unresolvedItemsFrom`/`resolveItems` in `food_upload.go` map
+  `recognized.Items` to persisted rows 1:1 for both `Recognize` and `Clarify`. No code change
+  needed beyond the shared prompt from task 1. Full detail recorded in
+  `openspec/changes/split-distinct-plated-foods/design.md` under "Open Questions".
 
 ## 4. Tests
 

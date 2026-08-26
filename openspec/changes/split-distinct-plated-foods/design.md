@@ -107,7 +107,15 @@ item even though a user logging the meal thinks of them as two foods with separa
 
 ## Open Questions
 
-- Whether `Clarify`'s request construction or `food_upload.go`'s handling of the clarify
-  response has any separate item-count guidance that could re-merge items a first `Recognize`
-  pass already split — task 3.1 is the implementer's check for this; expected to find nothing,
-  but not yet confirmed since no code has been written for this change.
+- Resolved by task 3.1: no separate item-count guidance exists outside the shared prompt.
+  `Clarify` (`backend/pkg/vision/openai.go`) sends `recognizeSystemPrompt` verbatim — the same
+  string `Recognize` uses — with no additional system content constraining item count.
+  `ClarifyMeal` (`backend/pkg/server/food_clarify.go`) builds `priorItems` 1:1 from `meal.Items`
+  and passes `history` unchanged; nothing there caps or collapses the item count either.
+  `carryForwardPriorFields` (same file) only copies `EstimatedProfile`/`CanonicalName` across
+  when `len(priorItems) == len(recognizedItems)` and the corresponding names look like the same
+  item — it never merges or drops items, and does nothing at all when the model's returned count
+  differs from the prior round's. `processRecognition` and `unresolvedItemsFrom`
+  (`backend/pkg/server/food_upload.go`) map `recognized.Items` to `database.FoodItem` rows 1:1
+  with no count-collapsing logic, for both the `Recognize` and `Clarify` paths. No code change
+  was needed beyond the shared prompt from task 1.
