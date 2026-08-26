@@ -4,13 +4,13 @@
 
 ## 2. Dashboard page state and persistence (`frontend/app/page.tsx`)
 
-- [ ] 2.1 Load `more_data_hidden` from settings into local state alongside the existing `order` state, defaulting to `false`/absent. Normalize strictly (`s.more_data_hidden === true`), not `s.more_data_hidden ?? false` — the settings blob is opaque, unvalidated JSON (same contract as `dashboard_order`'s `entry.hidden === true` check in `reconcileMetricOrder`, see `frontend/lib/vitals.ts`), so a malformed stored value (e.g. `"false"`, `1`) must not be treated as hidden.
-- [ ] 2.2 Add a `toggleMoreDataHidden()` function mirroring the existing `toggleHidden(index)` local-state-mutation style.
-- [ ] 2.3 Update `handleDone()` to include `more_data_hidden` in the same `updateSettings()` payload as `dashboard_order` — one PUT, no new writer.
-- [ ] 2.4 Gate the More Data render path on `dashboardReady` (the existing page-level flag, already `settingsLoaded && presenceReady`), not only `presenceReady`, so a hidden section can't flash unhidden before the saved preference is known. `dashboardReady` is already shared at the page level (see `design.md`'s Context), so this is a condition change on the existing silent gate (`presenceReady ? [...] : []` → `dashboardReady ? [...] : []`) — no new visible loading/error UI for the More Data section; it continues to render nothing while not ready, exactly as it does today.
-- [ ] 2.5 Update the read-only (non-editing) render condition from `presentSecondaryTypes.length > 0` to `!moreDataHidden && presentSecondaryTypes.length > 0`.
-- [ ] 2.6 In edit mode, render the More Data section (heading, toggle, link list) whenever `presentSecondaryTypes.length > 0`, regardless of `moreDataHidden`, visually distinguished (e.g. dimmed) when hidden — mirroring the vitals grid's dimmed-hidden-card treatment.
-- [ ] 2.7 When `presentSecondaryTypes.length === 0`, do not render the More Data section or its toggle at all, in either mode.
+- [x] 2.1 Load `more_data_hidden` from settings into local state alongside the existing `order` state, defaulting to `false`/absent. Normalize strictly (`s.more_data_hidden === true`), not `s.more_data_hidden ?? false` — the settings blob is opaque, unvalidated JSON (same contract as `dashboard_order`'s `entry.hidden === true` check in `reconcileMetricOrder`, see `frontend/lib/vitals.ts`), so a malformed stored value (e.g. `"false"`, `1`) must not be treated as hidden.
+- [x] 2.2 Add a `toggleMoreDataHidden()` function mirroring the existing `toggleHidden(index)` local-state-mutation style.
+- [x] 2.3 Update `handleDone()` to include `more_data_hidden` in the same `updateSettings()` payload as `dashboard_order` — one PUT, no new writer.
+- [x] 2.4 Gate the More Data render path on `dashboardReady` (the existing page-level flag, already `settingsLoaded && presenceReady`), not only `presenceReady`, so a hidden section can't flash unhidden before the saved preference is known. `dashboardReady` is already shared at the page level (see `design.md`'s Context), so this is a condition change on the existing silent gate (`presenceReady ? [...] : []` → `dashboardReady ? [...] : []`) — no new visible loading/error UI for the More Data section; it continues to render nothing while not ready, exactly as it does today.
+- [x] 2.5 Update the read-only (non-editing) render condition from `presentSecondaryTypes.length > 0` to `!moreDataHidden && presentSecondaryTypes.length > 0`.
+- [x] 2.6 In edit mode, render the More Data section (heading, toggle, link list) whenever `presentSecondaryTypes.length > 0`, regardless of `moreDataHidden`, visually distinguished (e.g. dimmed) when hidden — mirroring the vitals grid's dimmed-hidden-card treatment.
+- [x] 2.7 When `presentSecondaryTypes.length === 0`, do not render the More Data section or its toggle at all, in either mode.
 
 ## 3. UI control
 
