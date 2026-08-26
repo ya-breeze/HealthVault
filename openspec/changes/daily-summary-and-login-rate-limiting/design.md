@@ -46,7 +46,7 @@ Self-only, authenticated, no request body — same shape of decision as `Nutriti
   "carbs_grams_consumed": 120,
   "fat_grams_consumed": 45,
   "meal_count": 3,
-  "last_updated": "2026-08-26T14:32:00Z",
+  "last_logged_at": "2026-08-26T14:32:00Z",
   "display_language": "en",
   "target": {
     "available": true,
@@ -100,10 +100,20 @@ query this endpoint doesn't otherwise need. `meal_count` counts every `FoodMeal`
 whose Logged Day is today — a raw activity signal, matching "meal count" as named in the idea's
 comment, not the day-completeness capability's derived metric.
 
-**`last_updated` is the max `LoggedAt` among today's rows (any status), or `null` if none.** A
+**`last_logged_at` is the max `LoggedAt` among today's rows (any status), or `null` if none.** A
 `processing` row still means "the user just took a photo" — that's activity worth reflecting in
 "updated Xh ago" even before recognition finishes, matching the plan's requirement that a
 `~60s follow-up` refresh after returning from the Custom Tab has something to observe.
+
+**Named `last_logged_at`, not `last_updated`.** It tracks the most recent *logging* activity
+(`LoggedAt`), not the most recent change to the response's own values. Confirming an
+already-logged, still-`processing`/`pending_review` row later the same day changes
+`calories_consumed`/the macro sums without moving `LoggedAt` (confirmation doesn't relog the meal),
+so a field literally named "last updated" would understate its own freshness at that moment. This
+is not a staleness bug in the response itself — every field on this endpoint, including the
+consumed sums and the target, is computed fresh on every call, never cached — it is purely a naming
+hazard: `last_updated` invites a client to treat it as "how fresh is this payload," when what it
+actually means is "when did the user last log something." `last_logged_at` says that directly.
 
 A new `database.TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now time.Time)
 (TodaySummaryRow, error)` function in `food_completeness.go`'s package computes the UTC window
@@ -147,6 +157,58 @@ simplicity of one lookup rule, not a scenario worth adding real per-account case
   identical treatment, so lockout presence/absence can never be used as a username-existence
   oracle) increment a counter and record a timestamp.
 - **Threshold**: 5 failed attempts within the window trips a lockout.
+- **Attempt admission is atomic per username, not check-then-act — but admission reserves
+  capacity, it does not record a failure.** Credential verification (`auth.VerifyPassword`, bcrypt)
+  takes tens of milliseconds — long enough for many concurrent requests against the same username
+  to all observe "not locked" before any of them finishes and records a failure, which would let an
+  attacker fire a burst of parallel guesses per window instead of five. Closing that race by
+  provisionally counting every *admitted* attempt as a failure was considered and rejected: doing so
+  makes a burst of legitimate concurrent requests with the *correct* password (a double-tapped
+  login button, a mobile client's retry-on-timeout, two devices signing in at once) trip a real,
+  timed lockout — with escalating backoff — despite zero actual failures, which directly
+  contradicts "5 **failed** attempts" below. Concurrency safety and failure counting are kept
+  separate instead:
+  - Each username tracks a failure count/timestamps (as below) **plus an in-flight counter** —
+    the number of admitted attempts currently inside credential verification, not yet resolved.
+  - `Login` calls a single mutex-guarded `admitAttempt(username) (allowed bool, retryAfter
+    time.Duration)` **before** verifying credentials. Under the same lock held by
+    `admitAttempt`/`recordFailure`/`recordSuccess`, `admitAttempt` (a) rejects immediately with the
+    existing lockout's `retryAfter` if already locked, else (b) rejects with a fixed
+    `retryAfter` of 1 second (see "429 response" below) if `failure count + in-flight count >= 5`
+    (capacity is saturated by some mix of
+    confirmed failures and attempts still being verified), else (c) increments the in-flight counter
+    and returns `allowed = true`. Case (b) is a transient "try again shortly" signal, not a lockout:
+    it sets no `lockedUntil`, advances no backoff level, and self-clears as soon as the in-flight
+    attempts ahead of it resolve — it exists only to keep concurrent admission from exceeding 5
+    outstanding attempts, mirroring the real threshold so an attacker still cannot get more than 5
+    guesses verified per window no matter how many requests arrive at once.
+  - Credential verification then proceeds outside the lock. Afterwards `Login` calls exactly one of:
+    - `recordFailure(username)` on a 401 — decrements the in-flight counter, then advances the
+      *confirmed* failure count/timestamp, tripping a real lockout (with backoff, per "Lockout
+      duration" below) only now, if the confirmed count reaches the threshold.
+    - `recordSuccess(username)` on success — decrements the in-flight counter and clears the
+      failure count/backoff entirely, as already specified below.
+  Because only a confirmed 401 ever advances the failure count or trips a lockout, a burst of
+  concurrent *correct*-password requests can momentarily see case (b)'s short retry while capacity
+  is full, but never trips a timed lockout and never blocks a login once the in-flight batch
+  resolves. Because the in-flight counter is reserved at admission time under the same lock, an
+  attacker still cannot get more than 5 guesses into verification per window regardless of
+  concurrency — the 6th concurrent request sees capacity already reserved by attempts #1-#5, even
+  if all five are still running their bcrypt compare.
+- **Test seam for deterministic concurrency tests.** Real bcrypt is fast enough (tens of
+  milliseconds) that simply launching N goroutines against `Login` and asserting some subset
+  observed the capacity rejection would be scheduler-dependent: an early goroutine can finish
+  verification and call `recordSuccess` — freeing its in-flight slot — before a later goroutine
+  ever reaches `admitAttempt`, so a batch of 6 is not guaranteed to produce 5 admissions and 1
+  rejection; it could produce 6 successive admit-then-resolve cycles with none overlapping.
+  `Login` calls an unexported, test-only hook, `var afterAdmitHook func()`, immediately after a
+  successful admission and before credential verification begins; it is `nil` in production (zero
+  cost, never set outside `_test.go` files). A concurrency test sets it to block each admitted
+  goroutine on a channel the test controls, so it can: admit exactly 5 goroutines and hold them
+  there (in-flight counter pinned at 5, none resolved yet), *then* issue the 6th request and
+  assert it deterministically observes the capacity rejection, *then* release the held goroutines
+  to resolve normally. This replaces relying on wall-clock timing with an explicit barrier, so the
+  test's pass/fail no longer depends on goroutine scheduling.
 - **Lockout duration**: exponential backoff starting at 1 minute, doubling on each *subsequent*
   lockout for the same username (1m, 2m, 4m, 8m, 16m, capped at 30m), reset to 1m after a period
   with no failed attempts at all for 24h. This punishes sustained attack traffic increasingly
@@ -160,7 +222,15 @@ simplicity of one lookup rule, not a scenario worth adding real per-account case
   lockout trip, that is never cleared by the failure-list reset — this is what "expired" means for
   the sweep/ceiling eviction above (an entry with no activity for well past the 24h reset window),
   so clearing the failure list on lockout trip does not make an entry look prematurely stale or
-  evictable. Without
+  evictable. **A nonzero in-flight counter always makes an entry non-expired, regardless of
+  `lastActivity`** — a brand-new username's very first admitted attempt has zero confirmed
+  failures, no lockout, and a `lastActivity` that has never been set (since nothing updates it
+  before a failure or lockout trip), so without this rule the entry would read as "expired" by the
+  `lastActivity` criterion alone and be sweepable or evictable while its one in-flight attempt is
+  still inside `auth.VerifyPassword`. Evicting it there would let the username be recreated with a
+  fresh in-flight counter (defeating the 5-in-flight admission cap) and would leave the eventual
+  `recordFailure`/`recordSuccess` call decrementing an in-flight counter on a recreated or absent
+  entry. Without
   this, the sliding window's 15-minute lifetime would outlast most lockout durations (1m-30m), so
   the very next failed attempt after a lockout expires would see the window still holding the prior
   5 failures and re-trip immediately — contradicting the "5 more failed attempts" framing of
@@ -175,13 +245,42 @@ simplicity of one lookup rule, not a scenario worth adding real per-account case
   guessing at the login endpoint, not session validity, and locking out a legitimate user's
   already-authenticated app session as a side effect of someone else guessing their password would
   be a worse outcome than the lockout itself.
+- **Unknown usernames run a dummy bcrypt compare, closing a timing side channel.** `Login`
+  (`backend/pkg/server/auth.go`) currently returns 401 immediately when `FindUserByName` finds no
+  match, skipping bcrypt entirely, while a known username with a wrong password pays the full bcrypt
+  cost before its 401. That timing gap is a username-enumeration oracle regardless of this change —
+  but this change is exactly what makes it reachable from the open internet (Access currently hides
+  `/api/auth/login`; the Bypass policy this work unblocks does not), so closing it belongs here.
+  `kin-core/auth` already ships `auth.DummyHash` and documents `VerifyPassword` as "always runs
+  bcrypt even if hash is DummyHash, preventing timing oracles" for exactly this case — it is unused
+  in HealthVault today. `Login` SHALL call `auth.VerifyPassword(req.Password, auth.DummyHash)` on the
+  `FindUserByName` not-found path (discarding the result, since the user doesn't exist) before
+  returning 401, so an unknown-username response and a known-username/wrong-password response take
+  statistically indistinguishable time. Both paths SHALL still go through `admitAttempt` before
+  verification and `recordFailure` after their 401 identically, per the existing "identical
+  treatment" rule above.
 - **No IP tracking.** The origin sits behind a Cloudflare Tunnel; trusting a client-supplied header
   for the real IP without first wiring up trusted-proxy header validation would be a spoofable
   input, and that wiring is out of scope here. Per-username is sufficient for the stated threat
   (unlimited-attempts credential guessing against one account) and requires no new trust
   assumption.
-- **429 response**: `{"error": "too_many_attempts", "retry_after_seconds": <n>}`, `n` rounded up to
-  the nearest second remaining in the lockout. No cookies are set.
+- **429 response**: `{"error": "too_many_attempts", "retry_after_seconds": <n>}` in all three
+  rejection cases (real lockout, in-flight capacity, ceiling fail-closed), but `n` means something
+  different in each because only one of them is actually a timed lockout:
+  - **Real lockout** (`admitAttempt` finds the username already locked, before credential
+    verification runs): `n` is the number of seconds remaining until `lockedUntil`, rounded up.
+    The attempt whose confirmed failure *trips* a new lockout is never itself in this case: per
+    the "Fifth failed attempt trips the lockout" scenario, that attempt has already committed to
+    a 401 for its own failed credential check by the time `recordFailure` trips the lockout, so it
+    returns 401, not 429. Only a later attempt — rejected by `admitAttempt` before verification
+    even starts — sees this 429.
+  - **In-flight capacity rejection** and **ceiling fail-closed rejection** (both defined below):
+    neither sets a `lockedUntil` or advances backoff, so there is no lockout duration to report.
+    `n` is instead the fixed constant **1 second** — long enough for an in-flight bcrypt compare
+    (tens of milliseconds) to resolve and free capacity, short enough not to read as a real
+    lockout. A client SHOULD treat this as "retry almost immediately," not as evidence of a
+    lockout.
+  No cookies are set in any of the three cases.
 - **No background goroutine, but bounded map size.** Per `openspec/config.yaml`'s existing
   constraint ("no background job infrastructure... `ListenAndServe` is the only goroutine"), stale
   map entries (a username with no failures for well past the 24h reset window) are evicted lazily —
@@ -190,21 +289,33 @@ simplicity of one lookup rule, not a scenario worth adding real per-account case
   distinct, never-repeated username per request would create an entry that is never accessed again,
   so pure "evict on next access to that key" cleanup can never reclaim it, and the map would grow
   without bound on exactly the endpoint this change exists to protect from being placed on the open
-  internet. Instead, `recordFailure` sweeps a bounded number of the oldest expired entries (by last
-  activity) on every call — cheap, no ticker, no per-key dependency — and the map additionally
+  internet. Instead, `admitAttempt` sweeps a bounded number of the oldest expired entries (by last
+  activity) on every call — cheap, no ticker, no per-key dependency, and `admitAttempt` is called on
+  every login attempt (success, failure, or rejection alike), unlike `recordFailure` which now only
+  runs after a confirmed 401 — and the map additionally
   enforces a hard size ceiling (an order of magnitude above this project's realistic account count)
   past which room is made for a new entry by evicting the oldest **expired** entry only — never an
-  entry that is within an active lockout, within its trailing failure window, or has a nonzero
-  failure count. Eviction eligibility is therefore identical for the sweep and the ceiling: only
-  "expired" (fully quiet, nothing to protect) entries are ever removed. If the ceiling is reached
-  and every entry is still live (none expired), the new attacker-supplied entry is dropped instead
-  — a bounded false negative on brand-new never-seen usernames under sustained flood traffic —
-  rather than evicting a real account's protection to make room for it. This closes an eviction
-  side channel a naive "evict the least-recently-active entry" policy would otherwise have: an
-  attacker could not otherwise flush a targeted, actively-protected username's failure count or
-  lockout by flooding the map with cheap, never-repeated throwaway usernames until the ceiling
-  forces the target's (comparatively stale) entry out, then resume unlimited guessing against it
-  with a clean slate.
+  entry that is within an active lockout, within its trailing failure window, has a nonzero
+  failure count, or has a nonzero in-flight counter (an attempt still inside credential
+  verification). Eviction eligibility is therefore identical for the sweep and the ceiling: only
+  "expired" (fully quiet, nothing to protect) entries are ever removed. **If the ceiling is reached
+  and every entry is still live (none expired), the login attempt for the new username is rejected
+  with 429 (the same `too_many_attempts` shape as an ordinary lockout, `retry_after_seconds` fixed
+  at 1 second per the "429 response" bullet above, not tied to any lockout duration) instead of
+  being admitted unrecorded.** A drop-and-admit policy here would
+  reopen exactly the hole the ceiling exists to prevent: since the ceiling is only ever reached by
+  live (non-expired) entries, an attacker can trivially keep it saturated by sending one failed
+  attempt against a large batch of throwaway usernames often enough that none of them ever expire;
+  once saturated, every *other* never-before-seen username — including real, previously-quiet
+  accounts — would get a fresh, unrecorded, unlimited-attempts admission on every request, which is
+  worse than having no ceiling at all. Failing closed at the ceiling means a flood large enough to
+  saturate the map denies login attempts broadly (an availability cost, recoverable as soon as
+  entries expire) rather than silently disabling the limiter for whichever username the flood
+  hasn't already claimed. This still closes the original eviction side channel a naive
+  "evict the least-recently-active entry" policy would have: an attacker still cannot flush a
+  targeted, actively-protected username's failure count or lockout by flooding the map, because live
+  entries are still never evicted — the difference is only what happens to the *new* request once
+  no eviction is possible.
 - **Constants, not env config.** Unlike ports/paths (`deployment-config`'s existing env-var
   contract), the threshold/window/backoff schedule are Go constants. This is deliberately
   inconsistent with "protection travels with the software for any self-hoster" only in the sense
