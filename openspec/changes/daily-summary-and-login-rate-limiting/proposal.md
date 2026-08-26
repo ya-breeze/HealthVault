@@ -64,8 +64,10 @@ in `kin-core`. This proposal is that prerequisite, not a request to add the Bypa
 
 - `authentication`: adds a `Login attempt limiting` requirement (sliding-window failure counter,
   exponential backoff, 429 response) covering `POST /api/auth/login`, and corrects the
-  `RequireAuth middleware` requirement's stale claim that it accepts an `Authorization: Bearer`
-  header — the pinned `kin-core` v0.1.0 only ever validates the `access_token` cookie.
+  `RequireAuth middleware` requirement's stale "Valid token via Authorization header" scenario,
+  which incorrectly claimed `Authorization: Bearer` header support — the pinned `kin-core` v0.1.0
+  only ever validates the `access_token` cookie, so that scenario now asserts the actual (401)
+  behavior instead.
 
 ## Impact
 

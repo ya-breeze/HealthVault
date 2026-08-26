@@ -7,6 +7,13 @@ All routes under `/api` (except `/api/auth/*`) SHALL be protected by middleware 
 - **WHEN** a request to a protected route carries a valid access token cookie
 - **THEN** the request SHALL proceed and claims SHALL be available in context
 
+#### Scenario: Valid token via Authorization header
+- **WHEN** a request to a protected route carries `Authorization: Bearer <valid-token>` with no
+  `access_token` cookie
+- **THEN** the system SHALL return HTTP 401 — **correction**: this codebase's pinned `kin-core`
+  v0.1.0 middleware validates the `access_token` cookie only and has no `Authorization: Bearer`
+  header path; a prior version of this requirement incorrectly claimed header support existed
+
 #### Scenario: Missing token
 - **WHEN** a request to a protected route carries no token
 - **THEN** the system SHALL return HTTP 401
