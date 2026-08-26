@@ -250,7 +250,40 @@
 - [ ] 6.2a Manual device pass on a notched phone: bar sits above the home indicator, the
   `/food/manual/` submit button is reachable with the bar present, and a toast does not land on the
   bar. These are the three things the headless suite cannot fully settle.
-- [ ] 6.3 Ask the user to run `/code-review` on the branch; fix findings.
+- [x] 6.3 Ask the user to run `/code-review` on the branch; fix findings.
+
+  Six findings, all confirmed against the code and all fixed in `0ae0893`, each with e2e coverage
+  added alongside:
+  1. *(the significant one)* The shell is rendered inside each page component, so a client-side
+     navigation remounted it and reset `me` to `null` — the header and bar were absent for the
+     length of `/users/me` on **every** navigation, the bar disappearing under the finger that had
+     just tapped it. `main` did not have this: its `<header>` rendered unconditionally. Fixed with
+     a module-level session cache (`lib/session.ts`) seeding the shell's initial state; the fetch
+     still runs on every mount, so an expired session still redirects. The test stalls `/users/me`
+     by 800ms and samples every animation frame, so it cannot pass by racing a fast local stack.
+  2. The More sheet's focus trap handled focus-outside-the-panel only in the Shift direction, so
+     one Tab after clicking the `select-all` webhook block landed on a header control behind an
+     `aria-modal` dialog.
+  3. A failed logout was an unhandled rejection: no navigation, no message. Now toasts, via a
+     `useLogout` hook shared by the header and the sheet so they cannot diverge.
+  4. The sheet stayed open across a rotation to a landscape width, where the header carries the
+     same five controls itself. It now closes — keyed off whether the More destination still
+     renders, so the breakpoint is not restated in JS.
+  5. `TapTarget`'s `min-w-12` displaced the app title's `min-width: auto`, so on the now
+     `flex-nowrap` mobile row a long username could push the title across the badge at 320px.
+     `shrink-0` restores the intent that the badge is what gives way.
+  6. A drag-selection of the webhook URL released above the panel dismissed the sheet, because the
+     click is dispatched at the common ancestor.
+
+  Also from the review's notes: `BottomNav`'s doc comment justified `sm:hidden` with a claim about
+  the served static HTML that is not true — the bar is gated on `me` and so is never in the
+  prerendered markup at all. Comment corrected to the actual reasoning rather than left as a
+  rationale that does not hold. And the spec scenario "End of a long scrolled list is fully
+  visible" had no e2e case (the two submit-bar cases are both `position: fixed` and do not
+  exercise the in-flow half); one was added.
+
+  Full suite after the fixes: **166 passed, 1 skipped, 1 failed** — the failure being
+  `completeness.spec.ts:268`, which fails identically on `main` and is unrelated to this change.
 - [ ] 6.4 On the user's approval, archive the change on the feature branch
   (`openspec archive mobile-bottom-nav --yes`), regenerate projected specs as a separate commit,
   and validate `openspec validate --specs --strict`.

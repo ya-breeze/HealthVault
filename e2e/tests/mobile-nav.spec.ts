@@ -139,10 +139,23 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
     await login(page);
     await expect(bar(page)).toBeVisible();
 
+    // Held open deliberately: the gap this guards against lasts exactly as
+    // long as /users/me does, so against a fast local stack the unfixed code
+    // could slip through in a frame or two. With the request stalled, the
+    // only way to render a frame of chrome is to have had the session
+    // already — which is the fix. Applied after login so it delays the
+    // remounts, not the first resolution that fills the cache.
+    await page.route('**/users/me', async route => {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      await route.continue();
+    });
+
     await page.evaluate(() => {
-      const w = window as unknown as { __framesWithoutChrome?: number };
+      const w = window as unknown as { __frames?: number; __framesWithoutChrome?: number };
+      w.__frames = 0;
       w.__framesWithoutChrome = 0;
       const sample = () => {
+        w.__frames!++;
         const hasBar = !!document.querySelector('[data-testid="bottom-nav"]');
         const hasHeader = !!document.querySelector('header');
         if (!hasBar || !hasHeader) w.__framesWithoutChrome!++;
@@ -160,9 +173,12 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
       await expect(page).toHaveURL(url);
     }
 
-    const missed = await page.evaluate(
-      () => (window as unknown as { __framesWithoutChrome: number }).__framesWithoutChrome
-    );
+    const { frames, missed } = await page.evaluate(() => {
+      const w = window as unknown as { __frames: number; __framesWithoutChrome: number };
+      return { frames: w.__frames, missed: w.__framesWithoutChrome };
+    });
+    // A sampler that never ran would report zero misses too.
+    expect(frames, 'frames sampled').toBeGreaterThan(10);
     expect(missed, 'frames rendered without a header or without the bar').toBe(0);
   });
 
