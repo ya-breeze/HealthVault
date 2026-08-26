@@ -308,15 +308,10 @@ async function restoreAllVisible(page: Page) {
   }
 
   // A hidden More Data section is a second, independent flag on the same
-  // shared account (see UserSettings.more_data_hidden) — it needs the same
-  // cleanup as the per-card `hidden` flag above, in the same edit session,
-  // or it leaks into every later test that asserts on the `more-data` testid
-  // exactly the way a leaked hidden card does.
-  const hiddenMoreData = page.locator('[data-testid="more-data"][data-hidden="true"] [data-testid="more-data-visibility"]');
-  if ((await hiddenMoreData.count().catch(() => 0)) > 0) {
-    await hiddenMoreData.click().catch(() => {});
-    restored++;
-  }
+  // shared account (see UserSettings.more_data_hidden), but its toggle's
+  // testid ("more-data-visibility") already matches the generic loop above —
+  // the section's own container carries `data-hidden`, same as a VitalCard —
+  // so no separate cleanup step is needed here.
 
   if (restored === 0 && enteredEditMode) {
     // Nothing was hidden and we opened the editor purely to look. Leave via a

@@ -85,14 +85,9 @@ async function restoreAllVisible(page: Page) {
     restored++;
   }
 
-  // Same cleanup as above, but for the independent more_data_hidden flag —
-  // duplicated from dashboard.spec.ts for the same reason the rest of this
-  // helper is duplicated (see this file's header comment on restoreAllVisible).
-  const hiddenMoreData = page.locator('[data-testid="more-data"][data-hidden="true"] [data-testid="more-data-visibility"]');
-  if ((await hiddenMoreData.count().catch(() => 0)) > 0) {
-    await hiddenMoreData.click().catch(() => {});
-    restored++;
-  }
+  // The independent more_data_hidden flag needs no separate cleanup: its
+  // toggle's testid ("more-data-visibility") already matches the generic
+  // loop above, same as dashboard.spec.ts's restoreAllVisible.
 
   if (restored === 0 && enteredEditMode) {
     await page.goto('/').catch(() => {});
