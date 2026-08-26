@@ -23,3 +23,7 @@ The dashboard's More Data ("Другие данные") section already omits a 
 
 - **Backend**: none. `UserSettings` stays a generic JSON blob (`user-settings` capability unaffected — no requirement of it changes); the new key needs no migration since it has no prior shape to be compatible with (unlike Phase 1's `dashboard_order`, this is a brand-new key that simply defaults to absent/`false`).
 - **Frontend**: `frontend/lib/api.ts` (`UserSettings` type), `frontend/app/page.tsx` (More Data render gate, edit-mode heading control, `handleDone`'s settings payload), `frontend/lib/i18n/en.ts` / `ru.ts` (new toggle label keys). Reuses the existing `editing` state, `updateSettings()` queued write, and settings-load gating pattern Phase 1 established — no new component, no new API endpoint.
+
+## Investigation
+
+Full research, the code inspection this proposal is based on, and the two open design questions `design.md` resolves are recorded in `docs/investigations/idea-20-hide-other-data-section.md`.

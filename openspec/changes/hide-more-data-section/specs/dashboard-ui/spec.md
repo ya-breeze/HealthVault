@@ -73,3 +73,9 @@ The dashboard SHALL support a per-user, persisted preference to hide the entire 
 
 - **WHEN** a user who previously hid the More Data section loads the dashboard again (including from a different browser/device)
 - **THEN** the More Data section SHALL remain hidden in the read-only view, subject to presence filtering as normal once re-shown
+
+#### Scenario: Hidden preference survives presence regressing to zero
+
+- **GIVEN** the resolved user has hidden the More Data section
+- **WHEN** every secondary type's presence subsequently regresses to zero (e.g. via record deletion), causing the section and its toggle to no longer render in edit mode
+- **THEN** the stored hide/show preference SHALL remain unchanged, and the More Data section SHALL reappear as hidden once presence for any secondary type is regained

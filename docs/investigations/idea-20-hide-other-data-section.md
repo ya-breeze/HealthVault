@@ -106,7 +106,7 @@ icon) — as opposed to per-type toggles or a separate settings page.
   proposal's `design.md`, not something the code inspection alone resolves.
 - **Control placement and granularity**: the ask is explicitly one toggle
   for the *whole section*, not per-secondary-type checkboxes (that would be
-  a materially bigger feature — 18 individually-toggleable, currently
+  a materially bigger feature — 19 individually-toggleable, currently
   presence-filtered types, no existing UI pattern for a checklist of that
   length). Placement is a design choice: most natural is an eye icon next
   to the "Другие данные" heading itself, visible only in edit mode, distinct

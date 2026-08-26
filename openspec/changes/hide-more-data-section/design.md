@@ -10,7 +10,7 @@ The More Data section (`frontend/app/page.tsx`, ~lines 310-329) today renders wh
 - Keep the toggle undoable/discoverable the same way Phase 1's per-card hide is.
 
 **Non-Goals:**
-- Per-secondary-type toggles (18 currently presence-filtered types — a materially bigger feature, not what was asked for).
+- Per-secondary-type toggles (19 currently presence-filtered types — a materially bigger feature, not what was asked for).
 - A separate settings page or control location outside the existing Customize/Done mode.
 - Any change to presence filtering itself (idea-6) — this preference composes with it, not replaces it.
 
