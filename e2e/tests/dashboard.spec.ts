@@ -15,7 +15,7 @@ const ALL_DATA_TYPES = [
   'blood_glucose', 'oxygen_saturation', 'body_temperature', 'skin_temperature',
   'respiratory_rate', 'resting_heart_rate', 'exercise', 'hydration', 'nutrition',
   'basal_metabolic_rate', 'body_fat', 'lean_body_mass', 'vo2_max', 'bone_mass',
-  'speed', 'food_meal',
+  'speed', 'food_meal', 'weight_goal',
 ];
 
 const PRIMARY_METRIC_TYPES = [
@@ -412,8 +412,11 @@ test.describe('Dashboard card visibility', () => {
       await page.getByRole('button', { name: 'Customize' }).click();
 
       // Hide all 8. Each toggle stays in the DOM while editing, so this can
-      // walk them by index.
-      const toggles = page.locator('[data-testid$="-visibility"]');
+      // walk them by index. Scoped to vitals-grid, not the whole page — More
+      // Data has grown its own "-visibility" toggle (more-data-visibility),
+      // which would otherwise inflate this count when the account has any
+      // secondary-type presence.
+      const toggles = page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]');
       const count = await toggles.count();
       expect(count).toBe(8);
       for (let i = 0; i < count; i++) {
@@ -584,7 +587,9 @@ test.describe('Data-type presence filtering', () => {
 
     await page.getByRole('button', { name: 'Customize' }).click();
     await expect(page.getByTestId('vital-card-sleep-visibility')).toHaveCount(0);
-    await expect(page.locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1);
+    // Scoped to vitals-grid so More Data's own "-visibility" toggle
+    // (more-data-visibility) isn't counted alongside the primary cards'.
+    await expect(page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1);
 
     // Nothing was changed, so leave without triggering a settings write —
     // same reasoning as restoreAllVisible's own no-op exit.
