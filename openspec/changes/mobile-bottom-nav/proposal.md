@@ -31,8 +31,14 @@ bottom navigation bar addresses both, and is the standard pattern for thumb reac
 - **Desktop is unchanged.** At and above the breakpoint the existing header renders exactly as it
   does today and the tab bar is absent. This change introduces a viewport-conditional navigation
   shell, so the header requirement stops being unconditional.
+- **Reconcile the app's existing bottom-anchored elements with the bar.** Two pages render their own
+  `fixed bottom-0` submit bar (one of them `/food/manual/`, a promoted destination) and toasts sit
+  at `fixed bottom-4` app-wide. All three offset by a single shared clearance token so nothing
+  overlaps, and the app opts into `viewport-fit=cover` so safe-area insets stop resolving to zero.
 - Extend the tap-target spec's enumerated scope to cover the new bar — its requirement lists
-  covered surfaces exhaustively, so a new navigation surface would otherwise sit outside it.
+  covered surfaces exhaustively, so a new navigation surface would otherwise sit outside it. The
+  same edit corrects a stale part of that enumeration and of `dashboard-ui`'s: the header's settings
+  link, which ships today but is named in neither.
 - Extend `e2e/tests/` with cases that would have caught both measured defects: header height as a
   fraction of the viewport, and the reachability of the logging action without scrolling.
 
@@ -67,11 +73,23 @@ Explicitly **not** in this change:
 
 ## Impact
 
-- **New**: `frontend/components/BottomNav.tsx`, `frontend/components/MoreSheet.tsx`, and a
-  navigation shell wrapping authenticated pages.
-- **Modified**: `frontend/components/Header.tsx` (control set becomes viewport-conditional);
-  the nine authenticated pages that render `<Header />` directly, which need the shell instead;
-  `frontend/app/layout.tsx` for bottom-bar clearance so the bar never occludes page content.
+- **New**: `frontend/components/BottomNav.tsx`, `frontend/components/MoreSheet.tsx`, and
+  `frontend/components/AuthenticatedShell.tsx` wrapping authenticated pages.
+- **Modified**: `frontend/components/Header.tsx` (control set becomes viewport-conditional; the
+  session fetch moves up into the shell, which passes it to both header and sheet); the **eleven**
+  `<Header />` call sites across nine authenticated pages, which take the shell instead — note
+  `app/food/review/ReviewClient.tsx` has three, in its loading, error and main branches.
+- **Modified — bottom-anchored elements that would otherwise collide with the bar**:
+  `frontend/app/food/manual/page.tsx` and `frontend/app/food/review/ReviewClient.tsx` each render a
+  `fixed bottom-0` submit bar, and `/food/manual/` is one of the five promoted destinations;
+  `frontend/components/Toast.tsx` renders the app-wide toast stack at `fixed bottom-4`. All three
+  offset by the shared clearance token instead of sitting at the viewport edge. The token is `0px`
+  above the breakpoint, so desktop is unchanged at all three sites.
+- **Modified**: `frontend/app/globals.css` defines the clearance token once;
+  `frontend/app/layout.tsx` gains a `viewport` export with `viewportFit: 'cover'` — **not**
+  bottom-bar clearance, which belongs on the shell because `layout.tsx` also wraps `/login`.
+  Without `viewport-fit=cover` every `env(safe-area-inset-bottom)` in the app resolves to zero on
+  real devices, including the two already in the submit bars above.
 - **Icons**: `frontend/components/icons.tsx` gains home/more glyphs; camera, pencil and history
   icons already exist and are reused.
 - **i18n**: five tab labels plus sheet labels in both `en` and `ru`. Russian labels are the
