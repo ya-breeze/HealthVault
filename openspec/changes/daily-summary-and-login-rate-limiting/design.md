@@ -145,8 +145,13 @@ simplicity of one lookup rule, not a scenario worth adding real per-account case
   long break.
 - **Reset on success**: a successful login clears the username's failure counter and backoff
   level entirely.
-- **Reset on lockout trip**: tripping a lockout also clears the trailing-window failure count (but
-  **not** the backoff level — that only resets via the success or 24h-quiet paths above). Without
+- **Reset on lockout trip**: tripping a lockout also clears the trailing-window failure-timestamp
+  list (but **not** the backoff level — that only resets via the success or 24h-quiet paths above).
+  Each entry separately tracks a last-activity timestamp, updated on every failed attempt and on
+  lockout trip, that is never cleared by the failure-list reset — this is what "expired" means for
+  the sweep/ceiling eviction above (an entry with no activity for well past the 24h reset window),
+  so clearing the failure list on lockout trip does not make an entry look prematurely stale or
+  evictable. Without
   this, the sliding window's 15-minute lifetime would outlast most lockout durations (1m-30m), so
   the very next failed attempt after a lockout expires would see the window still holding the prior
   5 failures and re-trip immediately — contradicting the "5 more failed attempts" framing of
@@ -179,8 +184,18 @@ simplicity of one lookup rule, not a scenario worth adding real per-account case
   internet. Instead, `recordFailure` sweeps a bounded number of the oldest expired entries (by last
   activity) on every call — cheap, no ticker, no per-key dependency — and the map additionally
   enforces a hard size ceiling (an order of magnitude above this project's realistic account count)
-  past which the oldest entry is evicted to make room for a new one, so worst-case memory use stays
-  bounded regardless of how many distinct usernames an attacker cycles through.
+  past which room is made for a new entry by evicting the oldest **expired** entry only — never an
+  entry that is within an active lockout, within its trailing failure window, or has a nonzero
+  failure count. Eviction eligibility is therefore identical for the sweep and the ceiling: only
+  "expired" (fully quiet, nothing to protect) entries are ever removed. If the ceiling is reached
+  and every entry is still live (none expired), the new attacker-supplied entry is dropped instead
+  — a bounded false negative on brand-new never-seen usernames under sustained flood traffic —
+  rather than evicting a real account's protection to make room for it. This closes an eviction
+  side channel a naive "evict the least-recently-active entry" policy would otherwise have: an
+  attacker could not otherwise flush a targeted, actively-protected username's failure count or
+  lockout by flooding the map with cheap, never-repeated throwaway usernames until the ceiling
+  forces the target's (comparatively stale) entry out, then resume unlimited guessing against it
+  with a clean slate.
 - **Constants, not env config.** Unlike ports/paths (`deployment-config`'s existing env-var
   contract), the threshold/window/backoff schedule are Go constants. This is deliberately
   inconsistent with "protection travels with the software for any self-hoster" only in the sense

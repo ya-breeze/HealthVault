@@ -1,3 +1,24 @@
+## MODIFIED Requirements
+
+### Requirement: RequireAuth middleware
+All routes under `/api` (except `/api/auth/*`) SHALL be protected by middleware that validates the access token via the `access_token` cookie. Blacklisted tokens SHALL be rejected. The middleware SHALL inject the parsed claims (user_id, family_id) into the request context for downstream handlers.
+
+#### Scenario: Valid token via cookie
+- **WHEN** a request to a protected route carries a valid access token cookie
+- **THEN** the request SHALL proceed and claims SHALL be available in context
+
+#### Scenario: Missing token
+- **WHEN** a request to a protected route carries no token
+- **THEN** the system SHALL return HTTP 401
+
+#### Scenario: Blacklisted token
+- **WHEN** a request carries a token that has been blacklisted (e.g. after logout)
+- **THEN** the system SHALL return HTTP 401
+
+#### Scenario: Expired token
+- **WHEN** a request carries a token whose TTL has elapsed
+- **THEN** the system SHALL return HTTP 401
+
 ## ADDED Requirements
 
 ### Requirement: Login attempt limiting

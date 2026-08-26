@@ -2,14 +2,21 @@
 
 - [ ] 1.1 Add `backend/pkg/server/login_limiter.go`: a mutex-guarded, package-level map keyed by
       lowercased username, tracking failed-attempt timestamps (15-minute trailing window), current
-      backoff level, and lockout-expiry time, per design.md's "Login attempt limiting" decision
+      backoff level, lockout-expiry time, and a last-activity timestamp (updated on every failed
+      attempt and on lockout trip, never cleared by the trailing-window reset — this is the sole
+      signal for "expired" below), per design.md's "Login attempt limiting" decision
 - [ ] 1.2 Implement `recordFailure(username string)`, `recordSuccess(username string)`, and
       `checkLocked(username string) (locked bool, retryAfter time.Duration)`. On every
       `recordFailure` call, sweep a bounded number of the oldest expired entries (no background
       goroutine, per `openspec/config.yaml`'s "no background job infrastructure" constraint) and
-      enforce a hard map-size ceiling (evict the oldest entry to make room past the ceiling), per
-      design.md's bounded-map-size note — a pure "evict only on next access to the same key" scheme
-      does not reclaim entries created by a never-repeated attacker-supplied username
+      enforce a hard map-size ceiling: past the ceiling, evict the oldest **expired** entry to make
+      room for the new one (same expiry criterion as the sweep — never an entry with an active
+      lockout, a nonzero trailing-window failure count, or recent activity); if every entry is
+      still live when the ceiling is hit, drop the new entry instead of evicting a live one. Per
+      design.md's bounded-map-size note, a pure "evict only on next access to the same key" scheme
+      does not reclaim entries created by a never-repeated attacker-supplied username, and evicting
+      by recency alone (rather than expiry) would let an attacker flush a targeted username's
+      protection by flooding the map with throwaway usernames until the ceiling forces it out
 - [ ] 1.3 Implement the exponential backoff schedule: 1m/2m/4m/8m/16m/30m-cap, doubling per
       lockout since the last successful login, resetting to 1m after 24h with no failures.
       Tripping a lockout SHALL clear the username's trailing-window failure count (not its backoff
@@ -41,6 +48,10 @@
 - [ ] 2.8 Unit-test that tripping a lockout clears the failure count so a single failed attempt
       immediately after the lockout expires does not itself re-trigger a lockout (distinguishing
       this from the escalation scenario in 2.4, which requires 5 fresh failures)
+- [ ] 2.9 Unit-test that flooding the map with distinct, never-repeated throwaway usernames past
+      the hard size ceiling does not evict a different username's active lockout or nonzero
+      failure count — the flood's own entries (or, if none are evictable, the newest flood entry)
+      are dropped/evicted instead, per the "never evict a live entry" rule in 1.2
 
 ## 3. Backend: daily summary computation
 
