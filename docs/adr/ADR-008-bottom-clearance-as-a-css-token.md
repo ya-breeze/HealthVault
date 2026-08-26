@@ -1,7 +1,7 @@
 # ADR-008: The Mobile Navigation Bar's Clearance Is a CSS Token Every Bottom-Anchored Element Reads
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 

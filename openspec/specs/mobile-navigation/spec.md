@@ -1,7 +1,3 @@
-<!-- GENERATED FILE — DO NOT EDIT.
-     Regenerate with: make projected-specs
-     See openspec/specs.projected.README.md for details. -->
-
 # mobile-navigation Specification
 
 ## Purpose
