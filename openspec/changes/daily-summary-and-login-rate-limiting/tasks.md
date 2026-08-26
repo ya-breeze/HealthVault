@@ -193,6 +193,6 @@
 
 ## 6. Verification
 
-- [ ] 6.1 `make lint`
-- [ ] 6.2 `make test`
-- [ ] 6.3 `openspec validate daily-summary-and-login-rate-limiting --strict`
+- [x] 6.1 `make lint`
+- [x] 6.2 `make test`
+- [x] 6.3 `openspec validate daily-summary-and-login-rate-limiting --strict`
