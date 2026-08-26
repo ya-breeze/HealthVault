@@ -67,7 +67,7 @@ A Dashboard Card showing one vital metric's current value, 7-day sparkline, and 
 _Avoid_: Metric card, stat card
 
 **Food Card**:
-A Dashboard Card summarizing food-logging data — e.g. today's intake against a Nutrition Target, or a Healthiness Label.
+A Dashboard Card summarizing food-logging data — e.g. today's intake against a Nutrition Target, a Healthiness Label, or the Logging Gap Card.
 _Avoid_: Nutrition widget, food widget
 
 **Presence**:
@@ -90,6 +90,18 @@ worked toward, not the current one; carbs/fat split whatever calorie budget rema
 goal weight unconditionally — there is no partial target, and no fallback to measured weight when
 no goal is set (see ADR-003). What food intake is compared against on Food Cards.
 _Avoid_: Goal (ambiguous with Goal Weight), macro goal
+
+**Trend Weight**:
+The exponential moving average (alpha 0.25) of the outlier-filtered, day-bucketed `weight` series — the same EMA function and alpha the weight chart's own trend line (see Trend Projection) already uses, so the term means the same underlying computation everywhere the app shows it. The Logging Gap Card fits its slope over exactly this series' last 28 calendar days.
+_Avoid_: Trend line (reserve for the weight chart's rendered line specifically), smoothed weight
+
+**Implied Intake**:
+The daily calorie intake the Logging Gap Card's weight trend implies the caller actually ate: `Nutrition Target calories + (Trend Weight slope kg/day * 7700)`. Derived from energy balance (a weight trend implies a net calorie balance), not measured or logged — distinct from Mean Logged Intake, the average of the caller's actual food-log totals over the same window.
+_Avoid_: Estimated intake (ambiguous with Mean Logged Intake)
+
+**Logging Gap**:
+`Implied Intake - Mean Logged Intake`, rendered on the Logging Gap Card as a kcal/day range with an uncertainty interval, never a bare point estimate — the calorie amount the weight trend implies that isn't showing up in the food log. Deliberately not a TDEE, and does not touch or replace ADR-006's activity multiplier; see ADR-008.
+_Avoid_: TDEE, adaptive TDEE (the original framing this feature replaced; see ADR-008), total calories (an existing, unrelated table name)
 
 **Activity Level**:
 One of 5 standard tiers (Sedentary / Lightly active / Moderately active / Very active / Extra

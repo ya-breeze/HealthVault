@@ -234,17 +234,17 @@
 
 ## 7. Docs
 
-- [ ] 7.1 `CONTEXT.md`: add glossary entries for **Implied Intake**, **Logging Gap**, and **Trend
+- [x] 7.1 `CONTEXT.md`: add glossary entries for **Implied Intake**, **Logging Gap**, and **Trend
       Weight** (Dashboard/Nutrition-targets section), and update the existing **Food Card** entry's
       example if needed to reference the Logging Gap Card as a concrete instance
-- [ ] 7.2 New `docs/adr/ADR-008-<slug>.md` (`Status: Proposed`) recording: reporting a Logging Gap
+- [x] 7.2 New `docs/adr/ADR-008-<slug>.md` (`Status: Proposed`) recording: reporting a Logging Gap
       instead of a TDEE (and why — no third expenditure source exists in the data, per idea #10's
       grilling); silence-over-a-clamp as the safety mechanism; the rate-based 2 kg/day outlier rule
       and its rejection cap (design.md decision 2's residual limitation and bound); the quadrature
       interval formula and its two fixed/derived error terms; the card's distinct
       "temporarily unavailable" state for non-422 fetch failures (design.md decision 6); the card
       registry's Food Card generalization
-- [ ] 7.3 `todo.md`: record idea #10 as shipped by this change instead of adaptive TDEE — note the
+- [x] 7.3 `todo.md`: record idea #10 as shipped by this change instead of adaptive TDEE — note the
       framing change explicitly (not a TDEE, doesn't touch ADR-006) so a future reader doesn't
       re-open the original "replaces the activity multiplier" framing as if it were still live
 
