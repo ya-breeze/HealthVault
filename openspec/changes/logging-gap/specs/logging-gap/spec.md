@@ -110,14 +110,25 @@ formula.
 
 ### Requirement: Hard floor and silence rule
 Before computing anything else, the system SHALL apply a hard floor: if fewer than 2 raw weigh-ins
-survive outlier rejection within the window, or if 0 days in the window are Complete or Confirmed
-Complete, the system SHALL NOT compute a slope, Implied Intake, Mean Logged Intake, Logging Gap, or
-interval, and SHALL report the "not enough data yet" state directly.
+survive outlier rejection within the window, or if fewer than 3 days in the window are Complete or
+Confirmed Complete, the system SHALL NOT compute a slope, Implied Intake, Mean Logged Intake,
+Logging Gap, or interval, and SHALL report the "not enough data yet" state directly.
+
+The 3-valid-day minimum matches the precedent `food-day-completeness`'s own "Downstream coverage
+contract" requirement already set for this exact kind of feature (it names "an adaptive-TDEE
+computation" as an example, scoped to a rolling 7-Logged-Day window). That contract's window length
+doesn't literally apply here — this feature's window is 28 days, not 7 — but its valid-day floor is
+adopted directly rather than re-derived, because the interval formula's two terms (`formulaError`,
+`trendErrorKcal`) carry no term for Mean Logged Intake's own sampling variance: a single Complete
+day that happens to be a plausible-but-atypical eating day would not necessarily widen the interval
+at all, so the silence rule alone cannot be relied on to catch a thin-logged-days case the way it
+catches a thin-weigh-ins case. A 3-day floor does not fully close that gap (see design.md "Risks")
+but keeps this feature's minimum no weaker than the one already established for its category.
 
 When the hard floor is not hit, the system SHALL compute the Logging Gap and interval as above, and
 SHALL suppress the Logging Gap output — reporting the same "not enough data yet" state — whenever
 `abs(Logging Gap) < interval`, i.e. the range `[Logging Gap - interval, Logging Gap + interval]`
-includes zero. No separate minimum-valid-day threshold beyond the hard floor's "at least one" SHALL
+includes zero. No separate minimum-valid-day threshold beyond the hard floor's 3-day minimum SHALL
 be applied — a thin window is expected to produce a wide interval that triggers this rule on its
 own.
 
@@ -126,9 +137,9 @@ own.
 - **WHEN** the system computes the Logging Gap
 - **THEN** it reports "not enough data yet" without computing a slope or Implied Intake
 
-#### Scenario: Hard floor with zero valid days
-- **GIVEN** a caller has 5 weigh-ins across the window but every day in the window is Unconfirmed or
-  Incomplete
+#### Scenario: Hard floor with too few valid days
+- **GIVEN** a caller has 5 weigh-ins across the window but only 2 days in the window are Complete or
+  Confirmed Complete (the rest are Unconfirmed or Incomplete)
 - **WHEN** the system computes the Logging Gap
 - **THEN** it reports "not enough data yet" without computing Mean Logged Intake
 
@@ -141,6 +152,12 @@ own.
 - **GIVEN** a computed Logging Gap of 900 kcal/day and an interval of 310 kcal/day
 - **WHEN** the system evaluates the silence rule
 - **THEN** it shows the Logging Gap and its interval, since `[590, 1210]` does not include zero
+
+#### Scenario: A gap exactly equal to the interval is shown
+- **GIVEN** a computed Logging Gap of 310 kcal/day and an interval of 310 kcal/day
+- **WHEN** the system evaluates the silence rule
+- **THEN** it shows the Logging Gap and its interval, since the comparison is strict (`abs(Logging
+  Gap) < interval`) and equality does not qualify as covering zero
 
 ### Requirement: Nutrition Target unavailable is a distinct state
 When `GET /api/users/me/nutrition-target` returns HTTP 422, the system SHALL report a state distinct

@@ -109,18 +109,25 @@ rejection of a second window).
 Two distinct gates, evaluated in order:
 
 1. **Hard floor** (nothing is even attempted): fewer than 2 raw weigh-ins survive outlier
-   rejection inside the 28-day window, or 0 days in the window are Complete or Confirmed Complete
-   (`food-day-completeness`). The card renders "not enough data yet" without computing a slope,
-   Implied Intake, or interval at all.
+   rejection inside the 28-day window, or fewer than 3 days in the window are Complete or Confirmed
+   Complete (`food-day-completeness`). The card renders "not enough data yet" without computing a
+   slope, Implied Intake, or interval at all.
 2. **Statistical silence** (a Logging Gap is computed, but suppressed): `|Logging Gap| < interval`,
    i.e. the range `[Logging Gap - interval, Logging Gap + interval]` includes zero. Same visible
    text as the hard floor — the grilling comment specifies one surface string for both, since the
    distinction (too little data vs. enough data but inconclusive) isn't something a user needs to
    act on differently.
 
-No separate minimum-valid-days threshold exists beyond gate 1's "at least one" — per the grilling
-comment's own reasoning, a thin window already produces a wide interval via decision 3, and gate 2
-catches it.
+**The valid-day floor is 3, not "at least one."** `food-day-completeness`'s own "Downstream
+coverage contract" requirement already sets a 3-of-7-Logged-Day minimum for exactly this category of
+feature — it names "an adaptive-TDEE computation" as its example. That contract's 7-day window
+doesn't literally scope to this feature's 28-day one, so it isn't binding as written, but its
+valid-day floor is adopted here rather than re-derived: decision 3's interval has no term for Mean
+Logged Intake's own sampling variance across the valid days it averages, only for the Nutrition
+Target's fixed error and the trend slope's standard error. A single Complete day that happens to be
+plausible-but-atypical would not necessarily widen the interval at all, so gate 2 cannot be relied on
+alone the way it can for thin weigh-in data. 3 matches the established precedent rather than being
+independently derived, and does not fully close the gap — see "Risks."
 
 ### 6. Nutrition Target unavailable (422)
 
@@ -139,13 +146,19 @@ validation order, same caller-only scope, no `?user=` override):
 
 ```
 GET /api/food/daily-totals?from=YYYY-MM-DD&to=YYYY-MM-DD
-[{"date": "2026-08-19", "calories": 1753, "protein_grams": 88, "carbs_grams": 190, "fat_grams": 55}, ...]
+[{"date": "2026-08-19", "calories": 1753}, ...]
 ```
 
 One entry per day in the resolved range, summed over that day's `confirmed`-status `FoodMeal` rows
 only (unconfirmed/failed/processing meals have no final nutrition numbers, same rule the history
-page's own totals already follow) — a day with none gets zeros, not an omitted entry, so the
+page's own totals already follow) — a day with none gets a zero, not an omitted entry, so the
 Logging Gap computation can index by date without a presence check first.
+
+`calories` only, not protein/carbs/fat: the only consumer this change builds (the Logging Gap
+computation) reads `calories` alone. Macro fields are left out rather than pre-built for a Phase 4
+consumer that isn't designed yet — the same restraint decision 8 already applies to the card
+registry ("this union grows again then — not preemptively solved here"). Widen the response shape
+when a concrete consumer needs them.
 
 **Why a new endpoint instead of reusing `GET /api/food/meals`:** that endpoint pages raw meal rows;
 computing a 28-day (or, with lead-in, wider) window of daily sums from it means fetching and paging
@@ -183,6 +196,16 @@ gets redone at Phase 4.
   with no more real validation behind it. The combined "roughly ±310" figure from the idea's own
   grilled evidence table is in the same range this formula produces given that data, which is the
   extent of validation available before shipping.
+- **The interval has no term for Mean Logged Intake's own sampling variance.** Both of the interval's
+  terms come from the Nutrition Target formula and the weight-trend regression; neither scales with
+  how many valid (Complete/Confirmed Complete) days fed Mean Logged Intake, nor with how much
+  day-to-day variance exists among them. Decision 5's 3-valid-day floor (raised from "at least one"
+  to match `food-day-completeness`'s existing Downstream Coverage Contract precedent) narrows this
+  gap but does not close it: 3 atypical-but-plausible days can still average to a Mean Logged Intake
+  the interval doesn't widen to compensate for. A more complete fix — adding a standard-error-of-the-
+  mean term over the valid days' logged totals, combined in the same quadrature — is deliberately
+  left as a follow-up rather than done here, since it needs real usage data to validate rather than
+  another unmeasured constant.
 - **Logged intake's photo-estimation bias is not in the interval at all**, by design (decision 3) —
   the card's copy SHALL disclose this as a caveat ("logged calories are estimated from photos and may
   run high or low") rather than implying the shown range accounts for it. A user reading only the

@@ -164,10 +164,14 @@ which of the grilling comment's four explicitly-open questions it resolves.
    `GET /api/food/daily-totals` endpoint (task 1) and the frontend Logging Gap computation library
    (task 3) first, since the card (task 5) and the registry generalization (task 4) both depend on
    having real numbers to render and a card identifier to register.
-2. When implementing the interval math (design.md decision 3), add a unit test using the exact
-   worked numbers from the idea-forge issue's evidence table (Formula TDEE ~2,750, deficit
-   971–1,251, logged intake 1,269, combined ~±310) as a regression fixture — this is the only
-   validated real-data example available before the endpoint exists to pull fresh numbers.
+2. When implementing the interval math (design.md decision 3), add a unit test using the two error
+   terms from the idea-forge issue's evidence table (formulaError ≈275 from a ~2,750 Nutrition
+   Target, trendErrorKcal ≈195 from the 28-day window) as a regression fixture — this is the only
+   validated real-data example available before the endpoint exists to pull fresh numbers. Note the
+   grilling comment's own arithmetic rounds the combined figure to "~±310," but the settled formula
+   (`sqrt(275^2 + 195^2)`, mirrored in `specs/logging-gap/spec.md`'s own worked scenario and
+   `tasks.md` 3.8) computes ≈337 from those same two terms — use 337 as the fixture's expected
+   value, not 310.
 3. Once shipped, watch how often the silence rule fires in practice (gate 1's hard floor vs. gate
    2's statistical silence) against the assumption that thin data self-resolves via a widening
    interval — if the card is silent for most users most of the time, that's a signal the interval

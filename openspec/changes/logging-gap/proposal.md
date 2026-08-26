@@ -35,9 +35,10 @@ makes.
     quantifiable and is surfaced as caveat text, not folded into the number.
   - **Silence when the interval covers zero**: no Logging Gap is shown, only "not enough data yet" —
     this is the safety mechanism that replaces the sanity clamp the original framing proposed, and it
-    means no separate minimum-days threshold is needed (thin data produces a wide interval, which
-    covers zero on its own). A hard floor still applies below 2 weigh-ins or 0 valid days in the
-    window: nothing is even attempted.
+    means no separate minimum-days threshold beyond the hard floor is needed (thin data produces a
+    wide interval, which covers zero on its own). A hard floor still applies below 2 weigh-ins or
+    fewer than 3 valid days in the window (matching `food-day-completeness`'s existing coverage-
+    contract precedent for this category of feature): nothing is even attempted.
   - **Outlier rejection**: a raw weigh-in is excluded from the trend regression when its implied
     rate of change from the previous *kept* weigh-in exceeds 2 kg/day — physiologically impossible,
     not a subtler judgment call (those are left to the interval, which widens on its own around a
@@ -47,8 +48,9 @@ makes.
     `linearRegression` pair from Phase 2's weight-trend work) — no new persistence, no new backend
     computation beyond the one endpoint below.
 - **A new backend endpoint**, `GET /api/food/daily-totals` (`food-meal-history` capability): per-day
-  summed calories/protein/carbs/fat over the caller's `confirmed` meals, for a date range — the
-  server-side aggregation `food/history/page.tsx` currently does client-side, generalized so the
+  summed calories over the caller's `confirmed` meals, for a date range (calories only — no
+  consumer of this change reads protein/carbs/fat, so those are left out rather than pre-built) —
+  the server-side aggregation `food/history/page.tsx` currently does client-side, generalized so the
   Logging Gap Card (and, per the idea's own note, Phase 4 later) don't each re-fetch and re-sum raw
   meal rows themselves. The existing history page is not migrated to it in this change — it already
   has the rows loaded for its own display and has no reason to make a second round trip.

@@ -7,9 +7,10 @@
       `callerTimezone` helper), then validate `from > to` and the >92-day span against the
       (possibly clamped) `to` — same order as `GetCompleteness`
 - [ ] 1.2 Add a function computing, for a user and an inclusive Logged-Day date range, one
-      `{date, calories, protein_grams, carbs_grams, fat_grams}` entry per day — querying
-      `confirmed`-status `FoodMeal` rows for the range, grouping by Logged Day via the existing
-      timezone helper, summing each field; a day with no confirmed rows gets an all-zero entry
+      `{date, calories}` entry per day — querying `confirmed`-status `FoodMeal` rows for the range,
+      grouping by Logged Day via the existing timezone helper, summing `calories` only (no
+      protein/carbs/fat — no consumer of this change reads them); a day with no confirmed rows gets
+      a zero entry
 - [ ] 1.3 Register the route in `backend/pkg/server/server.go` (`GET /food/daily-totals`)
 - [ ] 1.4 Tests: happy path across several days including a zero-meal day, unconfirmed/failed/
       processing meals excluded from sums, `to` clamping when `to` names today or a future date,
@@ -18,9 +19,9 @@
 
 ## 2. Frontend: API client
 
-- [ ] 2.1 Add a `DailyTotal` interface (`date`, `calories`, `protein_grams`, `carbs_grams`,
-      `fat_grams`) and `api.getFoodDailyTotals(from, to)` (`GET /food/daily-totals`) to
-      `frontend/lib/api.ts`, documented the same way as `getCompleteness`
+- [ ] 2.1 Add a `DailyTotal` interface (`date`, `calories`) and `api.getFoodDailyTotals(from, to)`
+      (`GET /food/daily-totals`) to `frontend/lib/api.ts`, documented the same way as
+      `getCompleteness`
 
 ## 3. Frontend: Logging Gap computation library
 
@@ -38,21 +39,32 @@
 - [ ] 3.4 Unit tests for 3.3: a known small dataset with a hand-computed expected SE; exactly 2
       points returns `null`; exactly 3 points returns a defined (non-null) value; residuals of zero
       (perfectly linear input) do not throw or divide by zero unexpectedly for `n >= 3`
-- [ ] 3.5 Add `computeLoggingGap(...)` taking: the outlier-filtered/EMA'd trend series with its
+- [ ] 3.5 Add a pure `resolveLoggingGapWindow(now, timezone)` (or equivalent) function deriving the
+      28-day window (ending yesterday in the caller's Logged Day) and the wider lead-in-extended
+      range to fetch, so this boundary arithmetic is unit-testable on its own rather than living only
+      inside the card component (5.1)
+- [ ] 3.6 Unit tests for 3.5: window ends at yesterday regardless of time-of-day; a weigh-in landing
+      exactly on the window's first or last calendar day is included; the lead-in range is wider than
+      the visible 28-day window
+- [ ] 3.7 Add `computeLoggingGap(...)` taking: the outlier-filtered/EMA'd trend series with its
       28-day regression `{slope, intercept}` and SE, the Nutrition Target `calories`, and the
       per-day `{state, calories}` window data (from `food-day-completeness` + Daily Totals) —
       returns a discriminated union: `{kind: 'not_enough_data'}` (hard floor per design.md decision
       5, or `n < 3` from 3.3), `{kind: 'gap', value: number, interval: number}` when
       `abs(value) >= interval`, or `{kind: 'not_enough_data'}` again when `abs(value) < interval`
       (statistical silence — same tag, both paths produce it per the spec's single surface state)
-- [ ] 3.6 Unit tests for 3.5: fewer than 2 weigh-ins → `not_enough_data`; zero valid
-      (complete/confirmed_complete) days → `not_enough_data`; a gap whose interval covers zero →
-      `not_enough_data`; a gap clearly outside its interval → `gap` with the expected value/interval
-      (mirror the spec's `sqrt(275^2 + 195^2)` example); days with `unconfirmed`/`incomplete` state
-      are excluded from the Mean Logged Intake average, not counted as zero
-- [ ] 3.7 Add an `excludedOutlierCount` (or boolean) output alongside `computeLoggingGap`'s result
-      so the card can render the outlier note (spec's "Outlier note" scenarios) regardless of which
-      of the three content states is showing
+- [ ] 3.8 Unit tests for 3.7: fewer than 2 weigh-ins → `not_enough_data`; fewer than 3 valid
+      (complete/confirmed_complete) days (0, 1, and 2 — the boundary) → `not_enough_data`; exactly 3
+      valid days → computes; a gap whose interval covers zero → `not_enough_data`; a gap exactly
+      equal to its interval → `gap` (strict `<` comparison, per spec); a gap clearly outside its
+      interval → `gap` with the expected value/interval (mirror the spec's `sqrt(275^2 + 195^2)`
+      example); days with `unconfirmed`/`incomplete` state are excluded from the Mean Logged Intake
+      average, not counted as zero; a stale last weigh-in (several days before the window's last day)
+      produces a wider interval than an otherwise-identical dataset with a fresh last weigh-in
+- [ ] 3.9 Add an `excludedOutlierCount` (or boolean) output alongside `computeLoggingGap`'s result,
+      counting only exclusions within the 28-day window itself (not the lead-in extension used to
+      converge the EMA), so the card can render the outlier note (spec's "Outlier note" scenarios)
+      regardless of which of the three content states is showing
 
 ## 4. Frontend: dashboard card registry generalization
 
@@ -78,8 +90,9 @@
 ## 5. Frontend: Logging Gap Card
 
 - [ ] 5.1 Add a `LoggingGapCard` component: on mount (and whenever the dashboard's data range
-      changes), fetch the 28-day-plus-lead-in `weight` series (`api.data('weight', ...)`, reusing
-      the existing lead-in pattern from the weight Trend Projection code in
+      changes), use task 3.5's `resolveLoggingGapWindow` to get the window and lead-in range, fetch
+      the `weight` series over that range (`api.data('weight', ...)`, reusing the existing lead-in
+      pattern from the weight Trend Projection code in
       `frontend/app/data/[type]/DataTypeClient.tsx`), `api.getNutritionTarget()`,
       `api.getCompleteness(from, to)`, and `api.getFoodDailyTotals(from, to)`; run them through
       task 3's `loggingGap.ts` functions (reusing `emaSeries`/`linearRegression` from

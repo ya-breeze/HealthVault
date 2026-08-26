@@ -14,10 +14,13 @@ inclusive-day cap — both violations SHALL return 400. This ordering matches
 future date always fails post-clamp rather than resolving to an inverted or empty range.
 
 On success the system SHALL return a JSON array with exactly one entry per day in the resolved
-inclusive range, each shaped `{"date": "YYYY-MM-DD", "calories": number, "protein_grams": number,
-"carbs_grams": number, "fat_grams": number}`, summed only over that Logged Day's `confirmed`-status
-`FoodMeal` records. A day with no `confirmed` meals SHALL still appear in the array, with every
-numeric field `0` — the array SHALL NOT omit days with nothing logged.
+inclusive range, each shaped `{"date": "YYYY-MM-DD", "calories": number}`, summed only over that
+Logged Day's `confirmed`-status `FoodMeal` records. A day with no `confirmed` meals SHALL still
+appear in the array, with `calories` `0` — the array SHALL NOT omit days with nothing logged.
+
+This endpoint returns `calories` only. No consumer of this change (the Logging Gap computation)
+reads protein/carbs/fat; widen the response shape when a concrete consumer needs those fields
+rather than pre-building them here.
 
 #### Scenario: Happy path across several days including a zero-meal day
 - **GIVEN** the caller has confirmed meals on 3 of the 5 days in a requested range, and no meals at
