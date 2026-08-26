@@ -52,15 +52,18 @@ The system SHALL accept `POST /api/auth/refresh`. It SHALL validate the refresh 
 ---
 
 ### Requirement: RequireAuth middleware
-All routes under `/api` (except `/api/auth/*`) SHALL be protected by middleware that validates the access token. The token MAY be carried as the `access_token` cookie or as an `Authorization: Bearer <token>` header. Blacklisted tokens SHALL be rejected. The middleware SHALL inject the parsed claims (user_id, family_id) into the request context for downstream handlers.
+All routes under `/api` (except `/api/auth/*`) SHALL be protected by middleware that validates the access token via the `access_token` cookie. Blacklisted tokens SHALL be rejected. The middleware SHALL inject the parsed claims (user_id, family_id) into the request context for downstream handlers.
 
 #### Scenario: Valid token via cookie
 - **WHEN** a request to a protected route carries a valid access token cookie
 - **THEN** the request SHALL proceed and claims SHALL be available in context
 
 #### Scenario: Valid token via Authorization header
-- **WHEN** a request carries `Authorization: Bearer <valid-token>` with no cookie
-- **THEN** the request SHALL proceed and claims SHALL be available in context
+- **WHEN** a request to a protected route carries `Authorization: Bearer <valid-token>` with no
+  `access_token` cookie
+- **THEN** the system SHALL return HTTP 401 — **correction**: this codebase's pinned `kin-core`
+  v0.1.0 middleware validates the `access_token` cookie only and has no `Authorization: Bearer`
+  header path; a prior version of this requirement incorrectly claimed header support existed
 
 #### Scenario: Missing token
 - **WHEN** a request to a protected route carries no token
@@ -73,8 +76,6 @@ All routes under `/api` (except `/api/auth/*`) SHALL be protected by middleware 
 #### Scenario: Expired token
 - **WHEN** a request carries a token whose TTL has elapsed
 - **THEN** the system SHALL return HTTP 401
-
----
 
 ### Requirement: JWT claims
 Access tokens SHALL carry `user_id` (UUID) and `family_id` (UUID) as custom claims alongside standard JWT registered claims (`sub`, `exp`). The `family_id` claim enables family-scoped data access checks without additional DB lookups in the middleware hot path.
