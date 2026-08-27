@@ -155,8 +155,18 @@ export interface LoggingGapWindow {
   windowEnd: string;
   /** Wider start date to fetch weight from, so the EMA has converged before windowStart. */
   leadInStart: string;
+  /**
+   * UTC instant to pass as the weight fetch's `from`: one day earlier than `leadInStart`'s literal
+   * UTC midnight, since `leadInStart` is a Logged Day (caller-local calendar date) and a positive
+   * UTC offset's local midnight falls on the *previous* UTC day. Over-fetching by a day is safe —
+   * the caller re-derives each record's Logged Day from its real timestamp and `leadInStartDayOffset`
+   * trims anything still earlier than the lead-in, so this only ever widens, never narrows, the
+   * true range.
+   */
+  leadInFetchFromUTC: string;
   windowStartDayOffset: number;
   windowLastDayOffset: number;
+  leadInStartDayOffset: number;
 }
 
 /**
@@ -173,8 +183,10 @@ export function resolveLoggingGapWindow(now: Date, timezone: string | undefined)
     windowStart,
     windowEnd,
     leadInStart,
+    leadInFetchFromUTC: `${addDaysISO(leadInStart, -1)}T00:00:00.000Z`,
     windowStartDayOffset: toDayOffset(windowStart),
     windowLastDayOffset: toDayOffset(windowEnd),
+    leadInStartDayOffset: toDayOffset(leadInStart),
   };
 }
 

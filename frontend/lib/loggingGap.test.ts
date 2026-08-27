@@ -10,6 +10,7 @@ import {
   type DayValueRecord,
   type DayWindowData,
 } from './loggingGap';
+import { toDayOffset } from './dataTypeMeta';
 
 describe('rejectOutliers', () => {
   it('passes through an empty input unchanged', () => {
@@ -248,6 +249,28 @@ describe('resolveLoggingGapWindow', () => {
   it('derives a lead-in range wider than the visible 28-day window', () => {
     const window = resolveLoggingGapWindow(new Date('2026-08-26T12:00:00Z'), 'UTC');
     expect(window.leadInStart < window.windowStart).toBe(true);
+  });
+
+  it('leadInFetchFromUTC covers local midnight of leadInStart for a positive UTC offset', () => {
+    // UTC+14 local midnight of leadInStart is the previous UTC calendar day at 10:00 —
+    // literal `${leadInStart}T00:00:00.000Z` would start 14 hours too late and miss
+    // early lead-in-day weigh-ins.
+    const window = resolveLoggingGapWindow(new Date('2026-08-26T12:00:00Z'), 'Pacific/Kiritimati');
+    const leadInLocalMidnightUTC = new Date(`${window.leadInStart}T00:00:00.000Z`);
+    leadInLocalMidnightUTC.setUTCHours(leadInLocalMidnightUTC.getUTCHours() - 14);
+    expect(new Date(window.leadInFetchFromUTC).getTime()).toBeLessThanOrEqual(leadInLocalMidnightUTC.getTime());
+  });
+
+  it('leadInFetchFromUTC covers local midnight of leadInStart for a negative UTC offset', () => {
+    const window = resolveLoggingGapWindow(new Date('2026-08-26T12:00:00Z'), 'Pacific/Honolulu');
+    const leadInLocalMidnightUTC = new Date(`${window.leadInStart}T00:00:00.000Z`);
+    leadInLocalMidnightUTC.setUTCHours(leadInLocalMidnightUTC.getUTCHours() + 10);
+    expect(new Date(window.leadInFetchFromUTC).getTime()).toBeLessThanOrEqual(leadInLocalMidnightUTC.getTime());
+  });
+
+  it('leadInStartDayOffset matches the Logged Day offset of leadInStart', () => {
+    const window = resolveLoggingGapWindow(new Date('2026-08-26T12:00:00Z'), 'UTC');
+    expect(window.leadInStartDayOffset).toBe(toDayOffset(window.leadInStart));
   });
 });
 

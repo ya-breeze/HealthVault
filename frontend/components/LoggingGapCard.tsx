@@ -108,7 +108,7 @@ export default function LoggingGapCard({
       let dailyTotals: { date: string; calories: number }[];
       try {
         const [w, nt, c, d] = await Promise.all([
-          api.data('weight', `${gapWindow.leadInStart}T00:00:00.000Z`, now.toISOString()),
+          api.data('weight', gapWindow.leadInFetchFromUTC, now.toISOString()),
           api.getNutritionTarget(),
           api.getCompleteness(gapWindow.windowStart, gapWindow.windowEnd),
           api.getFoodDailyTotals(gapWindow.windowStart, gapWindow.windowEnd),
@@ -133,13 +133,15 @@ export default function LoggingGapCard({
       // "today" and any later reading is excluded here rather than at the
       // fetch boundary, since a `to` of "now" is the only fetch cutoff that
       // is safe for every timezone (see resolveLoggingGapWindow's own doc
-      // comment on why the window itself ends at "yesterday").
+      // comment on why the window itself ends at "yesterday"). The lower
+      // bound is filtered client-side too, since `leadInFetchFromUTC`
+      // deliberately over-fetches by a day to stay safe across timezones.
       const rawRecords = weightRaw
         .map(r => ({
           day: toDayOffset(loggedDayKey(new Date(String(r.time)), timezone)),
           value: Number(r.kilograms),
         }))
-        .filter(r => r.day <= gapWindow.windowLastDayOffset);
+        .filter(r => r.day >= gapWindow.leadInStartDayOffset && r.day <= gapWindow.windowLastDayOffset);
 
       const { kept, rejected, bootstrapSiblingAmbiguous } = rejectOutliers(rawRecords);
 
