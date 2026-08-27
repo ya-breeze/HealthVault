@@ -17,11 +17,11 @@ provide, and the gap looks like "no E2E tests exist" rather than what it actuall
 
 Diary already has this target in this shape (`BASE_URL` defaulting to its own WIP stack,
 overridable), which is the pattern this environment has settled on. This change brings HealthVault
-to the same shape, plus the fix Diary's version doesn't need: HealthVault's `e2e/` has its own
-`node_modules`, so a target that just calls `npx playwright test` fails with `MODULE_NOT_FOUND` on
-a worktree where nobody has run `npm install` yet, which is the normal state of a fresh feature
-branch. `test-e2e` should self-heal that instead of documenting it as a manual step someone has to
-remember.
+to the same shape, plus a fix Diary's version also needs but doesn't have: HealthVault's `e2e/`
+has its own `node_modules`, so a target that just calls `npx playwright test` fails with
+`MODULE_NOT_FOUND` on a worktree where nobody has run `npm install` yet, which is the normal state
+of a fresh feature branch. `test-e2e` should self-heal that instead of documenting it as a manual
+step someone has to remember.
 
 ## How
 
@@ -29,25 +29,33 @@ Add a `test-e2e` target to the top-level `Makefile`, matching Diary's shape:
 
 ```make
 .PHONY: test-e2e
-test-e2e: e2e/node_modules
+test-e2e: e2e/node_modules/.install-stamp
 	@cd e2e && BASE_URL=$(or $(BASE_URL),http://192.168.1.54:8892) npx playwright test --reporter=line
 
-e2e/node_modules: e2e/package-lock.json
+e2e/node_modules/.install-stamp: e2e/package-lock.json
 	@cd e2e && npm ci
-	@touch e2e/node_modules
+	@touch e2e/node_modules/.install-stamp
 ```
 
 `8892` is `hcw-wip`'s HTTP port (`jq '.deployments["hcw-wip"].http_port' /data/data.json`).
-`BASE_URL` overrides it, so `make test-e2e` still works against any other reachable stack —
-`hcw-prod` for a read-only smoke check, or a different WIP stack — without editing the Makefile.
+`BASE_URL` overrides it, so `make test-e2e` still works against any other reachable stack — a
+different WIP stack — without editing the Makefile. Do not point it at `hcw-prod`: the suite is
+not read-only, several specs issue real `POST`/`PUT`/`DELETE` requests (creating and deleting food
+log entries, changing settings), and `hcw-prod` holds real, irreplaceable data per this
+environment's stack-class rules.
 
-The `e2e/node_modules` prerequisite is a real Make file target, not a phony one: its recipe runs
-`npm ci` and then `touch`es the directory so its mtime is newer than `package-lock.json`. That
-makes the dependency-install step conditional the way Make already understands — `make test-e2e`
-installs on the first run in a fresh worktree (where `e2e/node_modules` doesn't exist) and skips
-straight to the tests on every run after, unless `package-lock.json` changes. This is why the
-target is not simply "run `npm ci` unconditionally before every test run": that would work, but
-would add several seconds of no-op network/install cost to every local iteration.
+The prerequisite is a stamp file (`e2e/node_modules/.install-stamp`), not the `e2e/node_modules`
+directory itself. `npm ci` writes into `node_modules` incrementally, so a directory-as-target
+would leave a *directory* with a fresh mtime even when `npm ci` dies partway through (network
+drop, disk full) — Make would then treat the failed install as satisfied on the next run and skip
+straight to a confusing `MODULE_NOT_FOUND` instead of retrying. A stamp file avoids that: it is
+only `touch`ed after `npm ci` exits 0, so a failed install leaves no stamp (or a stale one) and the
+next `make test-e2e` retries the install. This makes the dependency-install step conditional the
+way Make already understands — `make test-e2e` installs on the first run in a fresh worktree
+(where the stamp doesn't exist) and skips straight to the tests on every run after, unless
+`package-lock.json` changes. This is why the target is not simply "run `npm ci` unconditionally
+before every test run": that would work, but would add several seconds of no-op network/install
+cost to every local iteration.
 
 Two things this change deliberately does **not** touch:
 
@@ -74,8 +82,8 @@ the Makefile, since it isn't a per-project or per-worktree concern.
 - `make test-e2e` (requires `hcw-wip` deployed and reachable at the URL in `data.json`)
 
 ### Task 1: Add the test-e2e target
-- [ ] Add the `test-e2e` and `e2e/node_modules` targets to the top-level `Makefile`, exactly as
-      described in `## How`
+- [ ] Add the `test-e2e` target and the `e2e/node_modules/.install-stamp` target to the top-level
+      `Makefile`, exactly as described in `## How`
 - [ ] Confirm `test`'s recipe and prerequisites are unchanged — `test-e2e` must not be reachable
       from `make test`
 - [ ] Mark completed
@@ -84,6 +92,13 @@ the Makefile, since it isn't a per-project or per-worktree concern.
 - [ ] From a worktree with no `e2e/node_modules` present, run `make test-e2e` against `hcw-wip`
       and confirm it installs dependencies once, then runs the suite to completion (pass or a
       pre-existing failure unrelated to this change — either way, no `MODULE_NOT_FOUND`)
-- [ ] Run `make test-e2e` a second time in the same worktree and confirm it does not re-run `npm
-      ci` (no network/install step observed the second time)
+- [ ] Run `make test-e2e` a second time in the same worktree. Record `stat -c %Y
+      e2e/node_modules/.install-stamp` before and after this run and confirm it is unchanged, and
+      confirm no `npm ci`/`added N packages` output appears — this is the concrete check that
+      `npm ci` did not re-run, not just that the run looked fast
+- [ ] Touch `e2e/package-lock.json` (or bump a dependency version) and run `make test-e2e` a third
+      time; confirm `npm ci` runs again and the stamp's mtime updates — this is the path that
+      makes the target self-heal a dependency change, not just a missing `node_modules`
+- [ ] Run `BASE_URL=<a different reachable stack's URL> make test-e2e` and confirm the suite
+      targets that URL instead of the `hcw-wip` default
 - [ ] Mark completed
