@@ -578,7 +578,6 @@ the pull request and merges it themselves; that is the only gate this work passe
 it in a state worth reading.
 
 ## Validation Commands
-
 - `make lint`
 - `make test`
 
