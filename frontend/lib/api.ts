@@ -429,6 +429,15 @@ export interface NutritionTarget {
   activity_tier: string;
 }
 
+// Named rather than left inline on `api.me` below: AuthenticatedShell holds
+// the session and passes it to both Header and MoreSheet, so three call
+// sites now need to spell this shape.
+export interface Me {
+  id: string;
+  username: string;
+  family_id: string;
+}
+
 export const api = {
   login: (username: string, password: string) =>
     apiFetch('/auth/login', {
@@ -436,9 +445,15 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
 
-  logout: () => apiFetch('/auth/logout', { method: 'POST' }),
+  // `apiFetchNoBody`, not `apiFetch`: the endpoint answers 204 with an empty
+  // body, so parsing it as JSON throws — and every caller awaits this before
+  // routing to /login, so the rejection meant logout cleared the session
+  // server-side and then left the user sitting on the authenticated page.
+  // Surfaced by the More sheet's logout e2e case, which is the first test
+  // to assert on what happens after the click rather than on the control.
+  logout: () => apiFetchNoBody('/auth/logout', { method: 'POST' }),
 
-  me: () => apiFetch<{ id: string; username: string; family_id: string }>('/users/me'),
+  me: () => apiFetch<Me>('/users/me'),
 
   getSettings: () => apiFetch<UserSettings>('/users/me/settings'),
   putSettings: (settings: UserSettings) =>

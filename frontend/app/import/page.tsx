@@ -1,7 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 
 const TYPE_LABELS: Record<string, string> = {
   heart_rate: 'Heart Rate',
@@ -124,9 +124,7 @@ function ImportCard({ title, description, accept, label, onImport }: ImportCardP
 
 export default function ImportPage() {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header />
-
+    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <main className="max-w-2xl mx-auto px-6 py-10">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Import Data</h1>
         <ImportCard
@@ -145,6 +143,6 @@ export default function ImportPage() {
           onImport={api.importLibra}
         />
       </main>
-    </div>
+    </AuthenticatedShell>
   );
 }

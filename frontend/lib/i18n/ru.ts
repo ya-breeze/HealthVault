@@ -11,9 +11,21 @@ const ru: Dictionary = {
   'header.copied': 'Скопировано!',
   'header.copyToClipboard': 'Скопировать',
   'header.logout': 'Выйти',
+  'header.logoutFailed': 'Не удалось выйти. Попробуйте ещё раз.',
   'header.language': 'Язык',
   'header.languageChangeFailed': 'Не удалось сохранить язык. Попробуйте ещё раз.',
   'header.settings': 'Настройки',
+
+  // See en.ts: these five are the labels the 64px column at 320px has to
+  // hold. 'Вручную' and 'История' are the longest of them.
+  'nav.label': 'Основная',
+  'nav.home': 'Главная',
+  'nav.photo': 'Фото',
+  'nav.manual': 'Вручную',
+  'nav.history': 'История',
+  'nav.more': 'Ещё',
+  'nav.moreTitle': 'Ещё',
+  'nav.close': 'Закрыть',
 
   'status.processing': 'Анализ…',
   'status.pending_clarification': 'Требуется уточнение',
