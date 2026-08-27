@@ -1,7 +1,34 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+
+// Renders the limiter's retry hint as something a person can act on. Seconds
+// below a minute, whole minutes above it — "try again in 90 seconds" reads
+// worse than "in 2 minutes", and the backoff schedule reaches 30 minutes.
+function formatRetryAfter(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, seconds)} second${seconds === 1 ? '' : 's'}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
+// A 429 from /auth/login is a lockout, not a bad password, and the two need
+// different words: telling someone their credentials are invalid when they
+// have just been locked out sends them round the same loop, escalating the
+// backoff each time. The body carries retry_after_seconds; if it is missing
+// or unparsable the message still has to say "locked out", just without a
+// duration.
+function lockoutMessage(body: string): string {
+  let seconds = 0;
+  try {
+    const parsed = JSON.parse(body) as { retry_after_seconds?: number };
+    if (typeof parsed.retry_after_seconds === 'number') seconds = parsed.retry_after_seconds;
+  } catch {
+    // Not the structured body — fall through to the durationless message.
+  }
+  if (seconds > 0) return `Too many sign-in attempts. Try again in ${formatRetryAfter(seconds)}.`;
+  return 'Too many sign-in attempts. Try again shortly.';
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,7 +41,11 @@ export default function LoginPage() {
     try {
       await api.login(username, password);
       router.push('/');
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setError(lockoutMessage(err.message));
+        return;
+      }
       setError('Invalid credentials');
     }
   };

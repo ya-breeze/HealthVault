@@ -55,9 +55,17 @@ func readUserProfile(storage database.Storage, userID uuid.UUID) (userProfile, e
 		}
 		return userProfile{}, err
 	}
+	return parseUserProfile(settingsJSON), nil
+}
+
+// parseUserProfile interprets an already-read settings blob. Split out from
+// readUserProfile so a caller that needs several things from the same blob
+// can read it once — see SummaryTodayHandler, whose whole justification is
+// being one cheap call.
+func parseUserProfile(settingsJSON string) userProfile {
 	var obj map[string]any
 	if err := json.Unmarshal([]byte(settingsJSON), &obj); err != nil {
-		return userProfile{}, nil
+		return userProfile{}
 	}
 
 	var p userProfile
@@ -77,7 +85,7 @@ func readUserProfile(storage database.Storage, userID uuid.UUID) (userProfile, e
 			p.HasActivityOverride = true
 		}
 	}
-	return p, nil
+	return p
 }
 
 // parseBirthdate parses a YYYY-MM-DD birthdate and rejects it (ok=false) if

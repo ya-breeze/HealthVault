@@ -185,6 +185,13 @@ func DisplayLanguage(storage database.Storage, userID uuid.UUID) string {
 		}
 		return defaultDisplayLanguage
 	}
+	return displayLanguageFromSettings(settingsJSON)
+}
+
+// displayLanguageFromSettings interprets an already-read settings blob, so a
+// caller needing more than one thing out of it reads the row once. See
+// parseUserProfile for the same split.
+func displayLanguageFromSettings(settingsJSON string) string {
 	var obj map[string]any
 	if err := json.Unmarshal([]byte(settingsJSON), &obj); err != nil {
 		return defaultDisplayLanguage
