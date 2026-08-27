@@ -359,6 +359,23 @@ the Nutrition Target's *final* `calories` figure, which is BMR times ADR-006's s
 activity multiplier — the multiplier's own error is not separately quantified anywhere and is not
 added as a third term. See "Risks" below.
 
+**Known limitation, accepted:** `SE(slope)` is an OLS standard error, and OLS assumes independent
+residuals, but the points it is computed over are EMA-smoothed (decision 4) rather than raw
+weigh-ins. The alpha=0.25 EMA both shrinks residual variance and autocorrelates what remains, so
+`trendErrorKcal` is systematically *optimistic*: the interval is narrower than a textbook reading of
+this decision implies, and the "stay silent when the interval covers zero" rule therefore fires
+slightly less often than it would on raw residuals. It is accepted rather than corrected because the
+fixed `formulaError` term (~250 kcal at a typical target) dominates the quadrature for any
+reasonably dense series, so a correction would move the interval by far less than the term beside
+it. Anything that makes the trend term dominant again — a longer window, a smaller formula error, a
+switch to raw points — should revisit this first.
+
+**Non-finite inputs are silence, not a rendered value.** Any path that leaves the gap value or its
+interval non-finite — an empty valid-day average, a degenerate regression slope, a missing Nutrition
+Target figure — falls through to "not enough data yet". The suppression check is a comparison, and
+every comparison against `NaN` is `false`, so without an explicit finiteness guard a non-number
+would pass *through* the silence rule rather than be caught by it and render as "NaN–NaN kcal/day".
+
 ### 4. Trend Weight: reuse Phase 2's EMA, lead-in window matches Trend Projection's own pattern
 
 `Trend Weight` is `emaSeries` (alpha 0.25, `frontend/lib/dataTypeMeta.ts`) over the
@@ -436,7 +453,14 @@ Nutrition Target, Day Completeness, Daily Totals) rather than reading from `app/
   This part does match existing dashboard convention.
 - **A non-422 failure from any of the four requests** (network error, 5xx, or a Nutrition Target
   error other than the 422 handled by decision 6) SHALL render a distinct "temporarily unavailable"
-  state — never "not enough data yet". A 401 specifically never reaches this state: `apiFetch`
+  state — never "not enough data yet", and never the loading state left running forever. The same
+  applies to a throw from the *computation* that follows the four requests, not just from the
+  requests themselves: the window arithmetic and the per-record Logged Day resolution both call into
+  `Intl`, which raises on an invalid IANA zone or an unparseable timestamp, and `loggedDayKey` raises
+  from inside its own catch in that case, so nothing downstream can recover. An unhandled rejection
+  there would strand the card on its spinner with no error state and no way out, which is strictly
+  worse than the state the previous paragraph exists to provide. A 401 specifically never reaches
+  this state: `apiFetch`
   (`frontend/lib/api.ts`) already intercepts every 401 transparently — refreshing the session and
   retrying, or routing to login on refresh failure — before any caller, including this card, sees
   the response.
@@ -785,6 +809,12 @@ it in a state worth reading.
       28-day window itself (not the lead-in extension used to converge the EMA — the same count
       `checkHardFloor` uses for the rejection cap), so the card can render the outlier note (spec's
       "Outlier note" scenarios) regardless of which of the four content states is showing
+- [x] 3.10 Keep the day-bucketing stage (decision 4's "outlier-filtered, day-bucketed weight
+      series") in this library rather than in the card component, exported and unit-tested
+      alongside the rest: one point per distinct day whatever that day holds, sorted, gaps
+      preserved, input not mutated. It is the step decision 2's same-day-sibling exemption depends
+      on for its safety — siblings are kept unchecked precisely because bucketing collapses them
+      before the EMA sees them — so it must not be the one step with no test of its own
 
 ### Task 4: Frontend: dashboard card registry generalization
 - [x] 4.1 In `frontend/lib/vitals.ts`: introduce a `CardId = DataType | 'logging_gap'` type; widen
@@ -872,7 +902,14 @@ it in a state worth reading.
 - [x] 8.5 E2E or component-level coverage for the "temporarily unavailable" state: simulate a non-422
       failure (e.g. a 500) from one of the card's four requests while the others succeed, and assert
       the card shows "temporarily unavailable" rather than "not enough data yet"
-- [x] 8.6 Run the full suite against `hcw-wip`
+- [x] 8.6 One E2E test that leaves `/api/food/daily-totals` **unmocked**, so the endpoint decision 7
+      adds and the card that calls it are exercised against each other at least once: assert the
+      request path and both query parameter names as the card actually built them, a 200, one
+      zero-filled entry per window day, and the `date`/`calories`/`unconfirmed_meals` field names as
+      the card reads them. Every other test in the file fulfills all four requests from fixtures,
+      which leaves a renamed parameter or a mismatched JSON tag able to pass the whole suite and
+      fail only in a browser
+- [x] 8.7 Run the full suite against `hcw-wip`
 
 ### Task 9: Verification
 - [x] 9.1 `make lint`

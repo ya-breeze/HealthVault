@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bucketByDay,
   checkHardFloor,
   computeLoggingGap,
   excludedOutlierCount,
@@ -172,6 +173,73 @@ describe('rejectOutliers', () => {
     const result = rejectOutliers(records);
     expect(result.rejected).toEqual([]);
     expect(result.kept).toEqual(records);
+  });
+});
+
+describe('bucketByDay', () => {
+  it('returns an empty series for empty input', () => {
+    expect(bucketByDay([])).toEqual([]);
+  });
+
+  it('averages same-day weigh-ins into a single point', () => {
+    const bucketed = bucketByDay([
+      { day: 10, value: 80.0 },
+      { day: 10, value: 81.0 },
+      { day: 10, value: 82.0 },
+    ]);
+    expect(bucketed).toEqual([{ day: 10, value: 81 }]);
+  });
+
+  // The property the same-day-sibling exemption's safety argument rests on:
+  // rejectOutliers deliberately keeps every same-day sibling without
+  // rate-checking it, and this is what stops those siblings from each casting
+  // a vote in the EMA. One day in, one point out — always.
+  it('emits exactly one point per distinct day, however many records that day holds', () => {
+    const bucketed = bucketByDay([
+      { day: 3, value: 70 },
+      { day: 1, value: 80 },
+      { day: 3, value: 72 },
+      { day: 1, value: 82 },
+      { day: 3, value: 74 },
+      { day: 2, value: 90 },
+    ]);
+    expect(bucketed).toHaveLength(3);
+    expect(new Set(bucketed.map(b => b.day)).size).toBe(3);
+  });
+
+  it('sorts output by day even when the input is unordered', () => {
+    const bucketed = bucketByDay([
+      { day: 5, value: 75 },
+      { day: -2, value: 78 },
+      { day: 0, value: 77 },
+    ]);
+    expect(bucketed.map(b => b.day)).toEqual([-2, 0, 5]);
+  });
+
+  it('preserves gaps rather than filling in the missing days', () => {
+    // The regression is fitted on (day, ema) pairs, so a missing day must stay
+    // missing — interpolating one here would invent a weigh-in that never
+    // happened and flatten the very slope the gap is derived from.
+    const bucketed = bucketByDay([
+      { day: 0, value: 80 },
+      { day: 9, value: 78 },
+    ]);
+    expect(bucketed).toEqual([
+      { day: 0, value: 80 },
+      { day: 9, value: 78 },
+    ]);
+  });
+
+  it('leaves the caller\'s array untouched', () => {
+    const records: DayValueRecord[] = [
+      { day: 2, value: 80 },
+      { day: 1, value: 81 },
+    ];
+    bucketByDay(records);
+    expect(records).toEqual([
+      { day: 2, value: 80 },
+      { day: 1, value: 81 },
+    ]);
   });
 });
 
@@ -725,6 +793,30 @@ describe('computeLoggingGap', () => {
         { state: 'unconfirmed', calories: 0 },
         { state: 'incomplete', calories: 0 },
         { state: 'complete', calories: 0, unconfirmedMeals: 2 },
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
+    );
+    expect(result).toEqual({ kind: 'not_enough_data' });
+  });
+
+  // The same NaN escape as the test above, reached through its other two
+  // entrances rather than through an empty average. Each poisons `value`, and
+  // every comparison against NaN is false, so `Math.abs(value) <= interval`
+  // lets it straight through to a "NaN–NaN kcal/day" render.
+  it.each([
+    ['a non-finite regression slope', { slope: NaN, intercept: 0 }, 3100],
+    ['an infinite regression slope', { slope: Infinity, intercept: 0 }, 3100],
+    ['a non-numeric nutrition target', { slope: 0, intercept: 0 }, NaN],
+  ])('reports not_enough_data rather than a NaN gap given %s', (_label, regression, target) => {
+    const result = computeLoggingGap(
+      regression,
+      0,
+      target,
+      perDayWindowData([
+        { state: 'complete', calories: 2200 },
+        { state: 'complete', calories: 2200 },
+        { state: 'complete', calories: 2200 },
       ]),
       windowStartDayOffset,
       windowLastDayOffset

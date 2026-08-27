@@ -6,6 +6,7 @@ import { loggedDayKey } from '@/lib/loggedDay';
 import {
   resolveLoggingGapWindow,
   rejectOutliers,
+  bucketByDay,
   checkHardFloor,
   computeLoggingGap,
   slopeStandardError,
@@ -46,21 +47,6 @@ interface LoggingGapCardProps {
   controlsDisabled?: boolean;
 }
 
-// Day-buckets outlier-surviving raw weigh-ins by averaging same-day values —
-// design.md decision 4's "outlier-filtered, day-bucketed weight series", run
-// once the rejection walk (task 3.1) has finished, never partway through it.
-function bucketByDay(records: { day: number; value: number }[]): { day: number; value: number }[] {
-  const buckets = new Map<number, number[]>();
-  for (const r of records) {
-    const vals = buckets.get(r.day);
-    if (vals) vals.push(r.value);
-    else buckets.set(r.day, [r.value]);
-  }
-  return [...buckets.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([day, vals]) => ({ day, value: vals.reduce((a, v) => a + v, 0) / vals.length }));
-}
-
 // The profile/goal-weight settings location a "complete your profile" link
 // should point at, per NutritionTargetUnmetReason (design.md decision 6).
 // Goal weight is set from the weight detail page's Add Record form (see
@@ -92,107 +78,125 @@ export default function LoggingGapCard({
     setState({ kind: 'loading' });
     setOutlierExcluded(false);
 
+    // Everything below runs inside one try/catch, not just the fetches: the
+    // date arithmetic and the whole computation chain can throw too, and an
+    // uncaught throw in an async IIFE is an unhandled rejection that leaves
+    // the card stuck on "Calculating…" forever with no way out. The concrete
+    // case is a bad IANA timezone (a corrupted settings blob, say) or an
+    // unparseable record timestamp: `Intl.DateTimeFormat.format` raises
+    // RangeError on an Invalid Date, and `loggedDayKey` raises it from inside
+    // *both* its try and its own catch, so nothing downstream of it can
+    // recover. "Temporarily unavailable" is the honest state for all of it —
+    // we have no gap to show and no reason to claim the data is missing.
     (async () => {
-      // The timezone prop drives resolveLoggingGapWindow's "yesterday"
-      // boundary the same way food-day-completeness resolves the caller's
-      // Logged Day. It arrives with the parent's own settings load, so there
-      // is no settings failure state to handle here — a settings error keeps
-      // the dashboard grid (and therefore this card) unrendered entirely.
-      const gapWindow = resolveLoggingGapWindow(new Date(), timezone);
-      const now = new Date();
-
-      let weightRaw: Record<string, unknown>[];
-      let nutritionTargetCalories: number;
-      let completeness: { date: string; state: DayCompletenessState }[];
-      let dailyTotals: { date: string; calories: number; unconfirmed_meals: number }[];
       try {
-        const [w, nt, c, d] = await Promise.all([
-          api.data('weight', gapWindow.leadInFetchFromUTC, now.toISOString()),
-          api.getNutritionTarget(),
-          api.getCompleteness(gapWindow.windowStart, gapWindow.windowEnd),
-          api.getFoodDailyTotals(gapWindow.windowStart, gapWindow.windowEnd),
-        ]);
-        weightRaw = w;
-        nutritionTargetCalories = nt.calories;
-        completeness = c;
-        dailyTotals = d;
-      } catch (err) {
-        if (cancelled) return;
-        if (err instanceof NutritionTargetUnmetError) {
-          setState({ kind: 'nutrition_target_unmet', reason: err.reason });
-        } else {
-          setState({ kind: 'retrieval_error' });
+        // The timezone prop drives resolveLoggingGapWindow's "yesterday"
+        // boundary the same way food-day-completeness resolves the caller's
+        // Logged Day. It arrives with the parent's own settings load, so there
+        // is no settings failure state to handle here — a settings error keeps
+        // the dashboard grid (and therefore this card) unrendered entirely.
+        const gapWindow = resolveLoggingGapWindow(new Date(), timezone);
+        const now = new Date();
+
+        let weightRaw: Record<string, unknown>[];
+        let nutritionTargetCalories: number;
+        let completeness: { date: string; state: DayCompletenessState }[];
+        let dailyTotals: { date: string; calories: number; unconfirmed_meals: number }[];
+        try {
+          const [w, nt, c, d] = await Promise.all([
+            api.data('weight', gapWindow.leadInFetchFromUTC, now.toISOString()),
+            api.getNutritionTarget(),
+            api.getCompleteness(gapWindow.windowStart, gapWindow.windowEnd),
+            api.getFoodDailyTotals(gapWindow.windowStart, gapWindow.windowEnd),
+          ]);
+          weightRaw = w;
+          nutritionTargetCalories = nt.calories;
+          completeness = c;
+          dailyTotals = d;
+        } catch (err) {
+          // This inner catch exists only to tell the 422 "complete your
+          // profile" case apart from every other fetch failure; the outer one
+          // handles anything the computation below throws.
+          if (cancelled) return;
+          if (err instanceof NutritionTargetUnmetError) {
+            setState({ kind: 'nutrition_target_unmet', reason: err.reason });
+          } else {
+            setState({ kind: 'retrieval_error' });
+          }
+          return;
         }
-        return;
-      }
-      if (cancelled) return;
+        if (cancelled) return;
 
-      // Raw, un-bucketed weigh-ins keyed by Logged Day offset (task 3.1
-      // operates on raw records, never bucketed ones) — the in-progress
-      // "today" and any later reading is excluded here rather than at the
-      // fetch boundary, since a `to` of "now" is the only fetch cutoff that
-      // is safe for every timezone (see resolveLoggingGapWindow's own doc
-      // comment on why the window itself ends at "yesterday"). The lower
-      // bound is filtered client-side too, since `leadInFetchFromUTC`
-      // deliberately over-fetches by a day to stay safe across timezones.
-      const rawRecords = weightRaw
-        .map(r => ({
-          day: toDayOffset(loggedDayKey(new Date(String(r.time)), timezone)),
-          value: Number(r.kilograms),
-        }))
-        .filter(r => r.day >= gapWindow.leadInStartDayOffset && r.day <= gapWindow.windowLastDayOffset);
+        // Raw, un-bucketed weigh-ins keyed by Logged Day offset (task 3.1
+        // operates on raw records, never bucketed ones) — the in-progress
+        // "today" and any later reading is excluded here rather than at the
+        // fetch boundary, since a `to` of "now" is the only fetch cutoff that
+        // is safe for every timezone (see resolveLoggingGapWindow's own doc
+        // comment on why the window itself ends at "yesterday"). The lower
+        // bound is filtered client-side too, since `leadInFetchFromUTC`
+        // deliberately over-fetches by a day to stay safe across timezones.
+        const rawRecords = weightRaw
+          .map(r => ({
+            day: toDayOffset(loggedDayKey(new Date(String(r.time)), timezone)),
+            value: Number(r.kilograms),
+          }))
+          .filter(r => r.day >= gapWindow.leadInStartDayOffset && r.day <= gapWindow.windowLastDayOffset);
 
-      const { kept, rejected, bootstrapSiblingAmbiguous } = rejectOutliers(rawRecords);
+        const { kept, rejected, bootstrapSiblingAmbiguous } = rejectOutliers(rawRecords);
 
-      const perDayWindowData: Record<number, DayWindowData> = {};
-      const completenessByDate = new Map(completeness.map(c => [c.date, c.state]));
-      for (const total of dailyTotals) {
-        perDayWindowData[toDayOffset(total.date)] = {
-          state: completenessByDate.get(total.date) ?? 'incomplete',
-          calories: total.calories,
-          unconfirmedMeals: total.unconfirmed_meals,
-        };
-      }
+        const perDayWindowData: Record<number, DayWindowData> = {};
+        const completenessByDate = new Map(completeness.map(c => [c.date, c.state]));
+        for (const total of dailyTotals) {
+          perDayWindowData[toDayOffset(total.date)] = {
+            state: completenessByDate.get(total.date) ?? 'incomplete',
+            calories: total.calories,
+            unconfirmedMeals: total.unconfirmed_meals,
+          };
+        }
 
-      const keptInWindow = kept.filter(r => r.day >= gapWindow.windowStartDayOffset);
-      const rejectedInWindow = rejected.filter(r => r.day >= gapWindow.windowStartDayOffset);
-      const mostRecentKeptDayOffset = kept.length > 0 ? Math.max(...kept.map(r => r.day)) : -Infinity;
+        const keptInWindow = kept.filter(r => r.day >= gapWindow.windowStartDayOffset);
+        const rejectedInWindow = rejected.filter(r => r.day >= gapWindow.windowStartDayOffset);
+        const mostRecentKeptDayOffset = kept.length > 0 ? Math.max(...kept.map(r => r.day)) : -Infinity;
 
-      const hardFloor = checkHardFloor(
-        keptInWindow,
-        rejectedInWindow,
-        bootstrapSiblingAmbiguous,
-        gapWindow.windowStartDayOffset,
-        perDayWindowData,
-        mostRecentKeptDayOffset,
-        gapWindow.windowLastDayOffset,
-      );
-
-      let result: ContentState;
-      if (hardFloor) {
-        result = { kind: 'not_enough_data' };
-      } else {
-        const bucketed = bucketByDay(kept);
-        const ema = emaSeries(bucketed.map(b => b.value), 0.25);
-        const points = bucketed
-          .map((b, i) => ({ x: b.day, y: ema[i] }))
-          .filter(p => p.x >= gapWindow.windowStartDayOffset && p.x <= gapWindow.windowLastDayOffset);
-        const { slope, intercept } = linearRegression(points);
-        const se = slopeStandardError(points, slope, intercept);
-        const gap = computeLoggingGap(
-          { slope, intercept },
-          se,
-          nutritionTargetCalories,
-          perDayWindowData,
+        const hardFloor = checkHardFloor(
+          keptInWindow,
+          rejectedInWindow,
+          bootstrapSiblingAmbiguous,
           gapWindow.windowStartDayOffset,
+          perDayWindowData,
+          mostRecentKeptDayOffset,
           gapWindow.windowLastDayOffset,
         );
-        result = gap.kind === 'gap' ? { kind: 'gap', value: gap.value, interval: gap.interval } : { kind: 'not_enough_data' };
-      }
 
-      if (cancelled) return;
-      setState(result);
-      setOutlierExcluded(excludedOutlierCount(rejected, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset) > 0);
+        let result: ContentState;
+        if (hardFloor) {
+          result = { kind: 'not_enough_data' };
+        } else {
+          const bucketed = bucketByDay(kept);
+          const ema = emaSeries(bucketed.map(b => b.value), 0.25);
+          const points = bucketed
+            .map((b, i) => ({ x: b.day, y: ema[i] }))
+            .filter(p => p.x >= gapWindow.windowStartDayOffset && p.x <= gapWindow.windowLastDayOffset);
+          const { slope, intercept } = linearRegression(points);
+          const se = slopeStandardError(points, slope, intercept);
+          const gap = computeLoggingGap(
+            { slope, intercept },
+            se,
+            nutritionTargetCalories,
+            perDayWindowData,
+            gapWindow.windowStartDayOffset,
+            gapWindow.windowLastDayOffset,
+          );
+          result = gap.kind === 'gap' ? { kind: 'gap', value: gap.value, interval: gap.interval } : { kind: 'not_enough_data' };
+        }
+
+        if (cancelled) return;
+        setState(result);
+        setOutlierExcluded(excludedOutlierCount(rejected, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset) > 0);
+      } catch {
+        if (cancelled) return;
+        setState({ kind: 'retrieval_error' });
+      }
     })();
 
     return () => {

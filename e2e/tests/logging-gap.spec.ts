@@ -93,7 +93,10 @@ interface LoggingGapFixture {
 // history the shared `alice` account happens to hold. Also independent of
 // what the account's own dashboard_order/hidden state is, since routing is
 // per-page rather than a real backend mutation.
-async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture) {
+//
+// `opts.liveDailyTotals` leaves /api/food/daily-totals unrouted so it reaches
+// the real backend — see the contract test below for why one test must.
+async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?: { liveDailyTotals?: boolean }) {
   await page.route('**/api/data/weight**', route => {
     if (fixture.weightStatus) {
       return route.fulfill({ status: fixture.weightStatus, json: { error: 'boom' } });
@@ -121,7 +124,9 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture) {
     });
   });
   await page.route('**/api/food/completeness**', route => route.fulfill({ json: fixture.completeness ?? [] }));
-  await page.route('**/api/food/daily-totals**', route => route.fulfill({ json: fixture.dailyTotals ?? [] }));
+  if (!opts?.liveDailyTotals) {
+    await page.route('**/api/food/daily-totals**', route => route.fulfill({ json: fixture.dailyTotals ?? [] }));
+  }
 }
 
 // A fixture producing a clearly out-of-interval gap (8.1): steady weight
@@ -185,6 +190,69 @@ test.describe('Logging Gap Card', () => {
 
       await expect(card).toContainText('Logged intake is estimated from photo recognition');
       await expect(card).toContainText("doesn't separately account for error in your activity multiplier");
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  // The one test in this file that does NOT mock /api/food/daily-totals.
+  // Every other test here fulfills all four of the card's requests from
+  // fixtures, which makes the card's *logic* deterministic but leaves the seam
+  // this feature actually introduced — a brand-new endpoint and a brand-new
+  // caller for it — untested end to end: a wrong path prefix, a renamed query
+  // parameter, or a JSON tag that doesn't match the field the card reads would
+  // pass every mocked test and fail only in a real browser. The other three
+  // requests stay mocked so this test depends on nothing about what the shared
+  // `alice` account has logged; only the daily-totals round trip is real.
+  test('the card requests daily totals from the real endpoint, which answers with the shape it reads', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      const { windowStart, windowEnd } = loggingGapWindow();
+      await mockLoggingGapApis(page, clearGapFixture(), { liveDailyTotals: true });
+
+      const responsePromise = page.waitForResponse(r => r.url().includes('/api/food/daily-totals'), {
+        timeout: 20_000,
+      });
+      await page.goto('/');
+      const response = await responsePromise;
+
+      // The URL the card built, asserted against the route the server
+      // registered — path and both parameter names, not just "something 200'd".
+      const url = new URL(response.url());
+      expect(url.pathname).toBe('/api/food/daily-totals');
+      expect(url.searchParams.get('from')).toBe(windowStart);
+      expect(url.searchParams.get('to')).toBe(windowEnd);
+      expect(response.status()).toBe(200);
+
+      // DailyTotalsRange zero-fills every day in the range rather than omitting
+      // the empty ones, so the window's full length comes back whatever this
+      // account has logged — which is what lets the card index by date without
+      // a presence check.
+      const body = await response.json();
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toHaveLength(dateRange(windowStart, windowEnd).length);
+      expect(body[0].date).toBe(windowStart);
+      expect(body[body.length - 1].date).toBe(windowEnd);
+      // Field names exactly as LoggingGapCard destructures them — `calories`
+      // and the snake_case `unconfirmed_meals`, both numbers.
+      for (const entry of body) {
+        expect(typeof entry.date).toBe('string');
+        expect(typeof entry.calories).toBe('number');
+        expect(typeof entry.unconfirmed_meals).toBe('number');
+      }
+
+      // And the card survived the real response: it reached a terminal content
+      // state rather than throwing or hanging on the spinner.
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-loading')).toHaveCount(0, { timeout: 15_000 });
+      await expect(card.getByTestId('logging-gap-error')).toHaveCount(0);
     } finally {
       await putSettings(request, cookies, original);
     }

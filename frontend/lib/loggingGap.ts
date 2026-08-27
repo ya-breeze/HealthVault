@@ -111,9 +111,41 @@ export function rejectOutliers(records: DayValueRecord[]): OutlierRejectionResul
 }
 
 /**
+ * Day-buckets outlier-surviving raw weigh-ins by averaging same-day values — design.md decision 4's
+ * "outlier-filtered, day-bucketed weight series". Run this only once the rejection walk has
+ * finished, never partway through it: `rejectOutliers` rate-checks *raw* records and exempts
+ * same-day siblings by design, so bucketing first would silently change which records it rejects.
+ *
+ * Output is sorted by day and has exactly one entry per distinct day, which is what makes the
+ * same-day-sibling exemption safe downstream — a day with five weigh-ins contributes one point to
+ * the EMA, not five.
+ */
+export function bucketByDay(records: DayValueRecord[]): DayValueRecord[] {
+  const buckets = new Map<number, number[]>();
+  for (const r of records) {
+    const vals = buckets.get(r.day);
+    if (vals) vals.push(r.value);
+    else buckets.set(r.day, [r.value]);
+  }
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([day, vals]) => ({ day, value: vals.reduce((a, v) => a + v, 0) / vals.length }));
+}
+
+/**
  * Standard OLS slope standard error from the regression's own residuals — design.md decision 3.
  * `null` when fewer than 3 distinct x-values are given: with n-2 < 1 the standard error is
  * genuinely undefined, not zero (a 2-point fit is a perfect line with zero degrees of freedom).
+ *
+ * Known and accepted limitation: the `y` values passed here are EMA-smoothed (decision 4), not raw
+ * weigh-ins, and OLS assumes independent residuals. The alpha=0.25 EMA both shrinks residual
+ * variance and autocorrelates what is left, so this standard error is systematically *optimistic* —
+ * the resulting interval is narrower than a textbook reading of decision 3 would suggest, and the
+ * "stay silent when the interval covers zero" rule therefore fires slightly less often than it
+ * would on raw residuals. It is left as-is because the fixed 10%-of-target term (~250 kcal at a
+ * typical target) dominates the quadrature for any reasonably dense series, so correcting it would
+ * change the interval by far less than the term it sits beside. Anything that makes the trend term
+ * dominant again — a longer window, a smaller formula error — should revisit this first.
  */
 export function slopeStandardError(
   points: { x: number; y: number }[],
@@ -288,6 +320,12 @@ export type LoggingGapResult =
  * makes this function's output depend on a call ordering its signature doesn't express, and the
  * failure mode is silent — an empty average is `NaN`, `Math.abs(NaN) <= interval` is `false`, so a
  * `{kind: 'gap'}` carrying `NaN` would render as "NaN–NaN kcal/day".
+ *
+ * That escape route has more than one entrance, so the final `Number.isFinite(value)` check closes
+ * it for all of them rather than only for the empty average: a non-finite `regression.slope` or a
+ * missing/non-numeric `nutritionTargetCalories` poisons `impliedIntake` the same way and reaches
+ * the same comparison, which lets non-numbers through because every comparison against `NaN` is
+ * `false`. Silence is the right answer to any of them — there is no gap we can honestly report.
  */
 export function computeLoggingGap(
   regression: { slope: number; intercept: number },
@@ -307,6 +345,9 @@ export function computeLoggingGap(
   const trendErrorKcal = se === null ? Infinity : KCAL_PER_KG * se;
   const interval = Math.sqrt(formulaError * formulaError + trendErrorKcal * trendErrorKcal);
 
+  if (!Number.isFinite(value) || !Number.isFinite(interval)) {
+    return { kind: 'not_enough_data' };
+  }
   if (Math.abs(value) <= interval) {
     return { kind: 'not_enough_data' };
   }
