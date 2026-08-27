@@ -406,14 +406,16 @@ test.describe('Dashboard card visibility', () => {
     try {
       await page.getByRole('button', { name: 'Customize' }).click();
 
-      // Hide all 8. Each toggle stays in the DOM while editing, so this can
-      // walk them by index. Scoped to vitals-grid, not the whole page — More
-      // Data has grown its own "-visibility" toggle (more-data-visibility),
-      // which would otherwise inflate this count when the account has any
-      // secondary-type presence.
+      // Hide all 9 (the 8 DataType-backed vitals plus the always-present
+      // Logging Gap card — see hasCardPresence in lib/vitals.ts). Each toggle
+      // stays in the DOM while editing, so this can walk them by index.
+      // Scoped to vitals-grid, not the whole page — More Data has grown its
+      // own "-visibility" toggle (more-data-visibility), which would
+      // otherwise inflate this count when the account has any secondary-type
+      // presence.
       const toggles = page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]');
       const count = await toggles.count();
-      expect(count).toBe(8);
+      expect(count).toBe(PRIMARY_METRIC_TYPES.length + 1);
       for (let i = 0; i < count; i++) {
         await toggles.nth(i).click();
       }
@@ -447,9 +449,11 @@ test.describe('Dashboard card visibility', () => {
     await expect(grid.locator('> *').nth(0)).toHaveAttribute('data-testid', 'vital-card-weight');
     await expect(grid.locator('> *').nth(1)).toHaveAttribute('data-testid', 'vital-card-steps');
     // ...and the metrics the old shape never mentioned are appended, visible,
-    // rather than being dropped or defaulting to hidden.
-    await expect(grid.locator('> *')).toHaveCount(8);
+    // rather than being dropped or defaulting to hidden — including
+    // 'logging_gap', which the pre-visibility shape predates entirely.
+    await expect(grid.locator('> *')).toHaveCount(PRIMARY_METRIC_TYPES.length + 1);
     await expect(grid.getByTestId('vital-card-sleep')).toBeVisible();
+    await expect(grid.getByTestId('logging-gap-card')).toBeVisible();
     await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
   });
 
@@ -584,7 +588,10 @@ test.describe('Data-type presence filtering', () => {
     await expect(page.getByTestId('vital-card-sleep-visibility')).toHaveCount(0);
     // Scoped to vitals-grid so More Data's own "-visibility" toggle
     // (more-data-visibility) isn't counted alongside the primary cards'.
-    await expect(page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1);
+    // Sleep is excluded by zero presence, but 'logging_gap' never is
+    // (hasCardPresence, design.md decision 8) — net -1 +1 leaves the count
+    // unchanged from PRIMARY_METRIC_TYPES.length.
+    await expect(page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length);
 
     // Nothing was changed, so leave without triggering a settings write —
     // same reasoning as restoreAllVisible's own no-op exit.
@@ -700,18 +707,28 @@ test.describe('Data-type presence filtering', () => {
     }
   });
 
-  test('the vitals-grid-empty-no-data placeholder renders when no primary metric has presence', async ({ page }) => {
+  // Predates logging-gap: before it, zero presence across every DataType-backed
+  // primary metric meant presentOrder was genuinely empty, so the
+  // `vitals-grid-empty-no-data` placeholder fired. 'logging_gap' now always has
+  // presence (hasCardPresence, design.md decision 8) and is a member of
+  // PRIMARY_METRICS, so presentOrder can no longer be empty via presence alone
+  // — the grid falls through to rendering the Logging Gap card instead, and
+  // that placeholder has been removed as unreachable. This is the intended
+  // consequence of decision 8 ("always eligible to render"), not a regression:
+  // a user with zero vitals data now sees the Logging Gap card's own "not
+  // enough data" content state rather than a static dead end.
+  test('zero presence on every DataType-backed metric still renders the grid, with only the Logging Gap card', async ({ page }) => {
     const overrides = Object.fromEntries(PRIMARY_METRIC_TYPES.map(type => [type, false]));
     await page.route('**/api/data-types/presence', route =>
       route.fulfill({ json: presenceFixture(overrides) })
     );
     await page.goto('/');
 
-    // Distinct from vitals-grid-empty, which covers "hid every data-bearing
-    // card via Customize" — here there is nothing to un-hide.
-    await expect(page.getByTestId('vitals-grid-empty-no-data')).toBeVisible();
+    const grid = page.getByTestId('vitals-grid');
+    await expect(grid).toBeVisible();
+    await expect(grid.locator('> *')).toHaveCount(1);
+    await expect(grid.getByTestId('logging-gap-card')).toBeVisible();
     await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
-    await expect(page.getByTestId('vitals-grid')).toHaveCount(0);
   });
 
   test('a secondary type with zero data ever is omitted from More Data; one with data is shown', async ({ page }) => {

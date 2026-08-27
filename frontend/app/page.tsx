@@ -1,19 +1,20 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, DATA_TYPES } from '@/lib/api';
+import { api, DATA_TYPES, DataType } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, DashboardCardPref, VitalResult } from '@/lib/vitals';
+import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, hasCardPresence, secondaryTypes, DashboardCardPref, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import VitalCard from '@/components/VitalCard';
+import LoggingGapCard from '@/components/LoggingGapCard';
 import TapTarget from '@/components/ui/TapTarget';
 import { CameraIcon, PencilIcon, HistoryIcon, EyeIcon, EyeOffIcon } from '@/components/icons';
 
-const SECONDARY_TYPES = DATA_TYPES.filter(t => !PRIMARY_METRICS.some(m => m.type === t));
+const SECONDARY_TYPES = secondaryTypes(DATA_TYPES);
 
 export default function Dashboard() {
   const router = useRouter();
@@ -41,6 +42,12 @@ export default function Dashboard() {
   // error paragraph instead of the vitals grid for the rest of the session,
   // with no in-page way back. Found in code review.
   const [settingsAttempt, setSettingsAttempt] = useState(0);
+  // Kept from the same settings load below purely to hand to LoggingGapCard,
+  // which needs it to resolve its Logged Day window boundary. Held here rather
+  // than fetched again inside the card: the card mounts only once this load
+  // has succeeded, so a second GET would be redundant and would delay the
+  // card's own four requests behind it.
+  const [timezone, setTimezone] = useState<string | undefined>(undefined);
   const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
   // Strict `=== true`, not `?? false`: settings is opaque, unvalidated JSON,
   // and a malformed stored value (e.g. the string "false", or 1) must read as
@@ -71,6 +78,7 @@ export default function Dashboard() {
       .then(s => {
         setOrder(reconcileMetricOrder(s.dashboard_order));
         setMoreDataHidden(s.more_data_hidden === true);
+        setTimezone(s.timezone);
         setSettingsStatus('loaded');
       })
       .catch(() => {
@@ -100,11 +108,16 @@ export default function Dashboard() {
     })();
     const to = new Date().toISOString();
 
+    // 'logging_gap' has no /api/data/{type} backing (design.md decision 8) —
+    // it fetches and computes its own state (task 5's LoggingGapCard), so it's
+    // excluded here rather than passed to api.data/extractVital, which are
+    // DataType-only.
+    const dataMetrics = PRIMARY_METRICS.filter((m): m is { type: DataType } => m.type !== 'logging_gap');
     Promise.all(
-      PRIMARY_METRICS.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
+      dataMetrics.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
     ).then(results => {
       const next: Record<string, VitalResult | null> = {};
-      PRIMARY_METRICS.forEach((m, i) => {
+      dataMetrics.forEach((m, i) => {
         next[m.type] = extractVital(m.type, results[i]);
       });
       setVitals(next);
@@ -135,7 +148,7 @@ export default function Dashboard() {
   // untouched (they may gain presence on a later load).
   function moveCard(index: number, direction: -1 | 1) {
     setOrder(prev => {
-      const visibleTypes = prev.filter(m => hasPresence(presence, m.type)).map(m => m.type);
+      const visibleTypes = prev.filter(m => hasCardPresence(presence, m.type)).map(m => m.type);
       const target = index + direction;
       if (target < 0 || target >= visibleTypes.length) return prev;
       const idxA = prev.findIndex(m => m.type === visibleTypes[index]);
@@ -156,12 +169,15 @@ export default function Dashboard() {
   // mode) — see design.md, "Presence excludes a type from the customizable
   // set entirely". A zero-presence metric never appears here, regardless of
   // its stored `hidden` flag.
-  const presentOrder = order.filter(m => hasPresence(presence, m.type));
-  // "No data at all" (nothing to show, Customize can't help) is distinct from
-  // "user hid everything that does have data" (allHidden, below) — see the
-  // two-empty-states decision in design.md. allHidden must not fire when
-  // there's nothing present to hide.
-  const noPrimaryData = presentOrder.length === 0;
+  const presentOrder = order.filter(m => hasCardPresence(presence, m.type));
+  // There is no longer a "no data at all" empty state to pair `allHidden`
+  // against: hide-unrecorded-data-types' `vitals-grid-empty-no-data`
+  // placeholder could only fire when `presentOrder` was empty, and since
+  // 'logging_gap' joined PRIMARY_METRICS with unconditional presence
+  // (hasCardPresence, design.md decision 8) it never can be. A user with no
+  // readings at all now gets the Logging Gap card's own "not enough data yet"
+  // content instead. `allHidden` keeps its own length check regardless — it
+  // must not fire on an empty list.
   const allHidden = presentOrder.length > 0 && presentOrder.every(m => m.hidden);
   // Gated on dashboardReady (not just presenceReady) so a section the user
   // hid can't flash unhidden before the saved more_data_hidden preference has
@@ -171,7 +187,7 @@ export default function Dashboard() {
 
   function toggleHidden(index: number) {
     setOrder(prev => {
-      const visibleTypes = prev.filter(m => hasPresence(presence, m.type)).map(m => m.type);
+      const visibleTypes = prev.filter(m => hasCardPresence(presence, m.type)).map(m => m.type);
       const type = visibleTypes[index];
       return prev.map(m => (m.type === type ? { ...m, hidden: !m.hidden } : m));
     });
@@ -242,10 +258,6 @@ export default function Dashboard() {
               </TapTarget>
             )}
           </div>
-        ) : noPrimaryData ? (
-          <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty-no-data">
-            {t('dashboard.noPrimaryData')}
-          </p>
         ) : allHidden && !editing ? (
           <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
             {t('dashboard.allCardsHidden')}
@@ -253,6 +265,23 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
             {presentOrder.map((m, i) => (editing || !m.hidden) && (
+              // 'logging_gap' has no /api/data/{type} presence or VitalCard
+              // rendering — LoggingGapCard (task 5) owns its own fetch
+              // lifecycle and content states instead of reading `vitals`.
+              m.type === 'logging_gap' ? (
+                <LoggingGapCard
+                  key={m.type}
+                  timezone={timezone}
+                  editing={editing}
+                  onMoveUp={() => moveCard(i, -1)}
+                  onMoveDown={() => moveCard(i, 1)}
+                  moveUpDisabled={i === 0}
+                  moveDownDisabled={i === presentOrder.length - 1}
+                  hidden={m.hidden}
+                  onToggleHidden={() => toggleHidden(i)}
+                  controlsDisabled={saving}
+                />
+              ) : (
               <VitalCard
                 key={m.type}
                 type={m.type}
@@ -267,6 +296,7 @@ export default function Dashboard() {
                 onToggleHidden={() => toggleHidden(i)}
                 controlsDisabled={saving}
               />
+              )
             ))}
           </div>
         )}

@@ -92,6 +92,24 @@ ranges, sugar/sodium cutoffs), and the chat's persistence model (ongoing
 thread vs. ephemeral per session) — both deferred to this phase's own
 `opsx:propose`. Depends on Phase 3's Nutrition Target existing.
 
+## Idea #10 — Logging Gap Card (was "adaptive TDEE from energy balance")
+
+**Shipped** by the `logging-gap` change ([PR #39](https://github.com/ya-breeze/HealthVault/pull/39);
+see ADR-010; converted to `docs/specs/logging-gap.md` when OpenSpec was retired mid-implementation).
+
+Idea #10 started, and is still filed, under its original title — "adaptive TDEE from energy
+balance (replaces activity multiplier)" — but grilling it (idea-forge issue, "Grilled — the
+feature changed shape" comment, 2026-08-25) found the app has no independent expenditure signal to
+compute a real TDEE from, and dropped the "replaces the activity multiplier" framing entirely: this
+change **does not touch ADR-006**. What shipped instead is a **Logging Gap** — `Implied Intake -
+Mean Logged Intake`, an honest kcal/day range with an uncertainty interval, never a bare point
+estimate, silent ("not enough data yet") rather than clamped when the data can't support a
+confident number. Built on `food-day-completeness` (idea #9, above) for its valid-day floor, and
+generalizes the dashboard's Card registry (`DataType | 'logging_gap'`) so a non-`DataType` card can
+be shown/hidden/reordered the same way a Vital Card or Food Card already can — the shape Phase 4's
+own Card A/Card B will need too. See ADR-010 for the full reasoning, `CONTEXT.md`'s Nutrition
+targets section for the Implied Intake / Logging Gap / Trend Weight glossary entries.
+
 ## Open Food Facts (European product database)
 
 Investigated 2026-08-08: is there a European equivalent of the USDA FoodData

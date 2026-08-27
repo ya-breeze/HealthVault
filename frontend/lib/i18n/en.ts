@@ -259,10 +259,6 @@ const en = {
   'dashboard.showCard': 'Show {metric}',
   'dashboard.retryLoad': 'Try again',
   'dashboard.allCardsHidden': 'All cards are hidden. Tap Customize to show some again.',
-  // Distinct from allCardsHidden: this is "you have never recorded any of
-  // these metrics" (Customize can't help — there's nothing to reveal), not
-  // "you hid them yourself". See hide-unrecorded-data-types/design.md.
-  'dashboard.noPrimaryData': 'Log your first reading to see it here.',
   // Four plural forms because the dictionary type is shared with ru.ts, which
   // needs all four. English only ever selects 'one' and 'other', so the two
   // middle entries are unreachable here and simply mirror 'other' — see
@@ -283,6 +279,18 @@ const en = {
   'vitals.trend7d': '7d trend',
   'vitals.moveUp': 'Move {metric} up',
   'vitals.moveDown': 'Move {metric} down',
+
+  'loggingGap.title': 'Logging Gap',
+  'loggingGap.loading': 'Calculating your logging gap…',
+  'loggingGap.notEnoughData': 'Not enough data yet',
+  'loggingGap.retrievalError': 'Temporarily unavailable',
+  'loggingGap.targetUnmet': 'Complete your profile and goal weight to see your logging gap.',
+  'loggingGap.targetUnmetLink': 'Update now',
+  'loggingGap.unlogged': '{range} kcal/day not logged',
+  'loggingGap.loggedMore': '{range} kcal/day logged more than the trend implies',
+  'loggingGap.outlierNote': 'One or more weigh-ins were excluded as outliers.',
+  'loggingGap.caveatPhoto': 'Logged intake is estimated from photo recognition and may carry its own bias.',
+  'loggingGap.caveatActivity': "This doesn't separately account for error in your activity multiplier — a misestimate of activity can look like unlogged (or over-logged) intake.",
 
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing

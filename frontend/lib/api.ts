@@ -356,6 +356,18 @@ export interface DayCompleteness {
   state: DayCompletenessState;
 }
 
+// One day's logged-calorie total (food-daily-totals capability) — mirrors
+// the backend's database.DailyTotal (food_daily_totals.go).
+export interface DailyTotal {
+  date: string;
+  calories: number;
+  // How many of that day's meals are in a status other than `confirmed`, and
+  // so contributed nothing to `calories`. Non-zero means the day's total is
+  // under-counted by an unknown amount, which is not the same thing as a low
+  // total — see database.DailyTotal's own comment.
+  unconfirmed_meals: number;
+}
+
 // Both error classes below set `.name` explicitly and restore the prototype
 // chain via Object.setPrototypeOf in their constructors. TypeScript/SWC
 // transpilation of `class X extends Error` can silently break `instanceof`
@@ -614,6 +626,15 @@ export const api = {
     apiFetchNoBody(`/food/completeness/${date}/confirm`, { method: 'POST' }),
   unconfirmDay: (date: string): Promise<void> =>
     apiFetchNoBody(`/food/completeness/${date}/confirm`, { method: 'DELETE' }),
+
+  // GET /food/daily-totals — the caller's per-day logged-calorie totals
+  // across an inclusive Logged-Day range (design.md §7 "Backend: GET
+  // /api/food/daily-totals"). Capped at 92 days server-side, same as
+  // getCompleteness.
+  getFoodDailyTotals: (from: string, to: string) => {
+    const params = new URLSearchParams({ from, to });
+    return apiFetch<DailyTotal[]>(`/food/daily-totals?${params}`);
+  },
 
   // before_id must be paired with before to get the backend's lossless
   // (logged_at, id) keyset cursor — a before-only request falls back to a
