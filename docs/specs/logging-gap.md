@@ -825,19 +825,19 @@ it in a state worth reading.
       re-open the original "replaces the activity multiplier" framing as if it were still live
 
 ### Task 8: E2E
-- [ ] 8.1 Extend or add an `e2e/tests/` spec: seed weight + confirmed meals producing a clearly
+- [x] 8.1 Extend or add an `e2e/tests/` spec: seed weight + confirmed meals producing a clearly
       out-of-interval Logging Gap, load the dashboard, assert the card shows a range (not a bare
       number) and both caveats (photo estimation, activity multiplier)
-- [ ] 8.2 E2E coverage for the "not enough data yet" state with a freshly seeded user (no weight,
+- [x] 8.2 E2E coverage for the "not enough data yet" state with a freshly seeded user (no weight,
       no meals)
-- [ ] 8.3 E2E coverage for the "complete your profile/goal weight" state with a user who has weight
+- [x] 8.3 E2E coverage for the "complete your profile/goal weight" state with a user who has weight
       and food history but no goal weight set
-- [ ] 8.4 E2E coverage for hiding/reordering the Logging Gap Card via Edit mode and confirming the
+- [x] 8.4 E2E coverage for hiding/reordering the Logging Gap Card via Edit mode and confirming the
       change persists across a reload, alongside existing Vital Cards
-- [ ] 8.5 E2E or component-level coverage for the "temporarily unavailable" state: simulate a non-422
+- [x] 8.5 E2E or component-level coverage for the "temporarily unavailable" state: simulate a non-422
       failure (e.g. a 500) from one of the card's four requests while the others succeed, and assert
       the card shows "temporarily unavailable" rather than "not enough data yet"
-- [ ] 8.6 Run the full suite against `hcw-wip`
+- [x] 8.6 Run the full suite against `hcw-wip`
 
 ### Task 9: Verification
 - [ ] 9.1 `make lint`
