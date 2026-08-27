@@ -281,7 +281,7 @@ describe('checkHardFloor', () => {
   function validPerDayWindowData(validDayCount: number): Record<number, DayWindowData> {
     const data: Record<number, DayWindowData> = {};
     for (let i = 0; i < validDayCount; i++) {
-      data[windowStartDayOffset + i] = { state: 'complete', calories: 2000 };
+      data[windowStartDayOffset + i] = { state: 'complete', calories: 2000, unconfirmedMeals: 0 };
     }
     return data;
   }
@@ -347,6 +347,24 @@ describe('checkHardFloor', () => {
       windowLastDayOffset
     );
     expect(result).toBe(false);
+  });
+
+  it('fires when a Complete day is disqualified by an unconfirmed meal, dropping the valid count below 3', () => {
+    // The floor must count the same days computeLoggingGap averages: a day
+    // that's Complete but whose total is missing meals is not one of them, so
+    // 3 such days are not 3 valid days.
+    const data = validPerDayWindowData(3);
+    data[windowStartDayOffset + 2] = { state: 'complete', calories: 0, unconfirmedMeals: 2 };
+    const result = checkHardFloor(
+      safeKept,
+      safeRejected,
+      false,
+      windowStartDayOffset,
+      data,
+      safeMostRecentKeptDayOffset,
+      windowLastDayOffset
+    );
+    expect(result).toBe(true);
   });
 
   it('does not fire when the most recent kept weigh-in is exactly 7 days stale', () => {
@@ -467,9 +485,9 @@ describe('checkHardFloor', () => {
     expect(rejected.some(r => r.day === 2)).toBe(true);
 
     const perDayWindowData: Record<number, DayWindowData> = {
-      0: { state: 'complete', calories: 2000 },
-      1: { state: 'complete', calories: 2000 },
-      2: { state: 'complete', calories: 2000 },
+      0: { state: 'complete', calories: 2000, unconfirmedMeals: 0 },
+      1: { state: 'complete', calories: 2000, unconfirmedMeals: 0 },
+      2: { state: 'complete', calories: 2000, unconfirmedMeals: 0 },
     };
     const mostRecentKeptDayOffset = Math.max(...kept.map(r => r.day));
     const result = checkHardFloor(
@@ -486,10 +504,20 @@ describe('checkHardFloor', () => {
 });
 
 describe('computeLoggingGap', () => {
-  function perDayWindowData(entries: DayWindowData[]): Record<number, DayWindowData> {
+  const windowStartDayOffset = 0;
+  const windowLastDayOffset = LOGGING_GAP_WINDOW_DAYS - 1;
+
+  // Entries are laid out from day 0 upward, so every one lands inside
+  // [windowStartDayOffset, windowLastDayOffset] unless a test says otherwise by
+  // keying the map itself. `unconfirmedMeals` defaults to 0 — a day whose meals
+  // all reached `confirmed` — so only the tests actually about that rule
+  // mention it.
+  function perDayWindowData(
+    entries: (Omit<DayWindowData, 'unconfirmedMeals'> & { unconfirmedMeals?: number })[]
+  ): Record<number, DayWindowData> {
     const data: Record<number, DayWindowData> = {};
     entries.forEach((entry, i) => {
-      data[i] = entry;
+      data[i] = { unconfirmedMeals: 0, ...entry };
     });
     return data;
   }
@@ -503,7 +531,9 @@ describe('computeLoggingGap', () => {
         { state: 'complete', calories: 2950 },
         { state: 'complete', calories: 2950 },
         { state: 'complete', calories: 2950 },
-      ])
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
     );
     expect(result).toEqual({ kind: 'not_enough_data' });
   });
@@ -517,7 +547,9 @@ describe('computeLoggingGap', () => {
         { state: 'complete', calories: 2200 },
         { state: 'complete', calories: 2200 },
         { state: 'complete', calories: 2200 },
-      ])
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
     );
     expect(result.kind).toBe('gap');
     if (result.kind === 'gap') {
@@ -535,7 +567,9 @@ describe('computeLoggingGap', () => {
         { state: 'complete', calories: 2790 },
         { state: 'complete', calories: 2790 },
         { state: 'complete', calories: 2790 },
-      ])
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
     );
     expect(result).toEqual({ kind: 'not_enough_data' });
   });
@@ -549,7 +583,9 @@ describe('computeLoggingGap', () => {
         { state: 'complete', calories: 4000 },
         { state: 'complete', calories: 4000 },
         { state: 'complete', calories: 4000 },
-      ])
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
     );
     expect(result.kind).toBe('gap');
     if (result.kind === 'gap') {
@@ -570,7 +606,9 @@ describe('computeLoggingGap', () => {
         { state: 'complete', calories: 1200 },
         { state: 'complete', calories: 1200 },
         { state: 'complete', calories: 1200 },
-      ])
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
     );
     expect(result.kind).toBe('gap');
     if (result.kind === 'gap') {
@@ -590,7 +628,9 @@ describe('computeLoggingGap', () => {
         { state: 'complete', calories: 2200 },
         { state: 'unconfirmed', calories: 0 },
         { state: 'incomplete', calories: 0 },
-      ])
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
     );
     expect(result.kind).toBe('gap');
     if (result.kind === 'gap') {
@@ -599,6 +639,97 @@ describe('computeLoggingGap', () => {
       // higher than 900.
       expect(result.value).toBeCloseTo(900, 6);
     }
+  });
+
+  it('excludes a Complete day whose meals never reached confirmed, rather than averaging its under-counted total', () => {
+    // The failure this guards: Day Completeness counts occasions across every
+    // meal status, so a day whose three photographed meals all failed vision
+    // is still 'complete' — with a 0 kcal total. Averaged in, it drags Mean
+    // Logged Intake down and invents a gap. Here the three real days average
+    // 2200 (gap 900); admitting the fourth would make the mean 1650 and report
+    // a ~1450 gap that never happened.
+    const result = computeLoggingGap(
+      { slope: 0, intercept: 0 },
+      0,
+      3100,
+      perDayWindowData([
+        { state: 'complete', calories: 2200 },
+        { state: 'complete', calories: 2200 },
+        { state: 'complete', calories: 2200 },
+        { state: 'complete', calories: 0, unconfirmedMeals: 3 },
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
+    );
+    expect(result.kind).toBe('gap');
+    if (result.kind === 'gap') {
+      expect(result.value).toBeCloseTo(900, 6);
+    }
+  });
+
+  it('excludes a partially-confirmed day even when its remaining total looks plausible', () => {
+    // One unconfirmed meal is enough: the total is short by an unknown amount,
+    // and nothing downstream can tell how much. 1800 is a believable day, which
+    // is exactly why it must not be averaged in as if it were the whole day.
+    const result = computeLoggingGap(
+      { slope: 0, intercept: 0 },
+      0,
+      3100,
+      perDayWindowData([
+        { state: 'complete', calories: 2200 },
+        { state: 'complete', calories: 2200 },
+        { state: 'complete', calories: 2200 },
+        { state: 'confirmed_complete', calories: 1800, unconfirmedMeals: 1 },
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
+    );
+    expect(result.kind).toBe('gap');
+    if (result.kind === 'gap') {
+      expect(result.value).toBeCloseTo(900, 6);
+    }
+  });
+
+  it('ignores valid days outside the window instead of averaging them in', () => {
+    const result = computeLoggingGap(
+      { slope: 0, intercept: 0 },
+      0,
+      3100,
+      {
+        [windowStartDayOffset - 1]: { state: 'complete', calories: 0, unconfirmedMeals: 0 },
+        [windowStartDayOffset]: { state: 'complete', calories: 2200, unconfirmedMeals: 0 },
+        [windowLastDayOffset]: { state: 'complete', calories: 2200, unconfirmedMeals: 0 },
+        [windowLastDayOffset + 1]: { state: 'complete', calories: 0, unconfirmedMeals: 0 },
+      },
+      windowStartDayOffset,
+      windowLastDayOffset
+    );
+    expect(result.kind).toBe('gap');
+    if (result.kind === 'gap') {
+      // Mean of the two in-window days only. The two out-of-window zeros would
+      // have halved it and doubled the reported gap.
+      expect(result.value).toBeCloseTo(900, 6);
+    }
+  });
+
+  it('reports not_enough_data rather than a NaN gap when no day in the window is valid', () => {
+    // checkHardFloor already rejects fewer than 3 valid days, so this is
+    // unreachable through the card — but an empty average is NaN, and NaN fails
+    // the `<= interval` suppression check, so without its own guard this would
+    // return a gap that renders as "NaN–NaN kcal/day".
+    const result = computeLoggingGap(
+      { slope: 0, intercept: 0 },
+      0,
+      3100,
+      perDayWindowData([
+        { state: 'unconfirmed', calories: 0 },
+        { state: 'incomplete', calories: 0 },
+        { state: 'complete', calories: 0, unconfirmedMeals: 2 },
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
+    );
+    expect(result).toEqual({ kind: 'not_enough_data' });
   });
 
   it('reports not_enough_data when se is null, regardless of value', () => {
@@ -610,7 +741,9 @@ describe('computeLoggingGap', () => {
         { state: 'complete', calories: 2200 },
         { state: 'complete', calories: 2200 },
         { state: 'complete', calories: 2200 },
-      ])
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
     );
     expect(result).toEqual({ kind: 'not_enough_data' });
   });

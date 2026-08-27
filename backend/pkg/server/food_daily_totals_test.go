@@ -106,6 +106,88 @@ func TestGetFoodDailyTotals_UnconfirmedMealsExcludedFromSum(t *testing.T) {
 	if len(got) != 1 || got[0].Calories != 500 {
 		t.Fatalf("expected only the confirmed meal's 500 calories, got %+v", got)
 	}
+	// The three non-confirmed rows are reported as a count so a consumer can
+	// tell this under-counted day apart from a genuinely 500 kcal one.
+	if got[0].UnconfirmedMeals != 3 {
+		t.Errorf("expected 3 unconfirmed meals, got %+v", got[0])
+	}
+}
+
+// A day whose meals are all confirmed reports zero unconfirmed meals, and a
+// day with no meals at all reports zero too — the two cases a consumer treats
+// as "this total can be trusted" (the second trivially, having nothing to
+// under-count).
+func TestGetFoodDailyTotals_UnconfirmedMealCountIsZeroWhenNothingIsPending(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	base := time.Now().UTC().Truncate(24 * time.Hour)
+	day2 := base.AddDate(0, 0, -2)
+	createMealWithCalories(t, st, userID, familyID, database.MealStatusConfirmed, day2.Add(8*time.Hour), 400)
+	createMealWithCalories(t, st, userID, familyID, database.MealStatusConfirmed, day2.Add(18*time.Hour), 600)
+	// day -1 has no meals at all.
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	from := day2.Format("2006-01-02")
+	to := base.AddDate(0, 0, -1).Format("2006-01-02")
+
+	w := httptest.NewRecorder()
+	h.GetFoodDailyTotals(w, withClaims(dailyTotalsRequest(fmt.Sprintf("from=%s&to=%s", from, to)), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got []database.DailyTotal
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 days, got %d: %+v", len(got), got)
+	}
+	if got[0].Calories != 1000 || got[0].UnconfirmedMeals != 0 {
+		t.Errorf("day -2: expected 1000 calories and 0 unconfirmed, got %+v", got[0])
+	}
+	if got[1].Calories != 0 || got[1].UnconfirmedMeals != 0 {
+		t.Errorf("day -1 (no meals): expected 0 calories and 0 unconfirmed, got %+v", got[1])
+	}
+}
+
+// The count is scoped per Logged Day, not smeared across the range: a pending
+// meal on one day must not mark a neighbouring day's total as under-counted.
+func TestGetFoodDailyTotals_UnconfirmedMealCountIsPerDay(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	base := time.Now().UTC().Truncate(24 * time.Hour)
+	day3 := base.AddDate(0, 0, -3)
+	day2 := base.AddDate(0, 0, -2)
+	createMealWithCalories(t, st, userID, familyID, database.MealStatusConfirmed, day3.Add(9*time.Hour), 800)
+	createMealWithCalories(t, st, userID, familyID, database.MealStatusConfirmed, day2.Add(9*time.Hour), 700)
+	createMealWithCalories(t, st, userID, familyID, database.MealStatusPendingClarification, day2.Add(20*time.Hour), 0)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	from := day3.Format("2006-01-02")
+	to := day2.Format("2006-01-02")
+
+	w := httptest.NewRecorder()
+	h.GetFoodDailyTotals(w, withClaims(dailyTotalsRequest(fmt.Sprintf("from=%s&to=%s", from, to)), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got []database.DailyTotal
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 days, got %d: %+v", len(got), got)
+	}
+	if got[0].UnconfirmedMeals != 0 {
+		t.Errorf("day -3: expected 0 unconfirmed, got %+v", got[0])
+	}
+	if got[1].UnconfirmedMeals != 1 {
+		t.Errorf("day -2: expected 1 unconfirmed, got %+v", got[1])
+	}
 }
 
 func TestGetFoodDailyTotals_ToClampedToYesterday(t *testing.T) {

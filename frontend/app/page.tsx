@@ -42,6 +42,12 @@ export default function Dashboard() {
   // error paragraph instead of the vitals grid for the rest of the session,
   // with no in-page way back. Found in code review.
   const [settingsAttempt, setSettingsAttempt] = useState(0);
+  // Kept from the same settings load below purely to hand to LoggingGapCard,
+  // which needs it to resolve its Logged Day window boundary. Held here rather
+  // than fetched again inside the card: the card mounts only once this load
+  // has succeeded, so a second GET would be redundant and would delay the
+  // card's own four requests behind it.
+  const [timezone, setTimezone] = useState<string | undefined>(undefined);
   const [order, setOrder] = useState<DashboardCardPref[]>(() => reconcileMetricOrder(undefined));
   // Strict `=== true`, not `?? false`: settings is opaque, unvalidated JSON,
   // and a malformed stored value (e.g. the string "false", or 1) must read as
@@ -72,6 +78,7 @@ export default function Dashboard() {
       .then(s => {
         setOrder(reconcileMetricOrder(s.dashboard_order));
         setMoreDataHidden(s.more_data_hidden === true);
+        setTimezone(s.timezone);
         setSettingsStatus('loaded');
       })
       .catch(() => {
@@ -163,11 +170,14 @@ export default function Dashboard() {
   // set entirely". A zero-presence metric never appears here, regardless of
   // its stored `hidden` flag.
   const presentOrder = order.filter(m => hasCardPresence(presence, m.type));
-  // "No data at all" (nothing to show, Customize can't help) is distinct from
-  // "user hid everything that does have data" (allHidden, below) — see the
-  // two-empty-states decision in design.md. allHidden must not fire when
-  // there's nothing present to hide.
-  const noPrimaryData = presentOrder.length === 0;
+  // There is no longer a "no data at all" empty state to pair `allHidden`
+  // against: hide-unrecorded-data-types' `vitals-grid-empty-no-data`
+  // placeholder could only fire when `presentOrder` was empty, and since
+  // 'logging_gap' joined PRIMARY_METRICS with unconditional presence
+  // (hasCardPresence, design.md decision 8) it never can be. A user with no
+  // readings at all now gets the Logging Gap card's own "not enough data yet"
+  // content instead. `allHidden` keeps its own length check regardless — it
+  // must not fire on an empty list.
   const allHidden = presentOrder.length > 0 && presentOrder.every(m => m.hidden);
   // Gated on dashboardReady (not just presenceReady) so a section the user
   // hid can't flash unhidden before the saved more_data_hidden preference has
@@ -248,10 +258,6 @@ export default function Dashboard() {
               </TapTarget>
             )}
           </div>
-        ) : noPrimaryData ? (
-          <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty-no-data">
-            {t('dashboard.noPrimaryData')}
-          </p>
         ) : allHidden && !editing ? (
           <p className="mb-8 text-sm text-text-muted bg-bg-elevated border border-border rounded-[10px] px-4 py-3" data-testid="vitals-grid-empty">
             {t('dashboard.allCardsHidden')}
@@ -265,6 +271,7 @@ export default function Dashboard() {
               m.type === 'logging_gap' ? (
                 <LoggingGapCard
                   key={m.type}
+                  timezone={timezone}
                   editing={editing}
                   onMoveUp={() => moveCard(i, -1)}
                   onMoveDown={() => moveCard(i, 1)}

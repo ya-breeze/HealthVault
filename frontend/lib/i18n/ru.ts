@@ -165,7 +165,6 @@ const ru: Dictionary = {
   'dashboard.showCard': 'Показать: {metric}',
   'dashboard.retryLoad': 'Повторить',
   'dashboard.allCardsHidden': 'Все карточки скрыты. Нажмите «Настроить», чтобы вернуть их.',
-  'dashboard.noPrimaryData': 'Добавьте первое измерение, чтобы увидеть его здесь.',
   // Russian's four plural categories, selected by Intl.PluralRules:
   // one   — 1, 21, 31…      "1 приём пищи требует проверки"
   // few   — 2–4, 22–24…     "3 приёма пищи требуют проверки"

@@ -361,6 +361,11 @@ export interface DayCompleteness {
 export interface DailyTotal {
   date: string;
   calories: number;
+  // How many of that day's meals are in a status other than `confirmed`, and
+  // so contributed nothing to `calories`. Non-zero means the day's total is
+  // under-counted by an unknown amount, which is not the same thing as a low
+  // total — see database.DailyTotal's own comment.
+  unconfirmed_meals: number;
 }
 
 // Both error classes below set `.name` explicitly and restore the prototype

@@ -193,10 +193,53 @@ export function resolveLoggingGapWindow(now: Date, timezone: string | undefined)
 export interface DayWindowData {
   state: DayCompletenessState;
   calories: number;
+  /**
+   * Count of that day's meals in a status other than `confirmed` (the
+   * daily-totals endpoint's `unconfirmed_meals`) — see `isValidDay`.
+   */
+  unconfirmedMeals: number;
 }
 
-function isValidDayState(state: DayCompletenessState): boolean {
-  return state === 'complete' || state === 'confirmed_complete';
+/**
+ * Whether a day may be averaged into Mean Logged Intake. Two independent
+ * conditions, and both matter:
+ *
+ * - Day Completeness says the day was fully logged (Complete or Confirmed
+ *   Complete — `food-day-completeness`'s own gate, read as-is).
+ * - Every one of that day's meals actually reached `confirmed`, so its
+ *   calorie total is the whole day rather than part of it.
+ *
+ * The second is not implied by the first: Day Completeness counts Eating
+ * Occasions across *every* meal status, while the calorie total sums only
+ * `confirmed` rows. A day whose meals were photographed but whose vision
+ * calls failed (or were never confirmed) is therefore Complete with a total
+ * far below what was eaten — often 0. Averaging that in doesn't merely add
+ * noise, it drags Mean Logged Intake down and manufactures a confident
+ * Logging Gap out of nothing, with a perfectly healthy weight trend so
+ * neither the interval nor the hard floor can catch it.
+ */
+function isValidDay(day: DayWindowData): boolean {
+  if (day.state !== 'complete' && day.state !== 'confirmed_complete') return false;
+  return day.unconfirmedMeals === 0;
+}
+
+/**
+ * The days inside `[windowStartDayOffset, windowLastDayOffset]` that may be averaged into Mean
+ * Logged Intake, per `isValidDay`. Shared by `checkHardFloor` (which counts them against the floor
+ * of 3) and `computeLoggingGap` (which averages them), so the set the floor vouches for is exactly
+ * the set the mean is taken over — the two used to filter `perDayWindowData` differently.
+ */
+function validDaysInWindow(
+  perDayWindowData: Record<number, DayWindowData>,
+  windowStartDayOffset: number,
+  windowLastDayOffset: number
+): DayWindowData[] {
+  return Object.entries(perDayWindowData)
+    .filter(([dayOffsetKey, day]) => {
+      const dayOffset = Number(dayOffsetKey);
+      return dayOffset >= windowStartDayOffset && dayOffset <= windowLastDayOffset && isValidDay(day);
+    })
+    .map(([, day]) => day);
 }
 
 /**
@@ -220,10 +263,7 @@ export function checkHardFloor(
   if (rejected.length > HARD_FLOOR_MAX_REJECTIONS) return true;
   if (bootstrapSiblingAmbiguous) return true;
 
-  const validDayCount = Object.entries(perDayWindowData).filter(([dayOffsetKey, day]) => {
-    const dayOffset = Number(dayOffsetKey);
-    return dayOffset >= windowStartDayOffset && dayOffset <= windowLastDayOffset && isValidDayState(day.state);
-  }).length;
+  const validDayCount = validDaysInWindow(perDayWindowData, windowStartDayOffset, windowLastDayOffset).length;
   if (validDayCount < HARD_FLOOR_MIN_VALID_DAYS) return true;
 
   if (windowLastDayOffset - mostRecentKeptDayOffset > HARD_FLOOR_FRESHNESS_DAYS) return true;
@@ -240,15 +280,26 @@ export type LoggingGapResult =
  * 3 and "Silence rule and hard floor") — called only once `checkHardFloor` has already returned
  * `false`, so a regression exists. `se: null` (fewer than 3 distinct EMA days) is treated as an
  * unbounded `trendErrorKcal`, which always suppresses output via the interval check below.
+ *
+ * Takes the same window bounds `checkHardFloor` does, and scopes `perDayWindowData` with them
+ * itself rather than trusting the caller to have pre-filtered — the two functions are exported
+ * side by side and must not disagree about which days count. The empty-`validDays` guard is
+ * likewise its own: the hard floor already rejects fewer than 3 valid days, but relying on that
+ * makes this function's output depend on a call ordering its signature doesn't express, and the
+ * failure mode is silent — an empty average is `NaN`, `Math.abs(NaN) <= interval` is `false`, so a
+ * `{kind: 'gap'}` carrying `NaN` would render as "NaN–NaN kcal/day".
  */
 export function computeLoggingGap(
   regression: { slope: number; intercept: number },
   se: number | null,
   nutritionTargetCalories: number,
-  perDayWindowData: Record<number, DayWindowData>
+  perDayWindowData: Record<number, DayWindowData>,
+  windowStartDayOffset: number,
+  windowLastDayOffset: number
 ): LoggingGapResult {
   const impliedIntake = nutritionTargetCalories + regression.slope * KCAL_PER_KG;
-  const validDays = Object.values(perDayWindowData).filter(d => isValidDayState(d.state));
+  const validDays = validDaysInWindow(perDayWindowData, windowStartDayOffset, windowLastDayOffset);
+  if (validDays.length === 0) return { kind: 'not_enough_data' };
   const meanLoggedIntake = validDays.reduce((acc, d) => acc + d.calories, 0) / validDays.length;
   const value = impliedIntake - meanLoggedIntake;
 

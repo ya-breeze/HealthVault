@@ -25,6 +25,17 @@ type ContentState =
   | { kind: 'retrieval_error' };
 
 interface LoggingGapCardProps {
+  /**
+   * The caller's IANA timezone, from the settings blob `app/page.tsx` has
+   * already loaded (it does not render this card until `settingsStatus ===
+   * 'loaded'`). Passed down rather than re-fetched here: an own
+   * `api.getSettings()` would duplicate a request the parent already made,
+   * and — since the window boundary must be known before the four content
+   * fetches can be issued — would put a serial round trip in front of them on
+   * every dashboard load. `undefined` resolves the window in UTC, matching
+   * ResolveTimezone's own fail-open default (food_completeness.go).
+   */
+  timezone?: string;
   editing?: boolean;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -63,13 +74,13 @@ function unmetReasonHref(reason: NutritionTargetUnmetReason): string {
  * A Food Card (dashboard-ui, design.md decision 8): computes and renders the
  * Logging Gap — see docs/specs/logging-gap.md. Unlike VitalCard, this card
  * has no `/api/data/{type}` presence signal and owns its own fetch lifecycle
- * (weight, Nutrition Target, Day Completeness, Daily Totals — plus a
- * timezone lookup used only to resolve the window boundary the same way
- * food-day-completeness does, not one of those four content-bearing
- * requests), so its loading/error states are entirely local.
+ * (weight, Nutrition Target, Day Completeness, Daily Totals), so its
+ * loading/error states are entirely local. The window boundary's timezone is
+ * not a fifth request — it comes in as a prop from the parent's settings
+ * load; see `LoggingGapCardProps.timezone`.
  */
 export default function LoggingGapCard({
-  editing, onMoveUp, onMoveDown, moveUpDisabled, moveDownDisabled,
+  timezone, editing, onMoveUp, onMoveDown, moveUpDisabled, moveDownDisabled,
   hidden, onToggleHidden, controlsDisabled,
 }: LoggingGapCardProps) {
   const { t } = useLanguage();
@@ -82,30 +93,18 @@ export default function LoggingGapCard({
     setOutlierExcluded(false);
 
     (async () => {
-      // Timezone drives resolveLoggingGapWindow's "yesterday" boundary the
-      // same way food-day-completeness resolves the caller's Logged Day —
-      // see app/food/history/page.tsx for the same getSettings-for-timezone
-      // pattern. A failure here is the same class of problem as a failed
-      // fetch of the four requests below (network/5xx), so it resolves to
-      // the same "temporarily unavailable" state rather than a fifth,
-      // distinct error surface.
-      let timezone: string | undefined;
-      try {
-        const settings = await api.getSettings();
-        timezone = settings.timezone;
-      } catch {
-        if (!cancelled) setState({ kind: 'retrieval_error' });
-        return;
-      }
-      if (cancelled) return;
-
+      // The timezone prop drives resolveLoggingGapWindow's "yesterday"
+      // boundary the same way food-day-completeness resolves the caller's
+      // Logged Day. It arrives with the parent's own settings load, so there
+      // is no settings failure state to handle here — a settings error keeps
+      // the dashboard grid (and therefore this card) unrendered entirely.
       const gapWindow = resolveLoggingGapWindow(new Date(), timezone);
       const now = new Date();
 
       let weightRaw: Record<string, unknown>[];
       let nutritionTargetCalories: number;
       let completeness: { date: string; state: DayCompletenessState }[];
-      let dailyTotals: { date: string; calories: number }[];
+      let dailyTotals: { date: string; calories: number; unconfirmed_meals: number }[];
       try {
         const [w, nt, c, d] = await Promise.all([
           api.data('weight', gapWindow.leadInFetchFromUTC, now.toISOString()),
@@ -151,6 +150,7 @@ export default function LoggingGapCard({
         perDayWindowData[toDayOffset(total.date)] = {
           state: completenessByDate.get(total.date) ?? 'incomplete',
           calories: total.calories,
+          unconfirmedMeals: total.unconfirmed_meals,
         };
       }
 
@@ -179,7 +179,14 @@ export default function LoggingGapCard({
           .filter(p => p.x >= gapWindow.windowStartDayOffset && p.x <= gapWindow.windowLastDayOffset);
         const { slope, intercept } = linearRegression(points);
         const se = slopeStandardError(points, slope, intercept);
-        const gap = computeLoggingGap({ slope, intercept }, se, nutritionTargetCalories, perDayWindowData);
+        const gap = computeLoggingGap(
+          { slope, intercept },
+          se,
+          nutritionTargetCalories,
+          perDayWindowData,
+          gapWindow.windowStartDayOffset,
+          gapWindow.windowLastDayOffset,
+        );
         result = gap.kind === 'gap' ? { kind: 'gap', value: gap.value, interval: gap.interval } : { kind: 'not_enough_data' };
       }
 
@@ -191,7 +198,7 @@ export default function LoggingGapCard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [timezone]);
 
   const dim = editing && hidden ? ' opacity-40' : '';
 

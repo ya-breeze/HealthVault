@@ -34,9 +34,13 @@ anchor point) — those four are resolved below and are the only judgment calls 
   ADR-006's steps window — never today, which is still in progress):
   - **Implied Intake** = the caller's Nutrition Target `calories` figure, adjusted by the weight
     trend's implied deficit/surplus (`trend slope (kg/day) × 7700`).
-  - **Logging Gap** = Implied Intake − mean logged intake over the window's Complete /
-    Confirmed Complete days only (per `food-day-completeness`'s states) — days that didn't pass that
-    gate are excluded, not averaged in as zero.
+  - **Logging Gap** = Implied Intake − mean logged intake over the window's *valid* days only —
+    Complete / Confirmed Complete (per `food-day-completeness`'s states) **and** with every one of
+    that day's meals actually `confirmed`, so its calorie total is the whole day. Days that didn't
+    pass that gate are excluded, not averaged in as zero. The second condition is not implied by the
+    first: Day Completeness counts Eating Occasions across every meal status while the calorie total
+    sums only `confirmed` rows, so a day whose meals were photographed but whose vision calls failed
+    is Complete with a total far below what was eaten — see decision 5.
   - An **uncertainty interval**, combined in quadrature from the Nutrition Target's fixed ±10%
     Mifflin-St Jeor error and the weight-trend regression's own slope standard error (converted to
     kcal/day via ×7700). Logged intake's own systematic bias (photo portion estimation) is not
@@ -389,6 +393,19 @@ Two distinct gates, evaluated in order:
    specifies one surface string for both, since the distinction (too little data vs. enough data
    but inconclusive) isn't something a user needs to act on differently.
 
+**A valid day is Complete-or-Confirmed-Complete *and* fully confirmed.** `food-day-completeness`'s
+state is necessary but not sufficient, because the two datasets this feature joins disagree about
+meal status: `DayRange` counts Eating Occasions across every status, while decision 7's daily total
+sums `confirmed` rows only. A day whose three meals were all photographed but whose vision calls
+ended `failed` (or were simply never confirmed) is therefore reported Complete with a 0 kcal total.
+Averaged in, such days pull Mean Logged Intake toward zero and produce a confident four-figure
+Logging Gap out of nothing — and nothing downstream can catch it, since the weight trend is
+perfectly healthy, so neither the interval nor any other hard-floor gate widens or fires. Both the
+floor's count and the mean's average therefore exclude any day with a non-`confirmed` meal
+(decision 7's `unconfirmed_meals`). This is not a change to `food-day-completeness`'s own gate — its
+states are still read as-is; the extra condition lives in the `logging-gap` capability, which is the
+only consumer that joins the two datasets.
+
 **The valid-day floor is 3, not "at least one."** `food-day-completeness`'s own "Downstream
 coverage contract" requirement already sets a 3-of-7-Logged-Day minimum for exactly this category of
 feature — it names "an adaptive-TDEE computation" as its example. That contract's 7-day window
@@ -446,13 +463,22 @@ validation order, same caller-only scope, no `?user=` override):
 
 ```
 GET /api/food/daily-totals?from=YYYY-MM-DD&to=YYYY-MM-DD
-[{"date": "2026-08-19", "calories": 1753}, ...]
+[{"date": "2026-08-19", "calories": 1753, "unconfirmed_meals": 0}, ...]
 ```
 
 One entry per day in the resolved range, summed over that day's `confirmed`-status `FoodMeal` rows
 only (unconfirmed/failed/processing meals have no final nutrition numbers, same rule the history
 page's own totals already follow) — a day with none gets a zero, not an omitted entry, so the
 Logging Gap computation can index by date without a presence check first.
+
+`unconfirmed_meals` is how many of that day's rows were in some other status and so contributed
+nothing to `calories`. It exists because "0 kcal" is otherwise ambiguous between a day with no food
+logged and a day whose food was logged but never confirmed, and decision 5's valid-day rule has to
+tell those apart — a zero sum that means "meals are missing" must not be averaged into Mean Logged
+Intake. Any consumer joining this endpoint's totals to `GET /api/food/completeness`'s states needs
+it, because that endpoint counts occasions across every status while this one sums only `confirmed`
+rows. A count rather than a boolean: it costs nothing over the same scan and says how much of the
+day is missing, which a later consumer may want to threshold differently than "any at all".
 
 `calories` only, not protein/carbs/fat: the only consumer this change builds (the Logging Gap
 computation) reads `calories` alone. Macro fields are left out rather than pre-built for a Phase 4
@@ -486,6 +512,14 @@ show. This is a small, additive widening — every existing `DataType`-backed ca
 unchanged — and it's the shape Phase 4's own Food Cards (todo.md: "Card A", "Card B") will need too,
 so it's worth generalizing correctly here rather than hardcoding a single-card special case that
 gets redone at Phase 4.
+
+One consequence is deliberate and worth naming: because `'logging_gap'` is a member of
+`PRIMARY_METRICS` and always passes the presence gate, the presence-filtered card list can never be
+empty again, so hide-unrecorded-data-types' `vitals-grid-empty-no-data` placeholder ("log your
+first reading to see it here") became unreachable. It is removed rather than left as dead code
+gated on a condition that can no longer hold. Nothing is lost: a user with no readings at all now
+sees the Logging Gap Card's own "not enough data yet" state, which says the same thing from inside
+a card that will start showing something once they do log.
 
 ### Risks / Trade-offs
 

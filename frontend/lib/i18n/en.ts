@@ -262,7 +262,6 @@ const en = {
   // Distinct from allCardsHidden: this is "you have never recorded any of
   // these metrics" (Customize can't help — there's nothing to reveal), not
   // "you hid them yourself". See hide-unrecorded-data-types/design.md.
-  'dashboard.noPrimaryData': 'Log your first reading to see it here.',
   // Four plural forms because the dictionary type is shared with ru.ts, which
   // needs all four. English only ever selects 'one' and 'other', so the two
   // middle entries are unreachable here and simply mirror 'other' — see

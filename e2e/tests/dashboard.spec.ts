@@ -708,14 +708,15 @@ test.describe('Data-type presence filtering', () => {
   });
 
   // Predates logging-gap: before it, zero presence across every DataType-backed
-  // primary metric meant presentOrder was genuinely empty, so this placeholder
-  // fired. 'logging_gap' now always has presence (hasCardPresence, design.md
-  // decision 8) and is a member of PRIMARY_METRICS, so presentOrder can no
-  // longer be empty via presence alone — the grid falls through to rendering
-  // the Logging Gap card instead. This is the intended consequence of decision
-  // 8 ("always eligible to render"), not a regression: a user with zero vitals
-  // data now sees the Logging Gap card's own "not enough data" content state
-  // rather than a static dead end, which is strictly more useful.
+  // primary metric meant presentOrder was genuinely empty, so the
+  // `vitals-grid-empty-no-data` placeholder fired. 'logging_gap' now always has
+  // presence (hasCardPresence, design.md decision 8) and is a member of
+  // PRIMARY_METRICS, so presentOrder can no longer be empty via presence alone
+  // — the grid falls through to rendering the Logging Gap card instead, and
+  // that placeholder has been removed as unreachable. This is the intended
+  // consequence of decision 8 ("always eligible to render"), not a regression:
+  // a user with zero vitals data now sees the Logging Gap card's own "not
+  // enough data" content state rather than a static dead end.
   test('zero presence on every DataType-backed metric still renders the grid, with only the Logging Gap card', async ({ page }) => {
     const overrides = Object.fromEntries(PRIMARY_METRIC_TYPES.map(type => [type, false]));
     await page.route('**/api/data-types/presence', route =>
@@ -727,7 +728,6 @@ test.describe('Data-type presence filtering', () => {
     await expect(grid).toBeVisible();
     await expect(grid.locator('> *')).toHaveCount(1);
     await expect(grid.getByTestId('logging-gap-card')).toBeVisible();
-    await expect(page.getByTestId('vitals-grid-empty-no-data')).toHaveCount(0);
     await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
   });
 

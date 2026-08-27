@@ -9,19 +9,33 @@ import (
 )
 
 // DailyTotal is one day's entry in a daily-totals range-query result
-// (design.md §7 "Backend: GET /api/food/daily-totals").
+// (design.md §7 "Backend: GET /api/food/daily-totals"). UnconfirmedMeals is
+// how many of that day's FoodMeal rows are in a status other than
+// `confirmed` and therefore contributed nothing to Calories — the signal a
+// consumer needs to tell "this day really was a 0 kcal day" apart from "this
+// day's total is missing meals I can't see."
 type DailyTotal struct {
-	Date     string  `json:"date"`
-	Calories float64 `json:"calories"`
+	Date             string  `json:"date"`
+	Calories         float64 `json:"calories"`
+	UnconfirmedMeals int     `json:"unconfirmed_meals"`
 }
 
 // DailyTotalsRange computes, for userID across the inclusive Logged-Day
 // range [from, to] (both YYYY-MM-DD strings in loc — the caller is
 // responsible for clamping `to` to exclude today before calling this, same
 // contract as DayRange), one DailyTotal entry per day: the sum of that
-// Logged Day's `confirmed`-status FoodMeal.Calories. A day with no confirmed
-// meals gets a zero entry rather than being omitted, so callers can index by
-// date without a presence check first.
+// Logged Day's `confirmed`-status FoodMeal.Calories, plus a count of that
+// day's rows in any other status. A day with no confirmed meals gets a zero
+// entry rather than being omitted, so callers can index by date without a
+// presence check first.
+//
+// The query itself is deliberately not status-filtered — DayRange
+// (food_completeness.go) counts Eating Occasions across every status, so a
+// day can be Complete on its numbers while some of its meals never reached
+// `confirmed` and contributed no calories here. A consumer that joins the
+// two results (the Logging Gap computation does) would otherwise read that
+// day's under-counted total as fact. Reporting the non-confirmed count
+// alongside the sum lets it exclude such a day instead.
 func DailyTotalsRange(
 	db *gorm.DB, userID uuid.UUID, loc *time.Location, from, to string,
 ) ([]DailyTotal, error) {
@@ -45,24 +59,30 @@ func DailyTotalsRange(
 	windowStart, windowEnd := fromDate.UTC(), toDate.AddDate(0, 0, 1).UTC()
 
 	var meals []FoodMeal
-	if err := db.Select("logged_at", "calories").
-		Where("user_id = ? AND status = ? AND logged_at >= ? AND logged_at < ?",
-			userID, MealStatusConfirmed, windowStart, windowEnd).
+	if err := db.Select("logged_at", "calories", "status").
+		Where("user_id = ? AND logged_at >= ? AND logged_at < ?",
+			userID, windowStart, windowEnd).
 		Find(&meals).Error; err != nil {
 		return nil, fmt.Errorf("query meals: %w", err)
 	}
 	caloriesByDate := make(map[string]float64, len(meals))
+	unconfirmedByDate := make(map[string]int, len(meals))
 	for _, m := range meals {
 		d := LocalDate(m.LoggedAt, loc)
-		caloriesByDate[d] += m.Calories
+		if m.Status == MealStatusConfirmed {
+			caloriesByDate[d] += m.Calories
+			continue
+		}
+		unconfirmedByDate[d]++
 	}
 
 	result := make([]DailyTotal, 0, int(toDate.Sub(fromDate).Hours()/24)+1)
 	for d := fromDate; !d.After(toDate); d = d.AddDate(0, 0, 1) {
 		dateStr := d.Format("2006-01-02")
 		result = append(result, DailyTotal{
-			Date:     dateStr,
-			Calories: caloriesByDate[dateStr],
+			Date:             dateStr,
+			Calories:         caloriesByDate[dateStr],
+			UnconfirmedMeals: unconfirmedByDate[dateStr],
 		})
 	}
 

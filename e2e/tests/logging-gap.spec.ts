@@ -85,7 +85,7 @@ interface LoggingGapFixture {
   nutritionTargetCalories?: number;
   nutritionTargetUnmetReason?: string;
   completeness?: { date: string; state: string }[];
-  dailyTotals?: { date: string; calories: number }[];
+  dailyTotals?: { date: string; calories: number; unconfirmed_meals: number }[];
 }
 
 // Mocks the four requests LoggingGapCard fetches (task 5.1) so its content
@@ -126,8 +126,9 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture) {
 
 // A fixture producing a clearly out-of-interval gap (8.1): steady weight
 // loss (0.2 kg/day, well under the 2 kg/day outlier cap) against a low,
-// constant logged-calorie history, every window day 'complete' so the hard
-// floor never fires and Mean Logged Intake is well below Implied Intake.
+// constant logged-calorie history, every window day 'complete' with all of
+// its meals confirmed, so the hard floor never fires and Mean Logged Intake
+// is well below Implied Intake.
 function clearGapFixture(): LoggingGapFixture {
   const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
   const windowDates = dateRange(windowStart, windowEnd);
@@ -135,7 +136,25 @@ function clearGapFixture(): LoggingGapFixture {
     weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.2),
     nutritionTargetCalories: 2500,
     completeness: windowDates.map(date => ({ date, state: 'complete' })),
-    dailyTotals: windowDates.map(date => ({ date, calories: 500 })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 500, unconfirmed_meals: 0 })),
+  };
+}
+
+// The regression the `unconfirmed_meals` gate exists for: the same steady
+// weight loss and the same 'complete' days as clearGapFixture, but every
+// day's meals failed vision and so summed to 0 kcal. Before the gate, those
+// zeros averaged into Mean Logged Intake and produced a confident ~2500
+// kcal/day "not logged" figure out of a food log that simply hadn't
+// processed. Every day is now disqualified, so the valid-day floor fires
+// instead.
+function unconfirmedMealsFixture(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.2),
+    nutritionTargetCalories: 2500,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 0, unconfirmed_meals: 3 })),
   };
 }
 
@@ -184,6 +203,27 @@ test.describe('Logging Gap Card', () => {
       const card = page.getByTestId('logging-gap-card');
       await expect(card.getByTestId('logging-gap-not-enough-data')).toBeVisible({ timeout: 15_000 });
       await expect(card).toContainText('Not enough data yet');
+      await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('Complete days whose meals never reached confirmed show "not enough data yet", not a fabricated gap', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, unconfirmedMealsFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-not-enough-data')).toBeVisible({ timeout: 15_000 });
       await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
     } finally {
       await putSettings(request, cookies, original);
