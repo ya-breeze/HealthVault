@@ -377,3 +377,84 @@ func TestLoginLimiter_InFlightEntryNeverEvicted(t *testing.T) {
 		}
 	})
 }
+
+// Review finding 1 (regression): a flood of *resolved* failures — one
+// confirmed failed attempt each for ceiling-many throwaway usernames — must
+// not deny admission to a username the limiter has never seen. This is the
+// shape age-only eviction could not evict: every entry has a zero in-flight
+// counter but recent activity, so for loginQuietReset nothing was evictable
+// and every new username was rejected before credential verification ran.
+func TestLoginLimiter_ResolvedFailureFloodDoesNotDenyNewUsernames(t *testing.T) {
+	l := newTestLoginLimiter()
+
+	for i := 0; i < loginMapCeiling; i++ {
+		u := fmt.Sprintf("junk-%d", i)
+		l.admitAttempt(u)
+		l.recordFailure(u)
+	}
+	if len(l.entries) != loginMapCeiling {
+		t.Fatalf("expected the flood to fill the map to the ceiling, got %d entries", len(l.entries))
+	}
+
+	allowed, retryAfter := l.admitAttempt("brand-new")
+	if !allowed {
+		t.Fatalf("a never-seen username must still be admitted after a resolved-failure flood (retryAfter %v)", retryAfter)
+	}
+	if len(l.entries) > loginMapCeiling {
+		t.Fatalf("expected the ceiling to hold, got %d entries", len(l.entries))
+	}
+}
+
+// Review finding 1: the flood displaces its own junk before it touches an
+// active lockout — evictTierFailures sorts below evictTierLocked.
+func TestLoginLimiter_LockoutOutlivesResolvedFailureFlood(t *testing.T) {
+	l := newTestLoginLimiter()
+
+	fiveFailures(l, "victim")
+	if l.entries[normalizeLoginUsername("victim")].lockedUntil.IsZero() {
+		t.Fatalf("expected 'victim' to be locked out")
+	}
+
+	for i := 0; i < loginMapCeiling+50; i++ {
+		u := fmt.Sprintf("junk-%d", i)
+		l.admitAttempt(u)
+		l.recordFailure(u)
+	}
+
+	got := l.entries[normalizeLoginUsername("victim")]
+	if got == nil {
+		t.Fatalf("expected 'victim' to survive a resolved-failure flood")
+	}
+	if got.lockedUntil.IsZero() {
+		t.Fatalf("expected 'victim' to remain locked out after the flood")
+	}
+}
+
+// Review finding 2: a successful login records activity, so a legitimate
+// account holds its map slot instead of being swept on the next admission.
+// While it did not, no real account was ever present in the map, which is
+// what let the flood above deny login to everyone rather than only to
+// usernames not seen before.
+func TestLoginLimiter_SuccessfulLoginHoldsItsSlot(t *testing.T) {
+	l := newTestLoginLimiter()
+
+	l.admitAttempt("alice")
+	l.recordSuccess("alice")
+
+	entry := l.entries[normalizeLoginUsername("alice")]
+	if entry == nil {
+		t.Fatalf("expected an entry for 'alice' after a successful login")
+	}
+	if entry.lastActivity.IsZero() {
+		t.Fatalf("expected recordSuccess to record activity")
+	}
+	if entry.isExpired(time.Now()) {
+		t.Fatalf("a just-succeeded entry must not count as expired")
+	}
+
+	// Drive a sweep via another username's admission and confirm it survives.
+	l.admitAttempt("someone-else")
+	if l.entries[normalizeLoginUsername("alice")] == nil {
+		t.Fatalf("expected 'alice' to survive the sweep after a successful login")
+	}
+}

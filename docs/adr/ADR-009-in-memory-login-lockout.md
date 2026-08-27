@@ -51,9 +51,25 @@ runs, and only a confirmed 401 (via `recordFailure`) ever advances the failure c
 lockout — so a burst of concurrent *correct*-password requests can never trip a real lockout.
 Because there is no background goroutine, stale entries are reclaimed lazily: `admitAttempt`
 sweeps a bounded number of the oldest expired entries on every call, and a hard map-size ceiling
-evicts the oldest expired entry to make room for a new one — never a live entry (active lockout,
-nonzero failure count, or nonzero in-flight counter) — failing closed (429) if every entry is
-still live when the ceiling is hit.
+evicts one entry to make room for a new one, **graded by what that entry is protecting** — expired
+first, then idle, then partial failure progress, oldest-first within each — failing closed (429)
+only when every entry holds an active lockout or an attempt still inside credential verification.
+
+Alongside it, a **process-wide cap on concurrent credential verifications**. The per-username
+limiter bounds one account's attempts and nothing else: every unknown username runs a full-cost
+bcrypt compare before its 401 (which is what closes the enumeration oracle), so cheap requests
+across distinct usernames bought unbounded CPU. The two answer different attacks — per-username
+lockout answers targeted credential stuffing, the global cap answers volume — and neither
+substitutes for the other.
+
+> **Correction (review of the implementing PR).** As first written, eviction ranked entries by age
+> alone and `recordSuccess` never updated `lastActivity`. Together those made the ceiling a login
+> denial-of-service: a successful login left an entry that was immediately expired and swept, so no
+> real account was ever in the map, and one failed attempt against each of 1000 throwaway usernames
+> filled it with entries nothing could evict for 24 hours — after which every username without an
+> entry was refused before verification. Roughly 1000 cheap, trickle-able requests to stop everyone
+> logging in. The reasoning that picked fail-closed over admitting-unrecorded weighed it only
+> against losing the limiter for untouched accounts, and never against nobody logging in at all.
 
 ### Consequences
 
@@ -64,9 +80,17 @@ still live when the ceiling is hit.
   here) would be a spoofable input. Per-username is sufficient for the stated threat (unlimited
   credential guessing against one account).
 - **Bounded map size, not unlimited growth.** An attacker submitting a distinct, never-repeated
-  username per request cannot grow the map without bound, because the ceiling forces eviction of
-  the oldest expired entry — or, if none are expired, fails the new request closed — rather than
-  admitting it unrecorded.
+  username per request cannot grow the map without bound: the ceiling forces eviction of the most
+  disposable entry rather than admitting the attempt unrecorded.
+- **An active lockout is never evicted, and the fail-closed path survives because of that.**
+  Sacrificing a lockout to admit a stranger would hand back precisely the targeted-guessing
+  protection this exists to provide. So fail-closed remains reachable — but only by tripping and
+  re-tripping 1000 separate lockouts, five full-cost verifications each, throttled by the global
+  cap, and only until those lockouts expire on their own. That is a different order of attack from
+  the 1000 cheap requests the correction above describes.
+- **The global cap can reject a legitimate login under load.** It returns the same 429 shape with a
+  1-second retry hint, and at 8 concurrent verifications against a handful of users the bound is
+  reached only under an attack or a thundering herd, both of which are the cases it exists for.
 - **No per-deployment tuning.** Threshold, window, and backoff schedule are Go constants, not env
   config — consistent with this project's scale guidance against complexity nothing has asked for.
 - This is the precedent future rate-limiting/lockout decisions in this codebase or `kin-core`

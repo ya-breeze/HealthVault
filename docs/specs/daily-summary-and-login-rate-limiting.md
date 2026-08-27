@@ -65,6 +65,33 @@ computation is modeled as nullable and always null here. `RequireAuth` gains no
 exclusively, and the Android client is expected to keep a cookie jar. Adding real header support is a
 follow-up decision for whoever starts `healthvault-android`, not a prerequisite for this change.
 
+**Review correction — the ceiling was a login DoS.** As first written, an entry counted as
+evictable only after 24h of quiet, and `recordSuccess` never touched `lastActivity`. Two
+consequences compounded: a successful login left an entry that was *immediately* expired and swept,
+so real accounts held no slot; and one failed login against each of 1000 throwaway usernames filled
+the map with entries nothing could evict for a day, after which every username without an existing
+entry was rejected with 429 before credential verification ran. 1000 cheap, trickle-able requests
+denied login to everyone — on the endpoint this change exists to put on the open internet. Fail-closed
+was chosen over admitting-unrecorded on the grounds that losing the limiter for untouched accounts
+was worse; what that reasoning missed is that the alternative outcome is nobody logging in at all.
+
+Eviction is now **graded by what the entry is protecting** rather than by age alone — expired, then
+idle, then partial failure progress — oldest-first within a tier, while an active lockout and an
+attempt still inside credential verification are never evicted at all. So a flood displaces its own
+junk and stops there. Fail-closed still exists, but reaching it now means tripping and re-tripping
+1000 separate lockouts at five full-cost verifications each, and it lasts only until those lockouts
+expire. Sacrificing a lockout to admit a stranger was the alternative, and it would give back exactly
+the targeted-guessing protection the limiter is for. The cost of those verifications is bounded by
+the other half —
+
+**a global cap on concurrent credential verifications.** The per-username limiter never bounded total
+work: every unknown username runs a full-cost bcrypt compare before its 401 (which is what closes the
+enumeration oracle), so cheap HTTP requests from distinct usernames bought unbounded server CPU. A
+process-wide semaphore now bounds verifications in flight; over the bound returns the same 429 shape.
+Per-username lockout answers targeted credential stuffing, the global cap answers volume, and neither
+substitutes for the other. `Retry-After` accompanies every 429 so an unattended client — the widget
+this is all for — can back off without parsing the body.
+
 **Finishing note.** This change was implemented before OpenSpec was retired, so it originally lived
 in `openspec/changes/daily-summary-and-login-rate-limiting/`. That tree was deleted from `main` in
 #43 while this branch was in flight; the branch's copy went with it in the merge, and this file
@@ -129,7 +156,24 @@ is renumbered to ADR-009 here.
 ### Task 5: Documentation and verification
 
 - [x] Record the in-memory, per-process lockout decision as an ADR, `Accepted` on merge
+- [x] Fold the review's corrections into it: graded eviction, and the global verification cap
 - [x] Renumber it to ADR-009 after `ADR-008-bottom-clearance-as-a-css-token` merged to `main` first
 - [x] Replace the retired `openspec/changes/` entry with this file
 - [x] `make lint` and `make test` pass on the tree merged with `main`
+- [x] Mark completed
+
+### Task 6: Review corrections
+
+- [x] Set `lastActivity` on success, so an account that logs in normally holds its slot
+- [x] Replace age-only eviction with the graded tiers, oldest-first within a tier, never evicting an
+      entry with an attempt in flight
+- [x] Bound concurrent credential verifications process-wide, releasing the reserved in-flight slot
+      when the bound rejects an attempt
+- [x] Send `Retry-After` alongside every 429 body
+- [x] Surface the lockout on the login page — retry time from the response, never "Invalid
+      credentials"
+- [x] Read the caller's settings once per `/api/summary/today` request instead of three times
+- [x] Cover the resolved-failure flood: it must not deny a new username, and must not strip a lockout
+      before its own junk
+- [x] Cover the global cap: attempts beyond it are rejected with the 429 shape and release their slot
 - [x] Mark completed

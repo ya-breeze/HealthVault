@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -35,11 +36,18 @@ type authHandlers struct {
 	cookieCfg cookies.Config
 }
 
-// writeTooManyAttempts writes the 429 response shape shared by all three
-// login-limiter rejection cases (real lockout, in-flight capacity, ceiling
-// fail-closed). No cookies are set.
+// writeTooManyAttempts writes the 429 response shape shared by every
+// login-limiter rejection case (real lockout, in-flight capacity, the
+// process-wide verification cap, ceiling fail-closed). No cookies are set.
+//
+// The retry hint goes out twice on purpose: in the body for the web client,
+// and as the standard Retry-After header for everything else. The widget
+// this endpoint exists for refreshes unattended in the background, and HTTP
+// client libraries and intermediate proxies honour the header without being
+// taught this endpoint's body shape.
 func writeTooManyAttempts(w http.ResponseWriter, retryAfter time.Duration) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", strconv.Itoa(ceilRetryAfter(retryAfter)))
 	w.WriteHeader(http.StatusTooManyRequests)
 	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 		"error":               "too_many_attempts",
@@ -73,6 +81,19 @@ func (h *authHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		writeTooManyAttempts(w, retryAfter)
 		return
 	}
+
+	// The per-username reservation above bounds one account's attempts; this
+	// bounds the bcrypt work the process will do at once for all of them.
+	// Releasing the reservation on rejection is what keeps a burst from
+	// leaving phantom in-flight attempts behind — verification never ran,
+	// so this attempt is neither a failure nor a success.
+	if !acquireVerifySlot() {
+		releaseAttempt(req.Username)
+		writeTooManyAttempts(w, loginCapacityRetryAfter)
+		return
+	}
+	defer releaseVerifySlot()
+
 	if afterAdmitHook != nil {
 		afterAdmitHook()
 	}

@@ -60,12 +60,17 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		loc, err := callerTimezone(storage, claims.UserID)
+		// One settings read for all three things this response needs from it
+		// — timezone, profile, display language. The endpoint exists so a
+		// widget makes one cheap call instead of three; triplicating the row
+		// read inside it would give that back.
+		settingsJSON, err := readUserSettingsJSON(storage, claims.UserID)
 		if err != nil {
 			slog.Error("SummaryTodayHandler: read user settings", "err", err, "user_id", claims.UserID)
 			http.Error(w, "query error", http.StatusInternalServerError)
 			return
 		}
+		loc := database.ResolveTimezone(settingsJSON)
 
 		now := time.Now().UTC()
 
@@ -75,7 +80,8 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		values, unavailableReason, err := computeUserNutritionTarget(storage, claims.UserID, now)
+		values, unavailableReason, err := computeNutritionTargetForProfile(
+			storage, claims.UserID, now, parseUserProfile(settingsJSON))
 		if err != nil {
 			writeQueryError(w, "summary today: compute nutrition target", err, claims.UserID)
 			return
@@ -103,27 +109,27 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 			FatGramsConsumed:     summary.FatGramsConsumed,
 			MealCount:            summary.MealCount,
 			LastLoggedAt:         lastLoggedAt,
-			DisplayLanguage:      DisplayLanguage(storage, claims.UserID),
+			DisplayLanguage:      displayLanguageFromSettings(settingsJSON),
 			Target:               target,
 			Recommendation:       nil,
 		})
 	}
 }
 
-// callerTimezone resolves userID's timezone from their stored settings, the
-// same "no settings row yet is the ordinary case" pattern
-// foodHandlers.callerTimezoneAndThreshold uses: a missing row falls back to
-// defaults (UTC, via database.ResolveTimezone) rather than surfacing an
-// error, since a user who has never opened settings is normal, not a
-// failure. Any other read error is propagated to the caller to turn into a
-// 500.
-func callerTimezone(storage database.Storage, userID uuid.UUID) (*time.Location, error) {
+// readUserSettingsJSON reads userID's settings blob with the same "no
+// settings row yet is the ordinary case" handling
+// foodHandlers.callerTimezoneAndThreshold uses: a missing row yields an empty
+// blob, which every interpreter below turns into its documented default (UTC
+// for the timezone, an empty profile, the default display language), since a
+// user who has never opened settings is normal rather than a failure. Any
+// other read error is propagated to the caller to turn into a 500.
+func readUserSettingsJSON(storage database.Storage, userID uuid.UUID) (string, error) {
 	settingsJSON, err := storage.GetUserSettings(userID)
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
+			return "", err
 		}
-		settingsJSON = ""
+		return "", nil
 	}
-	return database.ResolveTimezone(settingsJSON), nil
+	return settingsJSON, nil
 }

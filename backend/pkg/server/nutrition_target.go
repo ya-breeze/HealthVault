@@ -92,6 +92,15 @@ func computeUserNutritionTarget(
 	if err != nil {
 		return nutritionTargetValues{}, "", fmt.Errorf("read user profile: %w", err)
 	}
+	return computeNutritionTargetForProfile(storage, userID, now, profile)
+}
+
+// computeNutritionTargetForProfile is computeUserNutritionTarget for a caller
+// that has already read the settings blob, so the profile is not fetched a
+// second time. Same contract otherwise.
+func computeNutritionTargetForProfile(
+	storage database.Storage, userID uuid.UUID, now time.Time, profile userProfile,
+) (values nutritionTargetValues, unavailableReason string, err error) {
 	if !profile.HasBirthdate || !profile.HasSex {
 		return nutritionTargetValues{}, "missing_profile", nil
 	}

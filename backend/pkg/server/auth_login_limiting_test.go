@@ -3,10 +3,13 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -249,5 +252,101 @@ func TestLogin_ConcurrentCorrectPasswordNeverTripsLockout(t *testing.T) {
 	finalRec := doLogin(h, username, "goodpass")
 	if finalRec.Code != http.StatusOK {
 		t.Fatalf("expected a follow-up login to succeed — no real lockout should ever have been tripped, got %d", finalRec.Code)
+	}
+}
+
+// Review finding 5: every 429 carries the standard Retry-After header, not
+// just the JSON body. The widget refreshes unattended, and HTTP clients and
+// proxies back off on the header without knowing this endpoint's body shape.
+func TestLogin_LockoutSetsRetryAfterHeader(t *testing.T) {
+	h, storage := newLoginTestHandlers(t)
+	createLoginTestUser(t, storage, "header-user", "correct-password")
+
+	for i := 0; i < loginLockoutThreshold; i++ {
+		doLogin(h, "header-user", "wrong-password")
+	}
+
+	rec := doLogin(h, "header-user", "correct-password")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 once locked out, got %d", rec.Code)
+	}
+	retryAfter := rec.Header().Get("Retry-After")
+	if retryAfter == "" {
+		t.Fatalf("expected a Retry-After header on the 429")
+	}
+	secs, err := strconv.Atoi(retryAfter)
+	if err != nil || secs <= 0 {
+		t.Fatalf("expected Retry-After to be a positive whole number of seconds, got %q", retryAfter)
+	}
+
+	var body struct {
+		RetryAfterSeconds int `json:"retry_after_seconds"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode 429 body: %v", err)
+	}
+	if body.RetryAfterSeconds != secs {
+		t.Fatalf("header and body disagree: header %d, body %d", secs, body.RetryAfterSeconds)
+	}
+}
+
+// Review finding 4: the per-username limiter bounds one account's attempts,
+// not the process's total bcrypt work — every unknown username runs a
+// full-cost compare before its 401. Attempts beyond loginVerifyConcurrency
+// are rejected with the standard 429 shape before verification begins, and
+// the reservation each one took is released so no phantom in-flight attempts
+// are left behind.
+func TestLogin_GlobalVerifyCapRejectsExcessConcurrency(t *testing.T) {
+	h, storage := newLoginTestHandlers(t)
+	createLoginTestUser(t, storage, "cap-user", "correct-password")
+
+	admitted := make(chan struct{})
+	release := make(chan struct{})
+	orig := afterAdmitHook
+	afterAdmitHook = func() {
+		admitted <- struct{}{}
+		<-release
+	}
+	defer func() { afterAdmitHook = orig }()
+
+	// Hold every verification slot open, each under its own username so the
+	// per-username in-flight cap is never what does the rejecting.
+	var wg sync.WaitGroup
+	for i := 0; i < loginVerifyConcurrency; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			doLogin(h, fmt.Sprintf("holder-%d", i), "wrong-password")
+		}(i)
+	}
+	for i := 0; i < loginVerifyConcurrency; i++ {
+		<-admitted
+	}
+
+	rec := doLogin(h, "cap-user", "correct-password")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 once every verification slot is held, got %d", rec.Code)
+	}
+	var body struct {
+		Error             string `json:"error"`
+		RetryAfterSeconds int    `json:"retry_after_seconds"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode 429 body: %v", err)
+	}
+	if body.Error != "too_many_attempts" || body.RetryAfterSeconds <= 0 {
+		t.Fatalf("expected the standard 429 shape, got %+v", body)
+	}
+	if entry := globalLoginLimiter.entries[normalizeLoginUsername("cap-user")]; entry != nil && entry.inFlight != 0 {
+		t.Fatalf("expected the rejected attempt to release its reservation, in-flight is %d", entry.inFlight)
+	}
+
+	close(release)
+	wg.Wait()
+	afterAdmitHook = orig
+
+	// Slots are released, so a correct password gets through as normal.
+	if rec := doLogin(h, "cap-user", "correct-password"); rec.Code != http.StatusOK {
+		t.Fatalf("expected a normal login to succeed once the slots are freed, got %d", rec.Code)
 	}
 }

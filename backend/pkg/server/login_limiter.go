@@ -33,10 +33,64 @@ const (
 	// admitAttempt call, so a large backlog of expired entries can't turn
 	// one call into an unbounded scan-and-delete.
 	loginSweepBatchSize = 16
-	// loginCapacityRetryAfter is the fixed retry-after used for the two
+	// loginCapacityRetryAfter is the fixed retry-after used for the
 	// rejection cases that are not a timed lockout: in-flight capacity
-	// saturation and ceiling fail-closed.
+	// saturation, the global verification cap, and ceiling fail-closed.
 	loginCapacityRetryAfter = 1 * time.Second
+	// loginVerifyConcurrency bounds how many credential verifications may
+	// run at once across *all* usernames. The per-username limiter does not
+	// bound total work: every unknown username runs a full-cost bcrypt
+	// compare before its 401 (that is what closes the enumeration oracle),
+	// so without this a cheap request from each of many distinct usernames
+	// buys unbounded server CPU. Sized well above this project's realistic
+	// concurrent-login count and well below loginMapCeiling — the latter
+	// matters, because it is what keeps the ceiling's fail-closed path
+	// unreachable: only an entry with an attempt in flight is inevictable,
+	// and at most this many can be in flight at once.
+	loginVerifyConcurrency = 8
+)
+
+// Eviction tiers, ranked by how much protection is lost by evicting the
+// entry: lower is more disposable. The ceiling evicts the lowest-tier entry
+// available, oldest-first within a tier, so a flood of throwaway usernames
+// displaces its own junk long before it reaches anything real. The top two
+// tiers are never evicted at all.
+//
+// Ranking by tier rather than by age alone is not a refinement, it is the
+// fix for a login denial-of-service: with age as the only criterion, one
+// failed attempt against each of loginMapCeiling throwaway usernames filled
+// the map with entries nothing could evict for loginQuietReset, and every
+// username without an existing entry was then rejected before credential
+// verification ran — 1000 cheap requests, 24 hours of nobody logging in.
+//
+// An active lockout stays inevictable, so what remains possible is far more
+// expensive and far shorter-lived: an attacker must trip and keep tripping
+// loginMapCeiling separate lockouts (five confirmed failures each, every one
+// of them paying full bcrypt cost through loginVerifyConcurrency) to force
+// the fail-closed path, and it lasts only until those lockouts expire.
+// Sacrificing a lockout instead would hand back exactly the targeted
+// credential-stuffing protection this limiter exists to provide.
+const (
+	// evictTierExpired: quiet past the reset window — nothing left to protect.
+	evictTierExpired = iota
+	// evictTierIdle: no lockout and no failures in the window; only the
+	// backoff level survives, and only until loginQuietReset would clear it.
+	evictTierIdle
+	// evictTierFailures: partial progress toward a lockout. Evicting one
+	// costs an attacker's own accumulated failures as readily as a real
+	// user's, and neither has protection to lose yet.
+	evictTierFailures
+	// evictTierLocked: an active lockout. Never evicted — it is the
+	// protection, and it expires on its own.
+	evictTierLocked
+	// evictTierPinned: an admitted attempt is still inside credential
+	// verification. Never evicted: dropping the entry would discard the
+	// decrement its resolver is about to make.
+	evictTierPinned
+
+	// evictTierProtected is the first inevictable tier: an entry at or above
+	// it is kept even when that means rejecting a brand-new username.
+	evictTierProtected = evictTierLocked
 )
 
 // loginBackoffSchedule is the exponential backoff schedule applied on each
@@ -64,11 +118,18 @@ type loginLimiterEntry struct {
 	backoffLevel int
 	// lockedUntil is the time the current lockout (if any) expires.
 	lockedUntil time.Time
-	// lastActivity is updated on every confirmed failure and on lockout
-	// trip. It is never cleared by the trailing-window reset. Together
-	// with inFlight, it defines "expired" for sweep/ceiling eviction: an
-	// entry is expired only if lastActivity is well past the quiet-reset
-	// window and inFlight is zero.
+	// lastActivity is updated on every confirmed failure, on lockout trip,
+	// and on a successful login. It is never cleared by the trailing-window
+	// reset. Together with inFlight, it defines "expired" for sweep/ceiling
+	// eviction: an entry is expired only if lastActivity is well past the
+	// quiet-reset window and inFlight is zero.
+	//
+	// Success updates it for the same reason failure does: an account that
+	// logs in normally has to hold its slot. While it did not, every
+	// successful login left an entry that was immediately expired and swept
+	// on the next admitAttempt, so no legitimate account was ever present
+	// in the map — which is what let a flood of throwaway usernames deny
+	// login to *everyone* rather than only to usernames not seen before.
 	lastActivity time.Time
 }
 
@@ -134,27 +195,49 @@ func (l *loginLimiter) sweepLocked(now time.Time) {
 	}
 }
 
-// evictOldestExpiredLocked removes a single oldest expired entry to make
-// room at the ceiling. Returns true if an entry was evicted. Caller must
-// hold l.mu. Never evicts a live entry (active lockout, nonzero trailing
-// failure count, or nonzero in-flight counter) — those never satisfy
-// isExpired.
-func (l *loginLimiter) evictOldestExpiredLocked(now time.Time) bool {
-	var oldestKey string
-	var oldestActivity time.Time
+// evictionTier ranks the entry for ceiling eviction; see the tier constants
+// for what each means and why the ranking exists. Caller must hold l.mu
+// (pruneFailures mutates the entry).
+func (e *loginLimiterEntry) evictionTier(now time.Time) int {
+	if e.inFlight > 0 {
+		return evictTierPinned
+	}
+	if e.lockedUntil.After(now) {
+		return evictTierLocked
+	}
+	e.pruneFailures(now)
+	if len(e.failures) > 0 {
+		return evictTierFailures
+	}
+	if now.Sub(e.lastActivity) > loginQuietReset {
+		return evictTierExpired
+	}
+	return evictTierIdle
+}
+
+// evictOneLocked removes a single most-disposable entry to make room at the
+// ceiling: the lowest eviction tier present, and within that tier the one
+// idle longest. Returns false when every entry is at or above
+// evictTierProtected, which is the fail-closed path. Caller must hold l.mu.
+func (l *loginLimiter) evictOneLocked(now time.Time) bool {
+	var bestKey string
+	var bestActivity time.Time
+	bestTier := evictTierProtected
 	found := false
 	for k, e := range l.entries {
-		if !e.isExpired(now) {
+		tier := e.evictionTier(now)
+		if tier >= evictTierProtected {
 			continue
 		}
-		if !found || e.lastActivity.Before(oldestActivity) {
-			oldestKey = k
-			oldestActivity = e.lastActivity
+		if !found || tier < bestTier || (tier == bestTier && e.lastActivity.Before(bestActivity)) {
+			bestKey = k
+			bestTier = tier
+			bestActivity = e.lastActivity
 			found = true
 		}
 	}
 	if found {
-		delete(l.entries, oldestKey)
+		delete(l.entries, bestKey)
 	}
 	return found
 }
@@ -177,7 +260,7 @@ func (l *loginLimiter) admitAttempt(username string) (allowed bool, retryAfter t
 	entry, ok := l.entries[key]
 	if !ok {
 		if len(l.entries) >= loginMapCeiling {
-			if !l.evictOldestExpiredLocked(now) {
+			if !l.evictOneLocked(now) {
 				return false, loginCapacityRetryAfter
 			}
 		}
@@ -251,6 +334,7 @@ func (l *loginLimiter) tripLockoutLocked(entry *loginLimiterEntry, now, prevActi
 // in-flight counter, then clears the confirmed failure count and backoff
 // level entirely.
 func (l *loginLimiter) recordSuccess(username string) {
+	now := time.Now()
 	key := normalizeLoginUsername(username)
 
 	l.mu.Lock()
@@ -266,6 +350,7 @@ func (l *loginLimiter) recordSuccess(username string) {
 	entry.failures = entry.failures[:0]
 	entry.backoffLevel = 0
 	entry.lockedUntil = time.Time{}
+	entry.lastActivity = now
 }
 
 // releaseAttempt resolves one admitted attempt as neither a confirmed
@@ -314,4 +399,28 @@ func recordSuccess(username string) {
 
 func releaseAttempt(username string) {
 	globalLoginLimiter.releaseAttempt(username)
+}
+
+// loginVerifySlots bounds concurrent credential verifications process-wide.
+// A buffered channel rather than a counter because the bound must be
+// acquired without blocking: an attempt that cannot get a slot is rejected
+// with the standard 429 shape, not queued behind bcrypt work that an
+// attacker chose the volume of.
+var loginVerifySlots = make(chan struct{}, loginVerifyConcurrency)
+
+// acquireVerifySlot reserves one of the process-wide verification slots,
+// reporting false immediately if all of them are taken.
+func acquireVerifySlot() bool {
+	select {
+	case loginVerifySlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// releaseVerifySlot returns a slot taken by acquireVerifySlot. Only ever
+// called after a successful acquire, so the receive cannot block.
+func releaseVerifySlot() {
+	<-loginVerifySlots
 }
