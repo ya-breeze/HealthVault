@@ -311,3 +311,7 @@ func recordFailure(username string) {
 func recordSuccess(username string) {
 	globalLoginLimiter.recordSuccess(username)
 }
+
+func releaseAttempt(username string) {
+	globalLoginLimiter.releaseAttempt(username)
+}

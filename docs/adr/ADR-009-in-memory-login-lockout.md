@@ -1,4 +1,4 @@
-# ADR-008: In-Memory, Per-Process Login Attempt Limiting
+# ADR-009: In-Memory, Per-Process Login Attempt Limiting
 
 ## Status
 Accepted
@@ -18,8 +18,8 @@ scoped locally to HealthVault?
 
 - This is the first rate-limiting/lockout mechanism anywhere in this codebase or in `kin-core` —
   there is no existing precedent to extend.
-- `openspec/config.yaml` constrains the backend to no background job infrastructure —
-  `ListenAndServe` is the only goroutine — ruling out a ticker-based cleanup process.
+- The backend has no background job infrastructure — `ListenAndServe` is the only goroutine —
+  ruling out a ticker-based cleanup process.
 - This project runs as a single backend process for a handful of users (`/data/CLAUDE.md`'s scale
   guidance); distributed or shared-state rate limiting is not a real requirement here.
 - Extending `kin-core/authdb` would require a schema/version bump to a shared library for a
