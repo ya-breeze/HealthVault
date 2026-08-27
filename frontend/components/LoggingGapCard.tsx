@@ -61,7 +61,7 @@ function unmetReasonHref(reason: NutritionTargetUnmetReason): string {
 
 /**
  * A Food Card (dashboard-ui, design.md decision 8): computes and renders the
- * Logging Gap — see openspec/changes/logging-gap. Unlike VitalCard, this card
+ * Logging Gap — see docs/specs/logging-gap.md. Unlike VitalCard, this card
  * has no `/api/data/{type}` presence signal and owns its own fetch lifecycle
  * (weight, Nutrition Target, Day Completeness, Daily Totals — plus a
  * timezone lookup used only to resolve the window boundary the same way

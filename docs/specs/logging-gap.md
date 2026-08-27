@@ -3,8 +3,9 @@ Idea: ya-breeze/idea-forge#10
 
 > Converted from `openspec/changes/logging-gap/` on 2026-08-26, when OpenSpec was retired
 > (idea-forge ADR-0009 / ya-breeze/idea-forge#26). The `Why` and `How` below are that change's
-> `proposal.md` and `design.md`; the task list is its `tasks.md` with tick state carried across
-> unchanged — 28 of 38 done. Only `9.4 openspec validate` was dropped, having lost its subject.
+> `proposal.md` and `design.md`; the task list is its `tasks.md` with tick state carried across.
+> Only `9.4 openspec validate` was dropped, having lost its subject; all remaining 37 tasks are
+> done.
 
 ## Why
 

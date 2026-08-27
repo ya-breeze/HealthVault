@@ -1,8 +1,8 @@
 // Pure computation library for the Logging Gap card (logging-gap capability) — see
-// openspec/changes/logging-gap/design.md for the full rationale behind each rule below. Kept
+// docs/specs/logging-gap.md's "How" section for the full rationale behind each rule below. Kept
 // framework-free (no fetch, no React) so every step is unit-testable on its own; the card
 // component (task 5) owns fetching the four inputs and wiring these functions together in the
-// order design.md's "Silence rule and hard floor" requires.
+// order the spec's "Silence rule and hard floor" requires.
 
 import { toDayOffset } from './dataTypeMeta';
 import { loggedDayKey } from './loggedDay';

@@ -177,6 +177,21 @@ func TestGetFoodDailyTotals_BadRequests(t *testing.T) {
 	}
 }
 
+func TestGetFoodDailyTotals_ExactlyMaxSpanSucceeds(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	from := time.Now().UTC().AddDate(0, 0, -92).Format("2006-01-02")
+
+	w := httptest.NewRecorder()
+	h.GetFoodDailyTotals(w, withClaims(dailyTotalsRequest(fmt.Sprintf("from=%s&to=%s", from, yesterday)), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for exactly a 92-day span, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestGetFoodDailyTotals_Unauthorized(t *testing.T) {
 	st := newFoodTestStorage(t)
 	h := server.NewFoodHandlers(st, nil, t.TempDir())

@@ -162,6 +162,16 @@ describe('rejectOutliers', () => {
     ]);
     expect(result.bootstrapSiblingAmbiguous).toBe(false);
   });
+
+  it('keeps a candidate at exactly the 2.0 kg/day rate cap (boundary, not >)', () => {
+    const records: DayValueRecord[] = [
+      { day: 0, value: 90.0 },
+      { day: 1, value: 92.0 },
+    ];
+    const result = rejectOutliers(records);
+    expect(result.rejected).toEqual([]);
+    expect(result.kept).toEqual(records);
+  });
 });
 
 describe('slopeStandardError', () => {
@@ -521,6 +531,27 @@ describe('computeLoggingGap', () => {
     expect(result.kind).toBe('gap');
     if (result.kind === 'gap') {
       expect(result.value).toBeCloseTo(-900, 6);
+      expect(result.interval).toBeCloseTo(310, 6);
+    }
+  });
+
+  it('folds a non-zero weight-trend slope into Implied Intake via KCAL_PER_KG', () => {
+    // slope -0.2 kg/day of weight loss implies eating 0.2 * 7700 = 1540 kcal/day less than the
+    // nutrition target: impliedIntake = 3100 - 1540 = 1560. Mean Logged Intake of 1200 gives a
+    // hand-computed value of 360, clearly outside the 310 formula-error-only interval.
+    const result = computeLoggingGap(
+      { slope: -0.2, intercept: 80 },
+      0,
+      3100,
+      perDayWindowData([
+        { state: 'complete', calories: 1200 },
+        { state: 'complete', calories: 1200 },
+        { state: 'complete', calories: 1200 },
+      ])
+    );
+    expect(result.kind).toBe('gap');
+    if (result.kind === 'gap') {
+      expect(result.value).toBeCloseTo(360, 6);
       expect(result.interval).toBeCloseTo(310, 6);
     }
   });

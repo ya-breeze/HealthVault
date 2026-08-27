@@ -95,7 +95,7 @@ thread vs. ephemeral per session) — both deferred to this phase's own
 ## Idea #10 — Logging Gap Card (was "adaptive TDEE from energy balance")
 
 **Shipped** by the `logging-gap` change ([PR #39](https://github.com/ya-breeze/HealthVault/pull/39);
-see ADR-010; archived at `openspec/changes/archive/`).
+see ADR-010; converted to `docs/specs/logging-gap.md` when OpenSpec was retired mid-implementation).
 
 Idea #10 started, and is still filed, under its original title — "adaptive TDEE from energy
 balance (replaces activity multiplier)" — but grilling it (idea-forge issue, "Grilled — the
