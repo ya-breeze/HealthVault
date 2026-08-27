@@ -104,7 +104,7 @@ anchor point) — those four are resolved below and are the only judgment calls 
   `frontend/lib/vitals.ts` (registry generalization), a new `LoggingGapCard` component, `app/page.tsx`
   (renders the new card, wires it into Edit mode).
 - Docs: `CONTEXT.md` (new glossary entries — Implied Intake, Logging Gap, Trend Weight, Food Card
-  generalization note), new `docs/adr/ADR-008-<slug>.md`, `todo.md` (record Phase 4's prerequisite
+  generalization note), new `docs/adr/ADR-010-<slug>.md`, `todo.md` (record Phase 4's prerequisite
   work this reuses, and that idea #10 shipped as this instead of adaptive TDEE).
   proposal an implementer's own pass will build from.
 
@@ -814,7 +814,7 @@ it in a state worth reading.
 - [x] 7.1 `CONTEXT.md`: add glossary entries for **Implied Intake**, **Logging Gap**, and **Trend
       Weight** (Dashboard/Nutrition-targets section), and update the existing **Food Card** entry's
       example if needed to reference the Logging Gap Card as a concrete instance
-- [x] 7.2 New `docs/adr/ADR-008-<slug>.md` (`Status: Proposed`) recording: reporting a Logging Gap
+- [x] 7.2 New `docs/adr/ADR-010-<slug>.md` (`Status: Proposed`) recording: reporting a Logging Gap
       instead of a TDEE (and why — no third expenditure source exists in the data, per idea #10's
       grilling); silence-over-a-clamp as the safety mechanism; the rate-based 2 kg/day outlier rule
       and its rejection cap (design.md decision 2's residual limitation and bound); the quadrature

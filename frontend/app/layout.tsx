@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Barlow, IBM_Plex_Mono, Inter } from "next/font/google";
 import { ToastProvider } from "@/components/Toast";
 import { LanguageProvider } from "@/components/LanguageContext";
@@ -109,6 +109,17 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "HealthVault",
   description: "Android health data dashboard",
+};
+
+// Opts the document into painting behind the device's safe areas, which is
+// what makes `env(safe-area-inset-*)` resolve to anything other than 0.
+// Without it every inset rule in the app is dead CSS on *every* device, a
+// notched phone included — not merely in a headless test browser. The bottom
+// navigation bar's own inset padding depends on this, and so do the two
+// submit bars' pre-existing `env()` padding, which was inert until now.
+// See mobile-navigation's "The document opts into safe-area insets".
+export const viewport: Viewport = {
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

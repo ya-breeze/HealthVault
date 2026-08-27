@@ -228,3 +228,69 @@ func DayRange(
 
 	return result, nil
 }
+
+// TodaySummaryRow is one user's aggregated "today" activity for
+// GET /api/summary/today (design.md §1): consumed macro sums restricted to
+// confirmed meals, a raw row count and max LoggedAt across every status.
+// HasLastLoggedAt is false (LastLoggedAt the zero time.Time) when there are
+// no rows at all for today.
+type TodaySummaryRow struct {
+	Date                 string
+	CaloriesConsumed     float64
+	ProteinGramsConsumed float64
+	CarbsGramsConsumed   float64
+	FatGramsConsumed     float64
+	MealCount            int
+	LastLoggedAt         time.Time
+	HasLastLoggedAt      bool
+}
+
+// TodaySummary computes userID's Local Day (`LocalDate(now, loc)`) and folds
+// every FoodMeal row Logged on that day into a TodaySummaryRow: macro sums
+// restricted to `status = confirmed` rows (design.md: a processing/
+// pending_review/pending_clarification/failed row's macro fields are zero or
+// stale, per `Aggregate()` in models_food.go, so summing across all statuses
+// would silently show a partial or zero-inflated number), a row count and max
+// LoggedAt across every status (design.md: "a processing row still means the
+// user just took a photo").
+//
+// `now` is threaded in explicitly rather than calling time.Now() internally,
+// matching computeUserNutritionTarget's pattern, so a caller can pass the
+// same `now` into both and keep the reported date and this aggregation
+// window consistent with each other at a local-midnight boundary. The UTC
+// window bounds are computed the same way DayRange does for a single day —
+// required because FoodMeal.LoggedAt is stored UTC-normalized and go-sqlite3
+// stores time.Time as TEXT preserving whatever offset it's given, so SQLite
+// compares it as text, not as an instant (see DayRange's own comment above).
+func TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now time.Time) (TodaySummaryRow, error) {
+	dateStr := LocalDate(now, loc)
+	dayStart, err := time.ParseInLocation("2006-01-02", dateStr, loc)
+	if err != nil {
+		return TodaySummaryRow{}, fmt.Errorf("parse local date %q: %w", dateStr, err)
+	}
+	windowStart, windowEnd := dayStart.UTC(), dayStart.AddDate(0, 0, 1).UTC()
+
+	var meals []FoodMeal
+	if err := db.Select("status", "calories", "protein_grams", "carbs_grams", "fat_grams", "logged_at").
+		Where("user_id = ? AND logged_at >= ? AND logged_at < ?", userID, windowStart, windowEnd).
+		Find(&meals).Error; err != nil {
+		return TodaySummaryRow{}, fmt.Errorf("query meals: %w", err)
+	}
+
+	row := TodaySummaryRow{Date: dateStr}
+	for _, m := range meals {
+		row.MealCount++
+		if m.LoggedAt.After(row.LastLoggedAt) {
+			row.LastLoggedAt = m.LoggedAt
+		}
+		if m.Status == MealStatusConfirmed {
+			row.CaloriesConsumed += m.Calories
+			row.ProteinGramsConsumed += m.ProteinGrams
+			row.CarbsGramsConsumed += m.CarbsGrams
+			row.FatGramsConsumed += m.FatGrams
+		}
+	}
+	row.HasLastLoggedAt = row.MealCount > 0
+
+	return row, nil
+}

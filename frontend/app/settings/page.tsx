@@ -2,7 +2,7 @@
 import { ChangeEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, UserSettings } from '@/lib/api';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import { SUPPORTED_LANGUAGES, LanguageCode } from '@/lib/i18n';
@@ -144,9 +144,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg">
-      <Header />
-
+    <AuthenticatedShell className="min-h-screen bg-bg">
       <main className="max-w-md mx-auto px-6 py-8">
         <h1 className="text-xl font-bold text-text mb-6">Settings</h1>
 
@@ -235,6 +233,6 @@ export default function SettingsPage() {
           )}
         </section>
       </main>
-    </div>
+    </AuthenticatedShell>
   );
 }

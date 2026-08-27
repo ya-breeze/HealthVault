@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ManualMealItemInput } from '@/lib/api';
 import ManualItemEditor from '@/components/food/ManualItemEditor';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
 
 function emptyItem(): ManualMealItemInput {
@@ -44,9 +44,7 @@ export default function ManualMealPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-24">
-      <Header />
-
+    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-24">
       <main className="max-w-md mx-auto px-6 py-6">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Log a Meal Manually</h1>
         <div className="flex flex-col sm:flex-row gap-2 mb-4">
@@ -86,7 +84,15 @@ export default function ManualMealPage() {
         {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      {/* Anchored above the bottom navigation bar, not at the viewport edge:
+          `/food/manual/` is one of the bar's own destinations, so without
+          the offset the bar lands on this submit button. A padding on the
+          shell cannot do this — a fixed element is out of flow relative to
+          the viewport, not to its ancestor. Its own bottom padding keeps the
+          safe-area inset for the desktop case, where no bar is beneath it to
+          absorb it; below the breakpoint `--edge-inset-b` is `0px` because
+          `--nav-block` already carries it. */}
+      <div className="fixed bottom-[var(--nav-block)] left-0 right-0 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+var(--edge-inset-b))]">
         <div className="max-w-md mx-auto">
           <TapTarget
             onClick={handleSubmit}
@@ -97,6 +103,6 @@ export default function ManualMealPage() {
           </TapTarget>
         </div>
       </div>
-    </div>
+    </AuthenticatedShell>
   );
 }

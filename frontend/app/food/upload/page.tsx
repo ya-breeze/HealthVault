@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import CameraCapture from '@/components/food/CameraCapture';
-import Header from '@/components/Header';
+import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
 import { MAX_HINT_LENGTH, normalizedUnicodeLength, unicodeLength } from '@/lib/foodGuidance';
 
@@ -40,9 +40,7 @@ export default function FoodUploadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header />
-
+    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <main className="max-w-md mx-auto px-6 py-10">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Log a Meal</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
@@ -130,6 +128,6 @@ export default function FoodUploadPage() {
           }}
         />
       )}
-    </div>
+    </AuthenticatedShell>
   );
 }

@@ -155,6 +155,22 @@ func mustCreateMeal(t *testing.T, db *gorm.DB, userID, familyID uuid.UUID, logge
 	}
 }
 
+func mustCreateMealWithMacros(
+	t *testing.T, db *gorm.DB, userID, familyID uuid.UUID, status string, loggedAt time.Time,
+	calories, proteinGrams, carbsGrams, fatGrams float64,
+) {
+	t.Helper()
+	m := database.FoodMeal{
+		UserID: userID, Status: status, LoggedAt: loggedAt,
+		Calories: calories, ProteinGrams: proteinGrams, CarbsGrams: carbsGrams, FatGrams: fatGrams,
+	}
+	m.ID = uuid.New()
+	m.FamilyID = familyID
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+}
+
 func mustCreateConfirmation(t *testing.T, db *gorm.DB, userID, familyID uuid.UUID, localDate string) {
 	t.Helper()
 	c := database.FoodDayCompletion{UserID: userID, LocalDate: localDate, ConfirmedAt: time.Now()}
@@ -307,5 +323,140 @@ func TestDayRange_NonUTCLocationFindsMeals(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].OccasionCount != 2 || got[0].State != database.DayStateComplete {
 		t.Errorf("got %+v, want a single complete/2-occasion day for 2026-08-20", got)
+	}
+}
+
+// TestTodaySummary_ConfirmedOnlySumsAllStatusCountAndMaxLoggedAt covers 4.1:
+// macro sums restricted to confirmed meals, a row count and max LoggedAt
+// spanning every status, and that a non-today meal (yesterday) is excluded
+// entirely from all of the above.
+func TestTodaySummary_ConfirmedOnlySumsAllStatusCountAndMaxLoggedAt(t *testing.T) {
+	db := newCompletenessTestDB(t)
+	userID, familyID := uuid.New(), uuid.New()
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+
+	mustCreateMealWithMacros(t, db, userID, familyID, database.MealStatusConfirmed,
+		now.Add(-2*time.Hour), 500, 30, 40, 10)
+	mustCreateMealWithMacros(t, db, userID, familyID, database.MealStatusConfirmed,
+		now.Add(-1*time.Hour), 300, 20, 20, 5)
+	// A processing meal today: counts toward MealCount/LastLoggedAt, not sums.
+	mustCreateMealWithMacros(t, db, userID, familyID, database.MealStatusProcessing,
+		now, 9999, 9999, 9999, 9999)
+	// Yesterday's confirmed meal must not leak into today's totals.
+	mustCreateMealWithMacros(t, db, userID, familyID, database.MealStatusConfirmed,
+		now.AddDate(0, 0, -1), 1000, 100, 100, 100)
+
+	got, err := database.TodaySummary(db, userID, time.UTC, now)
+	if err != nil {
+		t.Fatalf("TodaySummary: %v", err)
+	}
+	if got.Date != "2026-01-15" {
+		t.Errorf("Date = %q, want 2026-01-15", got.Date)
+	}
+	if got.CaloriesConsumed != 800 || got.ProteinGramsConsumed != 50 ||
+		got.CarbsGramsConsumed != 60 || got.FatGramsConsumed != 15 {
+		t.Errorf("consumed sums = %+v, want confirmed-only sums 800/50/60/15", got)
+	}
+	if got.MealCount != 3 {
+		t.Errorf("MealCount = %d, want 3 (all statuses today)", got.MealCount)
+	}
+	if !got.HasLastLoggedAt || !got.LastLoggedAt.Equal(now) {
+		t.Errorf("LastLoggedAt = %v (has=%v), want %v", got.LastLoggedAt, got.HasLastLoggedAt, now)
+	}
+}
+
+// TestTodaySummary_ZeroMealsToday covers 4.1's zero-meals case: HasLastLoggedAt
+// is false and every numeric field is zero when the user has logged nothing
+// today.
+func TestTodaySummary_ZeroMealsToday(t *testing.T) {
+	db := newCompletenessTestDB(t)
+	userID := uuid.New()
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+
+	got, err := database.TodaySummary(db, userID, time.UTC, now)
+	if err != nil {
+		t.Fatalf("TodaySummary: %v", err)
+	}
+	want := database.TodaySummaryRow{Date: "2026-01-15"}
+	if got != want {
+		t.Errorf("TodaySummary with no meals = %+v, want %+v", got, want)
+	}
+}
+
+// TestTodaySummary_NonConfirmedStatusesContributeCountNotMacros covers 4.2:
+// every non-confirmed status (processing, pending_review,
+// pending_clarification, failed) contributes to MealCount and LastLoggedAt
+// but never to the consumed macro sums.
+func TestTodaySummary_NonConfirmedStatusesContributeCountNotMacros(t *testing.T) {
+	db := newCompletenessTestDB(t)
+	userID, familyID := uuid.New(), uuid.New()
+	now := time.Date(2026, 1, 15, 18, 0, 0, 0, time.UTC)
+
+	statuses := []string{
+		database.MealStatusProcessing,
+		database.MealStatusPendingReview,
+		database.MealStatusPendingClarification,
+		database.MealStatusFailed,
+	}
+	loggedAt := now.Add(-3 * time.Hour)
+	for i, status := range statuses {
+		mustCreateMealWithMacros(t, db, userID, familyID, status,
+			loggedAt.Add(time.Duration(i)*time.Minute), 400, 40, 40, 40)
+	}
+	// The single latest row determines LastLoggedAt.
+	latest := now
+	mustCreateMealWithMacros(t, db, userID, familyID, database.MealStatusFailed, latest, 400, 40, 40, 40)
+
+	got, err := database.TodaySummary(db, userID, time.UTC, now)
+	if err != nil {
+		t.Fatalf("TodaySummary: %v", err)
+	}
+	if got.MealCount != len(statuses)+1 {
+		t.Errorf("MealCount = %d, want %d", got.MealCount, len(statuses)+1)
+	}
+	if got.CaloriesConsumed != 0 || got.ProteinGramsConsumed != 0 ||
+		got.CarbsGramsConsumed != 0 || got.FatGramsConsumed != 0 {
+		t.Errorf("consumed sums = %+v, want all zero (no confirmed meals)", got)
+	}
+	if !got.HasLastLoggedAt || !got.LastLoggedAt.Equal(latest) {
+		t.Errorf("LastLoggedAt = %v (has=%v), want %v", got.LastLoggedAt, got.HasLastLoggedAt, latest)
+	}
+}
+
+// TestTodaySummary_LocalDayBoundaryByTimezone covers 4.5: a meal logged just
+// after local midnight in a non-UTC zone must land in that zone's "today",
+// not UTC's — mirroring food-day-completeness's own timezone-boundary
+// coverage (TestDayRange_NonUTCLocationFindsMeals above), but exercised
+// through TodaySummary with a fixed `now` rather than wall-clock time.
+func TestTodaySummary_LocalDayBoundaryByTimezone(t *testing.T) {
+	db := newCompletenessTestDB(t)
+	userID, familyID := uuid.New(), uuid.New()
+
+	loc, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+	// 2026-08-21T02:00:00Z is 2026-08-20T19:00:00-07:00 in America/Los_Angeles
+	// (LA-local "today" is the 20th), and 2026-08-21T02:00:00Z is UTC's 21st.
+	// The LA-local day 2026-08-20 spans [2026-08-20T07:00:00Z, 2026-08-21T07:00:00Z).
+	now := time.Date(2026, 8, 21, 2, 0, 0, 0, time.UTC)
+	mealLoggedAt := now.Add(-1 * time.Hour) // 2026-08-21T01:00:00Z = 2026-08-20T18:00:00-07:00: inside the window.
+	mustCreateMealWithMacros(t, db, userID, familyID, database.MealStatusConfirmed,
+		mealLoggedAt, 500, 30, 40, 10)
+	// Logged just before the LA-local day's window starts (2026-08-20T06:59:00Z
+	// = 2026-08-19T23:59:00-07:00): still LA's 19th, must not be included.
+	beforeWindow := time.Date(2026, 8, 20, 6, 59, 0, 0, time.UTC)
+	mustCreateMealWithMacros(t, db, userID, familyID, database.MealStatusConfirmed,
+		beforeWindow, 999, 999, 999, 999)
+
+	got, err := database.TodaySummary(db, userID, loc, now)
+	if err != nil {
+		t.Fatalf("TodaySummary: %v", err)
+	}
+	if got.Date != "2026-08-20" {
+		t.Errorf("Date = %q, want 2026-08-20 (LA-local day)", got.Date)
+	}
+	if got.MealCount != 1 || got.CaloriesConsumed != 500 {
+		t.Errorf("expected only the in-window meal aggregated under the LA-local day, got %+v", got)
 	}
 }

@@ -95,7 +95,7 @@ thread vs. ephemeral per session) — both deferred to this phase's own
 ## Idea #10 — Logging Gap Card (was "adaptive TDEE from energy balance")
 
 **Shipped** by the `logging-gap` change ([PR #39](https://github.com/ya-breeze/HealthVault/pull/39);
-see ADR-008; archived at `openspec/changes/archive/`).
+see ADR-010; archived at `openspec/changes/archive/`).
 
 Idea #10 started, and is still filed, under its original title — "adaptive TDEE from energy
 balance (replaces activity multiplier)" — but grilling it (idea-forge issue, "Grilled — the
@@ -107,7 +107,7 @@ estimate, silent ("not enough data yet") rather than clamped when the data can't
 confident number. Built on `food-day-completeness` (idea #9, above) for its valid-day floor, and
 generalizes the dashboard's Card registry (`DataType | 'logging_gap'`) so a non-`DataType` card can
 be shown/hidden/reordered the same way a Vital Card or Food Card already can — the shape Phase 4's
-own Card A/Card B will need too. See ADR-008 for the full reasoning, `CONTEXT.md`'s Nutrition
+own Card A/Card B will need too. See ADR-010 for the full reasoning, `CONTEXT.md`'s Nutrition
 targets section for the Implied Intake / Logging Gap / Trend Weight glossary entries.
 
 ## Open Food Facts (European product database)

@@ -337,6 +337,12 @@ export interface UserSettings {
   // below do NOT positionally match their tier display names ('active' ->
   // "Very active", 'very_active' -> "Extra active").
   activity_override?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
+  // Whether the dashboard's More Data section (secondary data-type links) is
+  // collapsed from the read-only view. Absent or anything other than the
+  // literal boolean `true` means "not hidden" — see frontend/app/page.tsx's
+  // strict `=== true` normalization, mirroring dashboard_order's
+  // `entry.hidden === true` check in lib/vitals.ts#reconcileMetricOrder.
+  more_data_hidden?: boolean;
   [key: string]: unknown;
 }
 
@@ -430,6 +436,15 @@ export interface NutritionTarget {
   activity_tier: string;
 }
 
+// Named rather than left inline on `api.me` below: AuthenticatedShell holds
+// the session and passes it to both Header and MoreSheet, so three call
+// sites now need to spell this shape.
+export interface Me {
+  id: string;
+  username: string;
+  family_id: string;
+}
+
 export const api = {
   login: (username: string, password: string) =>
     apiFetch('/auth/login', {
@@ -437,9 +452,15 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
 
-  logout: () => apiFetch('/auth/logout', { method: 'POST' }),
+  // `apiFetchNoBody`, not `apiFetch`: the endpoint answers 204 with an empty
+  // body, so parsing it as JSON throws — and every caller awaits this before
+  // routing to /login, so the rejection meant logout cleared the session
+  // server-side and then left the user sitting on the authenticated page.
+  // Surfaced by the More sheet's logout e2e case, which is the first test
+  // to assert on what happens after the click rather than on the control.
+  logout: () => apiFetchNoBody('/auth/logout', { method: 'POST' }),
 
-  me: () => apiFetch<{ id: string; username: string; family_id: string }>('/users/me'),
+  me: () => apiFetch<Me>('/users/me'),
 
   getSettings: () => apiFetch<UserSettings>('/users/me/settings'),
   putSettings: (settings: UserSettings) =>

@@ -15,7 +15,7 @@ const ALL_DATA_TYPES = [
   'blood_glucose', 'oxygen_saturation', 'body_temperature', 'skin_temperature',
   'respiratory_rate', 'resting_heart_rate', 'exercise', 'hydration', 'nutrition',
   'basal_metabolic_rate', 'body_fat', 'lean_body_mass', 'vo2_max', 'bone_mass',
-  'speed', 'food_meal',
+  'speed', 'food_meal', 'weight_goal',
 ];
 
 const PRIMARY_METRIC_TYPES = [
@@ -307,6 +307,12 @@ async function restoreAllVisible(page: Page) {
     restored++;
   }
 
+  // A hidden More Data section is a second, independent flag on the same
+  // shared account (see UserSettings.more_data_hidden), but its toggle's
+  // testid ("more-data-visibility") already matches the generic loop above —
+  // the section's own container carries `data-hidden`, same as a VitalCard —
+  // so no separate cleanup step is needed here.
+
   if (restored === 0 && enteredEditMode) {
     // Nothing was hidden and we opened the editor purely to look. Leave via a
     // navigation instead of Done: handleDone PUTs unconditionally, so clicking
@@ -401,8 +407,11 @@ test.describe('Dashboard card visibility', () => {
       await page.getByRole('button', { name: 'Customize' }).click();
 
       // Hide all 8. Each toggle stays in the DOM while editing, so this can
-      // walk them by index.
-      const toggles = page.locator('[data-testid$="-visibility"]');
+      // walk them by index. Scoped to vitals-grid, not the whole page — More
+      // Data has grown its own "-visibility" toggle (more-data-visibility),
+      // which would otherwise inflate this count when the account has any
+      // secondary-type presence.
+      const toggles = page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]');
       const count = await toggles.count();
       expect(count).toBe(8);
       for (let i = 0; i < count; i++) {
@@ -573,7 +582,9 @@ test.describe('Data-type presence filtering', () => {
 
     await page.getByRole('button', { name: 'Customize' }).click();
     await expect(page.getByTestId('vital-card-sleep-visibility')).toHaveCount(0);
-    await expect(page.locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1);
+    // Scoped to vitals-grid so More Data's own "-visibility" toggle
+    // (more-data-visibility) isn't counted alongside the primary cards'.
+    await expect(page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1);
 
     // Nothing was changed, so leave without triggering a settings write —
     // same reasoning as restoreAllVisible's own no-op exit.
@@ -774,5 +785,230 @@ test.describe('Data-type presence filtering', () => {
     await expect(page.getByTestId('vitals-grid')).toBeVisible();
     await expect(page.getByTestId('vitals-grid-loading')).toHaveCount(0);
     await expect(page.getByTestId('more-data')).toBeVisible();
+  });
+});
+
+// Reads the account's current settings, merges `patch` on top, and PUTs the
+// result — a raw (typed-API-bypassing) write, used only to seed a stored
+// value the TS UserSettings type wouldn't allow api.updateSettings to send
+// (e.g. more_data_hidden as a string), per the strict-normalization test
+// below. Runs via page.evaluate so it carries the session cookie the way a
+// real client write would.
+async function putRawSettings(page: Page, patch: Record<string, unknown>) {
+  await page.evaluate(async (patch) => {
+    const getRes = await fetch('/api/users/me/settings', { credentials: 'include' });
+    if (!getRes.ok) throw new Error(`GET settings failed: ${getRes.status}`);
+    const current = await getRes.json();
+    const putRes = await fetch('/api/users/me/settings', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...current, ...patch }),
+    });
+    if (!putRes.ok) throw new Error(`PUT settings failed: ${putRes.status}`);
+  }, patch);
+}
+
+test.describe('More Data visibility', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    // Same reasoning as the other describe blocks: a section left hidden (or
+    // a card left hidden) by an earlier failed test must not be mistaken for
+    // what this block itself is testing.
+    await restoreAllVisible(page);
+  });
+
+  test('hiding the More Data section removes it from the read-only page, stays discoverable (dimmed) in edit mode, and persists across reload; re-showing restores it', async ({ page }) => {
+    const moreData = page.getByTestId('more-data');
+
+    try {
+      await expect(moreData).toBeVisible();
+      await expect(page.getByTestId('more-data-visibility')).not.toBeVisible();
+
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await page.getByTestId('more-data-visibility').click();
+      // Still on screen while editing — dimmed, so it can be found and shown
+      // again — mirroring the vitals grid's dimmed-hidden-card treatment.
+      await expect(moreData).toHaveAttribute('data-hidden', 'true');
+
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+      await page.reload();
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+      // Re-show it.
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await expect(page.getByTestId('more-data')).toHaveAttribute('data-hidden', 'true');
+      await page.getByTestId('more-data-visibility').click();
+      await expect(page.getByTestId('more-data')).toHaveAttribute('data-hidden', 'false');
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(page.getByTestId('more-data')).toBeVisible();
+
+      await page.reload();
+      await expect(page.getByTestId('more-data')).toBeVisible();
+    } finally {
+      await restoreAllVisible(page);
+    }
+  });
+
+  test('the More Data visibility toggle is absent from edit mode when no secondary type has presence', async ({ page }) => {
+    const overrides = Object.fromEntries(SECONDARY_TYPES.map(type => [type, false]));
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture(overrides) })
+    );
+    await page.goto('/');
+
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByTestId('more-data')).toHaveCount(0);
+    await expect(page.getByTestId('more-data-visibility')).toHaveCount(0);
+
+    // Nothing was changed, so leave without triggering a settings write —
+    // same reasoning as restoreAllVisible's own no-op exit.
+    await page.goto('/');
+  });
+
+  test('a user-hidden More Data section stays hidden through a presence-fetch failure', async ({ page }) => {
+    try {
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await page.getByTestId('more-data-visibility').click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+      // Per design.md's Risks section, a user-hidden section stays hidden
+      // even during the fail-open path that would otherwise show every
+      // primary and secondary type.
+      await page.route('**/api/data-types/presence', route =>
+        route.fulfill({ status: 500, json: { error: 'boom' } })
+      );
+      await page.reload();
+      await expect(page.getByTestId('vitals-grid')).toBeVisible();
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+    } finally {
+      await page.unroute('**/api/data-types/presence').catch(() => {});
+      await restoreAllVisible(page);
+    }
+  });
+
+  test('More Data does not render before the saved hidden preference is known, and does not flash unhidden if the settings load fails', async ({ page }) => {
+    // Hide it first so "stays hidden" is the persisted preference under test.
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await page.getByTestId('more-data-visibility').click();
+    await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+    await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+    try {
+      let release: () => void = () => {};
+      const held = new Promise<void>(resolve => { release = resolve; });
+      await page.route('**/api/users/me/settings', async route => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        await held;
+        await route.fulfill({ status: 500, json: { error: 'boom' } });
+      });
+
+      await page.goto('/');
+
+      // While in flight: not rendered, same as the vitals grid.
+      await expect(page.getByTestId('vitals-grid-loading')).toBeVisible();
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+      release();
+
+      // After failure: still not rendered — a settings-load failure must not
+      // flash the section unhidden.
+      await expect(page.getByTestId('vitals-grid-error')).toBeVisible();
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+      // Recovers in-page, and the stored "hidden" preference still holds
+      // once the real settings load succeeds.
+      await page.unroute('**/api/users/me/settings');
+      await page.getByTestId('vitals-grid-retry').click();
+      await expect(page.getByTestId('vitals-grid')).toBeVisible();
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+    } finally {
+      await restoreAllVisible(page);
+    }
+  });
+
+  // Accepted edge case from design.md's Risks section: the toggle disappears
+  // if presence regresses to zero via record deletion, but the stored
+  // preference is not lost — just temporarily inert.
+  test('More Data and its toggle disappear from edit mode if presence drops to zero while hidden, without erroring; the stored preference survives', async ({ page }) => {
+    try {
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await page.getByTestId('more-data-visibility').click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+      // Drive every secondary type's presence to zero.
+      const noneOverrides = Object.fromEntries(SECONDARY_TYPES.map(type => [type, false]));
+      await page.route('**/api/data-types/presence', route =>
+        route.fulfill({ json: presenceFixture(noneOverrides) })
+      );
+      await page.reload();
+
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+      await expect(page.getByTestId('more-data-visibility')).toHaveCount(0);
+      await page.goto('/');
+
+      // Restore presence for exactly one secondary type — the section is
+      // still hidden in the read-only view, i.e. the stored preference
+      // survived the toggle's temporary disappearance.
+      const oneTypeOverrides = Object.fromEntries(SECONDARY_TYPES.map(type => [type, type === 'vo2_max']));
+      await page.route('**/api/data-types/presence', route =>
+        route.fulfill({ json: presenceFixture(oneTypeOverrides) })
+      );
+      await page.reload();
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+    } finally {
+      await page.unroute('**/api/data-types/presence').catch(() => {});
+      await restoreAllVisible(page);
+    }
+  });
+
+  // handleDone's GET-merge-PUT write path previously had a lost-update race
+  // (see settings.spec.ts's "Settings lost-update race" coverage) that a
+  // second key merged into the same payload could reintroduce.
+  test('toggling a vitals card and the More Data section in one edit session, saved via a single Done, persists both after reload', async ({ page }) => {
+    const grid = page.getByTestId('vitals-grid');
+
+    try {
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await page.getByTestId('vital-card-sleep-visibility').click();
+      await expect(grid.getByTestId('vital-card-sleep')).toHaveAttribute('data-hidden', 'true');
+      await page.getByTestId('more-data-visibility').click();
+      await expect(page.getByTestId('more-data')).toHaveAttribute('data-hidden', 'true');
+
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(grid.getByTestId('vital-card-sleep')).toHaveCount(0);
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+
+      await page.reload();
+      await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+      await expect(grid.getByTestId('vital-card-sleep')).toHaveCount(0);
+      await expect(page.getByTestId('more-data')).toHaveCount(0);
+    } finally {
+      await restoreAllVisible(page);
+    }
+  });
+
+  // Mirrors 'settings saved in the pre-visibility shape still load' above:
+  // a naive `?? false` read would incorrectly treat a truthy-but-not-`true`
+  // stored value as hidden. Written via a raw PUT rather than the app UI,
+  // since the app itself (through its typed UserSettings) can never produce
+  // this shape — but a hand-edited or pre-normalization row could.
+  test('a stored more_data_hidden value that is truthy but not strictly true renders as visible, not hidden', async ({ page }) => {
+    try {
+      await putRawSettings(page, { more_data_hidden: 'false' });
+      await page.reload();
+      await expect(page.getByTestId('more-data')).toBeVisible();
+
+      await putRawSettings(page, { more_data_hidden: 1 });
+      await page.reload();
+      await expect(page.getByTestId('more-data')).toBeVisible();
+    } finally {
+      await putRawSettings(page, { more_data_hidden: false }).catch(() => {});
+    }
   });
 });

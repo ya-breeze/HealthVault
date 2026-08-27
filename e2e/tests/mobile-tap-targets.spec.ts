@@ -117,22 +117,69 @@ test.describe('Mobile tap targets — review page', () => {
 test.describe('Mobile tap targets — header and toast', () => {
   test.use({ viewport: MOBILE_VIEWPORT });
 
-  test('header nav controls meet the 48px minimum', async ({ page }) => {
+  // The controls this used to assert on here — Custom Foods, Import,
+  // Settings, Logout — are no longer in the header at a mobile width; the
+  // bottom navigation change moved them into the More sheet. So the mobile
+  // assertions follow the controls into the sheet (below), and the header's
+  // full-control-set assertions move to the desktop-viewport block after it,
+  // matching the two scenarios mobile-touch-targets now splits this into:
+  // "Header and toast controls meet the minimum" and "Header nav controls
+  // meet the minimum where the header renders them".
+  //
+  // Note these are located by `data-nav-control` rather than by visible name
+  // or title: the header and the sheet render the same five controls, so a
+  // name-based locator would have to be scoped anyway, and the attribute is
+  // what the two surfaces already share.
+  test('every control the header still renders at a mobile width meets the 48px minimum', async ({ page }) => {
     await login(page);
     await page.goto('/food/history/');
 
-    await assertMinTapTarget(page.getByRole('link', { name: 'Custom Foods' }), 'header Custom Foods link');
-    await assertMinTapTarget(page.getByRole('link', { name: 'Import' }), 'header Import link');
-    await assertMinTapTarget(page.getByRole('button', { name: 'Logout' }), 'header Logout button');
-    // Display Language moved off the header into /settings (see
-    // user-profile-and-nutrition-target's design.md); the header control in
-    // its place is this icon-only link to /settings, so it's what needs
-    // covering here now — the existing assertions above enumerate header
-    // controls by name, so a newly added one is not covered until it is named
-    // here. See openspec/specs/mobile-touch-targets "Header and toast
-    // controls meet the minimum".
-    await assertMinTapTarget(page.getByTitle('Settings'), 'header Settings link');
+    const headerControls = page.locator('header a, header button');
+    const count = await headerControls.count();
+    let asserted = 0;
+    for (let i = 0; i < count; i++) {
+      const control = headerControls.nth(i);
+      // The shed controls are still in the DOM at this width, display:none.
+      // They are covered by the sheet's assertions below, not here.
+      if (!(await control.isVisible())) continue;
+      await assertMinTapTarget(control, `header control #${i}`);
+      asserted++;
+    }
+    // The header still renders *something* tappable — a zero here would make
+    // the loop above vacuously pass.
+    expect(asserted, 'header should render at least one visible control').toBeGreaterThan(0);
   });
+
+  test('the More sheet\'s controls meet the 48px minimum', async ({ page }) => {
+    await login(page);
+    await page.goto('/food/history/');
+    await page.locator('[data-nav-destination="more"]').click();
+
+    const sheet = page.getByTestId('more-sheet');
+    await expect(sheet).toBeVisible();
+    for (const id of ['custom-foods', 'import', 'settings', 'logout']) {
+      await assertMinTapTarget(sheet.locator(`[data-nav-control="${id}"]`), `sheet ${id} control`);
+    }
+    // The webhook entry is a panel rather than a single control; its copy
+    // button is the tappable part of it.
+    await assertMinTapTarget(
+      sheet.locator('[data-nav-control="webhook"] button'),
+      'sheet webhook copy button'
+    );
+  });
+
+  // mobile-touch-targets' "Bottom navigation destinations meet the minimum"
+  // fixes the guarantee down to 320px explicitly, because that is the width
+  // where five destinations divide most tightly — 320 / 5 = 64px per column.
+  for (const width of [320, 360, 390, 430]) {
+    test(`the bottom navigation destinations meet the 48px minimum at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await login(page);
+      for (const id of ['home', 'photo', 'manual', 'history', 'more']) {
+        await assertMinTapTarget(page.locator(`[data-nav-destination="${id}"]`), `${id} destination at ${width}px`);
+      }
+    });
+  }
 
   test('the relocated Display Language control on /settings meets the 48px minimum', async ({ page }) => {
     await login(page);
@@ -189,5 +236,125 @@ test.describe('Mobile tap targets — header and toast', () => {
     const toast = page.getByRole('status').filter({ hasText: 'Meal updated' });
     await expect(toast).toBeVisible();
     await assertMinTapTarget(toast.getByRole('button', { name: 'Dismiss notification' }), 'toast dismiss control');
+  });
+});
+
+// The other half of the split described above: where the header does carry
+// its full control set — at and above the mobile navigation breakpoint —
+// every one of those five controls still has to meet the minimum.
+test.describe('Header nav controls at a desktop width', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('the full header control set meets the 48px minimum', async ({ page }) => {
+    await login(page);
+    await page.goto('/food/history/');
+
+    for (const id of ['webhook', 'custom-foods', 'import', 'settings', 'logout']) {
+      await assertMinTapTarget(page.locator(`header [data-nav-control="${id}"]`), `header ${id} control`);
+    }
+  });
+});
+
+// Mocks every /api/data/<type> read the data detail page makes, so the record
+// table always renders a fixed set of rows. The page defaults to a `week`
+// zoom whose range is only the last 7 days, so a case relying on real records
+// would start skipping — silently, and permanently — as soon as the chosen
+// type stopped receiving recent data. See data-page-tap-targets/design.md.
+async function mockDataRecords(page: Page, type: string, rows: Record<string, unknown>[]) {
+  await page.route('**/api/data/**', route => {
+    const url = new URL(route.request().url());
+    // Bucketed reads feed the chart only; an empty result there is explicitly
+    // non-fatal in DataTypeClient, and the chart is not what's being measured.
+    if (url.searchParams.has('bucket')) return route.fulfill({ json: [] });
+    return route.fulfill({ json: url.pathname.endsWith(`/data/${type}`) ? rows : [] });
+  });
+}
+
+function weightRow(id: string, kg: number, daysAgo: number) {
+  const at = new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+  return { id, kilograms: kg, time: at, created_at: at, updated_at: at };
+}
+
+// Covers the data detail route, which the original mobile-tap-targets change
+// scoped out entirely — see openspec/specs/mobile-touch-targets "Data detail
+// record delete control meets the minimum" and its three sibling scenarios.
+test.describe('Mobile tap targets — data detail page', () => {
+  // hasTouch matters here, not just the viewport: the zoom and macro tabs take
+  // the minimum via TapTarget's `compactOnMouse`, which is keyed off
+  // `(pointer: fine)`. The suite's project is devices['Desktop Chrome'], which
+  // reports a fine pointer at any viewport size, so without this these two
+  // groups would be measured in their compact mouse rendering and the case
+  // would assert the wrong thing.
+  test.use({ viewport: MOBILE_VIEWPORT, hasTouch: true });
+
+  test('record delete, its confirmation, and the zoom tabs meet the 48px minimum', async ({ page }) => {
+    await login(page);
+    await mockDataRecords(page, 'weight', [
+      weightRow('rec-1', 80.5, 1),
+      weightRow('rec-2', 80.1, 2),
+    ]);
+
+    await page.goto('/data/weight/');
+
+    const deleteControls = page.getByRole('button', { name: 'Delete record' });
+    await expect(deleteControls.first()).toBeVisible();
+    await expect(deleteControls).toHaveCount(2);
+    await assertMinTapTarget(deleteControls.first(), 'record delete control');
+
+    for (const z of ['Day', 'Week', 'Month', 'Year']) {
+      await assertMinTapTarget(page.getByRole('button', { name: z, exact: true }), `${z} zoom tab`);
+    }
+
+    // Activating one row's delete swaps that cell into its inline
+    // confirm/cancel state; both replacements need the minimum too.
+    await deleteControls.first().click();
+    const confirm = page.getByRole('button', { name: 'Confirm', exact: true });
+    const cancel = page.getByRole('button', { name: 'Cancel', exact: true });
+    await expect(confirm).toBeVisible();
+    await assertMinTapTarget(confirm, 'delete confirm control');
+    await assertMinTapTarget(cancel, 'delete cancel control');
+  });
+
+  test('nutrition macro tabs meet the 48px minimum', async ({ page }) => {
+    await login(page);
+    await mockDataRecords(page, 'nutrition', []);
+
+    await page.goto('/data/nutrition/');
+
+    // boundingBox() waits for attached, not visible, and the null check below
+    // does not retry — so gate on visibility first, as the sibling cases do.
+    await expect(page.getByRole('button', { name: 'Calories', exact: true })).toBeVisible();
+
+    for (const m of ['Calories', 'Protein', 'Carbs', 'Fat', 'Sugar', 'Sodium', 'Fiber']) {
+      await assertMinTapTarget(page.getByRole('button', { name: m, exact: true }), `${m} macro tab`);
+    }
+  });
+});
+
+// The delete control and its confirm/cancel siblings are deliberately NOT
+// `compactOnMouse` — 14x20 was too small for a mouse as well as a thumb, and it
+// is the control whose mis-tap destroys a health record. Everything above runs
+// on a coarse pointer, where `compactOnMouse` and plain TapTarget render
+// identically, so nothing there would notice if someone added it to the delete
+// control for consistency with the two tab groups in the same file. This pins
+// that distinction: on a fine pointer the tabs go compact and the delete
+// control must not follow them.
+test.describe('Data detail page — mouse pointer', () => {
+  test.use({ viewport: { width: 1280, height: 900 }, hasTouch: false });
+
+  test('delete control keeps the 48px minimum while the compact tabs are released', async ({ page }) => {
+    await login(page);
+    await mockDataRecords(page, 'weight', [weightRow('rec-1', 80.5, 1)]);
+
+    await page.goto('/data/weight/');
+
+    const del = page.getByRole('button', { name: 'Delete record' });
+    await expect(del).toBeVisible();
+    await assertMinTapTarget(del, 'record delete control (mouse)');
+
+    const week = page.getByRole('button', { name: 'Week', exact: true });
+    const weekBox = await week.boundingBox();
+    expect(weekBox, 'zoom tab should have a bounding box').not.toBeNull();
+    expect(weekBox!.height, 'zoom tab height on a fine pointer').toBeLessThan(MIN_TAP_TARGET);
   });
 });

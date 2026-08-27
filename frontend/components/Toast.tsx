@@ -44,7 +44,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="fixed bottom-4 inset-x-0 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none">
+      {/* Offset by the bottom navigation bar's vertical budget rather than
+          left at `bottom-4`: `useToast` is the app-wide error path, so
+          without this every toast lands inside the bar. `--nav-block` is
+          `0px` at and above the breakpoint, where `--edge-inset-b` takes
+          over the safe-area inset the bar was absorbing, so this resolves to
+          the previous `bottom-4` on desktop. See mobile-navigation's "A
+          toast clears the navigation bar". */}
+      <div className="fixed bottom-[calc(1rem+var(--nav-block)+var(--edge-inset-b))] inset-x-0 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none">
         {toasts.map(t => (
           <div
             key={t.id}

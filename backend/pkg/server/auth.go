@@ -2,14 +2,31 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ya-breeze/kin-core/auth"
 	"github.com/ya-breeze/kin-core/authdb"
 	"github.com/ya-breeze/kin-core/cookies"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"gorm.io/gorm"
+)
+
+const (
+	// maxLoginBodyBytes bounds the request body read before decoding, so an
+	// oversized payload is rejected before any JSON parsing work.
+	maxLoginBodyBytes = 4 * 1024
+	// maxLoginUsernameLength bounds the username accepted for login. The
+	// login limiter (login_limiter.go) retains a normalized copy of the
+	// username for up to 24h and caps the number of tracked entries at
+	// loginMapCeiling, but that count cap alone does not bound an entry's
+	// size — without this check, an attacker submitting distinct oversized
+	// usernames could still inflate the limiter's memory footprint well
+	// beyond what the entry-count ceiling assumes.
+	maxLoginUsernameLength = 254
 )
 
 type authHandlers struct {
@@ -19,24 +36,94 @@ type authHandlers struct {
 	cookieCfg cookies.Config
 }
 
+// writeTooManyAttempts writes the 429 response shape shared by every
+// login-limiter rejection case (real lockout, in-flight capacity, the
+// process-wide verification cap, ceiling fail-closed). No cookies are set.
+//
+// The retry hint goes out twice on purpose: in the body for the web client,
+// and as the standard Retry-After header for everything else. The widget
+// this endpoint exists for refreshes unattended in the background, and HTTP
+// client libraries and intermediate proxies honour the header without being
+// taught this endpoint's body shape.
+func writeTooManyAttempts(w http.ResponseWriter, retryAfter time.Duration) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", strconv.Itoa(ceilRetryAfter(retryAfter)))
+	w.WriteHeader(http.StatusTooManyRequests)
+	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		"error":               "too_many_attempts",
+		"retry_after_seconds": ceilRetryAfter(retryAfter),
+	})
+}
+
 func (h *authHandlers) Login(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
+
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	if utf8.RuneCountInString(req.Username) > maxLoginUsernameLength {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	allowed, retryAfter := admitAttempt(req.Username)
+	if !allowed {
+		writeTooManyAttempts(w, retryAfter)
+		return
+	}
+
+	// The per-username reservation above bounds one account's attempts; this
+	// bounds the bcrypt work the process will do at once for all of them.
+	// Releasing the reservation on rejection is what keeps a burst from
+	// leaving phantom in-flight attempts behind — verification never ran,
+	// so this attempt is neither a failure nor a success.
+	if !acquireVerifySlot() {
+		releaseAttempt(req.Username)
+		writeTooManyAttempts(w, loginCapacityRetryAfter)
+		return
+	}
+	defer releaseVerifySlot()
+
+	if afterAdmitHook != nil {
+		afterAdmitHook()
+	}
+
 	user, err := h.storage.FindUserByName(req.Username)
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			// An operational DB error (not "no such user") is not a
+			// credential failure: release the reserved in-flight slot
+			// without recording a failure, so a transient outage can't
+			// contribute toward locking out a legitimate account.
+			releaseAttempt(req.Username)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		// Run the same bcrypt cost as a wrong-password 401 so an
+		// unknown-username response is not measurably faster (closes a
+		// username-enumeration timing oracle, per design.md).
+		auth.VerifyPassword(req.Password, auth.DummyHash)
+		recordFailure(req.Username)
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
 	if !auth.VerifyPassword(req.Password, user.PasswordHash) {
+		recordFailure(req.Username)
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
+	recordSuccess(req.Username)
+
 	accessToken, err := auth.GenerateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
