@@ -49,7 +49,7 @@ not read-only, several specs issue real `POST`/`PUT`/`DELETE` requests (creating
 log entries, changing settings), and `hcw-prod` holds real, irreplaceable data per this
 environment's stack-class rules.
 
-This matters beyond the Makefile target itself: `playwright.config.ts` and 6 of the 10 spec files
+This matters beyond the Makefile target itself: `playwright.config.ts` and 5 of the 10 spec files
 each independently fall back to `http://192.168.1.54:8888` — `hcw-prod`'s port — when `BASE_URL` is
 unset, and `hcw-prod` seeds the same `alice`/`pass1` credentials the suite logs in with. `make
 test-e2e` always sets `BASE_URL` explicitly, so it never hits any of these fallbacks, but anyone
@@ -87,7 +87,7 @@ Three things this change deliberately does **not** touch:
   this Makefile target should paper over.
 - **`playwright.config.ts`'s and individual specs' own `BASE_URL` fallbacks are not rewritten.**
   Several of them default to `hcw-prod`'s port when `BASE_URL` is unset — a pre-existing risk this
-  change doesn't introduce and, being spread across the config and 6 spec files, is a larger fix
+  change doesn't introduce and, being spread across the config and 5 spec files, is a larger fix
   than one Makefile target. `make test-e2e` itself is unaffected since it always sets `BASE_URL`
   explicitly; a follow-up idea should hunt down and align every in-repo default instead.
 
@@ -110,8 +110,12 @@ the Makefile, since it isn't a per-project or per-worktree concern.
 
 ### Task 2: Verify from a clean worktree
 - [ ] From a worktree with no `e2e/node_modules` present, run `make test-e2e` against `hcw-wip`
-      and confirm it installs dependencies once, then runs the suite to completion (pass or a
-      pre-existing failure unrelated to this change — either way, no `MODULE_NOT_FOUND`)
+      and confirm it installs dependencies once, then runs the suite to completion with a
+      successful (`0`) exit status and no `MODULE_NOT_FOUND`. A failing run — including a failure
+      that looks pre-existing or unrelated to this change — does not satisfy this task; per this
+      environment's E2E validation rule, a failure found while validating a change must be fixed,
+      not waved through, so treat any failure as a finding to fix or to raise explicitly rather
+      than a reason to tick this box anyway
 - [ ] Run `make test-e2e` a second time in the same worktree. Record `stat -c %Y
       e2e/node_modules/.install-stamp` before and after this run and confirm it is unchanged, and
       confirm no `npm ci`/`added N packages` output appears — this is the concrete check that
@@ -119,6 +123,12 @@ the Makefile, since it isn't a per-project or per-worktree concern.
 - [ ] Touch `e2e/package-lock.json` (or bump a dependency version) and run `make test-e2e` a third
       time; confirm `npm ci` runs again and the stamp's mtime updates — this is the path that
       makes the target self-heal a dependency change, not just a missing `node_modules`
-- [ ] Run `BASE_URL=<a different reachable stack's URL> make test-e2e` and confirm the suite
-      targets that URL instead of the `hcw-wip` default
+- [ ] Confirm the `BASE_URL` override itself: `hcw-wip` and `hcw-prod` are the only two HealthVault
+      deployments in `data.json`, and `hcw-prod` is off-limits (see `## How`), so there is no
+      second reachable stack to point at. Instead run
+      `make -n test-e2e BASE_URL=http://example.invalid:9` (Make's dry-run flag, which prints the
+      recipe without executing it) and confirm the printed command line carries
+      `BASE_URL=http://example.invalid:9` rather than the `192.168.1.54:8892` default — this
+      proves the `$(or $(BASE_URL),...)` substitution picks up an override without running the
+      suite against anything
 - [ ] Mark completed
