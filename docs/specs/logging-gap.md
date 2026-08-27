@@ -840,6 +840,6 @@ it in a state worth reading.
 - [x] 8.6 Run the full suite against `hcw-wip`
 
 ### Task 9: Verification
-- [ ] 9.1 `make lint`
-- [ ] 9.2 `make test`
-- [ ] 9.3 `npx tsc --noEmit` in `frontend/`
+- [x] 9.1 `make lint`
+- [x] 9.2 `make test`
+- [x] 9.3 `npx tsc --noEmit` in `frontend/`
