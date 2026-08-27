@@ -1,7 +1,7 @@
 # ADR-010: Report a Logging Gap, Not an Adaptive TDEE
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
