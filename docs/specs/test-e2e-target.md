@@ -108,11 +108,11 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Add the test-e2e target
-- [ ] Add the `test-e2e` target and the `e2e/node_modules/.install-stamp` target to the top-level
+- [x] Add the `test-e2e` target and the `e2e/node_modules/.install-stamp` target to the top-level
       `Makefile`, exactly as described in `## How`
-- [ ] Confirm `test`'s recipe and prerequisites are unchanged — `test-e2e` must not be reachable
+- [x] Confirm `test`'s recipe and prerequisites are unchanged — `test-e2e` must not be reachable
       from `make test`
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Verify from a clean worktree
 - [ ] From a worktree with no `e2e/node_modules` present, run `make test-e2e` against `hcw-wip`
