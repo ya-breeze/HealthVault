@@ -115,21 +115,35 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Verify from a clean worktree
-- [ ] From a worktree with no `e2e/node_modules` present, run `make test-e2e` against `hcw-wip`
+- [x] From a worktree with no `e2e/node_modules` present, run `make test-e2e` against `hcw-wip`
       and confirm it installs dependencies once, then runs the suite to completion with a
       successful (`0`) exit status and no `MODULE_NOT_FOUND`. A failing run — including a failure
       that looks pre-existing or unrelated to this change — does not satisfy this task; per this
       environment's E2E validation rule, a failure found while validating a change must be fixed,
       not waved through, so treat any failure as a finding to fix or to raise explicitly rather
       than a reason to tick this box anyway
-- [ ] Run `make test-e2e` a second time in the same worktree. Record `stat -c %Y
+
+      Confirmed: removed `e2e/node_modules`, ran `make test-e2e` against `hcw-wip`
+      (`http://192.168.1.54:8892`, the default). `npm ci` installed dependencies once, the
+      `.install-stamp` file was created, and the suite completed with exit status `0` (180 passed,
+      2 flaky retried to a pass, 1 skipped). No `MODULE_NOT_FOUND` anywhere in the output.
+- [x] Run `make test-e2e` a second time in the same worktree. Record `stat -c %Y
       e2e/node_modules/.install-stamp` before and after this run and confirm it is unchanged, and
       confirm no `npm ci`/`added N packages` output appears — this is the concrete check that
       `npm ci` did not re-run, not just that the run looked fast
-- [ ] Touch `e2e/package-lock.json` (or bump a dependency version) and run `make test-e2e` a third
+
+      Confirmed: stamp mtime was identical before and after (`1787871763` both times), and
+      `grep -iE "npm ci|added [0-9]+ package"` on the run's output matched nothing. The suite ran
+      and exited `0` again.
+- [x] Touch `e2e/package-lock.json` (or bump a dependency version) and run `make test-e2e` a third
       time; confirm `npm ci` runs again and the stamp's mtime updates — this is the path that
       makes the target self-heal a dependency change, not just a missing `node_modules`
-- [ ] Confirm the `BASE_URL` override itself: `hcw-wip` and `hcw-prod` are the only two HealthVault
+
+      Confirmed: after `touch e2e/package-lock.json`, the run's output included
+      `added 3 packages, and audited 4 packages`, and the stamp's mtime advanced from
+      `1787871763` to `1787872083`. `package-lock.json`'s tracked content is unchanged (`git diff`
+      empty), only its mtime moved, which is exactly the trigger `npm ci` prerequisite depends on.
+- [x] Confirm the `BASE_URL` override itself: `hcw-wip` and `hcw-prod` are the only two HealthVault
       deployments in `data.json`, and `hcw-prod` is off-limits (see `## How`), so there is no
       second reachable stack to point at. Instead run
       `make -n test-e2e BASE_URL=http://example.invalid:9` (Make's dry-run flag, which prints the
@@ -137,4 +151,8 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
       `BASE_URL=http://example.invalid:9` rather than the `192.168.1.54:8892` default — this
       proves the `$(or $(BASE_URL),...)` substitution picks up an override without running the
       suite against anything
-- [ ] Mark completed
+
+      Confirmed: `make -n test-e2e BASE_URL=http://example.invalid:9` printed
+      `cd .../e2e && BASE_URL=http://example.invalid:9 npx playwright test --reporter=line`,
+      carrying the override rather than the `192.168.1.54:8892` default.
+- [x] Mark completed
