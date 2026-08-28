@@ -5,7 +5,7 @@ ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 # which the USDA food index depends on. Keep it on build, test and vet alike.
 GO_TAGS := sqlite_fts5
 
-.PHONY: all build test test-backend test-frontend lint run-backend
+.PHONY: all build test test-backend test-frontend test-e2e lint run-backend
 
 all: build
 
@@ -23,6 +23,13 @@ test-backend:
 
 test-frontend:
 	@cd $(ROOT_DIR)/frontend && npm test --silent
+
+test-e2e: $(ROOT_DIR)e2e/node_modules/.install-stamp
+	@cd $(ROOT_DIR)e2e && BASE_URL=$(or $(BASE_URL),http://192.168.1.54:8892) npx playwright test --reporter=line
+
+$(ROOT_DIR)e2e/node_modules/.install-stamp: $(ROOT_DIR)e2e/package-lock.json
+	@cd $(ROOT_DIR)e2e && npm ci
+	@touch $(ROOT_DIR)e2e/node_modules/.install-stamp
 
 lint:
 	@cd $(ROOT_DIR)/backend && go vet -tags $(GO_TAGS) ./...
