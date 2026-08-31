@@ -197,9 +197,15 @@ test.describe('Manual meal entry', () => {
       }).toPass({ timeout: 15_000 });
       expect(['pending_review', 'pending_clarification', 'failed']).toContain(meal.status);
 
-      const items: { name: string }[] = meal.items ?? [];
-      const hasNonEnglishName = items.some(item => /[^\x00-\x7F]/.test(item.name));
-      expect(hasNonEnglishName, `expected a non-ASCII item name, got ${JSON.stringify(items.map(i => i.name))}`).toBe(true);
+      // A real model failure (status 'failed') leaves no items at all —
+      // failMeal only flips status, and a freshly created described meal
+      // starts with none — so the language check below only applies to the
+      // two statuses that actually carry recognized items.
+      if (meal.status !== 'failed') {
+        const items: { name: string }[] = meal.items ?? [];
+        const hasNonEnglishName = items.some(item => /[^\x00-\x7F]/.test(item.name));
+        expect(hasNonEnglishName, `expected a non-ASCII item name, got ${JSON.stringify(items.map(i => i.name))}`).toBe(true);
+      }
 
       await deleteMeal(request, cookies, mealId);
     } finally {
