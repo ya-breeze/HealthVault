@@ -105,35 +105,35 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Bound the capture modal to the visible viewport
-- [ ] In `frontend/components/food/CameraCapture.tsx`, clamp the overlay to the dynamic viewport
+- [x] In `frontend/components/food/CameraCapture.tsx`, clamp the overlay to the dynamic viewport
       (`dvh`) so the card is bounded by the space actually on screen, not by the large viewport a
       `fixed inset-0` element resolves to.
-- [ ] Restructure the card into a flex column with three regions: the existing header, a preview
+- [x] Restructure the card into a flex column with three regions: the existing header, a preview
       region, and a new footer holding the Capture `TapTarget`.
-- [ ] Give the header and footer `shrink-0`, and the preview region `flex-1` plus `min-h-0`, so
+- [x] Give the header and footer `shrink-0`, and the preview region `flex-1` plus `min-h-0`, so
       the preview is the only region that gives way when the viewport is short. Note in a comment
       that `min-h-0` is what actually allows the shrink, since a flex item's automatic minimum
       size otherwise pins it to its content height.
-- [ ] Give the `<video>` `object-contain` so a shrunk preview is letterboxed rather than
+- [x] Give the `<video>` `object-contain` so a shrunk preview is letterboxed rather than
       distorted, and confirm `capture()` still draws at the stream's own `videoWidth`/
       `videoHeight` — the captured image must not change with the preview's rendered size.
-- [ ] Give the preview region `overflow-y-auto` as the last-resort fallback, and keep the Capture
+- [x] Give the preview region `overflow-y-auto` as the last-resort fallback, and keep the Capture
       button outside that scroll region so it cannot be scrolled off screen.
-- [ ] Render the error state inside the same preview region, so a long message scrolls and the
+- [x] Render the error state inside the same preview region, so a long message scrolls and the
       header's Cancel control stays reachable at any viewport height.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Absorb the bottom safe-area inset in the overlay
-- [ ] Give the overlay a bottom padding of `max(1rem, env(safe-area-inset-bottom))`, so the
+- [x] Give the overlay a bottom padding of `max(1rem, env(safe-area-inset-bottom))`, so the
       Capture button clears a home indicator in landscape without shrinking the existing 1rem
       padding on devices with no inset.
-- [ ] Add a comment stating why the literal `env()` term is used rather than `--edge-inset-b`:
+- [x] Add a comment stating why the literal `env()` term is used rather than `--edge-inset-b`:
       ADR-008 leaves full-screen overlays outside the `--nav-block` rule, so no element underneath
       absorbs the inset for this overlay, and `--edge-inset-b` is `0px` below the `sm` breakpoint
       exactly because the navigation bar normally does.
-- [ ] Confirm no `--nav-block` offset is added — covering the navigation bar is deliberate for
+- [x] Confirm no `--nav-block` offset is added — covering the navigation bar is deliberate for
       this overlay and ADR-008 says so.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: Cover the landscape case in E2E
 - [ ] In the `In-app camera capture` describe block in `e2e/tests/food.spec.ts`, add a landscape
