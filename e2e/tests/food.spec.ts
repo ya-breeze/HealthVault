@@ -185,12 +185,18 @@ test.describe('Manual meal entry', () => {
       const mealId = url.searchParams.get('meal')!;
       expect(mealId).toBeTruthy();
 
-      await expect(
-        page.getByText(/Review needed|Needs clarification|Analysis failed/)
-      ).toBeVisible({ timeout: 15_000 });
+      // The review screen's status text renders in the account's own Display
+      // Language (Russian here), so it can't be matched by the English
+      // status strings the other test above checks — poll the API for a
+      // terminal status instead, which is language-independent.
+      let meal: { status: string; items?: { name: string }[] } = { status: 'processing' };
+      await expect(async () => {
+        const mealRes = await request.get(`${BASE_URL}/api/food/meals/${mealId}`, { headers: { Cookie: cookies } });
+        meal = await mealRes.json();
+        expect(meal.status).not.toBe('processing');
+      }).toPass({ timeout: 15_000 });
+      expect(['pending_review', 'pending_clarification', 'failed']).toContain(meal.status);
 
-      const mealRes = await request.get(`${BASE_URL}/api/food/meals/${mealId}`, { headers: { Cookie: cookies } });
-      const meal = await mealRes.json();
       const items: { name: string }[] = meal.items ?? [];
       const hasNonEnglishName = items.some(item => /[^\x00-\x7F]/.test(item.name));
       expect(hasNonEnglishName, `expected a non-ASCII item name, got ${JSON.stringify(items.map(i => i.name))}`).toBe(true);

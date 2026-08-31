@@ -267,9 +267,9 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
       `completeness.spec.ts` untouched
 - [x] Check whether `e2e/tests/mobile-nav.spec.ts`'s manual-page submit-bar and safe-area tests
       still target the right control after the page rework, and update them if not
-- [ ] Run `make lint` and `make test`, then deploy the branch to `hcw-wip` and run
+- [x] Run `make lint` and `make test`, then deploy the branch to `hcw-wip` and run
       `make test-e2e` against it; fix every failure rather than recording it as pre-existing
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 7: Documentation and the ADR
 - [ ] Add a **Meal Description** term to `CONTEXT.md` under "Food logging", including the
