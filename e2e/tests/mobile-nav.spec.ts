@@ -674,7 +674,7 @@ test.describe('a toast does not occlude a page\'s own bottom action bar', () => 
 
     const navBox = await boxOf(bar(page), 'navigation bar');
     const toastBox = await boxOf(toast, 'toast');
-    const gap = navBox.top - (toastBox.y + toastBox.height);
+    const gap = navBox.y - (toastBox.y + toastBox.height);
     expect(gap, 'toast bottom edge should sit about 1rem above the navigation bar\'s top edge')
       .toBeGreaterThan(8);
     expect(gap, 'toast bottom edge should sit about 1rem above the navigation bar\'s top edge')
