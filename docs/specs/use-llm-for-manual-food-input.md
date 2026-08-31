@@ -220,23 +220,23 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Backend tests for the describe path
-- [ ] Add `backend/pkg/server/food_describe_test.go` covering: a successful describe creating a
+- [x] Add `backend/pkg/server/food_describe_test.go` covering: a successful describe creating a
       `pending_review` meal whose items carry the model's names, weights and estimated macros,
       with the description persisted and the meal aggregate still zero until confirm
-- [ ] Cover validation: missing/empty description, an over-length description, and an oversized
+- [x] Cover validation: missing/empty description, an over-length description, and an oversized
       request body, each rejected before any `vision.Fake` call is recorded
-- [ ] Cover a `Describe` failure leaving the meal `failed` with the description still stored, and
+- [x] Cover a `Describe` failure leaving the meal `failed` with the description still stored, and
       a subsequent `RetryMeal` on that meal re-running `Describe` (assert via `DescribeCalls`)
       rather than returning 409
-- [ ] Cover the language behavior that motivates this change: with a Russian `display_language`,
+- [x] Cover the language behavior that motivates this change: with a Russian `display_language`,
       assert `Describe` is called with `"ru"`, that no USDA or Open Food Facts candidate is
       bound, and that items land with `MacroSource` `estimated` from the model's own profile
-- [ ] Cover a `Describe` response carrying `clarification_questions`, asserting the meal reaches
+- [x] Cover a `Describe` response carrying `clarification_questions`, asserting the meal reaches
       `pending_clarification` and that the existing `ClarifyMeal` endpoint carries it through to
       `pending_review` without a photo
-- [ ] Confirm the existing `food_manual_test.go` suite still passes untouched — the structured
+- [x] Confirm the existing `food_manual_test.go` suite still passes untouched — the structured
       endpoint's behavior must not change
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 5: Description-first manual entry in the frontend
 - [ ] Add `description?: string` to the `FoodMeal` interface and a `describeMeal` call to
