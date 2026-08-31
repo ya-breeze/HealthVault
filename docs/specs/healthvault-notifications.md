@@ -89,10 +89,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 5: Record the decision and validate
-- [ ] Add `docs/adr/ADR-011-bottom-action-bars-register-their-height.md` with `Status: Proposed`, stating the obligation: a page's bottom-anchored action bar renders through `BottomActionBar`, and anything anchored above it reads the registered height rather than a literal.
-- [ ] Add a `> **Update (ADR-011):** …` note to `docs/adr/ADR-008-bottom-clearance-as-a-css-token.md` pointing at it, without rewriting ADR-008.
-- [ ] Run `make lint` and `make test`, and fix anything they report.
-- [ ] Build the frontend (`cd frontend && npm run build`) to catch type errors, since `make lint` covers the Go backend only and the project has no frontend linter.
+- [x] Add `docs/adr/ADR-011-bottom-action-bars-register-their-height.md` with `Status: Proposed`, stating the obligation: a page's bottom-anchored action bar renders through `BottomActionBar`, and anything anchored above it reads the registered height rather than a literal.
+- [x] Add a `> **Update (ADR-011):** …` note to `docs/adr/ADR-008-bottom-clearance-as-a-css-token.md` pointing at it, without rewriting ADR-008.
+- [x] Run `make lint` and `make test`, and fix anything they report.
+- [x] Build the frontend (`cd frontend && npm run build`) to catch type errors, since `make lint` covers the Go backend only and the project has no frontend linter.
 - [ ] Deploy the branch to the `hcw-wip` stack and run `make test-e2e` against it, fixing failures before reporting the change done.
 - [ ] State plainly that the non-zero safe-area-inset case is a manual check on a notched device, since headless Chromium reports the inset as 0.
 - [ ] Flip ADR-011 from `Proposed` to `Accepted` as the last commit on the branch.
