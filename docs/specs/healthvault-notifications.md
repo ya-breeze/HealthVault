@@ -79,14 +79,14 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: End-to-end guard
-- [ ] Add a `test.describe` to `e2e/tests/mobile-nav.spec.ts` for "a toast does not occlude a page's own bottom action bar", reusing the file's `login`, `boxOf` and `intersects` helpers.
-- [ ] Mock `**/api/food/meals/<id>` GET with a `pending_review` meal carrying one item (`id`, `meal_id`, `name`, `macro_source: 'reference'`, `weight_grams`, `confidence` and the macro fields of `FoodItem`), and mock `**/api/food/meals/<id>/items/*` PATCH to return the updated meal, so the weight edit resolves without touching the deployed data.
-- [ ] At the 390x844 mobile viewport: load `/food/review/?meal=<id>`, change the item's weight input and blur it, wait for the toast, and assert the toast's box does not intersect the bar's box.
-- [ ] Assert in the same case that the confirm button is still enabled and still hit-testable while the toast is visible — `click({ trial: true })` — since a control hidden under the toast is the reported defect and a stacking-order-only fix would not satisfy this.
-- [ ] Repeat both assertions at the 1280x800 desktop viewport, where `--nav-block` is `0px` and the bar sits at the screen edge.
-- [ ] Assert that with no bar on screen the toast returns to its base offset: raise a toast on a page that renders no `BottomActionBar` and check its bottom edge sits within about 1rem of the navigation bar's top edge.
-- [ ] Keep `the review page's submit bar clears it, and so does a toast` passing as written; it covers the toast against the navigation bar, which this change must not regress.
-- [ ] Mark completed
+- [x] Add a `test.describe` to `e2e/tests/mobile-nav.spec.ts` for "a toast does not occlude a page's own bottom action bar", reusing the file's `login`, `boxOf` and `intersects` helpers.
+- [x] Mock `**/api/food/meals/<id>` GET with a `pending_review` meal carrying one item (`id`, `meal_id`, `name`, `macro_source: 'reference'`, `weight_grams`, `confidence` and the macro fields of `FoodItem`), and mock `**/api/food/meals/<id>/items/*` PATCH to return the updated meal, so the weight edit resolves without touching the deployed data.
+- [x] At the 390x844 mobile viewport: load `/food/review/?meal=<id>`, change the item's weight input and blur it, wait for the toast, and assert the toast's box does not intersect the bar's box.
+- [x] Assert in the same case that the confirm button is still enabled and still hit-testable while the toast is visible — `click({ trial: true })` — since a control hidden under the toast is the reported defect and a stacking-order-only fix would not satisfy this.
+- [x] Repeat both assertions at the 1280x800 desktop viewport, where `--nav-block` is `0px` and the bar sits at the screen edge.
+- [x] Assert that with no bar on screen the toast returns to its base offset: raise a toast on a page that renders no `BottomActionBar` and check its bottom edge sits within about 1rem of the navigation bar's top edge.
+- [x] Keep `the review page's submit bar clears it, and so does a toast` passing as written; it covers the toast against the navigation bar, which this change must not regress.
+- [x] Mark completed
 
 ### Task 5: Record the decision and validate
 - [ ] Add `docs/adr/ADR-011-bottom-action-bars-register-their-height.md` with `Status: Proposed`, stating the obligation: a page's bottom-anchored action bar renders through `BottomActionBar`, and anything anchored above it reads the registered height rather than a literal.
