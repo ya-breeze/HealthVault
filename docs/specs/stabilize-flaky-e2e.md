@@ -201,8 +201,10 @@ before. The gate for this change is the suite run repeatedly, recorded in Task 4
 
 ### Task 5: Prove the suite is stable
 
-- [ ] Deploy the branch to `hcw-wip` and run `make test-e2e` five times with `--retries=0`.
-- [ ] Record the pass counts in this task; every run must be zero failed and zero flaky for the
-      five tests named in `Why`.
-- [ ] Report any test that still fails rather than re-running until it passes.
-- [ ] Mark completed
+- [x] Deploy the branch to `hcw-wip` and run `make test-e2e` five times with `--retries=0`.
+- [x] Record the pass counts in this task; every run must be zero failed and zero flaky for the
+      five tests named in `Why`. Result: **188 passed, 0 failed, 0 flaky, five runs out of five.**
+- [x] Report any test that still fails rather than re-running until it passes. The first five-run
+      gate, before Task 4 existed, is recorded here rather than discarded: it read 188/187/188/187/188
+      with `mobile-nav.spec.ts:426` failing twice. That failure is what Task 4 turned out to be.
+- [x] Mark completed
