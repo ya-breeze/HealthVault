@@ -73,15 +73,21 @@ ADR-007 also settles the 3-of-7 minimum-coverage floor Phase 4's "not enough dat
 
 ### Phase 4 — Food dashboard Cards + LLM recommendations/chat
 
-Two new Food Cards (per ADR-001's registry, defaulting to visible):
+**Now one card, not two, and partly shipped.** The original plan added Card A (today vs. target)
+and Card B (Healthiness Label plus advice) beside the already-shipped Logging Gap card — three
+nutrition cards on one dashboard. ya-breeze rejected that in favour of a single merged card, and
+the `nutrition-card-today-and-on-track` change built two of its three rows on the existing card
+(registry id `logging_gap`, retitled "Nutrition"):
 
-- **Card A** — today's calories/macros vs. the Phase-3 Nutrition Target.
-- **Card B** (single merged Card, not two) — a **Healthiness Label** (Good /
-  Fair / Needs attention, rolling 7-day window) plus 1-2 short recommendation
-  lines under it. The label itself is a **deterministic heuristic** over
-  already-logged `FoodMeal` macro/sugar/sodium fields — explicitly *not*
-  LLM-judged (ADR-004), so it stays free, fast, and reproducible on every
+- ~~**Card A** — today's calories/macros vs. the Phase-3 Nutrition Target.~~ **Shipped** as the
+  card's top row, fed by `GET /api/summary/today`.
+- **Middle row — still to build.** A **Healthiness Label** (Good / Fair / Needs attention, rolling
+  7-day window) plus 1-2 short recommendation lines under it. The label itself is a
+  **deterministic heuristic** over already-logged `FoodMeal` macro/sugar/sodium fields —
+  explicitly *not* LLM-judged (ADR-004), so it stays free, fast, and reproducible on every
   dashboard load regardless of entry source (photo/manual/barcode).
+- ~~The logging-gap line~~ — **shipped**, as the card's bottom row, and it now distinguishes "the
+  log agrees with the weight trend" from "not enough data" instead of showing the latter for both.
 
 LLM involvement is downstream of the label, not the label itself: (1) an
 automatic once-daily cached call that generates/refines the recommendation

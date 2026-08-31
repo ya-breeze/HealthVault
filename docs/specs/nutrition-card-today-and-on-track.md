@@ -237,11 +237,11 @@ bar clamps at 100% while the numbers keep counting.
 - [x] Mark completed
 
 ### Task 6: Validate against the deployed stack
-- [ ] Run `make lint` and `make test` and fix anything they report
-- [ ] Deploy the branch to `hcw-wip` and run `make test-e2e` against it; fix every failure rather
+- [x] Run `make lint` and `make test` and fix anything they report
+- [x] Deploy the branch to `hcw-wip` and run `make test-e2e` against it; fix every failure rather
       than recording it as pre-existing
-- [ ] Add the `> **Update:**` note to `docs/adr/ADR-004-heuristic-food-healthiness-label.md`
+- [x] Add the `> **Update:**` note to `docs/adr/ADR-004-heuristic-food-healthiness-label.md`
       recording the one-card decision, leaving its `Status` as `Proposed`
-- [ ] Update `todo.md`'s Phase 4 section so it describes the merged card and notes which rows this
+- [x] Update `todo.md`'s Phase 4 section so it describes the merged card and notes which rows this
       change already shipped
-- [ ] Mark completed
+- [x] Mark completed
