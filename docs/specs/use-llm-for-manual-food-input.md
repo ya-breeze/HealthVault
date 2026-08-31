@@ -239,21 +239,21 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 5: Description-first manual entry in the frontend
-- [ ] Add `description?: string` to the `FoodMeal` interface and a `describeMeal` call to
+- [x] Add `description?: string` to the `FoodMeal` interface and a `describeMeal` call to
       `frontend/lib/api.ts`, posting to `/food/meals/describe`
-- [ ] Rework `frontend/app/food/manual/page.tsx` to lead with the description textarea, the
+- [x] Rework `frontend/app/food/manual/page.tsx` to lead with the description textarea, the
       optional name and time inputs, a live character counter against the 1000-rune limit, the
       external-provider disclosure, and a submit that navigates to `/food/review/?meal=<id>`
-- [ ] Move the existing item-by-item form (the `ManualItemEditor` list, its add-item control and
+- [x] Move the existing item-by-item form (the `ManualItemEditor` list, its add-item control and
       its own submit) behind a collapsed disclosure on the same page, with its behavior and its
       `POST /api/food/meals/manual` call unchanged
-- [ ] Show `meal.description` on the review screen for a described meal in
+- [x] Show `meal.description` on the review screen for a described meal in
       `frontend/app/food/review/ReviewClient.tsx`, and confirm the reanalyze control stays hidden
       for it (`photo_path` is empty)
-- [ ] Add the new strings to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`, and update
+- [x] Add the new strings to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`, and update
       `en.ts`'s header comment to record that the description entry path is translated while the
       demoted structured form remains English
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 6: E2E coverage and validation against the deployed stack
 - [ ] Extend the `Manual meal entry` describe block in `e2e/tests/food.spec.ts` with a test that

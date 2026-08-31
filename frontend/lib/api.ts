@@ -207,6 +207,7 @@ export interface FoodItem {
 export interface FoodMeal {
   id: string;
   photo_path?: string;
+  description?: string;
   status: MealStatus;
   logged_at: string;
   name: string;
@@ -584,6 +585,8 @@ export const api = {
   },
   createManualMeal: (input: { name?: string; logged_at?: string; items: ManualMealItemInput[] }) =>
     apiFetch<FoodMeal>('/food/meals/manual', { method: 'POST', body: JSON.stringify(input) }),
+  describeMeal: (input: { description: string; name?: string; logged_at?: string }) =>
+    apiFetch<FoodMeal>('/food/meals/describe', { method: 'POST', body: JSON.stringify(input) }),
   getMeal: (id: string) => apiFetch<FoodMeal>(`/food/meals/${id}`),
   mealPhotoUrl: (id: string) => `${BASE}/food/meals/${id}/photo`,
   retryMeal: (id: string) => apiFetch<FoodMeal>(`/food/meals/${id}/retry`, { method: 'POST' }),
