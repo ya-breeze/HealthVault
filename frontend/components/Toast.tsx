@@ -1,6 +1,7 @@
 'use client';
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import TapTarget from './ui/TapTarget';
+import { useBottomActionBarHeight } from './ui/BottomActionBar';
 
 export type ToastVariant = 'success' | 'error';
 
@@ -30,6 +31,7 @@ const VARIANT_STYLES: Record<ToastVariant, string> = {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
   const nextId = useRef(0);
+  const barHeight = useBottomActionBarHeight();
 
   const dismiss = useCallback((id: number) => {
     setToasts(ts => ts.filter(t => t.id !== id));
@@ -50,8 +52,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           `0px` at and above the breakpoint, where `--edge-inset-b` takes
           over the safe-area inset the bar was absorbing, so this resolves to
           the previous `bottom-4` on desktop. See mobile-navigation's "A
-          toast clears the navigation bar". */}
-      <div className="fixed bottom-[calc(1rem+var(--nav-block)+var(--edge-inset-b))] inset-x-0 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none">
+          toast clears the navigation bar".
+
+          A registered BottomActionBar (a page's own submit/confirm bar —
+          see ADR-011) sits between the toast and the navigation bar, so the
+          toast must clear that too. The two branches below aren't
+          interchangeable: the bar already carries `--edge-inset-b` inside
+          its own bottom padding, so that inset is inside its measured
+          height, and adding `--edge-inset-b` again on top of it would
+          double-count the safe-area inset on a notched device in landscape.
+          With no bar registered the toast falls back to exactly the
+          bar-less offset above. */}
+      <div
+        className="fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none"
+        style={{
+          bottom: barHeight > 0
+            ? `calc(1rem + var(--nav-block) + ${barHeight}px)`
+            : 'calc(1rem + var(--nav-block) + var(--edge-inset-b))',
+        }}
+      >
         {toasts.map(t => (
           <div
             key={t.id}

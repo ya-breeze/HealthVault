@@ -54,22 +54,22 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Bottom action bar registry
-- [ ] Add `frontend/components/ui/BottomActionBar.tsx` as a `'use client'` module exporting `BottomActionBarProvider`, `useBottomActionBarHeight()` and a default `BottomActionBar` component.
-- [ ] Hold the registry as a map from `useId` key to measured height, and have `useBottomActionBarHeight()` return the maximum, or `0` when nothing is registered.
-- [ ] Have `BottomActionBar` render the fixed bar markup both pages use today — `fixed bottom-[var(--nav-block)] left-0 right-0 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+var(--edge-inset-b))]` — plus `data-testid="bottom-action-bar"`, keeping the inner `max-w-md mx-auto` wrapper and accepting `children`.
-- [ ] Keep the `fixed` and `z-30` classes on that element: `e2e/tests/mobile-nav.spec.ts` locates both submit bars as `.fixed.z-30`, and those cases must keep passing unchanged.
-- [ ] Measure the element's border-box height with a `ResizeObserver`, register it while mounted, and unregister it on unmount so the height returns to `0`.
-- [ ] Throw from `useBottomActionBarHeight()` when it is called outside the provider, matching `useToast` in `frontend/components/Toast.tsx`.
-- [ ] Move ADR-008's offset explanation — currently duplicated as comments at `frontend/app/food/manual/page.tsx:87` and `frontend/app/food/review/ReviewClient.tsx:298` — into this component, and state in the same comment what the registration is for.
-- [ ] Mount `BottomActionBarProvider` around `ToastProvider` in `frontend/app/layout.tsx`.
-- [ ] Mark completed
+- [x] Add `frontend/components/ui/BottomActionBar.tsx` as a `'use client'` module exporting `BottomActionBarProvider`, `useBottomActionBarHeight()` and a default `BottomActionBar` component.
+- [x] Hold the registry as a map from `useId` key to measured height, and have `useBottomActionBarHeight()` return the maximum, or `0` when nothing is registered.
+- [x] Have `BottomActionBar` render the fixed bar markup both pages use today — `fixed bottom-[var(--nav-block)] left-0 right-0 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+var(--edge-inset-b))]` — plus `data-testid="bottom-action-bar"`, keeping the inner `max-w-md mx-auto` wrapper and accepting `children`.
+- [x] Keep the `fixed` and `z-30` classes on that element: `e2e/tests/mobile-nav.spec.ts` locates both submit bars as `.fixed.z-30`, and those cases must keep passing unchanged.
+- [x] Measure the element's border-box height with a `ResizeObserver`, register it while mounted, and unregister it on unmount so the height returns to `0`.
+- [x] Throw from `useBottomActionBarHeight()` when it is called outside the provider, matching `useToast` in `frontend/components/Toast.tsx`.
+- [x] Move ADR-008's offset explanation — currently duplicated as comments at `frontend/app/food/manual/page.tsx:87` and `frontend/app/food/review/ReviewClient.tsx:298` — into this component, and state in the same comment what the registration is for.
+- [x] Mount `BottomActionBarProvider` around `ToastProvider` in `frontend/app/layout.tsx`.
+- [x] Mark completed
 
 ### Task 2: The toast stack clears the registered bar
-- [ ] In `frontend/components/Toast.tsx`, read `useBottomActionBarHeight()` and set the stack container's `bottom` through an inline style instead of the current `bottom-[calc(...)]` class.
-- [ ] Use `calc(1rem + var(--nav-block) + <height>px)` when a bar is registered, and `calc(1rem + var(--nav-block) + var(--edge-inset-b))` when none is.
-- [ ] Comment why the two branches differ: the bar already carries `--edge-inset-b` in its own bottom padding, so that inset is inside the measured height and must not be added a second time.
-- [ ] Leave the container's `pointer-events-none`, the card's `pointer-events-auto`, `z-50`, the variant styles and the 3s auto-dismiss untouched.
-- [ ] Mark completed
+- [x] In `frontend/components/Toast.tsx`, read `useBottomActionBarHeight()` and set the stack container's `bottom` through an inline style instead of the current `bottom-[calc(...)]` class.
+- [x] Use `calc(1rem + var(--nav-block) + <height>px)` when a bar is registered, and `calc(1rem + var(--nav-block) + var(--edge-inset-b))` when none is.
+- [x] Comment why the two branches differ: the bar already carries `--edge-inset-b` in its own bottom padding, so that inset is inside the measured height and must not be added a second time.
+- [x] Leave the container's `pointer-events-none`, the card's `pointer-events-auto`, `z-50`, the variant styles and the 3s auto-dismiss untouched.
+- [x] Mark completed
 
 ### Task 3: Both submit bars use the shared component
 - [ ] Replace the fixed submit bar in `frontend/app/food/manual/page.tsx` with `<BottomActionBar>`, keeping the Save Meal `TapTarget` and its disabled/saving behaviour exactly as they are.
