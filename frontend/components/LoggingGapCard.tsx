@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { api, NutritionTargetUnmetError, NutritionTargetUnmetReason, DayCompletenessState } from '@/lib/api';
+import { api, NutritionTargetUnmetReason, DayCompletenessState, TodaySummary } from '@/lib/api';
 import { emaSeries, linearRegression, toDayOffset } from '@/lib/dataTypeMeta';
 import { loggedDayKey } from '@/lib/loggedDay';
 import {
@@ -12,16 +12,36 @@ import {
   slopeStandardError,
   excludedOutlierCount,
   DayWindowData,
+  LoggingGapResult,
 } from '@/lib/loggingGap';
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
 import { EyeIcon, EyeOffIcon } from './icons';
 
+// Today's intake beside the target it is measured against — the card's top
+// row. Both halves are carried together because neither is meaningful alone:
+// a consumed figure with no target is a number with no scale.
+interface TodayRow {
+  calories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+  targetCalories: number;
+  targetProteinGrams: number;
+  targetCarbsGrams: number;
+  targetFatGrams: number;
+}
+
+// `loading`, `retrieval_error` and `nutrition_target_unmet` are whole-card
+// states: each means there is no top row *and* no gap line to draw. Only
+// `ready` splits, because once the fetches land the two rows have genuinely
+// independent outcomes — a card can show today's intake perfectly well while
+// the 28-day gap stays unresolvable, which is the normal state of a user in
+// their first weeks.
 type ContentState =
   | { kind: 'loading' }
-  | { kind: 'gap'; value: number; interval: number }
-  | { kind: 'not_enough_data' }
+  | { kind: 'ready'; today: TodayRow; gap: LoggingGapResult }
   | { kind: 'nutrition_target_unmet'; reason: NutritionTargetUnmetReason }
   | { kind: 'retrieval_error' };
 
@@ -99,33 +119,44 @@ export default function LoggingGapCard({
         const now = new Date();
 
         let weightRaw: Record<string, unknown>[];
-        let nutritionTargetCalories: number;
+        let summary: TodaySummary;
         let completeness: { date: string; state: DayCompletenessState }[];
         let dailyTotals: { date: string; calories: number; unconfirmed_meals: number }[];
         try {
-          const [w, nt, c, d] = await Promise.all([
+          // `getTodaySummary`, not `getNutritionTarget`: it carries today's
+          // consumed macros alongside the same target, so the top row costs
+          // this card no additional request. Still four fetches, not five.
+          const [w, s, c, d] = await Promise.all([
             api.data('weight', gapWindow.leadInFetchFromUTC, now.toISOString()),
-            api.getNutritionTarget(),
+            api.getTodaySummary(),
             api.getCompleteness(gapWindow.windowStart, gapWindow.windowEnd),
             api.getFoodDailyTotals(gapWindow.windowStart, gapWindow.windowEnd),
           ]);
           weightRaw = w;
-          nutritionTargetCalories = nt.calories;
+          summary = s;
           completeness = c;
           dailyTotals = d;
-        } catch (err) {
-          // This inner catch exists only to tell the 422 "complete your
-          // profile" case apart from every other fetch failure; the outer one
-          // handles anything the computation below throws.
+        } catch {
+          // Every fetch failure is the same failure now. The 422 this used to
+          // sort out separately does not exist on /summary/today — it reports
+          // an unavailable target as ordinary data, handled just below — so
+          // the inner catch no longer has a second case to tell apart.
           if (cancelled) return;
-          if (err instanceof NutritionTargetUnmetError) {
-            setState({ kind: 'nutrition_target_unmet', reason: err.reason });
-          } else {
-            setState({ kind: 'retrieval_error' });
-          }
+          setState({ kind: 'retrieval_error' });
           return;
         }
         if (cancelled) return;
+
+        // An unavailable target ends the card rather than degrading it: the
+        // top row has nothing to measure today's intake against, and the gap
+        // has no Implied Intake to derive. Same "complete your profile"
+        // state as before, now read from a field instead of caught.
+        const target = summary.target;
+        if (!target.available) {
+          setState({ kind: 'nutrition_target_unmet', reason: target.reason });
+          return;
+        }
+        const nutritionTargetCalories = target.calories;
 
         // Raw, un-bucketed weigh-ins keyed by Logged Day offset (task 3.1
         // operates on raw records, never bucketed ones) — the in-progress
@@ -168,9 +199,9 @@ export default function LoggingGapCard({
           gapWindow.windowLastDayOffset,
         );
 
-        let result: ContentState;
+        let gapResult: LoggingGapResult;
         if (hardFloor) {
-          result = { kind: 'not_enough_data' };
+          gapResult = { kind: 'not_enough_data' };
         } else {
           const bucketed = bucketByDay(kept);
           const ema = emaSeries(bucketed.map(b => b.value), 0.25);
@@ -179,7 +210,7 @@ export default function LoggingGapCard({
             .filter(p => p.x >= gapWindow.windowStartDayOffset && p.x <= gapWindow.windowLastDayOffset);
           const { slope, intercept } = linearRegression(points);
           const se = slopeStandardError(points, slope, intercept);
-          const gap = computeLoggingGap(
+          gapResult = computeLoggingGap(
             { slope, intercept },
             se,
             nutritionTargetCalories,
@@ -187,11 +218,23 @@ export default function LoggingGapCard({
             gapWindow.windowStartDayOffset,
             gapWindow.windowLastDayOffset,
           );
-          result = gap.kind === 'gap' ? { kind: 'gap', value: gap.value, interval: gap.interval } : { kind: 'not_enough_data' };
         }
 
         if (cancelled) return;
-        setState(result);
+        setState({
+          kind: 'ready',
+          today: {
+            calories: summary.calories_consumed,
+            proteinGrams: summary.protein_grams_consumed,
+            carbsGrams: summary.carbs_grams_consumed,
+            fatGrams: summary.fat_grams_consumed,
+            targetCalories: target.calories,
+            targetProteinGrams: target.protein_grams,
+            targetCarbsGrams: target.carbs_grams,
+            targetFatGrams: target.fat_grams,
+          },
+          gap: gapResult,
+        });
         setOutlierExcluded(excludedOutlierCount(rejected, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset) > 0);
       } catch {
         if (cancelled) return;
@@ -206,12 +249,98 @@ export default function LoggingGapCard({
 
   const dim = editing && hidden ? ' opacity-40' : '';
 
+  function renderToday(today: TodayRow) {
+    // Clamped so an over-target day fills the bar rather than overflowing its
+    // container; the numbers beside it keep counting past 100%, which is where
+    // that information belongs. Going over target is not an error and is not
+    // coloured as one. The guard against a non-positive target is defensive —
+    // the backend never emits one — but a zero would otherwise divide to
+    // Infinity and produce a `width: Infinity%` style.
+    const pct =
+      today.targetCalories > 0
+        ? Math.min(100, Math.max(0, (today.calories / today.targetCalories) * 100))
+        : 0;
+    // Cast-free, the way metricLabel builds its keys: the template literal
+    // expands to the union of the three `loggingGap.` macro keys, so dropping
+    // one from the dictionary is a type error here rather than a raw key
+    // rendered on the dashboard.
+    const macro = (labelKey: 'protein' | 'carbs' | 'fat', consumed: number, target: number) =>
+      interpolate(t(`loggingGap.${labelKey}`), {
+        consumed: String(Math.round(consumed)),
+        target: String(Math.round(target)),
+      });
+    return (
+      <div className={`py-1${dim}`} data-testid="nutrition-today">
+        <div
+          className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums"
+          data-testid="nutrition-today-calories"
+        >
+          {interpolate(t('loggingGap.todayCalories'), {
+            consumed: String(Math.round(today.calories)),
+            target: String(Math.round(today.targetCalories)),
+          })}
+        </div>
+        {/* Presentational: the calorie line above is the accessible content,
+            and a bar that repeated it would only add a second thing to read. */}
+        <div className="mt-1.5 h-1.5 w-full rounded-full bg-border overflow-hidden" aria-hidden="true">
+          <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+        </div>
+        <div
+          className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted tabular-nums"
+          data-testid="nutrition-today-macros"
+        >
+          <span>{macro('protein', today.proteinGrams, today.targetProteinGrams)}</span>
+          <span>{macro('carbs', today.carbsGrams, today.targetCarbsGrams)}</span>
+          <span>{macro('fat', today.fatGrams, today.targetFatGrams)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  function renderGap(gap: LoggingGapResult) {
+    switch (gap.kind) {
+      case 'not_enough_data':
+        return (
+          <p className="text-sm text-text-muted" data-testid="logging-gap-not-enough-data">
+            {t('loggingGap.notEnoughData')}
+          </p>
+        );
+      case 'on_track':
+        // Deliberately not "all good": the silence rule this state comes from
+        // compares the log against the weight trend and checks nothing else —
+        // not whether weight moves toward the goal, not whether intake is
+        // sane. The praise is real but scoped to what was actually measured.
+        return (
+          <div data-testid="logging-gap-on-track">
+            <p className="text-sm font-medium text-text">
+              <span aria-hidden="true">✓ </span>
+              {t('loggingGap.onTrack')}
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">{t('loggingGap.onTrackDetail')}</p>
+          </div>
+        );
+      case 'gap': {
+        // Never a negative-to-negative range (spec's "Logging Gap Card
+        // content and placement" requirement): a negative value means Mean
+        // Logged Intake exceeds Implied Intake, rendered with the absolute
+        // range and direction-aware copy instead.
+        const unlogged = gap.value >= 0;
+        const lower = Math.round(Math.abs(gap.value) - gap.interval);
+        const upper = Math.round(Math.abs(gap.value) + gap.interval);
+        const range = `${lower}–${upper}`;
+        return (
+          <p className="text-sm font-medium text-text" data-testid="logging-gap-value">
+            {interpolate(t(unlogged ? 'loggingGap.unlogged' : 'loggingGap.loggedMore'), { range })}
+          </p>
+        );
+      }
+    }
+  }
+
   function renderContent() {
     switch (state.kind) {
       case 'loading':
         return <p className={`text-sm text-text-muted py-2${dim}`} data-testid="logging-gap-loading">{t('loggingGap.loading')}</p>;
-      case 'not_enough_data':
-        return <p className={`text-sm text-text-muted py-2${dim}`} data-testid="logging-gap-not-enough-data">{t('loggingGap.notEnoughData')}</p>;
       case 'retrieval_error':
         return <p className={`text-sm text-text-muted py-2${dim}`} data-testid="logging-gap-error">{t('loggingGap.retrievalError')}</p>;
       case 'nutrition_target_unmet':
@@ -223,23 +352,13 @@ export default function LoggingGapCard({
             </a>
           </p>
         );
-      case 'gap': {
-        // Never a negative-to-negative range (spec's "Logging Gap Card
-        // content and placement" requirement): a negative value means Mean
-        // Logged Intake exceeds Implied Intake, rendered with the absolute
-        // range and direction-aware copy instead.
-        const unlogged = state.value >= 0;
-        const lower = Math.round(Math.abs(state.value) - state.interval);
-        const upper = Math.round(Math.abs(state.value) + state.interval);
-        const range = `${lower}–${upper}`;
+      case 'ready':
         return (
-          <div className={`py-2${dim}`} data-testid="logging-gap-value">
-            <div className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums">
-              {interpolate(t(unlogged ? 'loggingGap.unlogged' : 'loggingGap.loggedMore'), { range })}
-            </div>
-          </div>
+          <>
+            {renderToday(state.today)}
+            <div className={`mt-2 pt-2 border-t border-border${dim}`}>{renderGap(state.gap)}</div>
+          </>
         );
-      }
     }
   }
 

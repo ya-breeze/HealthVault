@@ -186,55 +186,55 @@ bar clamps at 100% while the numbers keep counting.
 - `make test-e2e`
 
 ### Task 1: Add the `on_track` result
-- [ ] Add `{ kind: 'on_track' }` to `LoggingGapResult` in `frontend/lib/loggingGap.ts` and return
+- [x] Add `{ kind: 'on_track' }` to `LoggingGapResult` in `frontend/lib/loggingGap.ts` and return
       it from `computeLoggingGap` when `Math.abs(value) <= interval`, leaving the preceding
       `validDays.length === 0` and `Number.isFinite` guards returning `not_enough_data`
-- [ ] Update the function's doc comment so it explains the three outcomes and why the finiteness
+- [x] Update the function's doc comment so it explains the three outcomes and why the finiteness
       check must precede the interval comparison
-- [ ] Add unit tests in `frontend/lib/loggingGap.test.ts`: a gap inside the interval returns
+- [x] Add unit tests in `frontend/lib/loggingGap.test.ts`: a gap inside the interval returns
       `on_track`; a gap outside it still returns `gap`; `se === null` returns `not_enough_data` and
       **not** `on_track`; an empty valid-day set returns `not_enough_data`
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Fetch today's summary instead of the bare target
-- [ ] Add a `TodaySummary` interface and an `api.getTodaySummary()` method to `frontend/lib/api.ts`
+- [x] Add a `TodaySummary` interface and an `api.getTodaySummary()` method to `frontend/lib/api.ts`
       for `GET /api/summary/today`, typed against `summaryTodayResponse` in
       `backend/pkg/server/summary_today.go`, with `target` as a discriminated
       available/unavailable shape
-- [ ] Replace the `api.getNutritionTarget()` call in `LoggingGapCard.tsx` with
+- [x] Replace the `api.getNutritionTarget()` call in `LoggingGapCard.tsx` with
       `api.getTodaySummary()`, taking the gap's target calories from `target.calories`
-- [ ] Reach the `nutrition_target_unmet` state from `target.available === false` and its `reason`,
+- [x] Reach the `nutrition_target_unmet` state from `target.available === false` and its `reason`,
       and delete the now-unreachable `NutritionTargetUnmetError` catch from this card; leave
       `api.getNutritionTarget()` and `NutritionTargetUnmetError` exported and unchanged
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: Render the today row and the on-track line
-- [ ] Restructure `ContentState` to the `ready` shape described in `## How`, carrying both the
+- [x] Restructure `ContentState` to the `ready` shape described in `## How`, carrying both the
       today row and the gap result
-- [ ] Render the today row: consumed against target calories, an `aria-hidden` progress bar that
+- [x] Render the today row: consumed against target calories, an `aria-hidden` progress bar that
       clamps at 100%, and the three macros against their targets
-- [ ] Render the gap line beneath a divider, covering `gap`, `on_track` and `not_enough_data`, and
+- [x] Render the gap line beneath a divider, covering `gap`, `on_track` and `not_enough_data`, and
       keep the outlier note and both caveat lines where they are
-- [ ] Give the new elements `data-testid` attributes consistent with the existing
+- [x] Give the new elements `data-testid` attributes consistent with the existing
       `logging-gap-*` names
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Copy in both languages
-- [ ] Retitle `loggingGap.title` to "Питание" / "Nutrition" in `frontend/lib/i18n/ru.ts` and
+- [x] Retitle `loggingGap.title` to "Питание" / "Nutrition" in `frontend/lib/i18n/ru.ts` and
       `en.ts`
-- [ ] Add keys for the today row (calorie line, macro labels) and for the `on_track` line and its
+- [x] Add keys for the today row (calorie line, macro labels) and for the `on_track` line and its
       supporting sentence, in both files, keeping the `loggingGap.*` prefix
-- [ ] Re-read `loggingGap.loading`, whose current text names the gap specifically, and reword it if
+- [x] Re-read `loggingGap.loading`, whose current text names the gap specifically, and reword it if
       it no longer describes a card that is loading three rows
-- [ ] Confirm the two dictionaries have identical key sets
-- [ ] Mark completed
+- [x] Confirm the two dictionaries have identical key sets
+- [x] Mark completed
 
 ### Task 5: End-to-end coverage
-- [ ] Extend `e2e/tests/logging-gap.spec.ts` so it asserts the today row renders for a seeded user
+- [x] Extend `e2e/tests/logging-gap.spec.ts` so it asserts the today row renders for a seeded user
       with a Nutrition Target, and that the card's title is the new one
-- [ ] Add or adjust coverage so the `on_track` line and the `not_enough_data` line are
+- [x] Add or adjust coverage so the `on_track` line and the `not_enough_data` line are
       distinguishable by `data-testid`, and neither spec asserts the old conflated behaviour
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 6: Validate against the deployed stack
 - [ ] Run `make lint` and `make test` and fix anything they report

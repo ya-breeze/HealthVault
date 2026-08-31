@@ -441,6 +441,60 @@ export interface NutritionTarget {
   activity_tier: string;
 }
 
+// The `target` field of TodaySummary, discriminated on `available` so a
+// caller cannot read `calories` without having checked first — the backend
+// omits every numeric field when the target is unavailable
+// (summaryTargetPayload, backend/pkg/server/summary_today.go), and a flat
+// optional-number shape would let `target.calories` typecheck its way into an
+// arithmetic `undefined`.
+export type TodaySummaryTarget =
+  | { available: false; reason: NutritionTargetUnmetReason }
+  | {
+      available: true;
+      calories: number;
+      protein_grams: number;
+      carbs_grams: number;
+      fat_grams: number;
+    };
+
+/**
+ * GET /api/summary/today — the caller's Logged Day so far, plus their
+ * Nutrition Target, in one response.
+ *
+ * Preferred over `getNutritionTarget()` by any caller that needs both, which
+ * is the whole reason the endpoint exists (see SummaryTodayHandler's own
+ * "one cheap call" comment). Two differences from that endpoint matter to
+ * callers:
+ *
+ * - **It never 422s.** An unavailable target is a normal state here, reported
+ *   as `target.available === false` with the same four reason codes, so there
+ *   is no `NutritionTargetUnmetError` to catch on this path.
+ * - **The consumed totals count `confirmed` meals only** (database.TodaySummary),
+ *   so a photographed but unconfirmed meal is absent from them. This matches
+ *   the rule the Logging Gap's own valid-day filter applies.
+ *
+ * `date` is the caller's Logged Day as the *server* resolves it, from the same
+ * timezone setting client-side window arithmetic reads. It is the authority on
+ * which day these totals cover; a caller that needs to name the day should use
+ * it rather than re-deriving "today" locally, so the two cannot disagree across
+ * a local midnight.
+ *
+ * `recommendation` is always `null` today — it is the reserved home for Phase
+ * 4's advice lines (see todo.md), not something any caller can rely on yet.
+ */
+export interface TodaySummary {
+  date: string;
+  calories_consumed: number;
+  protein_grams_consumed: number;
+  carbs_grams_consumed: number;
+  fat_grams_consumed: number;
+  meal_count: number;
+  last_logged_at: string | null;
+  display_language: string;
+  target: TodaySummaryTarget;
+  recommendation: null;
+}
+
 // Named rather than left inline on `api.me` below: AuthenticatedShell holds
 // the session and passes it to both Header and MoreSheet, so three call
 // sites now need to spell this shape.
@@ -470,6 +524,11 @@ export const api = {
   getSettings: () => apiFetch<UserSettings>('/users/me/settings'),
   putSettings: (settings: UserSettings) =>
     apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+
+  // Self-only, like getNutritionTarget below. See the TodaySummary doc
+  // comment for why a caller needing both today's intake and the target
+  // should reach for this instead of getNutritionTarget.
+  getTodaySummary: () => apiFetch<TodaySummary>('/summary/today'),
 
   // Self-only: no ?user= support, unlike most /data endpoints — see
   // design.md's "Self-only" decision. Throws NutritionTargetUnmetError on

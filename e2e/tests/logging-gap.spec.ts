@@ -84,6 +84,11 @@ interface LoggingGapFixture {
   weightStatus?: number;
   nutritionTargetCalories?: number;
   nutritionTargetUnmetReason?: string;
+  // Today's consumed totals, for the card's top row. Defaults to an untouched
+  // day (all zeros), which is what most of these fixtures want — they exist to
+  // pin the *gap* line, and a zeroed top row keeps them from also depending on
+  // numbers they don't care about.
+  today?: { calories: number; protein: number; carbs: number; fat: number };
   completeness?: { date: string; state: string }[];
   dailyTotals?: { date: string; calories: number; unconfirmed_meals: number }[];
 }
@@ -103,23 +108,32 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?:
     }
     return route.fulfill({ json: fixture.weight ?? [] });
   });
-  await page.route('**/api/users/me/nutrition-target', route => {
-    if (fixture.nutritionTargetUnmetReason) {
-      return route.fulfill({ status: 422, json: { error: fixture.nutritionTargetUnmetReason } });
-    }
+  // /api/summary/today, not /api/users/me/nutrition-target: the card reads
+  // today's consumed macros and the Nutrition Target from this one response.
+  // Note it never answers 422 — an unavailable target is ordinary data here,
+  // carried as `target.available === false`.
+  await page.route('**/api/summary/today', route => {
+    const target = fixture.nutritionTargetUnmetReason
+      ? { available: false, reason: fixture.nutritionTargetUnmetReason }
+      : {
+          available: true,
+          calories: fixture.nutritionTargetCalories ?? 2500,
+          protein_grams: 150,
+          carbs_grams: 250,
+          fat_grams: 70,
+        };
     return route.fulfill({
       json: {
-        calories: fixture.nutritionTargetCalories ?? 2500,
-        protein_grams: 150,
-        carbs_grams: 250,
-        fat_grams: 70,
-        measured_weight_kg: 80,
-        goal_weight_kg: 75,
-        height_m: 1.75,
-        age_years: 30,
-        sex: 'male',
-        activity_multiplier: 1.4,
-        activity_tier: 'moderate',
+        date: isoDateOnly(new Date()),
+        calories_consumed: fixture.today?.calories ?? 0,
+        protein_grams_consumed: fixture.today?.protein ?? 0,
+        carbs_grams_consumed: fixture.today?.carbs ?? 0,
+        fat_grams_consumed: fixture.today?.fat ?? 0,
+        meal_count: 0,
+        last_logged_at: null,
+        display_language: 'en',
+        target,
+        recommendation: null,
       },
     });
   });
@@ -169,6 +183,24 @@ function noDataFixture(): LoggingGapFixture {
   return { weight: [], completeness: [], dailyTotals: [] };
 }
 
+// The case this change exists for: plenty of data, and it agrees. Weight falls
+// 0.1 kg/day against a 2500 kcal target, so Implied Intake is
+// 2500 - 0.1 * 7700 = 1730; the log says 1700, a difference of 30 inside an
+// interval of ~250 (10% of the target, the trend term being ~0 for a perfectly
+// linear series). That lands on `on_track` — not on "not enough data yet",
+// which is what this fixture produced before.
+function onTrackFixture(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.1),
+    nutritionTargetCalories: 2500,
+    today: { calories: 1200, protein: 80, carbs: 130, fat: 35 },
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 1700, unconfirmed_meals: 0 })),
+  };
+}
+
 test.describe('Logging Gap Card', () => {
   test('a clear gap renders as a kcal/day range with both caveats, never a bare number', async ({ page, request }) => {
     await login(page);
@@ -190,6 +222,58 @@ test.describe('Logging Gap Card', () => {
 
       await expect(card).toContainText('Logged intake is estimated from photo recognition');
       await expect(card).toContainText("doesn't separately account for error in your activity multiplier");
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a log that agrees with the weight trend reads as on track, not as missing data', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, onTrackFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-on-track')).toBeVisible({ timeout: 15_000 });
+      await expect(card).toContainText('Your log matches your weight');
+      // The distinction this state exists to draw: neither the "not enough
+      // data" copy nor a gap figure may appear alongside it.
+      await expect(card.getByTestId('logging-gap-not-enough-data')).toHaveCount(0);
+      await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test("today's intake renders against the target, in every gap state", async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, onTrackFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const today = card.getByTestId('nutrition-today-calories');
+      await expect(today).toBeVisible({ timeout: 15_000 });
+      await expect(today).toContainText('1200 / 2500 kcal');
+      await expect(card.getByTestId('nutrition-today-macros')).toContainText('Protein 80/150 g');
+
+      // The top row is not conditional on the gap resolving: the same row must
+      // render when the gap line is "not enough data yet", which is the state a
+      // user spends their first weeks in. Re-mocking rather than starting a
+      // fresh page works because Playwright matches the most recently
+      // registered route first, so this second call shadows the first.
+      await mockLoggingGapApis(page, { ...noDataFixture(), today: { calories: 1200, protein: 80, carbs: 130, fat: 35 } });
+      await page.goto('/');
+      await expect(card.getByTestId('logging-gap-not-enough-data')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-today-calories')).toContainText('1200 / 2500 kcal');
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -310,8 +394,8 @@ test.describe('Logging Gap Card', () => {
     try {
       // Weight/food history is populated (via the same clear-gap fixture) to
       // match the scenario's framing, but is irrelevant to the outcome here:
-      // getNutritionTarget's 422 rejects the whole Promise.all before any of
-      // it is inspected (task 5.1).
+      // an unavailable target ends the card before any of it is inspected,
+      // because neither the today row nor the gap can be computed without one.
       await mockLoggingGapApis(page, { ...clearGapFixture(), nutritionTargetUnmetReason: 'missing_goal_weight' });
       await page.goto('/');
 
@@ -330,7 +414,7 @@ test.describe('Logging Gap Card', () => {
     }
   });
 
-  test('a non-422 failure from one of the four requests shows "temporarily unavailable", not "not enough data yet"', async ({
+  test('a failure from one of the four requests shows "temporarily unavailable", not "not enough data yet"', async ({
     page,
     request,
   }) => {
@@ -375,13 +459,13 @@ async function restoreLoggingGapDefault(page: Page) {
   }
 
   let changed = false;
-  const showToggle = page.getByRole('button', { name: 'Show Logging Gap' });
+  const showToggle = page.getByRole('button', { name: 'Show Nutrition' });
   if (await showToggle.isVisible().catch(() => false)) {
     await showToggle.click().catch(() => {});
     changed = true;
   }
 
-  const moveDown = page.getByRole('button', { name: 'Move Logging Gap down' });
+  const moveDown = page.getByRole('button', { name: 'Move Nutrition down' });
   for (let i = 0; i < 9; i++) {
     if (await moveDown.isDisabled().catch(() => true)) break;
     await moveDown.click().catch(() => {});
@@ -421,7 +505,7 @@ test.describe('Logging Gap Card in Edit mode', () => {
       await expect(grid.getByTestId('logging-gap-card')).toBeVisible();
 
       await page.getByRole('button', { name: 'Customize' }).click();
-      await page.getByRole('button', { name: 'Hide Logging Gap' }).click();
+      await page.getByRole('button', { name: 'Hide Nutrition' }).click();
 
       const saved = page.waitForResponse(
         r => r.url().includes('/api/users/me/settings') && r.request().method() === 'PUT',
@@ -444,7 +528,7 @@ test.describe('Logging Gap Card in Edit mode', () => {
     try {
       await page.getByRole('button', { name: 'Customize' }).click();
 
-      const moveUp = page.getByRole('button', { name: 'Move Logging Gap up' });
+      const moveUp = page.getByRole('button', { name: 'Move Nutrition up' });
       for (let i = 0; i < 9; i++) {
         if (await moveUp.isDisabled()) break;
         await moveUp.click();
