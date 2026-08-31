@@ -187,7 +187,7 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
       the description text, carries no image content at all, sets `store:false`, uses the
       `food_recognition` json_schema, and includes the language directive for a non-English
       display language
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Persist the description on the meal
 - [x] Add `Description string \`gorm:"type:text" json:"description,omitempty"\`` to
@@ -279,5 +279,5 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
       recording why manual entry's primary path is now model recognition rather than
       reference-database lookup, why the structured form is kept rather than removed, and why
       the user's real Display Language is passed here while `runExpertAnalysis` forces `"en"`
-- [ ] As the final commit of this change, flip ADR-011's status from `Proposed` to `Accepted`
-- [ ] Mark completed
+- [x] As the final commit of this change, flip ADR-011's status from `Proposed` to `Accepted`
+- [x] Mark completed

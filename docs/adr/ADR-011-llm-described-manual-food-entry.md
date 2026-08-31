@@ -1,7 +1,7 @@
 # ADR-011: Manual Food Entry's Primary Path Is Model Recognition, Not Reference-Database Lookup
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
