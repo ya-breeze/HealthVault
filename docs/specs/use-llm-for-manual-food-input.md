@@ -159,6 +159,13 @@ lookup, created as `Proposed` and flipped to `Accepted` as the final commit of t
 - `make test`
 - `make test-e2e`
 
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
+
 ### Task 1: Add the text-only Describe call to the vision package
 - [ ] Add `Describe(ctx context.Context, description, displayLanguage string) (*RecognizeResult, error)`
       to the `vision.Client` interface in `backend/pkg/vision/vision.go`, with a doc comment
