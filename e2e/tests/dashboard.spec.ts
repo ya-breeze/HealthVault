@@ -715,8 +715,9 @@ test.describe('Data-type presence filtering', () => {
   // — the grid falls through to rendering the Logging Gap card instead, and
   // that placeholder has been removed as unreachable. This is the intended
   // consequence of decision 8 ("always eligible to render"), not a regression:
-  // a user with zero vitals data now sees the Logging Gap card's own "not
-  // enough data" content state rather than a static dead end.
+  // a user with zero vitals data now sees the Nutrition card's own content —
+  // today's intake, and whatever the gap line resolves to — rather than a
+  // static dead end.
   test('zero presence on every DataType-backed metric still renders the grid, with only the Logging Gap card', async ({ page }) => {
     const overrides = Object.fromEntries(PRIMARY_METRIC_TYPES.map(type => [type, false]));
     await page.route('**/api/data-types/presence', route =>

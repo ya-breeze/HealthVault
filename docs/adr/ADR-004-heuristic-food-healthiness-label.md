@@ -3,6 +3,16 @@
 ## Status
 Proposed
 
+> **Update (`docs/specs/nutrition-card-today-and-on-track.md`, 2026-08-31):** the *packaging* of
+> this label has changed, though nothing about how it is computed has. Phase 4 originally placed it
+> on its own dashboard card ("Card B"), beside a separate Card A for today's intake versus target.
+> With the Logging Gap card already shipped, that would have put three nutrition cards on one
+> dashboard; ya-breeze asked for one card instead. Today's-intake and the logging-gap line have now
+> shipped as the first and third rows of the existing card (registry id `logging_gap`, retitled
+> "Nutrition"), and the Healthiness Label plus its advice lines are its planned middle row rather
+> than a card of their own. This ADR stays `Proposed` because none of what it decides — heuristic
+> over LLM, and the LLM's role downstream of the label — has been implemented yet.
+
 ## Context and Problem Statement
 
 Food logging already calls an LLM for photo recognition (`ClarifyRound`/`Log` on `FoodMeal`), so an LLM-judged "how healthy has your recent eating been" score is a natural-seeming extension of the same pattern. Should the dashboard's healthiness label be computed the same way, by an LLM call, or deterministically?
