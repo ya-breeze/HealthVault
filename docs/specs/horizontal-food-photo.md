@@ -158,13 +158,13 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Validate the change against the deployed stack
-- [ ] Re-read every modified file and check the layout classes for consistency with the
+- [x] Re-read every modified file and check the layout classes for consistency with the
       surrounding code, unused leftovers from the old structure, and any class that reintroduces a
       fixed height.
-- [ ] Run `make lint` and `make test`, and note in the summary that both cover the backend and
+- [x] Run `make lint` and `make test`, and note in the summary that both cover the backend and
       the pure-function Vitest suite only — this change's real gate is the E2E run below.
-- [ ] Deploy the branch to the `hcw-wip` stack and run `make test-e2e` against it, which is what
+- [x] Deploy the branch to the `hcw-wip` stack and run `make test-e2e` against it, which is what
       the new landscape cases need in order to mean anything.
-- [ ] Summarize which files changed and what each change does, and disclose the one part not
+- [x] Summarize which files changed and what each change does, and disclose the one part not
       covered by any automated check: the non-zero safe-area inset.
-- [ ] Mark completed
+- [x] Mark completed
