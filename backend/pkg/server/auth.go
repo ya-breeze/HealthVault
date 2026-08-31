@@ -149,6 +149,17 @@ func (h *authHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 			authdb.BlacklistToken(h.db, tokenStr, expiresAt) //nolint:errcheck
 		}
 	}
+	// Revoking the refresh token is what actually ends the session. The access
+	// token above expires in 15 minutes on its own, but the refresh token lives
+	// for a year (Login), so clearing the cookie without revoking the row leaves
+	// anyone holding a copy of that value able to POST /api/auth/refresh
+	// afterwards and mint a fresh access token — logout would have revoked
+	// nothing that outlives the next quarter hour. Best-effort like the
+	// blacklist write: a missing or already-revoked token is not a failure the
+	// caller can act on, and logout must still clear the cookies either way.
+	if rtToken := cookies.GetRefreshToken(r); rtToken != "" {
+		authdb.RevokeRefreshToken(h.db, rtToken) //nolint:errcheck
+	}
 	cookies.ClearAuthCookies(w, h.cookieCfg)
 	w.WriteHeader(http.StatusNoContent)
 }

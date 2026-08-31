@@ -11,16 +11,22 @@ import (
 	"github.com/ya-breeze/kin-core/cookies"
 )
 
-// accessCookie returns the kin_access cookie a handler set, or fails the test.
-func accessCookie(t *testing.T, rec *httptest.ResponseRecorder) string {
+// responseCookie returns the named cookie a handler set, or fails the test.
+func responseCookie(t *testing.T, rec *httptest.ResponseRecorder, name string) string {
 	t.Helper()
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == cookies.AccessCookieName {
+		if c.Name == name {
 			return c.Value
 		}
 	}
-	t.Fatalf("no %s cookie on the response", cookies.AccessCookieName)
+	t.Fatalf("no %s cookie on the response", name)
 	return ""
+}
+
+// accessCookie returns the kin_access cookie a handler set, or fails the test.
+func accessCookie(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	return responseCookie(t, rec, cookies.AccessCookieName)
 }
 
 // Two tokens for one user inside the same second must differ. The library's

@@ -7,5 +7,11 @@ frontend/.next/
 frontend/out/
 .env
 
+# Playwright run artifacts. e2e/.gitignore already covers e2e/test-results/,
+# but Playwright writes them relative to the cwd it was started from, so a run
+# launched from the repository root lands here instead.
+test-results/
+playwright-report/
+
 # ralphex agent state
 .ralphex/

@@ -208,3 +208,27 @@ before. The gate for this change is the suite run repeatedly, recorded in Task 4
       gate, before Task 4 existed, is recorded here rather than discarded: it read 188/187/188/187/188
       with `mobile-nav.spec.ts:426` failing twice. That failure is what Task 4 turned out to be.
 - [x] Mark completed
+
+### Task 6: Close what the code review found
+
+The review of this branch surfaced five things. Two are defects in the branch's own work, one is
+a pre-existing auth hole the branch's new tests brush against, and two are hygiene. Scope grew,
+so this task records it rather than letting the changes land unaccounted for.
+
+- [ ] Revoke the refresh token in `Logout`. It blacklists the access token, which expires in
+      15 minutes anyway, and never calls `authdb.RevokeRefreshToken` — so the year-long refresh
+      token logout claims to have killed still mints new access tokens for anyone holding the
+      cookie value. Cover it: refresh works before logout, 401s after.
+- [ ] Make `completeness.spec.ts`'s at-threshold test wait on a positive DOM signal. The response
+      waiter it currently awaits resolves on the *first* completeness window, while the page
+      setStates only after `Promise.all`, so the absence assertions can still pass on an
+      un-rendered page — the exact hazard the comment claims to close.
+- [ ] Address `mobile-nav.spec.ts` by test id, not by the `.fixed.z-30` Tailwind pair. The same
+      element already carries `data-testid="bottom-action-bar"`.
+- [ ] Stop tracking `test-results/.last-run.json`, and ignore Playwright's root-cwd output. It was
+      committed in this branch and records `"status": "failed"`.
+- [ ] Point `auth_login_limiting_test.go` at the local `generateAccessToken` and drop its
+      now-obsolete comment about second-precision collisions — Task 4 removed that hazard, and the
+      test currently exercises a token shape production no longer issues.
+- [ ] Re-run the five-run `make test-e2e` gate; record the counts.
+- [ ] Mark completed
