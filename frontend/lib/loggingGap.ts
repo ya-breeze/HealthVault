@@ -303,15 +303,38 @@ export function checkHardFloor(
   return false;
 }
 
+/**
+ * The three answers the card can give, and they are genuinely three:
+ *
+ * - `gap` — a difference large enough to stand outside its own uncertainty.
+ * - `on_track` — a difference *smaller* than its uncertainty. Not an absence
+ *   of data: the weight trend and the food log were both measured and they
+ *   agree, to the limit of what this estimate can resolve. Says nothing about
+ *   whether weight is moving toward the goal or whether intake is sensible —
+ *   the comparison below tests neither — so copy for this state must claim
+ *   only that the log matches the scale.
+ * - `not_enough_data` — the computation could not produce a number worth
+ *   comparing at all.
+ */
 export type LoggingGapResult =
   | { kind: 'gap'; value: number; interval: number }
+  | { kind: 'on_track' }
   | { kind: 'not_enough_data' };
 
 /**
  * Implied Intake, Mean Logged Intake, the Logging Gap value and its interval (design.md decisions
  * 3 and "Silence rule and hard floor") — called only once `checkHardFloor` has already returned
  * `false`, so a regression exists. `se: null` (fewer than 3 distinct EMA days) is treated as an
- * unbounded `trendErrorKcal`, which always suppresses output via the interval check below.
+ * unbounded `trendErrorKcal`, so the interval is infinite and the finiteness guard below returns
+ * `not_enough_data` for it — deliberately, and deliberately *before* the interval comparison,
+ * which would otherwise read an unmeasurable series as `on_track`.
+ *
+ * Distinguishing `on_track` from `not_enough_data` is the whole reason this function has three
+ * outcomes rather than two. Both used to return `not_enough_data`, which meant the card said "not
+ * enough data yet" to a user whose weight trend and food log had been measured for four weeks and
+ * agreed — denying the logging that produced the agreement. Where the two are told apart:
+ * everything that leaves us with no number to compare is `not_enough_data`; only a real
+ * comparison, resolved in favour of "these agree", is `on_track`.
  *
  * Takes the same window bounds `checkHardFloor` does, and scopes `perDayWindowData` with them
  * itself rather than trusting the caller to have pre-filtered — the two functions are exported
@@ -325,7 +348,8 @@ export type LoggingGapResult =
  * it for all of them rather than only for the empty average: a non-finite `regression.slope` or a
  * missing/non-numeric `nutritionTargetCalories` poisons `impliedIntake` the same way and reaches
  * the same comparison, which lets non-numbers through because every comparison against `NaN` is
- * `false`. Silence is the right answer to any of them — there is no gap we can honestly report.
+ * `false`. `not_enough_data` is the right answer to any of them — there is no gap we can honestly
+ * report, and equally no agreement we can honestly claim.
  */
 export function computeLoggingGap(
   regression: { slope: number; intercept: number },
@@ -348,8 +372,13 @@ export function computeLoggingGap(
   if (!Number.isFinite(value) || !Number.isFinite(interval)) {
     return { kind: 'not_enough_data' };
   }
+  // Order matters: this check must stay *after* the finiteness guard above.
+  // `se === null` (fewer than 3 distinct EMA days) makes `interval` infinite,
+  // and `Math.abs(value) <= Infinity` is `true` — so a series too sparse to
+  // measure at all would report as "on track", which is the one wrong answer
+  // this state must never give. The guard above catches it first.
   if (Math.abs(value) <= interval) {
-    return { kind: 'not_enough_data' };
+    return { kind: 'on_track' };
   }
   return { kind: 'gap', value, interval };
 }

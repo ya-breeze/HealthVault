@@ -116,3 +116,11 @@ the bar, and the bar sitting below them in the stacking order is the point.
   `env(safe-area-inset-*)` resolves to 0 on every device, and every rule above is dead CSS. It
   also makes the two submit bars' pre-existing inset padding live for the first time — an intended
   visual change on notched devices to pages that change in no other way.
+
+> **Update (ADR-011):** the gap this ADR named — "cannot catch a *fourth* site added later," and
+> the fact that these tokens describe only the navigation bar's own clearance — turned out to be
+> real: the app-wide toast stack was clearing the navigation bar correctly and landing on top of a
+> page's own submit/confirm bar instead, which no existing assertion caught. ADR-011 gives that
+> second relationship the same treatment via a runtime registration context
+> (`frontend/components/ui/BottomActionBar.tsx`), rather than extending the CSS tokens here, since
+> the bar's height is conditional and only known at runtime.

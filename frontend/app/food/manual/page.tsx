@@ -5,6 +5,7 @@ import { api, ManualMealItemInput } from '@/lib/api';
 import ManualItemEditor from '@/components/food/ManualItemEditor';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
+import BottomActionBar from '@/components/ui/BottomActionBar';
 
 function emptyItem(): ManualMealItemInput {
   return { name: '', source: 'reference' };
@@ -84,25 +85,15 @@ export default function ManualMealPage() {
         {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </main>
 
-      {/* Anchored above the bottom navigation bar, not at the viewport edge:
-          `/food/manual/` is one of the bar's own destinations, so without
-          the offset the bar lands on this submit button. A padding on the
-          shell cannot do this — a fixed element is out of flow relative to
-          the viewport, not to its ancestor. Its own bottom padding keeps the
-          safe-area inset for the desktop case, where no bar is beneath it to
-          absorb it; below the breakpoint `--edge-inset-b` is `0px` because
-          `--nav-block` already carries it. */}
-      <div className="fixed bottom-[var(--nav-block)] left-0 right-0 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+var(--edge-inset-b))]">
-        <div className="max-w-md mx-auto">
-          <TapTarget
-            onClick={handleSubmit}
-            disabled={saving}
-            className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save Meal'}
-          </TapTarget>
-        </div>
-      </div>
+      <BottomActionBar>
+        <TapTarget
+          onClick={handleSubmit}
+          disabled={saving}
+          className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save Meal'}
+        </TapTarget>
+      </BottomActionBar>
     </AuthenticatedShell>
   );
 }

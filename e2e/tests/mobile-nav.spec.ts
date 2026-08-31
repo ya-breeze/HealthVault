@@ -25,6 +25,12 @@ async function login(page: Page) {
 }
 
 const bar = (page: Page) => page.getByTestId('bottom-nav');
+// A page's own fixed submit/confirm bar (components/ui/BottomActionBar.tsx).
+// Addressed by its test id rather than by the `.fixed.z-30` Tailwind pair it
+// also carries: a z-index or layout tweak in that component would otherwise
+// turn every assertion here into "element not found", which says nothing about
+// the occlusion these tests exist to catch.
+const submitBar = (page: Page) => page.getByTestId('bottom-action-bar');
 const destination = (page: Page, id: string) => page.locator(`[data-nav-destination="${id}"]`);
 
 /** True when the two boxes share any area at all. */
@@ -301,6 +307,11 @@ test.describe('More sheet', () => {
         els.map(el => el.getAttribute('data-nav-control')!).sort()
       );
 
+    // `evaluateAll` samples the DOM once and never retries, so it has to be
+    // given something to wait for: without this the read lands before React
+    // paints the header and returns [], failing the guard below rather than
+    // the comparison this test is about.
+    await expect(page.locator('header [data-nav-control]').first()).toBeAttached();
     const headerControls = await read(page.locator('header'));
     await destination(page, 'more').click();
     await expect(page.getByTestId('more-sheet')).toBeVisible();
@@ -423,8 +434,18 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     await page.goto('/food/manual/');
     const submit = page.getByRole('button', { name: 'Save Meal' });
     await expect(submit).toBeVisible();
+    // boundingBox() returns null for an element that has not laid out yet, and
+    // unlike expect() it does not poll. The submit button being visible does
+    // not imply its fixed container and the navigation bar are — the bar in
+    // particular waits on api.me(), since AuthenticatedShell renders it only
+    // once the session resolves. Waiting on both is also what makes a missing
+    // bar report itself as "element not found" rather than as a null bounding
+    // box: the first framing of this test's intermittent failure hid a real
+    // auth bug behind a geometry error. See docs/specs/stabilize-flaky-e2e.md.
+    await expect(submitBar(page)).toBeVisible();
+    await expect(bar(page)).toBeVisible();
     expect(intersects(
-      await boxOf(page.locator('.fixed.z-30').first(), 'submit bar'),
+      await boxOf(submitBar(page), 'submit bar'),
       await boxOf(bar(page), 'navigation bar'),
     ), 'submit bar overlaps the navigation bar').toBe(false);
     // A control under the bar is unusable however the two stack, so this is
@@ -453,7 +474,7 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     await expect(confirm).toBeVisible();
     const navBox = await boxOf(bar(page), 'navigation bar');
     expect(intersects(
-      await boxOf(page.locator('.fixed.z-30').first(), 'review submit bar'),
+      await boxOf(submitBar(page), 'review submit bar'),
       navBox,
     ), 'review submit bar overlaps the navigation bar').toBe(false);
 
@@ -512,7 +533,7 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
 
     const read = async () => page.evaluate(() => {
       const shell = document.querySelector('[data-testid="shell-content"]')!;
-      const submit = document.querySelector('.fixed.z-30')!;
+      const submit = document.querySelector('[data-testid="bottom-action-bar"]')!;
       const s = getComputedStyle(submit);
       return {
         shellPaddingBottom: getComputedStyle(shell).paddingBottom,
@@ -571,5 +592,113 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
         });
     });
     expect(usesEnv, 'the bar\'s padding-bottom should carry an env() term').toBe(true);
+  });
+});
+
+// ADR-011: a page's own bottom action bar (the review page's confirm bar
+// here) sits between the toast and the navigation bar, so the toast has to
+// clear it too — not just the navigation bar, which the describe block above
+// already covers.
+test.describe('a toast does not occlude a page\'s own bottom action bar', () => {
+  const MEAL_ID = 'nav-bar-mock-meal';
+
+  async function mockPendingReviewMeal(page: Page) {
+    const item = {
+      id: 'nav-bar-mock-item', meal_id: MEAL_ID, name: 'Nav Bar Mock Item',
+      macro_source: 'reference', weight_grams: 150, confidence: 1,
+      calories: 200, protein_grams: 5, carbs_grams: 20, fat_grams: 5,
+      sugar_grams: 1, sodium_grams: 1, dietary_fiber_grams: 1,
+    };
+    const meal = {
+      id: MEAL_ID, photo_path: 'fake/path.jpg', status: 'pending_review',
+      logged_at: new Date().toISOString(), name: 'Nav Bar Mock Meal', clarify_round: 0, clarify_log: '',
+      calories: 200, protein_grams: 5, carbs_grams: 20, fat_grams: 5,
+      sugar_grams: 1, sodium_grams: 1, dietary_fiber_grams: 1, items: [item],
+    };
+    await page.route(`**/api/food/meals/${MEAL_ID}`, route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: meal }) : route.continue()
+    );
+    await page.route(`**/api/food/meals/${MEAL_ID}/items/*`, route =>
+      route.fulfill({ json: { ...meal, items: [{ ...item, weight_grams: 200 }] } })
+    );
+  }
+
+  // Changes the item's weight (raising a toast, same as a real weight edit
+  // on the review page) and asserts the toast clears the confirm bar, and
+  // that the confirm button is still enabled and hit-testable while the
+  // toast is on screen — the assertion a stacking-order-only fix would not
+  // satisfy, since the button would still be invisible under the toast.
+  async function assertToastClearsBarAndConfirmIsClickable(page: Page) {
+    const weightInput = page.locator('input[type="number"]').first();
+    await expect(weightInput).toBeVisible();
+    await weightInput.fill('200');
+    await weightInput.blur();
+
+    const toast = page.getByRole('status').first();
+    await expect(toast).toBeVisible();
+    const barBox = await boxOf(page.getByTestId('bottom-action-bar'), 'bottom action bar');
+    const toastBox = await boxOf(toast, 'toast');
+    expect(intersects(toastBox, barBox), 'toast overlaps the bottom action bar').toBe(false);
+
+    const confirm = page.getByRole('button', { name: /confirm meal/i });
+    await expect(confirm).toBeEnabled();
+    await confirm.click({ trial: true });
+  }
+
+  test('at the 390x844 mobile viewport', async ({ page }) => {
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await login(page);
+    await mockPendingReviewMeal(page);
+    await page.goto(`/food/review/?meal=${MEAL_ID}`);
+    await assertToastClearsBarAndConfirmIsClickable(page);
+  });
+
+  // --nav-block is 0px here and the bar sits at the screen edge, which is
+  // the other regime ADR-008/ADR-011's offset arithmetic has to hold in.
+  test('at the 1280x800 desktop viewport, where --nav-block is 0px', async ({ page }) => {
+    await page.setViewportSize(DESKTOP_VIEWPORT);
+    await login(page);
+    await mockPendingReviewMeal(page);
+    await page.goto(`/food/review/?meal=${MEAL_ID}`);
+    await assertToastClearsBarAndConfirmIsClickable(page);
+  });
+
+  // The review page renders no BottomActionBar for a 'failed' meal (only
+  // 'pending_review' shows the confirm bar), and Retry raises the same
+  // success toast as a weight edit. With no bar registered the toast must
+  // fall back to exactly its pre-ADR-011 offset — about 1rem above the
+  // navigation bar's top edge — rather than sitting at `bottom: 0`.
+  test('with no bar on screen, the toast returns to its base offset', async ({ page }) => {
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await login(page);
+
+    const mealId = 'nav-bar-mock-failed-meal';
+    const meal = {
+      id: mealId, photo_path: 'fake/path.jpg', status: 'failed',
+      logged_at: new Date().toISOString(), name: 'Nav Bar Mock Failed Meal', clarify_round: 0, clarify_log: '',
+      calories: 0, protein_grams: 0, carbs_grams: 0, fat_grams: 0,
+      sugar_grams: 0, sodium_grams: 0, dietary_fiber_grams: 0, items: [],
+    };
+    await page.route(`**/api/food/meals/${mealId}`, route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: meal }) : route.continue()
+    );
+    await page.route(`**/api/food/meals/${mealId}/retry`, route =>
+      route.fulfill({ json: { ...meal, status: 'processing' } })
+    );
+
+    await page.goto(`/food/review/?meal=${mealId}`);
+    await expect(page.getByTestId('bottom-action-bar')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Retry' }).click();
+    const toast = page.getByRole('status').first();
+    await expect(toast).toBeVisible();
+
+    const navBox = await boxOf(bar(page), 'navigation bar');
+    const toastBox = await boxOf(toast, 'toast');
+    const gap = navBox.y - (toastBox.y + toastBox.height);
+    expect(gap, 'toast bottom edge should sit about 1rem above the navigation bar\'s top edge')
+      .toBeGreaterThan(8);
+    expect(gap, 'toast bottom edge should sit about 1rem above the navigation bar\'s top edge')
+      .toBeLessThan(24);
   });
 });

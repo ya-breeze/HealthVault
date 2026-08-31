@@ -13,17 +13,40 @@ function isAuthExemptPath(path: string): boolean {
   return path === '/auth/login' || path === '/auth/refresh';
 }
 
+// Completion time of the last successful refresh in *this* tab. The
+// localStorage twin below is the cross-tab channel and this one cannot replace
+// it, but the reverse is also true: localStorage is only ever read inside the
+// Web Locks branch, which needs a secure context. This variable is what lets
+// the same rule hold on an origin that has no Web Locks — see lastRefreshAt().
+let lastRefreshAtInTab = 0;
+
+// The most recent refresh this tab can prove happened, from either channel.
+// Reading both means the guard degrades gracefully rather than conditionally:
+// no localStorage (private browsing) still leaves the in-tab value, and a
+// refresh performed by another tab still wins through localStorage.
+function lastRefreshAt(): number {
+  let stored = 0;
+  try {
+    stored = Number(localStorage.getItem(LAST_REFRESH_KEY)) || 0;
+  } catch {
+    // ignore; the in-tab value below still applies
+  }
+  return Math.max(stored, lastRefreshAtInTab);
+}
+
 // POSTs /auth/refresh directly (no retry wrapping — this IS the refresh call).
-// Records the completion time so other tabs waiting on the Web Lock can see a
-// refresh already happened at/after their request was dispatched.
+// Records the completion time so a later caller — in this tab, or in another
+// one waiting on the Web Lock — can see a refresh already happened at/after
+// its request was dispatched.
 async function refreshAccessToken(): Promise<boolean> {
   const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
   if (!res.ok) return false;
+  lastRefreshAtInTab = Date.now();
   try {
-    localStorage.setItem(LAST_REFRESH_KEY, String(Date.now()));
+    localStorage.setItem(LAST_REFRESH_KEY, String(lastRefreshAtInTab));
   } catch {
     // localStorage may be unavailable (e.g. private browsing); same-tab dedup
-    // via refreshPromise still applies, cross-tab dedup just degrades.
+    // still applies through lastRefreshAtInTab, cross-tab dedup just degrades.
   }
   return true;
 }
@@ -39,21 +62,28 @@ function coordinatedRefresh(dispatchedAt: number): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
 
   const run = async (): Promise<boolean> => {
+    // One rule, checked on both paths: a refresh that completed at or after
+    // this request was dispatched already replaced the token its 401 was
+    // complaining about, so the right move is to retry, not to refresh again.
+    // Refreshing again is not merely wasteful — RotateRefreshToken consumes
+    // the token it is given, so a second refresh presents a spent one, gets
+    // its own 401, and reports the caller as logged out.
+    if (lastRefreshAt() >= dispatchedAt) return true;
+
     if (typeof navigator !== 'undefined' && 'locks' in navigator && navigator.locks) {
       return navigator.locks.request(AUTH_REFRESH_LOCK, async () => {
-        let lastRefreshAt = 0;
-        try {
-          lastRefreshAt = Number(localStorage.getItem(LAST_REFRESH_KEY)) || 0;
-        } catch {
-          // ignore; falls through to performing our own refresh
-        }
-        if (lastRefreshAt >= dispatchedAt) return true;
+        // Re-read inside the lock: another tab may have refreshed while this
+        // one waited for it, which is the case the lock exists to serialize.
+        if (lastRefreshAt() >= dispatchedAt) return true;
         return refreshAccessToken();
       });
     }
     // No Web Locks (older browser, or not a secure context — e.g. the local
-    // http hcw-wip stack). Same-tab dedup above still applies; cross-tab
-    // coordination is a documented residual risk in that fallback case.
+    // http hcw-wip stack). The guard above still holds here because it reads
+    // an in-tab variable rather than only localStorage, so same-tab callers
+    // are covered on any origin. Cross-tab coordination still degrades: two
+    // tabs can race into simultaneous refreshes, which no in-tab state can
+    // see and only the Web Lock serializes.
     return refreshAccessToken();
   };
 
@@ -441,6 +471,66 @@ export interface NutritionTarget {
   activity_tier: string;
 }
 
+// The `target` field of TodaySummary, discriminated on `available` so a caller
+// cannot read `calories` without having checked first — a flat
+// optional-number shape would let `target.calories` typecheck its way into an
+// arithmetic `undefined`.
+//
+// The four numeric fields are required in the available branch, which holds
+// only because `summaryTargetPayload` (backend/pkg/server/summary_today.go)
+// carries no `omitempty` on them. It did once, and that is a trap worth
+// naming: `omitempty` drops a zero, zero is a legitimate carbs target, and the
+// key's absence would then reach `Math.round(undefined)` and render "NaN" on
+// the dashboard. A backend test asserts the keys are present; if that ever
+// changes, these fields become optional and every read site needs `?? 0`.
+export type TodaySummaryTarget =
+  | { available: false; reason: NutritionTargetUnmetReason }
+  | {
+      available: true;
+      calories: number;
+      protein_grams: number;
+      carbs_grams: number;
+      fat_grams: number;
+    };
+
+/**
+ * GET /api/summary/today — the caller's Logged Day so far, plus their
+ * Nutrition Target, in one response.
+ *
+ * Preferred over `getNutritionTarget()` by any caller that needs both, which
+ * is the whole reason the endpoint exists (see SummaryTodayHandler's own
+ * "one cheap call" comment). Two differences from that endpoint matter to
+ * callers:
+ *
+ * - **It never 422s.** An unavailable target is a normal state here, reported
+ *   as `target.available === false` with the same four reason codes, so there
+ *   is no `NutritionTargetUnmetError` to catch on this path.
+ * - **The consumed totals count `confirmed` meals only** (database.TodaySummary),
+ *   so a photographed but unconfirmed meal is absent from them. This matches
+ *   the rule the Logging Gap's own valid-day filter applies.
+ *
+ * `date` is the caller's Logged Day as the *server* resolves it, from the same
+ * timezone setting client-side window arithmetic reads. It is the authority on
+ * which day these totals cover; a caller that needs to name the day should use
+ * it rather than re-deriving "today" locally, so the two cannot disagree across
+ * a local midnight.
+ *
+ * `recommendation` is always `null` today — it is the reserved home for Phase
+ * 4's advice lines (see todo.md), not something any caller can rely on yet.
+ */
+export interface TodaySummary {
+  date: string;
+  calories_consumed: number;
+  protein_grams_consumed: number;
+  carbs_grams_consumed: number;
+  fat_grams_consumed: number;
+  meal_count: number;
+  last_logged_at: string | null;
+  display_language: string;
+  target: TodaySummaryTarget;
+  recommendation: null;
+}
+
 // Named rather than left inline on `api.me` below: AuthenticatedShell holds
 // the session and passes it to both Header and MoreSheet, so three call
 // sites now need to spell this shape.
@@ -471,9 +561,22 @@ export const api = {
   putSettings: (settings: UserSettings) =>
     apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
 
+  // Self-only, like getNutritionTarget below. See the TodaySummary doc
+  // comment for why a caller needing both today's intake and the target
+  // should reach for this instead of getNutritionTarget.
+  getTodaySummary: () => apiFetch<TodaySummary>('/summary/today'),
+
   // Self-only: no ?user= support, unlike most /data endpoints — see
   // design.md's "Self-only" decision. Throws NutritionTargetUnmetError on
   // 422 so callers can branch on the specific unmet reason.
+  //
+  // No caller in the app today: LoggingGapCard, the only one there was, moved
+  // to getTodaySummary above when it grew a row needing today's intake too.
+  // Kept as the client for a route the backend still serves
+  // (server.go's /users/me/nutrition-target), and because it returns the full
+  // derivation — measured weight, goal weight, height, age, activity tier —
+  // that the summary's target payload deliberately does not carry. Delete both
+  // this and NutritionTargetUnmetError if that route ever goes.
   getNutritionTarget: async (): Promise<NutritionTarget> => {
     const res = await apiRawFetch('/users/me/nutrition-target');
     if (res.status === 422) {

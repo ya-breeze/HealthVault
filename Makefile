@@ -24,8 +24,12 @@ test-backend:
 test-frontend:
 	@cd $(ROOT_DIR)/frontend && npm test --silent
 
+# E2E_ARGS forwards flags to Playwright — `make test-e2e E2E_ARGS=--retries=0`
+# is how a stability gate asks for first-attempt results. Without it the
+# config's `retries: 1` applies silently, and a run that failed once and passed
+# on retry reports as "1 flaky" rather than as the failure it is.
 test-e2e: $(ROOT_DIR)e2e/node_modules/.install-stamp
-	@cd $(ROOT_DIR)e2e && BASE_URL=$(or $(BASE_URL),http://192.168.1.54:8892) npx playwright test --reporter=line
+	@cd $(ROOT_DIR)e2e && BASE_URL=$(or $(BASE_URL),http://192.168.1.54:8892) npx playwright test --reporter=line $(E2E_ARGS)
 
 $(ROOT_DIR)e2e/node_modules/.install-stamp: $(ROOT_DIR)e2e/package-lock.json
 	@cd $(ROOT_DIR)e2e && npm ci

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow, IBM_Plex_Mono, Inter } from "next/font/google";
 import { ToastProvider } from "@/components/Toast";
+import { BottomActionBarProvider } from "@/components/ui/BottomActionBar";
 import { LanguageProvider } from "@/components/LanguageContext";
 import "./globals.css";
 
@@ -134,7 +135,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <LanguageProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <BottomActionBarProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </BottomActionBarProvider>
         </LanguageProvider>
       </body>
     </html>

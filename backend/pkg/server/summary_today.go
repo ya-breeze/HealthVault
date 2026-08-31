@@ -18,13 +18,22 @@ import (
 // nutrition-target's existing four reason codes. Never a 422 on this
 // endpoint: an unavailable target is a normal, expected state here (a fresh
 // user with no profile yet), not an error.
+// The four numeric fields deliberately carry no `omitempty`, unlike `Reason`.
+// `omitempty` drops an int that is zero, and zero is a legitimate target
+// value: computeNutritionTarget clamps carbs to zero whenever protein and the
+// fat floor already exhaust the calorie budget, which a goal weight entered in
+// pounds against an ordinary TDEE is enough to reach. Omitting the key then
+// makes a *present* target look partial — a client that types the field as
+// required (as the frontend's TodaySummaryTarget does) reads `undefined` and
+// renders "Carbs 130/NaN g". Absence must mean "no target", which `available`
+// already says; it must not double as "the number happened to be zero".
 type summaryTargetPayload struct {
 	Available    bool   `json:"available"`
 	Reason       string `json:"reason,omitempty"`
-	Calories     int    `json:"calories,omitempty"`
-	ProteinGrams int    `json:"protein_grams,omitempty"`
-	CarbsGrams   int    `json:"carbs_grams,omitempty"`
-	FatGrams     int    `json:"fat_grams,omitempty"`
+	Calories     int    `json:"calories"`
+	ProteinGrams int    `json:"protein_grams"`
+	CarbsGrams   int    `json:"carbs_grams"`
+	FatGrams     int    `json:"fat_grams"`
 }
 
 // summaryTodayResponse is the 200 response body for GET /api/summary/today

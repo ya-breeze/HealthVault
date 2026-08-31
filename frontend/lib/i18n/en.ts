@@ -280,11 +280,21 @@ const en = {
   'vitals.moveUp': 'Move {metric} up',
   'vitals.moveDown': 'Move {metric} down',
 
-  'loggingGap.title': 'Logging Gap',
-  'loggingGap.loading': 'Calculating your logging gap…',
+  // The `loggingGap.` prefix is kept for the whole card, including the keys
+  // below that have nothing to do with the gap. Renaming it is deferred to
+  // Phase 4, when the Healthiness Label row lands and the card fully becomes a
+  // nutrition card — so the churn happens once rather than twice.
+  'loggingGap.title': 'Nutrition',
+  'loggingGap.loading': 'Loading your nutrition…',
+  'loggingGap.todayCalories': '{consumed} / {target} kcal today',
+  'loggingGap.protein': 'Protein {consumed}/{target} g',
+  'loggingGap.carbs': 'Carbs {consumed}/{target} g',
+  'loggingGap.fat': 'Fat {consumed}/{target} g',
+  'loggingGap.onTrack': 'Your log matches your weight',
+  'loggingGap.onTrackDetail': 'On your fully-logged days, intake and weight trend agree — any gap left is too small to measure.',
   'loggingGap.notEnoughData': 'Not enough data yet',
   'loggingGap.retrievalError': 'Temporarily unavailable',
-  'loggingGap.targetUnmet': 'Complete your profile and goal weight to see your logging gap.',
+  'loggingGap.targetUnmet': 'Complete your profile and goal weight to see your nutrition targets.',
   'loggingGap.targetUnmetLink': 'Update now',
   'loggingGap.unlogged': '{range} kcal/day not logged',
   'loggingGap.loggedMore': '{range} kcal/day logged more than the trend implies',
