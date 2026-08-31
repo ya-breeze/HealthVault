@@ -1,4 +1,4 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext, type Locator } from '@playwright/test';
 import path from 'path';
 
 const USER = process.env.HCW_USER || 'alice';
@@ -289,6 +289,94 @@ test.describe('In-app camera capture', () => {
     await expect(page.getByText(/secure.*HTTPS|HTTPS.*secure/i)).toBeVisible({ timeout: 5_000 });
     // The page itself must still be alive and showing the app, not a crash screen.
     await expect(page.getByRole('heading', { name: /log a meal/i })).toBeVisible();
+  });
+
+  // Same navigator.mediaDevices mock 'camera capture uses the same hinted
+  // upload path' (above) establishes, so these tests exercise the real
+  // component layout without needing an actual camera in CI.
+  async function mockCamera(page: Page) {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => {} }] }) },
+      });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, get: () => 1920 });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, get: () => 1080 });
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get: () => null,
+        set: () => {},
+      });
+    });
+  }
+
+  async function boxOf(locator: Locator, label: string) {
+    const box = await locator.boundingBox();
+    expect(box, `${label} should have a bounding box`).not.toBeNull();
+    return box!;
+  }
+
+  // Regression for a real bug: the capture card had no height bound, so at a
+  // short viewport its natural column height (~350-450px) exceeded what was
+  // visible and overflow-hidden clipped the Capture button — the last
+  // element in the column — while leaving it in the DOM, enabled, and
+  // completely invisible. 740x320 is a phone held horizontally with browser
+  // chrome showing, the case that was actually broken. 390x844 (portrait
+  // mobile) and 1280x800 (desktop) are the orientations that already
+  // worked, included so this change is proven not to regress them.
+  const VIEWPORTS: Record<string, { width: number; height: number }> = {
+    'landscape, short viewport (740x320)': { width: 740, height: 320 },
+    'portrait mobile (390x844)': { width: 390, height: 844 },
+    'desktop (1280x800)': { width: 1280, height: 800 },
+  };
+
+  for (const [label, viewport] of Object.entries(VIEWPORTS)) {
+    test(`Capture button and card fit the viewport — ${label}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await mockCamera(page);
+      await login(page);
+      await page.goto('/food/upload/');
+      await page.getByRole('button', { name: 'Take Photo' }).click();
+
+      const captureButton = page.getByRole('button', { name: 'Capture' });
+      await expect(captureButton).toBeVisible();
+      await expect(captureButton).toBeEnabled();
+      // trial: true runs Playwright's actionability checks (hit-testable at
+      // its own position, not covered by another element) without actually
+      // clicking — the assertion a stacking-order-only fix would not
+      // satisfy, unlike toBeVisible() alone.
+      await captureButton.click({ trial: true });
+
+      const buttonBox = await boxOf(captureButton, 'Capture button');
+      expect(buttonBox.y).toBeGreaterThanOrEqual(0);
+      expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(viewport.height);
+
+      // A non-trivial floor, not just a non-zero box — a "fix" that
+      // collapses the preview to make room for the button would still pass
+      // a bare toBeVisible() check but fails here.
+      const videoBox = await boxOf(page.locator('video'), 'camera preview');
+      expect(videoBox.height).toBeGreaterThan(60);
+
+      // The invariant the clipping actually violated: the card itself fits
+      // within the viewport height.
+      const cardBox = await boxOf(page.getByTestId('camera-capture-card'), 'capture card');
+      expect(cardBox.y).toBeGreaterThanOrEqual(0);
+      expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(viewport.height);
+    });
+  }
+
+  test('overlay declares the bottom safe-area inset with an env() term', async ({ page }) => {
+    // Headless Chromium reports env(safe-area-inset-bottom) as 0 and offers
+    // no way to set it, so this only confirms the padding is declared with
+    // an env() term, not that a non-zero inset behaves correctly on a
+    // notched device — that half needs a manual check, the same residue
+    // ADR-008 records for safe-area handling.
+    await mockCamera(page);
+    await login(page);
+    await page.goto('/food/upload/');
+    await page.getByRole('button', { name: 'Take Photo' }).click();
+
+    await expect(page.getByTestId('camera-capture-overlay')).toHaveClass(/env\(safe-area-inset-bottom\)/);
   });
 });
 

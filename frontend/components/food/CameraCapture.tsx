@@ -75,8 +75,14 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
     // (covering the nav bar is the point), so nothing underneath absorbs the
     // inset for this overlay, and --edge-inset-b is 0px below the sm
     // breakpoint exactly because the nav bar normally does that job instead.
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center max-h-dvh px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md w-full max-h-full overflow-hidden flex flex-col">
+    <div
+      data-testid="camera-capture-overlay"
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center max-h-dvh px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+    >
+      <div
+        data-testid="camera-capture-card"
+        className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md w-full max-h-full overflow-hidden flex flex-col"
+      >
         <div className="shrink-0 px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
           <p className="text-sm font-semibold text-gray-900 dark:text-white">Take a photo</p>
           <TapTarget

@@ -136,26 +136,26 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: Cover the landscape case in E2E
-- [ ] In the `In-app camera capture` describe block in `e2e/tests/food.spec.ts`, add a landscape
+- [x] In the `In-app camera capture` describe block in `e2e/tests/food.spec.ts`, add a landscape
       case at a short viewport (for example 740x320, a phone held horizontally with browser
       chrome showing) that opens the camera through the existing `addInitScript`
       `navigator.mediaDevices` mock and asserts the Capture button is visible, enabled, and has a
       bounding box fully inside the viewport (`y >= 0` and `y + height <= viewport height`).
-- [ ] Assert the button is genuinely usable, not merely painted, with `click({ trial: true })` —
+- [x] Assert the button is genuinely usable, not merely painted, with `click({ trial: true })` —
       the assertion a stacking-order-only change would not satisfy.
-- [ ] Assert the preview keeps a usable height at that viewport (a non-trivial floor, not just a
+- [x] Assert the preview keeps a usable height at that viewport (a non-trivial floor, not just a
       non-zero box), so a "fix" that collapses the preview to nothing fails here.
-- [ ] Assert the card's own bounding box fits within the viewport height, which is the invariant
+- [x] Assert the card's own bounding box fits within the viewport height, which is the invariant
       the clipping violated.
-- [ ] Add the same assertions at a portrait mobile viewport (390x844) and at the desktop viewport
+- [x] Add the same assertions at a portrait mobile viewport (390x844) and at the desktop viewport
       the existing camera tests run at, proving the change fixes landscape without regressing the
       orientations that already worked.
-- [ ] Assert the overlay's `padding-bottom` is declared with an `env()` term, and state in a
+- [x] Assert the overlay's `padding-bottom` is declared with an `env()` term, and state in a
       comment that the non-zero-inset half is a manual check on a notched device because headless
       Chromium reports the inset as 0 — the same limitation ADR-008 records.
-- [ ] Confirm the pre-existing camera cases (`camera capture uses the same hinted upload path` and
+- [x] Confirm the pre-existing camera cases (`camera capture uses the same hinted upload path` and
       the secure-context error case) still pass unchanged.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Validate the change against the deployed stack
 - [ ] Re-read every modified file and check the layout classes for consistency with the
