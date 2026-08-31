@@ -1,7 +1,7 @@
 # ADR-011: A Page's Bottom Action Bar Registers Its Height for Anything Anchored Above It
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
