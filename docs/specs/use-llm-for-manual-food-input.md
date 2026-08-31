@@ -272,10 +272,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 7: Documentation and the ADR
-- [ ] Add a **Meal Description** term to `CONTEXT.md` under "Food logging", including the
+- [x] Add a **Meal Description** term to `CONTEXT.md` under "Food logging", including the
       distinction from the photo `Hint` and its `_Avoid_` line, following the file's existing
       entry format
-- [ ] Add `docs/adr/ADR-011-llm-described-manual-food-entry.md` with `Status: Proposed`,
+- [x] Add `docs/adr/ADR-011-llm-described-manual-food-entry.md` with `Status: Proposed`,
       recording why manual entry's primary path is now model recognition rather than
       reference-database lookup, why the structured form is kept rather than removed, and why
       the user's real Display Language is passed here while `runExpertAnalysis` forces `"en"`
