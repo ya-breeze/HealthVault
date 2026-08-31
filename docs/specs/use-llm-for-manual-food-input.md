@@ -256,16 +256,16 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 6: E2E coverage and validation against the deployed stack
-- [ ] Extend the `Manual meal entry` describe block in `e2e/tests/food.spec.ts` with a test that
+- [x] Extend the `Manual meal entry` describe block in `e2e/tests/food.spec.ts` with a test that
       submits a description through the real UI against the deployed stack and waits for the
       review route, asserting it reaches a real outcome (`Review needed`, `Needs clarification`,
       or `Analysis failed`) the way the photo-upload test does, then deletes the meal it created
-- [ ] Add a test asserting a non-English description is accepted and produces at least one item
+- [x] Add a test asserting a non-English description is accepted and produces at least one item
       whose name is not forced into English — the behavior the idea reports as broken today
-- [ ] Update the two existing manual-entry UI tests so they open the structured form's disclosure
+- [x] Update the two existing manual-entry UI tests so they open the structured form's disclosure
       first; leave the `POST /api/food/meals/manual` seeding helpers in `food.spec.ts` and
       `completeness.spec.ts` untouched
-- [ ] Check whether `e2e/tests/mobile-nav.spec.ts`'s manual-page submit-bar and safe-area tests
+- [x] Check whether `e2e/tests/mobile-nav.spec.ts`'s manual-page submit-bar and safe-area tests
       still target the right control after the page rework, and update them if not
 - [ ] Run `make lint` and `make test`, then deploy the branch to `hcw-wip` and run
       `make test-e2e` against it; fix every failure rather than recording it as pre-existing

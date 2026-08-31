@@ -52,12 +52,30 @@ async function cookieHeader(page: Page): Promise<string> {
   return cookies.map(c => `${c.name}=${c.value}`).join('; ');
 }
 
+// Full read/write of the account's settings blob — used to force a known
+// display_language before the non-English description test below and
+// restore whatever the account had beforehand, regardless of what the test
+// itself changed. Mirrors completeness.spec.ts's identical pair.
+async function getSettings(request: APIRequestContext, cookies: string): Promise<Record<string, unknown>> {
+  const res = await request.get(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies } });
+  return res.json();
+}
+
+async function putSettings(request: APIRequestContext, cookies: string, settings: Record<string, unknown>) {
+  const res = await request.put(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies }, data: settings });
+  if (!res.ok()) throw new Error(`failed to write settings: ${res.status()} ${await res.text()}`);
+}
+
 test.describe('Manual meal entry', () => {
   test('creates a confirmed meal with direct macros and shows it on review', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
 
     await page.goto('/food/manual/');
+    // The item-by-item form (ManualItemEditor and its own submit) now lives
+    // behind a collapsed disclosure — see the description-first rework of
+    // this page — so it has to be opened before its controls exist.
+    await page.getByTestId('describe-structured-toggle').click();
     await page.getByPlaceholder('Food name').fill('E2E Test Snack');
     await page.getByRole('tab', { name: 'Enter macros' }).click();
     await page.locator('label:has-text("Calories") input').fill('250');
@@ -99,6 +117,8 @@ test.describe('Manual meal entry', () => {
     );
 
     await page.goto('/food/manual/');
+    // See the previous test: the structured form is now behind a disclosure.
+    await page.getByTestId('describe-structured-toggle').click();
     await page.getByPlaceholder('Food name').fill('Перепелиное яйцо');
 
     // Mirrors the reported repro: clicking the already-active "Search food"
@@ -111,6 +131,74 @@ test.describe('Manual meal entry', () => {
     await expect(page.getByText('Searched as:')).toBeVisible();
     await expect(page.locator('strong', { hasText: 'quail egg' })).toBeVisible();
     await expect(page.getByText(/Egg, quail, whole, raw/)).toBeVisible();
+  });
+
+  // The new description-first entry path (idea #23): a real, synchronous
+  // call to the vision model, mirroring the photo-upload test's "reaches a
+  // terminal or actionable review state" pattern — recognition from a short
+  // free-text description is inherently non-deterministic, so this asserts
+  // only that analysis reached a real outcome, not a specific one.
+  test('describes a meal in free text and reaches a terminal or actionable review state', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+
+    await page.goto('/food/manual/');
+    await page.getByTestId('describe-textarea').fill('a bowl of chicken soup with a slice of bread');
+    await page.getByTestId('describe-submit').click();
+
+    // The describe request blocks on the synchronous vision call, same as
+    // photo upload — the page navigates to the review route once it returns.
+    await page.waitForURL(/\/food\/review\/\?meal=/, { timeout: 90_000 });
+
+    const url = new URL(page.url());
+    const mealId = url.searchParams.get('meal')!;
+    expect(mealId).toBeTruthy();
+
+    await expect(
+      page.getByText(/Review needed|Needs clarification|Analysis failed/)
+    ).toBeVisible({ timeout: 15_000 });
+
+    await deleteMeal(request, cookies, mealId);
+  });
+
+  // The central case idea #23 reports as broken: a non-English description
+  // must reach the model as-is (via Describe, passed the account's real
+  // Display Language) and come back with at least one item name in that
+  // language, rather than forced into English the way the old search-first
+  // form was. Restores the account's prior settings afterward regardless of
+  // outcome, since display_language is shared real-account state other
+  // specs (and the account owner) depend on.
+  test('a non-English description is accepted and produces an item not forced into English', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const priorSettings = await getSettings(request, cookies);
+
+    try {
+      await putSettings(request, cookies, { ...priorSettings, display_language: 'ru' });
+
+      await page.goto('/food/manual/');
+      await page.getByTestId('describe-textarea').fill('тарелка борща со сметаной и кусок хлеба');
+      await page.getByTestId('describe-submit').click();
+      await page.waitForURL(/\/food\/review\/\?meal=/, { timeout: 90_000 });
+
+      const url = new URL(page.url());
+      const mealId = url.searchParams.get('meal')!;
+      expect(mealId).toBeTruthy();
+
+      await expect(
+        page.getByText(/Review needed|Needs clarification|Analysis failed/)
+      ).toBeVisible({ timeout: 15_000 });
+
+      const mealRes = await request.get(`${BASE_URL}/api/food/meals/${mealId}`, { headers: { Cookie: cookies } });
+      const meal = await mealRes.json();
+      const items: { name: string }[] = meal.items ?? [];
+      const hasNonEnglishName = items.some(item => /[^\x00-\x7F]/.test(item.name));
+      expect(hasNonEnglishName, `expected a non-ASCII item name, got ${JSON.stringify(items.map(i => i.name))}`).toBe(true);
+
+      await deleteMeal(request, cookies, mealId);
+    } finally {
+      await putSettings(request, cookies, priorSettings);
+    }
   });
 });
 

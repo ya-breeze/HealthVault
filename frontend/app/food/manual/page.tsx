@@ -117,6 +117,7 @@ export default function ManualMealPage() {
         </label>
         <textarea
           id="meal-description"
+          data-testid="describe-textarea"
           value={description}
           onChange={e => setDescription(e.target.value)}
           rows={4}
@@ -133,6 +134,7 @@ export default function ManualMealPage() {
         <TapTarget
           onClick={handleDescribeSubmit}
           disabled={saving}
+          data-testid="describe-submit"
           className="w-full mb-6 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
         >
           {saving ? t('describe.submitting') : t('describe.submit')}
@@ -159,6 +161,7 @@ export default function ManualMealPage() {
         ) : (
           <TapTarget
             onClick={() => setShowStructured(true)}
+            data-testid="describe-structured-toggle"
             className="w-full rounded-lg border border-dashed border-gray-300 px-4 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
           >
             {t('describe.structuredToggle')}

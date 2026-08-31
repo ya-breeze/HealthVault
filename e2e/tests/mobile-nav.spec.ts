@@ -421,6 +421,10 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
   test('the manual-entry submit bar clears it and stays clickable', async ({ page }) => {
     await login(page);
     await page.goto('/food/manual/');
+    // The fixed submit bar (and its "Save Meal" button) now belongs to the
+    // structured item-by-item form, behind a collapsed disclosure — see the
+    // description-first rework of this page — so it only exists once opened.
+    await page.getByTestId('describe-structured-toggle').click();
     const submit = page.getByRole('button', { name: 'Save Meal' });
     await expect(submit).toBeVisible();
     expect(intersects(
@@ -509,6 +513,9 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
   test('the clearance token resolves to the bar\'s height on mobile and to nothing on desktop', async ({ page }) => {
     await login(page);
     await page.goto('/food/manual/');
+    // See the previous test: the fixed submit bar only exists once the
+    // structured form's disclosure is opened.
+    await page.getByTestId('describe-structured-toggle').click();
 
     const read = async () => page.evaluate(() => {
       const shell = document.querySelector('[data-testid="shell-content"]')!;
