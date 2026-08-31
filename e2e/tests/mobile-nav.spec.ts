@@ -25,6 +25,12 @@ async function login(page: Page) {
 }
 
 const bar = (page: Page) => page.getByTestId('bottom-nav');
+// A page's own fixed submit/confirm bar (components/ui/BottomActionBar.tsx).
+// Addressed by its test id rather than by the `.fixed.z-30` Tailwind pair it
+// also carries: a z-index or layout tweak in that component would otherwise
+// turn every assertion here into "element not found", which says nothing about
+// the occlusion these tests exist to catch.
+const submitBar = (page: Page) => page.getByTestId('bottom-action-bar');
 const destination = (page: Page, id: string) => page.locator(`[data-nav-destination="${id}"]`);
 
 /** True when the two boxes share any area at all. */
@@ -301,6 +307,11 @@ test.describe('More sheet', () => {
         els.map(el => el.getAttribute('data-nav-control')!).sort()
       );
 
+    // `evaluateAll` samples the DOM once and never retries, so it has to be
+    // given something to wait for: without this the read lands before React
+    // paints the header and returns [], failing the guard below rather than
+    // the comparison this test is about.
+    await expect(page.locator('header [data-nav-control]').first()).toBeAttached();
     const headerControls = await read(page.locator('header'));
     await destination(page, 'more').click();
     await expect(page.getByTestId('more-sheet')).toBeVisible();
@@ -423,8 +434,18 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     await page.goto('/food/manual/');
     const submit = page.getByRole('button', { name: 'Save Meal' });
     await expect(submit).toBeVisible();
+    // boundingBox() returns null for an element that has not laid out yet, and
+    // unlike expect() it does not poll. The submit button being visible does
+    // not imply its fixed container and the navigation bar are — the bar in
+    // particular waits on api.me(), since AuthenticatedShell renders it only
+    // once the session resolves. Waiting on both is also what makes a missing
+    // bar report itself as "element not found" rather than as a null bounding
+    // box: the first framing of this test's intermittent failure hid a real
+    // auth bug behind a geometry error. See docs/specs/stabilize-flaky-e2e.md.
+    await expect(submitBar(page)).toBeVisible();
+    await expect(bar(page)).toBeVisible();
     expect(intersects(
-      await boxOf(page.locator('.fixed.z-30').first(), 'submit bar'),
+      await boxOf(submitBar(page), 'submit bar'),
       await boxOf(bar(page), 'navigation bar'),
     ), 'submit bar overlaps the navigation bar').toBe(false);
     // A control under the bar is unusable however the two stack, so this is
@@ -453,7 +474,7 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     await expect(confirm).toBeVisible();
     const navBox = await boxOf(bar(page), 'navigation bar');
     expect(intersects(
-      await boxOf(page.locator('.fixed.z-30').first(), 'review submit bar'),
+      await boxOf(submitBar(page), 'review submit bar'),
       navBox,
     ), 'review submit bar overlaps the navigation bar').toBe(false);
 
@@ -512,7 +533,7 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
 
     const read = async () => page.evaluate(() => {
       const shell = document.querySelector('[data-testid="shell-content"]')!;
-      const submit = document.querySelector('.fixed.z-30')!;
+      const submit = document.querySelector('[data-testid="bottom-action-bar"]')!;
       const s = getComputedStyle(submit);
       return {
         shellPaddingBottom: getComputedStyle(shell).paddingBottom,

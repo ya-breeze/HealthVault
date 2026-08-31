@@ -129,13 +129,11 @@ func TestLogin_RefreshLogoutRequireAuthUnaffectedByConcurrentLockout(t *testing.
 		t.Fatalf("expected Refresh to succeed despite the username's active lockout, got %d", refreshRec.Code)
 	}
 
-	// Checked before Logout runs (below), which blacklists whatever token it
-	// is handed — GenerateAccessToken's claims have second-precision
-	// timestamps, so a token minted moments later for the same user could
-	// otherwise be byte-identical and get blacklisted along with it.
-	accessToken, err := auth.GenerateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
+	// Minted through the same helper the handlers use, so this exercises the
+	// token shape production actually issues (access_token.go).
+	accessToken, err := generateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
 	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
+		t.Fatalf("generateAccessToken: %v", err)
 	}
 	protected := RequireAuth(h.jwtSecret, h.cookieCfg, storage.DB())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -148,9 +146,9 @@ func TestLogin_RefreshLogoutRequireAuthUnaffectedByConcurrentLockout(t *testing.
 		t.Fatalf("expected a RequireAuth-protected request to succeed despite the username's active lockout, got %d", protectedRec.Code)
 	}
 
-	logoutToken, err := auth.GenerateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
+	logoutToken, err := generateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
 	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
+		t.Fatalf("generateAccessToken: %v", err)
 	}
 	logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	logoutReq.AddCookie(&http.Cookie{Name: cookies.AccessCookieName, Value: logoutToken})

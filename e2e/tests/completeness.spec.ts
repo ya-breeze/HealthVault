@@ -234,7 +234,8 @@ test.describe('Day completeness', () => {
 
     const mealName = `E2E Completeness At-Threshold Day ${RUN_TAG}`;
     // Three occasions at least 10 minutes apart (the Eating Occasion
-    // collapsing window), meeting the default threshold of 3.
+    // collapsing window), so this day sits at or above any threshold this
+    // test goes on to choose.
     const created = [
       await createMealAt(request, cookies, mealName, isoAtUTC(4, 8, 0)),
       await createMealAt(request, cookies, `${mealName} 2`, isoAtUTC(4, 8, 15)),
@@ -242,24 +243,48 @@ test.describe('Day completeness', () => {
     ];
     const date = isoAtUTC(4, 8, 0).slice(0, 10);
 
+    // A second day, deliberately left below threshold, purely so the page has
+    // something completeness-driven to render. `complete` and "not fetched
+    // yet" both render nothing (DayCompletenessControl returns null for
+    // either), so the at-threshold day offers no signal of its own that the
+    // state ever arrived — every assertion below would pass on an empty page.
+    // This day's "Mark day complete" button is that signal: it appears only
+    // after every window's response has resolved (the page setStates once,
+    // after Promise.all) and React has committed the result.
+    const sentinelName = `E2E Completeness Sentinel Day ${RUN_TAG}`;
+    const sentinel = await createMealAt(request, cookies, sentinelName, isoAtUTC(3, 8, 0));
+    const sentinelDate = isoAtUTC(3, 8, 0).slice(0, 10);
+
     try {
+      await unconfirmDate(request, cookies, sentinelDate);
+      // Derived, not hardcoded: this account is shared across spec files, so
+      // either day may already hold occasions this test did not create.
+      const atCount = await occasionCount(request, cookies, date);
+      const threshold = await thresholdLeavingDayBelow(request, cookies, sentinelDate);
+      expect(
+        threshold,
+        `the sentinel day ${sentinelDate} holds at least as many occasions as the at-threshold day ` +
+        `${date}; leftovers from an earlier run make this test unable to tell the two states apart`
+      ).toBeLessThanOrEqual(atCount);
+      await putSettings(request, cookies, { ...original, timezone: 'UTC', usual_meals_per_day: threshold });
+
       await page.goto('/food/history/');
       // exact: true — the other two seeded meals' names both contain this
       // one as a substring ("... 2", "... 3"), which getByText's default
       // substring match would otherwise resolve to all three.
       await expect(page.getByText(mealName, { exact: true })).toBeVisible();
-      // Wait for the completeness fetch covering this range to actually
-      // land before asserting absence — otherwise "no control" would pass
-      // trivially just because the fetch hasn't resolved yet.
-      await page.waitForResponse(r => r.url().includes('/api/food/completeness'));
+      await expect(
+        daySection(page, sentinelName).getByRole('button', { name: 'Mark day complete' })
+      ).toBeVisible({ timeout: 15_000 });
 
       const section = daySection(page, mealName);
       await expect(section.getByRole('button', { name: 'Mark day complete' })).toHaveCount(0);
       await expect(section.getByRole('button', { name: 'Unconfirm' })).toHaveCount(0);
       await expect(section.getByText('Complete', { exact: true })).toHaveCount(0);
     } finally {
-      await deleteMeals(request, cookies, created.map(m => m.id));
+      await deleteMeals(request, cookies, [...created.map(m => m.id), sentinel.id]);
       await unconfirmDate(request, cookies, date);
+      await unconfirmDate(request, cookies, sentinelDate);
       await putSettings(request, cookies, original);
     }
   });

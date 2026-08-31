@@ -13,17 +13,40 @@ function isAuthExemptPath(path: string): boolean {
   return path === '/auth/login' || path === '/auth/refresh';
 }
 
+// Completion time of the last successful refresh in *this* tab. The
+// localStorage twin below is the cross-tab channel and this one cannot replace
+// it, but the reverse is also true: localStorage is only ever read inside the
+// Web Locks branch, which needs a secure context. This variable is what lets
+// the same rule hold on an origin that has no Web Locks — see lastRefreshAt().
+let lastRefreshAtInTab = 0;
+
+// The most recent refresh this tab can prove happened, from either channel.
+// Reading both means the guard degrades gracefully rather than conditionally:
+// no localStorage (private browsing) still leaves the in-tab value, and a
+// refresh performed by another tab still wins through localStorage.
+function lastRefreshAt(): number {
+  let stored = 0;
+  try {
+    stored = Number(localStorage.getItem(LAST_REFRESH_KEY)) || 0;
+  } catch {
+    // ignore; the in-tab value below still applies
+  }
+  return Math.max(stored, lastRefreshAtInTab);
+}
+
 // POSTs /auth/refresh directly (no retry wrapping — this IS the refresh call).
-// Records the completion time so other tabs waiting on the Web Lock can see a
-// refresh already happened at/after their request was dispatched.
+// Records the completion time so a later caller — in this tab, or in another
+// one waiting on the Web Lock — can see a refresh already happened at/after
+// its request was dispatched.
 async function refreshAccessToken(): Promise<boolean> {
   const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
   if (!res.ok) return false;
+  lastRefreshAtInTab = Date.now();
   try {
-    localStorage.setItem(LAST_REFRESH_KEY, String(Date.now()));
+    localStorage.setItem(LAST_REFRESH_KEY, String(lastRefreshAtInTab));
   } catch {
     // localStorage may be unavailable (e.g. private browsing); same-tab dedup
-    // via refreshPromise still applies, cross-tab dedup just degrades.
+    // still applies through lastRefreshAtInTab, cross-tab dedup just degrades.
   }
   return true;
 }
@@ -39,21 +62,28 @@ function coordinatedRefresh(dispatchedAt: number): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
 
   const run = async (): Promise<boolean> => {
+    // One rule, checked on both paths: a refresh that completed at or after
+    // this request was dispatched already replaced the token its 401 was
+    // complaining about, so the right move is to retry, not to refresh again.
+    // Refreshing again is not merely wasteful — RotateRefreshToken consumes
+    // the token it is given, so a second refresh presents a spent one, gets
+    // its own 401, and reports the caller as logged out.
+    if (lastRefreshAt() >= dispatchedAt) return true;
+
     if (typeof navigator !== 'undefined' && 'locks' in navigator && navigator.locks) {
       return navigator.locks.request(AUTH_REFRESH_LOCK, async () => {
-        let lastRefreshAt = 0;
-        try {
-          lastRefreshAt = Number(localStorage.getItem(LAST_REFRESH_KEY)) || 0;
-        } catch {
-          // ignore; falls through to performing our own refresh
-        }
-        if (lastRefreshAt >= dispatchedAt) return true;
+        // Re-read inside the lock: another tab may have refreshed while this
+        // one waited for it, which is the case the lock exists to serialize.
+        if (lastRefreshAt() >= dispatchedAt) return true;
         return refreshAccessToken();
       });
     }
     // No Web Locks (older browser, or not a secure context — e.g. the local
-    // http hcw-wip stack). Same-tab dedup above still applies; cross-tab
-    // coordination is a documented residual risk in that fallback case.
+    // http hcw-wip stack). The guard above still holds here because it reads
+    // an in-tab variable rather than only localStorage, so same-tab callers
+    // are covered on any origin. Cross-tab coordination still degrades: two
+    // tabs can race into simultaneous refreshes, which no in-tab state can
+    // see and only the Web Lock serializes.
     return refreshAccessToken();
   };
 
