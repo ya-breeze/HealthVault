@@ -33,6 +33,12 @@ interface TodayRow {
   targetFatGrams: number;
 }
 
+// What the bottom row can say: the three outcomes of the gap computation,
+// plus a failure of the three requests that feed it — which is a gap-line
+// state rather than a card-level one, since the top row is still perfectly
+// renderable when only those three failed.
+type GapLine = LoggingGapResult | { kind: 'retrieval_error' };
+
 // `loading`, `retrieval_error` and `nutrition_target_unmet` are whole-card
 // states: each means there is no top row *and* no gap line to draw. Only
 // `ready` splits, because once the fetches land the two rows have genuinely
@@ -41,7 +47,7 @@ interface TodayRow {
 // their first weeks.
 type ContentState =
   | { kind: 'loading' }
-  | { kind: 'ready'; today: TodayRow; gap: LoggingGapResult }
+  | { kind: 'ready'; today: TodayRow; gap: GapLine }
   | { kind: 'nutrition_target_unmet'; reason: NutritionTargetUnmetReason }
   | { kind: 'retrieval_error' };
 
@@ -118,45 +124,71 @@ export default function LoggingGapCard({
         const gapWindow = resolveLoggingGapWindow(new Date(), timezone);
         const now = new Date();
 
-        let weightRaw: Record<string, unknown>[];
-        let summary: TodaySummary;
-        let completeness: { date: string; state: DayCompletenessState }[];
-        let dailyTotals: { date: string; calories: number; unconfirmed_meals: number }[];
-        try {
-          // `getTodaySummary`, not `getNutritionTarget`: it carries today's
-          // consumed macros alongside the same target, so the top row costs
-          // this card no additional request. Still four fetches, not five.
-          const [w, s, c, d] = await Promise.all([
-            api.data('weight', gapWindow.leadInFetchFromUTC, now.toISOString()),
-            api.getTodaySummary(),
-            api.getCompleteness(gapWindow.windowStart, gapWindow.windowEnd),
-            api.getFoodDailyTotals(gapWindow.windowStart, gapWindow.windowEnd),
-          ]);
-          weightRaw = w;
-          summary = s;
-          completeness = c;
-          dailyTotals = d;
-        } catch {
-          // Every fetch failure is the same failure now. The 422 this used to
-          // sort out separately does not exist on /summary/today — it reports
-          // an unavailable target as ordinary data, handled just below — so
-          // the inner catch no longer has a second case to tell apart.
-          if (cancelled) return;
+        // `getTodaySummary`, not `getNutritionTarget`: it carries today's
+        // consumed macros alongside the same target, so the top row costs this
+        // card no additional request. Still four fetches, not five.
+        //
+        // `allSettled`, not `all`: the four requests feed two rows with
+        // different appetites for failure. The summary feeds both — without a
+        // target there is neither a top row nor an Implied Intake — so its
+        // failure is the card's. The other three feed only the 28-day gap, and
+        // losing today's calories because a 58-day weight history 500'd would
+        // throw away the row this card leads with. They still go out in
+        // parallel; only how their failures are read differs.
+        const [weightR, summaryR, completenessR, dailyTotalsR] = await Promise.allSettled([
+          api.data('weight', gapWindow.leadInFetchFromUTC, now.toISOString()),
+          api.getTodaySummary(),
+          api.getCompleteness(gapWindow.windowStart, gapWindow.windowEnd),
+          api.getFoodDailyTotals(gapWindow.windowStart, gapWindow.windowEnd),
+        ]);
+        if (cancelled) return;
+
+        if (summaryR.status === 'rejected') {
           setState({ kind: 'retrieval_error' });
           return;
         }
-        if (cancelled) return;
+        const summary: TodaySummary = summaryR.value;
 
         // An unavailable target ends the card rather than degrading it: the
         // top row has nothing to measure today's intake against, and the gap
         // has no Implied Intake to derive. Same "complete your profile"
-        // state as before, now read from a field instead of caught.
+        // state as before, now read from a field instead of caught — there is
+        // no 422 on /summary/today, which reports this as ordinary data.
         const target = summary.target;
         if (!target.available) {
           setState({ kind: 'nutrition_target_unmet', reason: target.reason });
           return;
         }
         const nutritionTargetCalories = target.calories;
+
+        const todayRow: TodayRow = {
+          calories: summary.calories_consumed,
+          proteinGrams: summary.protein_grams_consumed,
+          carbsGrams: summary.carbs_grams_consumed,
+          fatGrams: summary.fat_grams_consumed,
+          targetCalories: target.calories,
+          targetProteinGrams: target.protein_grams,
+          targetCarbsGrams: target.carbs_grams,
+          targetFatGrams: target.fat_grams,
+        };
+
+        // All three or none: the gap is a single computation over the three
+        // together, so a partial set cannot produce a weaker answer, only a
+        // wrong one — a missing daily-totals response would read as "no valid
+        // days" and a missing weight response as "no weigh-ins", both of which
+        // render as "not enough data yet" and blame the user's logging for an
+        // outage.
+        if (
+          weightR.status === 'rejected' ||
+          completenessR.status === 'rejected' ||
+          dailyTotalsR.status === 'rejected'
+        ) {
+          setState({ kind: 'ready', today: todayRow, gap: { kind: 'retrieval_error' } });
+          return;
+        }
+        const weightRaw = weightR.value;
+        const completeness = completenessR.value;
+        const dailyTotals = dailyTotalsR.value;
 
         // Raw, un-bucketed weigh-ins keyed by Logged Day offset (task 3.1
         // operates on raw records, never bucketed ones) — the in-progress
@@ -221,20 +253,7 @@ export default function LoggingGapCard({
         }
 
         if (cancelled) return;
-        setState({
-          kind: 'ready',
-          today: {
-            calories: summary.calories_consumed,
-            proteinGrams: summary.protein_grams_consumed,
-            carbsGrams: summary.carbs_grams_consumed,
-            fatGrams: summary.fat_grams_consumed,
-            targetCalories: target.calories,
-            targetProteinGrams: target.protein_grams,
-            targetCarbsGrams: target.carbs_grams,
-            targetFatGrams: target.fat_grams,
-          },
-          gap: gapResult,
-        });
+        setState({ kind: 'ready', today: todayRow, gap: gapResult });
         setOutlierExcluded(excludedOutlierCount(rejected, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset) > 0);
       } catch {
         if (cancelled) return;
@@ -297,8 +316,16 @@ export default function LoggingGapCard({
     );
   }
 
-  function renderGap(gap: LoggingGapResult) {
+  function renderGap(gap: GapLine) {
     switch (gap.kind) {
+      case 'retrieval_error':
+        // Reuses the card-level wording and testid: from the reader's side
+        // this is the same event, just confined to one row.
+        return (
+          <p className="text-sm text-text-muted" data-testid="logging-gap-error">
+            {t('loggingGap.retrievalError')}
+          </p>
+        );
       case 'not_enough_data':
         return (
           <p className="text-sm text-text-muted" data-testid="logging-gap-not-enough-data">

@@ -441,12 +441,18 @@ export interface NutritionTarget {
   activity_tier: string;
 }
 
-// The `target` field of TodaySummary, discriminated on `available` so a
-// caller cannot read `calories` without having checked first — the backend
-// omits every numeric field when the target is unavailable
-// (summaryTargetPayload, backend/pkg/server/summary_today.go), and a flat
+// The `target` field of TodaySummary, discriminated on `available` so a caller
+// cannot read `calories` without having checked first — a flat
 // optional-number shape would let `target.calories` typecheck its way into an
 // arithmetic `undefined`.
+//
+// The four numeric fields are required in the available branch, which holds
+// only because `summaryTargetPayload` (backend/pkg/server/summary_today.go)
+// carries no `omitempty` on them. It did once, and that is a trap worth
+// naming: `omitempty` drops a zero, zero is a legitimate carbs target, and the
+// key's absence would then reach `Math.round(undefined)` and render "NaN" on
+// the dashboard. A backend test asserts the keys are present; if that ever
+// changes, these fields become optional and every read site needs `?? 0`.
 export type TodaySummaryTarget =
   | { available: false; reason: NutritionTargetUnmetReason }
   | {
@@ -533,6 +539,14 @@ export const api = {
   // Self-only: no ?user= support, unlike most /data endpoints — see
   // design.md's "Self-only" decision. Throws NutritionTargetUnmetError on
   // 422 so callers can branch on the specific unmet reason.
+  //
+  // No caller in the app today: LoggingGapCard, the only one there was, moved
+  // to getTodaySummary above when it grew a row needing today's intake too.
+  // Kept as the client for a route the backend still serves
+  // (server.go's /users/me/nutrition-target), and because it returns the full
+  // derivation — measured weight, goal weight, height, age, activity tier —
+  // that the summary's target payload deliberately does not carry. Delete both
+  // this and NutritionTargetUnmetError if that route ever goes.
   getNutritionTarget: async (): Promise<NutritionTarget> => {
     const res = await apiRawFetch('/users/me/nutrition-target');
     if (res.status === 422) {

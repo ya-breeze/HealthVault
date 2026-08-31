@@ -158,6 +158,64 @@ func TestSummaryToday_TargetAvailable(t *testing.T) {
 	if resp.Recommendation != nil {
 		t.Errorf("recommendation = %v, want null", resp.Recommendation)
 	}
+
+}
+
+// TestSummaryToday_ZeroTargetFieldIsStillPresent pins the absence of
+// `omitempty` on summaryTargetPayload's numeric fields.
+//
+// The scenario is the one that makes the tag bite, not a hypothetical: a goal
+// weight typed in pounds (165) against an ordinary sedentary TDEE (~2100 kcal
+// for this profile). Protein at 1.6 g/kg of goal plus the 0.8 g/kg fat floor
+// together exceed the calorie budget, so computeNutritionTarget clamps carbs
+// to zero — a complete, available target that happens to contain a zero.
+//
+// With `omitempty` that key vanishes, and a client whose type declares it
+// required (the frontend's TodaySummaryTarget) reads undefined and renders
+// "Carbs 130/NaN g" on the dashboard. A missing key must mean "no target",
+// which `available` already reports; it must never also mean "this number
+// happened to be zero".
+//
+// Asserted against the raw JSON deliberately: decoding into a struct cannot
+// tell a missing key from a zero, so a struct-based assertion would pass with
+// the tag restored.
+func TestSummaryToday_ZeroTargetFieldIsStillPresent(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male","activity_override":"sedentary"}`)
+	createRecord(t, st, userID, "weight", 80)
+	createRecord(t, st, userID, "height", 1.80)
+	createRecord(t, st, userID, "weight_goal", 165)
+
+	h := server.SummaryTodayHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSummaryTodayRequest(userID, ""))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	resp := decodeSummaryToday(t, w)
+	if !resp.Target.Available {
+		t.Fatalf("target.available = false, want true: %+v", resp.Target)
+	}
+	if resp.Target.CarbsGrams != 0 {
+		t.Fatalf("this fixture must produce a zero carbs target for the assertion below to mean "+
+			"anything, got %d — recheck computeNutritionTarget's clamp", resp.Target.CarbsGrams)
+	}
+
+	var raw struct {
+		Target map[string]json.RawMessage `json:"target"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal raw: %v", err)
+	}
+	for _, key := range []string{"calories", "protein_grams", "carbs_grams", "fat_grams"} {
+		if _, ok := raw.Target[key]; !ok {
+			t.Errorf("target.%s missing from the response body; every numeric field must be present "+
+				"whenever available=true, zero included", key)
+		}
+	}
 }
 
 // TestSummaryToday_ReflectsCallersOwnMeals covers the endpoint's core happy

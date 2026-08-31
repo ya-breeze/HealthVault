@@ -291,7 +291,7 @@ const en = {
   'loggingGap.carbs': 'Carbs {consumed}/{target} g',
   'loggingGap.fat': 'Fat {consumed}/{target} g',
   'loggingGap.onTrack': 'Your log matches your weight',
-  'loggingGap.onTrackDetail': 'Over the last 28 days, what you logged lines up with how your weight moved — no unlogged calories showing.',
+  'loggingGap.onTrackDetail': 'On your fully-logged days, intake and weight trend agree — any gap left is too small to measure.',
   'loggingGap.notEnoughData': 'Not enough data yet',
   'loggingGap.retrievalError': 'Temporarily unavailable',
   'loggingGap.targetUnmet': 'Complete your profile and goal weight to see your nutrition targets.',

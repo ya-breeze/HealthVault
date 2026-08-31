@@ -195,7 +195,7 @@ const ru: Dictionary = {
   'loggingGap.carbs': 'Углеводы {consumed}/{target} г',
   'loggingGap.fat': 'Жиры {consumed}/{target} г',
   'loggingGap.onTrack': 'Дневник сходится с весом',
-  'loggingGap.onTrackDetail': 'За последние 28 дней записанное совпадает с динамикой веса — неучтённых калорий не видно.',
+  'loggingGap.onTrackDetail': 'По полностью заполненным дням записанное сходится с динамикой веса — если разрыв и есть, он слишком мал, чтобы его различить.',
   'loggingGap.notEnoughData': 'Пока недостаточно данных',
   'loggingGap.retrievalError': 'Временно недоступно',
   'loggingGap.targetUnmet': 'Заполните профиль и целевой вес, чтобы увидеть цели по питанию.',

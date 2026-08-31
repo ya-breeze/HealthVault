@@ -122,9 +122,21 @@ The card fetches four things in parallel. This change replaces one of them:
 `GET /api/summary/today` (`backend/pkg/server/summary_today.go`) already returns everything both
 uses need: `calories_consumed`, `protein_grams_consumed`, `carbs_grams_consumed`,
 `fat_grams_consumed`, and a `target` object carrying either the computed target or
-`{available: false, reason}`. No backend change is required.
+`{available: false, reason}`.
 
-Three consequences worth stating:
+**One backend change is required after all**, found in code review and scoped in here rather than
+deferred, because the frontend cannot be correct without it. `summaryTargetPayload` tagged its four
+numeric fields `omitempty`, which drops an int that is zero — and zero is a legitimate target
+value: `computeNutritionTarget` clamps carbs to zero whenever protein and the fat floor already
+exhaust the calorie budget, which a goal weight typed in pounds against an ordinary TDEE reaches.
+The key then vanishes from a response whose target is fully available, the client reads
+`undefined` through a field its type declares required, and the dashboard renders
+"Carbs 130/NaN g". Absence must mean "no target", which `available` already says; it must not also
+mean "this number happened to be zero". The tags are dropped, and a backend test asserts on the raw
+JSON keys — decoding into a struct cannot catch this, since a missing key and a zero both arrive
+as 0.
+
+Three further consequences worth stating:
 
 - **The unmet-target path stops going through an exception.** `/api/summary/today` never returns
   422 — an unavailable target is a normal state there, reported as `target.available === false`
@@ -143,6 +155,22 @@ Three consequences worth stating:
 
 When `target.available` is false the whole card falls back to the existing "complete your profile"
 state: without a target there is neither a today row nor a gap to compute.
+
+### Which failures cost which row
+
+The four requests go out together but are read individually, through `Promise.allSettled` rather
+than `Promise.all`, because they feed two rows with different appetites for failure:
+
+- **The summary failing is the card's failure.** It carries both the today row and the target the
+  gap needs, so nothing can be drawn without it.
+- **The other three failing costs only the gap line**, which renders "Temporarily unavailable"
+  while the today row renders normally. Under a shared `Promise.all` a 500 on the 58-day weight
+  history would have discarded today's calories too — the row this change exists to add, thrown
+  away over a request it does not depend on.
+- **Those three are all-or-nothing between themselves.** The gap is one computation over the three
+  together, so a partial set yields a wrong answer rather than a weaker one: a missing
+  daily-totals response reads as "no valid days" and a missing weight response as "no weigh-ins",
+  and both render as "not enough data yet" — blaming the user's logging for an outage.
 
 ### Rendering
 
@@ -244,4 +272,17 @@ bar clamps at 100% while the numbers keep counting.
       recording the one-card decision, leaving its `Status` as `Proposed`
 - [x] Update `todo.md`'s Phase 4 section so it describes the merged card and notes which rows this
       change already shipped
+- [x] Mark completed
+
+### Task 7: Apply the code review's findings
+- [x] Drop `omitempty` from `summaryTargetPayload`'s four numeric fields and assert in
+      `summary_today_test.go`, against the raw JSON rather than a decoded struct, that all four
+      keys are present whenever `available` is true
+- [x] Read the four fetches with `Promise.allSettled` so a failure of the three gap-only requests
+      costs the gap line rather than the whole card, and cover both halves of that split in
+      `e2e/tests/logging-gap.spec.ts`
+- [x] Rewrite the `on_track` supporting sentence, which claimed both a 28-day span the mean is not
+      taken over (the floor is 3 valid days) and an *absence* of unlogged calories the interval can
+      only call unmeasurable
+- [x] Correct `getNutritionTarget`'s comment, which claimed other callers it no longer has
 - [x] Mark completed

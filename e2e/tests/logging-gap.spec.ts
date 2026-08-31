@@ -82,6 +82,7 @@ function buildWeightSeries(leadInStart: string, windowEnd: string, startKg: numb
 interface LoggingGapFixture {
   weight?: { time: string; kilograms: number }[];
   weightStatus?: number;
+  summaryStatus?: number;
   nutritionTargetCalories?: number;
   nutritionTargetUnmetReason?: string;
   // Today's consumed totals, for the card's top row. Defaults to an untouched
@@ -113,6 +114,9 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?:
   // Note it never answers 422 — an unavailable target is ordinary data here,
   // carried as `target.available === false`.
   await page.route('**/api/summary/today', route => {
+    if (fixture.summaryStatus) {
+      return route.fulfill({ status: fixture.summaryStatus, json: { error: 'boom' } });
+    }
     const target = fixture.nutritionTargetUnmetReason
       ? { available: false, reason: fixture.nutritionTargetUnmetReason }
       : {
@@ -427,13 +431,49 @@ test.describe('Logging Gap Card', () => {
       // Weight request 500s; the other three would otherwise succeed with a
       // perfectly good clear-gap fixture, proving the failure — not a data
       // shortfall — is what drives the state.
-      await mockLoggingGapApis(page, { ...clearGapFixture(), weightStatus: 500 });
+      await mockLoggingGapApis(page, {
+        ...clearGapFixture(),
+        today: { calories: 1200, protein: 80, carbs: 130, fat: 35 },
+        weightStatus: 500,
+      });
       await page.goto('/');
 
       const card = page.getByTestId('logging-gap-card');
       await expect(card.getByTestId('logging-gap-error')).toBeVisible({ timeout: 15_000 });
       await expect(card).toContainText('Temporarily unavailable');
+      // Never "not enough data yet": an outage is not a data shortfall, and
+      // saying so would blame the user's logging for a failed request.
       await expect(card.getByTestId('logging-gap-not-enough-data')).toHaveCount(0);
+      // The failure is confined to the gap line. Today's row comes from
+      // /api/summary/today, which answered, so it must survive — losing it
+      // here would discard the row this card leads with over an unrelated
+      // request.
+      await expect(card.getByTestId('nutrition-today-calories')).toContainText('1200 / 2500 kcal');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a failure of the summary request itself takes the whole card, since nothing can be drawn without it', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      // The other side of the split above: /api/summary/today carries both the
+      // today row and the target the gap needs, so its failure leaves no row
+      // to draw and no Implied Intake to derive.
+      await mockLoggingGapApis(page, { ...clearGapFixture(), summaryStatus: 500 });
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-error')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-today-calories')).toHaveCount(0);
+      await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
     } finally {
       await putSettings(request, cookies, original);
     }
