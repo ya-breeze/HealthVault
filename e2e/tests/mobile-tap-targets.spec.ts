@@ -135,6 +135,11 @@ test.describe('Mobile tap targets — header and toast', () => {
     await page.goto('/food/history/');
 
     const headerControls = page.locator('header a, header button');
+    // count() samples once and never retries. Reading it before the header
+    // paints yields 0, which skips the loop entirely and fails the
+    // "at least one control" guard below — a render race reported as a
+    // missing control.
+    await expect(headerControls.first()).toBeVisible();
     const count = await headerControls.count();
     let asserted = 0;
     for (let i = 0; i < count; i++) {

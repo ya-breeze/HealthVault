@@ -590,7 +590,11 @@ describe('computeLoggingGap', () => {
     return data;
   }
 
-  it('reports not_enough_data when the interval covers zero', () => {
+  it('reports on_track — not not_enough_data — when the interval covers zero', () => {
+    // The data is present and was compared: implied 3100 against a logged mean
+    // of 2950 is a value of 150 inside a 310 interval. That is an answer, not
+    // an absence of one, and it is the case a real user hit after four weeks of
+    // logging — see this function's own doc comment.
     const result = computeLoggingGap(
       { slope: 0, intercept: 0 },
       0,
@@ -603,7 +607,7 @@ describe('computeLoggingGap', () => {
       windowStartDayOffset,
       windowLastDayOffset
     );
-    expect(result).toEqual({ kind: 'not_enough_data' });
+    expect(result).toEqual({ kind: 'on_track' });
   });
 
   it('reports a gap clearly outside the interval', () => {
@@ -626,7 +630,7 @@ describe('computeLoggingGap', () => {
     }
   });
 
-  it('suppresses a gap exactly equal to its interval (boundary, <=)', () => {
+  it('treats a gap exactly equal to its interval as on_track (boundary, <=)', () => {
     const result = computeLoggingGap(
       { slope: 0, intercept: 0 },
       0,
@@ -639,7 +643,7 @@ describe('computeLoggingGap', () => {
       windowStartDayOffset,
       windowLastDayOffset
     );
-    expect(result).toEqual({ kind: 'not_enough_data' });
+    expect(result).toEqual({ kind: 'on_track' });
   });
 
   it('reports a negative gap when logged intake exceeds implied intake', () => {
@@ -824,7 +828,12 @@ describe('computeLoggingGap', () => {
     expect(result).toEqual({ kind: 'not_enough_data' });
   });
 
-  it('reports not_enough_data when se is null, regardless of value', () => {
+  it('reports not_enough_data — never on_track — when se is null, regardless of value', () => {
+    // This pins the order of the two guards. `se: null` makes the interval
+    // infinite, and `Math.abs(anything) <= Infinity` is true, so if the
+    // finiteness check ever moved below the interval comparison a series too
+    // sparse to measure would come back as "your log matches your weight".
+    // Silence is right here; false reassurance is not.
     const result = computeLoggingGap(
       { slope: 0, intercept: 0 },
       null,
@@ -833,6 +842,27 @@ describe('computeLoggingGap', () => {
         { state: 'complete', calories: 2200 },
         { state: 'complete', calories: 2200 },
         { state: 'complete', calories: 2200 },
+      ]),
+      windowStartDayOffset,
+      windowLastDayOffset
+    );
+    expect(result).toEqual({ kind: 'not_enough_data' });
+  });
+
+  it('reports not_enough_data — never on_track — when se is null and the value is itself zero', () => {
+    // The sibling of the test above, and the sharper one: here the logged mean
+    // equals implied intake exactly, so `value` is 0 and the series really does
+    // "agree" arithmetically. It still must not be reported as on_track — with
+    // fewer than 3 distinct EMA days there is no measured trend to have agreed
+    // with, so the agreement is an artefact of having nothing to compare.
+    const result = computeLoggingGap(
+      { slope: 0, intercept: 0 },
+      null,
+      3100,
+      perDayWindowData([
+        { state: 'complete', calories: 3100 },
+        { state: 'complete', calories: 3100 },
+        { state: 'complete', calories: 3100 },
       ]),
       windowStartDayOffset,
       windowLastDayOffset

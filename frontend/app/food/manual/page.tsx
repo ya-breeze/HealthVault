@@ -5,6 +5,7 @@ import { api, ManualMealItemInput } from '@/lib/api';
 import ManualItemEditor from '@/components/food/ManualItemEditor';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
+import BottomActionBar from '@/components/ui/BottomActionBar';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import { MAX_DESCRIPTION_LENGTH, normalizedUnicodeLength, unicodeLength } from '@/lib/foodGuidance';
@@ -172,27 +173,24 @@ export default function ManualMealPage() {
       {/* Only rendered once the structured form is disclosed: this bar, and
           the "Save Meal" button inside it, belong to the structured
           item-by-item submit — the description path above has its own
-          inline submit button instead. Anchored above the bottom navigation
-          bar, not at the viewport edge: `/food/manual/` is one of the bar's
-          own destinations, so without the offset the bar lands on this
-          submit button. A padding on the shell cannot do this — a fixed
-          element is out of flow relative to the viewport, not to its
-          ancestor. Its own bottom padding keeps the safe-area inset for the
-          desktop case, where no bar is beneath it to absorb it; below the
-          breakpoint `--edge-inset-b` is `0px` because `--nav-block` already
-          carries it. */}
+          inline submit button instead.
+
+          BottomActionBar (from main) replaces the hand-rolled fixed div this
+          branch wrote: it carries the same anchoring above the navigation bar
+          and the same safe-area handling, and additionally registers its
+          height so the toast stack clears it. Rendering it conditionally is
+          intended — the registry it writes to is keyed per mounted instance,
+          so an undisclosed structured form contributes no height. */}
       {showStructured && (
-        <div className="fixed bottom-[var(--nav-block)] left-0 right-0 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+var(--edge-inset-b))]">
-          <div className="max-w-md mx-auto">
-            <TapTarget
-              onClick={handleStructuredSubmit}
-              disabled={structuredSaving}
-              className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-            >
-              {structuredSaving ? 'Saving…' : 'Save Meal'}
-            </TapTarget>
-          </div>
-        </div>
+        <BottomActionBar>
+          <TapTarget
+            onClick={handleStructuredSubmit}
+            disabled={structuredSaving}
+            className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+          >
+            {structuredSaving ? 'Saving…' : 'Save Meal'}
+          </TapTarget>
+        </BottomActionBar>
       )}
     </AuthenticatedShell>
   );

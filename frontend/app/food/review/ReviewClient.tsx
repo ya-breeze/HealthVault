@@ -14,6 +14,7 @@ import { useLanguage } from '@/components/LanguageContext';
 import { mealStatusLabel } from '@/lib/i18n';
 import ExpertModeToggle from '@/components/food/ExpertModeToggle';
 import TapTarget from '@/components/ui/TapTarget';
+import BottomActionBar from '@/components/ui/BottomActionBar';
 import { useSerialQueue } from '@/lib/useSerialQueue';
 
 export default function ReviewClient({ mealId }: { mealId: string }) {
@@ -304,21 +305,16 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         )}
       </main>
 
-      {/* The submit bar below is the same markup, and takes the same
-          navigation-bar offset, as the manual-entry page's — see the comment
-          there. */}
       {showConfirmBar && (
-        <div className="fixed bottom-[var(--nav-block)] left-0 right-0 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 px-6 py-3 pb-[calc(0.75rem+var(--edge-inset-b))]">
-          <div className="max-w-md mx-auto">
-            <TapTarget
-              onClick={handleConfirm}
-              disabled={!canConfirm}
-              className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-            >
-              {busy ? t('review.confirming') : t('review.confirmMeal')}
-            </TapTarget>
-          </div>
-        </div>
+        <BottomActionBar>
+          <TapTarget
+            onClick={handleConfirm}
+            disabled={!canConfirm}
+            className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+          >
+            {busy ? t('review.confirming') : t('review.confirmMeal')}
+          </TapTarget>
+        </BottomActionBar>
       )}
 
       {showClarifyModal && (
