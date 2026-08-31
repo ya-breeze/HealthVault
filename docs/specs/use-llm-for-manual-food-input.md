@@ -190,15 +190,15 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [ ] Mark completed
 
 ### Task 2: Persist the description on the meal
-- [ ] Add `Description string \`gorm:"type:text" json:"description,omitempty"\`` to
+- [x] Add `Description string \`gorm:"type:text" json:"description,omitempty"\`` to
       `database.FoodMeal` in `backend/pkg/database/models_food.go`, documented as empty for photo
       meals and for structured manual entries
-- [ ] Confirm `columnAllowlist["food_meals"]` in `backend/pkg/database/storage_impl.go` is left
+- [x] Confirm `columnAllowlist["food_meals"]` in `backend/pkg/database/storage_impl.go` is left
       unchanged, so the new column is not exposed through the family-visible
       `GET /api/data/food_meal` path
-- [ ] Confirm nothing in the meal-list or meal-detail response shapes needs widening beyond the
+- [x] Confirm nothing in the meal-list or meal-detail response shapes needs widening beyond the
       full `FoodMeal` that `GetMeal` already returns (`MealSummary` stays as it is)
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: Add the describe endpoint and its analysis path
 - [ ] Add `backend/pkg/server/food_describe.go` with `CreateDescribedMeal`, implementing the
