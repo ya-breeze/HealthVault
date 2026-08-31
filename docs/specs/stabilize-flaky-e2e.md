@@ -153,6 +153,11 @@ make test-e2e
 `make test-e2e` alone does not prove a flake is fixed — the suite passed it most of the time
 before. The gate for this change is the suite run repeatedly, recorded in Task 4.
 
+Run it as `make test-e2e E2E_ARGS=--retries=0`. Retries are what a stability gate must not have:
+the config sets `retries: 1`, so a test that fails once and passes on the retry is reported as
+"1 flaky" and the run still exits 0. Task 6 added that passthrough — before it, the recipe was
+fixed text and the flag was silently discarded.
+
 ### Task 1: Make the same-tab refresh guard independent of Web Locks
 
 - [x] In `frontend/lib/api.ts`, record the completion time of a successful refresh in a
@@ -204,6 +209,10 @@ before. The gate for this change is the suite run repeatedly, recorded in Task 4
 - [x] Deploy the branch to `hcw-wip` and run `make test-e2e` five times with `--retries=0`.
 - [x] Record the pass counts in this task; every run must be zero failed and zero flaky for the
       five tests named in `Why`. Result: **188 passed, 0 failed, 0 flaky, five runs out of five.**
+      **Correction (Task 6):** these runs did not have retries off. The flag was passed but the
+      Makefile discarded it, so all five ran under the config's `retries: 1` and a first-attempt
+      failure would have been reported as "flaky" rather than as a failure. Task 6 re-runs the
+      gate for real; treat its numbers as the ones that count, not these.
 - [x] Report any test that still fails rather than re-running until it passes. The first five-run
       gate, before Task 4 existed, is recorded here rather than discarded: it read 188/187/188/187/188
       with `mobile-nav.spec.ts:426` failing twice. That failure is what Task 4 turned out to be.
@@ -212,23 +221,41 @@ before. The gate for this change is the suite run repeatedly, recorded in Task 4
 ### Task 6: Close what the code review found
 
 The review of this branch surfaced five things. Two are defects in the branch's own work, one is
-a pre-existing auth hole the branch's new tests brush against, and two are hygiene. Scope grew,
-so this task records it rather than letting the changes land unaccounted for.
+a pre-existing auth hole the branch's new tests brush against, and two are hygiene. Running the
+gate again then turned up a sixth, in the gate itself. Scope grew, so this task records it rather
+than letting the changes land unaccounted for.
 
-- [ ] Revoke the refresh token in `Logout`. It blacklists the access token, which expires in
+- [x] Revoke the refresh token in `Logout`. It blacklists the access token, which expires in
       15 minutes anyway, and never calls `authdb.RevokeRefreshToken` — so the year-long refresh
       token logout claims to have killed still mints new access tokens for anyone holding the
-      cookie value. Cover it: refresh works before logout, 401s after.
-- [ ] Make `completeness.spec.ts`'s at-threshold test wait on a positive DOM signal. The response
-      waiter it currently awaits resolves on the *first* completeness window, while the page
-      setStates only after `Promise.all`, so the absence assertions can still pass on an
-      un-rendered page — the exact hazard the comment claims to close.
-- [ ] Address `mobile-nav.spec.ts` by test id, not by the `.fixed.z-30` Tailwind pair. The same
+      cookie value. Cover it: refresh works before logout, 401s after. Confirmed the test fails
+      against the unfixed handler ("the refresh token survived logout (status 204)"). Diary,
+      GeekBudgetBE and KinCart were checked and already do this; HealthVault was the outlier, so
+      this is not a kin-core-wide flaw the way the `jti` one is.
+- [x] Make `completeness.spec.ts`'s at-threshold test wait on a positive DOM signal. The response
+      waiter it previously awaited resolves on the *first* completeness window, while the page
+      setStates only after `Promise.all`, so the absence assertions could still pass on an
+      un-rendered page — the exact hazard the comment claimed to close. It now seeds a second day
+      left below threshold and waits for that day's control, which appears only once every window
+      has landed and React has committed. The threshold is derived from the live occasion counts,
+      since the account is shared across spec files.
+- [x] Address `mobile-nav.spec.ts` by test id, not by the `.fixed.z-30` Tailwind pair. The same
       element already carries `data-testid="bottom-action-bar"`.
-- [ ] Stop tracking `test-results/.last-run.json`, and ignore Playwright's root-cwd output. It was
+- [x] Stop tracking `test-results/.last-run.json`, and ignore Playwright's root-cwd output. It was
       committed in this branch and records `"status": "failed"`.
-- [ ] Point `auth_login_limiting_test.go` at the local `generateAccessToken` and drop its
+- [x] Point `auth_login_limiting_test.go` at the local `generateAccessToken` and drop its
       now-obsolete comment about second-precision collisions — Task 4 removed that hazard, and the
-      test currently exercises a token shape production no longer issues.
-- [ ] Re-run the five-run `make test-e2e` gate; record the counts.
-- [ ] Mark completed
+      test was exercising a token shape production no longer issues.
+- [x] Give `make test-e2e` an `E2E_ARGS` passthrough. Every "retries-off" gate run on this branch
+      passed `--retries=0` into a recipe that discarded it, so all of them ran under `retries: 1`.
+      The fifth run of the first batch exposed this by reporting `1 flaky   187 passed`: a real
+      first-attempt failure that the retry hid, and that the exit code did not reflect.
+- [x] Re-run the gate with retries genuinely disabled and record the counts. Result: **ten
+      consecutive runs, 188 passed, 0 failed, 0 flaky in every one.**
+- [x] Report the one failure this branch cannot account for. The `1 flaky` run above was a genuine
+      first-attempt failure, and the log filter in use at the time kept only the summary line, so
+      the test that produced it was not captured. Ten retries-off runs since have not reproduced
+      it. It is recorded here rather than dropped: the honest statement about this suite is nine
+      clean first attempts out of ten observed before the gate was fixed, and ten out of ten
+      after, with one failure seen and never identified.
+- [x] Mark completed
