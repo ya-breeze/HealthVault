@@ -430,8 +430,12 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     await expect(submit).toBeVisible();
     // boundingBox() returns null for an element that has not laid out yet, and
     // unlike expect() it does not poll. The submit button being visible does
-    // not imply its fixed container and the navigation bar are, so both boxes
-    // the comparison below reads need their own wait.
+    // not imply its fixed container and the navigation bar are — the bar in
+    // particular waits on api.me(), since AuthenticatedShell renders it only
+    // once the session resolves. Waiting on both is also what makes a missing
+    // bar report itself as "element not found" rather than as a null bounding
+    // box: the first framing of this test's intermittent failure hid a real
+    // auth bug behind a geometry error. See docs/specs/stabilize-flaky-e2e.md.
     await expect(page.locator('.fixed.z-30').first()).toBeVisible();
     await expect(bar(page)).toBeVisible();
     expect(intersects(

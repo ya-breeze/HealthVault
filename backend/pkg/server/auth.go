@@ -124,7 +124,7 @@ func (h *authHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	recordSuccess(req.Username)
 
-	accessToken, err := auth.GenerateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
+	accessToken, err := generateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -170,7 +170,7 @@ func (h *authHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	accessToken, err := auth.GenerateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
+	accessToken, err := generateAccessToken(user.ID, &user.FamilyID, h.jwtSecret, 15*time.Minute)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

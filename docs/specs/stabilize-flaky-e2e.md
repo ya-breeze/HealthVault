@@ -29,8 +29,39 @@ runs:
 | `completeness.spec.ts:229` | killed #45; flaked in a #47 re-run | 30 s wait for a response already received |
 | `mobile-tap-targets.spec.ts:133` | flaked in an earlier full run | `asserted` is 0 |
 
-Four are test defects of one kind. The fifth is a real bug in the application that the test was
-correctly reporting.
+Four are test defects of one kind. The fifth — and, once the first fix landed, `mobile-nav.spec.ts:426`
+as well — are real bugs in the application that the tests were correctly reporting.
+
+**The bigger bug: a re-login inside one second is dead on arrival.** `mobile-nav.spec.ts:426`
+kept failing at the same 2-in-5 rate after its read was synchronized, and the added wait turned
+an opaque null bounding box into the real message: `getByTestId('bottom-nav')` — element not
+found. `AuthenticatedShell.tsx:106` renders the bar only once `api.me()` resolves, and a
+rejection pushes to `/login`, which is where the failing page had ended up. The recorded traffic
+for a failing run:
+
+```
+200 POST /api/auth/login          login succeeds
+401 GET  /api/users/me            401 with the cookies login just set
+204 POST /api/auth/refresh        refresh succeeds
+401 GET  /api/users/me            still 401 after a good refresh
+```
+
+`RequireAuth` (`backend/pkg/server/middleware.go:22`) checks a blacklist that stores the access
+token **string** (`kin-core/authdb/blacklist.go:19`), and `auth.GenerateAccessToken`
+(`kin-core/auth/token.go:28`) signs claims of only `{UserID, FamilyID, IssuedAt, ExpiresAt}` —
+no `jti`, no nonce, timestamps at one-second resolution, deterministic HS256. Two tokens minted
+for the same user in the same second are therefore byte-identical. So logout blacklists a string
+that the *next* login reproduces exactly, and `Refresh` reproduces it again, which is why the
+refresh in the trace changes nothing.
+
+Confirmed directly against the deployed stack, 5 attempts out of 5: login, logout, login again,
+then `GET /api/users/me` — tokens identical, response 401 every time. It clears only when the
+wall clock ticks into the next second.
+
+This is not a test-only concern. A user who logs out and logs straight back in — wrong account,
+switching users — gets a session that 401s until the second rolls over, and the frontend bounces
+them back to `/login`. The test found it because `logout ends the session` runs immediately
+before it.
 
 **The test defect: reads that never wait.** `expect(...)` polls until its timeout; `count()`,
 `boundingBox()`, and `evaluateAll()` sample the DOM once and return whatever is there. Each of
@@ -83,6 +114,23 @@ from being conditional.
 depends on, which is the thing that was implicit before. `completeness.spec.ts` instead registers
 its response waiter before the navigation that triggers the response, which is the documented
 Playwright pattern for that shape.
+
+**The access token gets a `jti`.** `auth.Claims` is exported and embeds `jwt.RegisteredClaims`,
+whose `ID` field is the standard `jti`, so HealthVault can mint the token itself with a random
+`jti` at both call sites (`auth.go:127` in Login, `auth.go:173` in Refresh) instead of calling
+`auth.GenerateAccessToken`. Every issued token is then unique, a blacklist entry revokes exactly
+the one session it was created for, and `ParseToken` needs no change because `jti` is already
+part of the claims it parses.
+
+Fixing it in kin-core instead would be the tidier home — the flaw is in that library's token
+minting, and every project on it has the same hole. It is a separate repository with its own
+release, though, and pinning HealthVault to an unreleased version to fix a bug found here trades
+one problem for a slower one. Minting locally is a two-line change in this repo that leaves
+kin-core free to adopt the same fix on its own schedule. Raising it against kin-core is left to
+the operator.
+
+Not chosen: dropping the blacklist check, or blacklisting by user rather than by token. The first
+removes real revocation, and the second revokes every session a user has whenever one logs out.
 
 **Excluded: retries.** Raising `retries` in `playwright.config.ts` from 1 would hide exactly the
 signal that made this change possible — idea-forge's baseline comparison distinguishes a broken
@@ -140,7 +188,18 @@ before. The gate for this change is the suite run repeatedly, recorded in Task 4
 - [x] Keep each test's existing assertions intact; the fixes add waits, never weaken a check.
 - [x] Mark completed
 
-### Task 4: Prove the suite is stable
+### Task 4: Make every issued access token unique
+
+- [x] Add a token minter in `backend/pkg/server` that builds `auth.Claims` with a random `jti`
+      and signs it, replacing both `auth.GenerateAccessToken` calls in `auth.go`.
+- [x] Cover it: two tokens minted for the same user in the same second differ, and a token
+      blacklisted by logout does not revoke a token issued by a later login.
+- [x] Prove the test bites — confirm it fails against the pre-fix minting.
+- [x] Re-run the live check from `Why` (login, logout, login, `GET /api/users/me`) against the
+      deployed branch and record the result here.
+- [x] Mark completed
+
+### Task 5: Prove the suite is stable
 
 - [ ] Deploy the branch to `hcw-wip` and run `make test-e2e` five times with `--retries=0`.
 - [ ] Record the pass counts in this task; every run must be zero failed and zero flaky for the
