@@ -72,11 +72,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: Both submit bars use the shared component
-- [ ] Replace the fixed submit bar in `frontend/app/food/manual/page.tsx` with `<BottomActionBar>`, keeping the Save Meal `TapTarget` and its disabled/saving behaviour exactly as they are.
-- [ ] Replace the fixed confirm bar in `frontend/app/food/review/ReviewClient.tsx` with `<BottomActionBar>`, still rendered only when `showConfirmBar` is true, and keeping `canConfirm`, `handleConfirm` and the button's labels unchanged.
-- [ ] Leave each page's `pb-24` shell padding as it is; it is out of this change's scope.
-- [ ] Confirm no other bottom-anchored page element exists that should adopt the component — `grep` for `fixed bottom` under `frontend/` finds only `BottomNav`, the toast stack and these two bars.
-- [ ] Mark completed
+- [x] Replace the fixed submit bar in `frontend/app/food/manual/page.tsx` with `<BottomActionBar>`, keeping the Save Meal `TapTarget` and its disabled/saving behaviour exactly as they are.
+- [x] Replace the fixed confirm bar in `frontend/app/food/review/ReviewClient.tsx` with `<BottomActionBar>`, still rendered only when `showConfirmBar` is true, and keeping `canConfirm`, `handleConfirm` and the button's labels unchanged.
+- [x] Leave each page's `pb-24` shell padding as it is; it is out of this change's scope.
+- [x] Confirm no other bottom-anchored page element exists that should adopt the component — `grep` for `fixed bottom` under `frontend/` finds only `BottomNav`, the toast stack and these two bars.
+- [x] Mark completed
 
 ### Task 4: End-to-end guard
 - [ ] Add a `test.describe` to `e2e/tests/mobile-nav.spec.ts` for "a toast does not occlude a page's own bottom action bar", reusing the file's `login`, `boxOf` and `intersects` helpers.
