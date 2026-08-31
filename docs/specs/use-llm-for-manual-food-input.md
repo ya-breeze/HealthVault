@@ -167,23 +167,23 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Add the text-only Describe call to the vision package
-- [ ] Add `Describe(ctx context.Context, description, displayLanguage string) (*RecognizeResult, error)`
+- [x] Add `Describe(ctx context.Context, description, displayLanguage string) (*RecognizeResult, error)`
       to the `vision.Client` interface in `backend/pkg/vision/vision.go`, with a doc comment
       stating it is text-only, reuses `Recognize`'s response shape and schema, and that
       `displayLanguage` has the same meaning it has on `Recognize`
-- [ ] Add `describeSystemPrompt` to `backend/pkg/vision/openai.go`: keep
+- [x] Add `describeSystemPrompt` to `backend/pkg/vision/openai.go`: keep
       `recognizeSystemPrompt`'s item-splitting and merging rules, replace the visual-evidence
       instructions with the quantity-reading, portion-estimation, brand/preparation/state, and
       `estimated_profile` rules from `## How`, and keep the `clarification_questions` contract
-- [ ] Implement `OpenAIClient.Describe`: system message is
+- [x] Implement `OpenAIClient.Describe`: system message is
       `describeSystemPrompt + languageDirective(displayLanguage)`, user message is the plain
       description text with no `image_url` content part, dispatched through the existing `call`
       with the `food_recognition` schema name and `recognizeJSONSchema`, converted through
       `toRecognizeResult`
-- [ ] Implement `Unconfigured.Describe` returning `ErrNotConfigured`
-- [ ] Implement `Fake.Describe` with `DescribeResult`, `DescribeErr`, and a `DescribeCalls`
+- [x] Implement `Unconfigured.Describe` returning `ErrNotConfigured`
+- [x] Implement `Fake.Describe` with `DescribeResult`, `DescribeErr`, and a `DescribeCalls`
       slice recording the description and display language, matching the existing fields' shape
-- [ ] Add a test in `backend/pkg/vision/openai_test.go` asserting a `Describe` request carries
+- [x] Add a test in `backend/pkg/vision/openai_test.go` asserting a `Describe` request carries
       the description text, carries no image content at all, sets `store:false`, uses the
       `food_recognition` json_schema, and includes the language directive for a non-English
       display language

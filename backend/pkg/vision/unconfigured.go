@@ -34,3 +34,7 @@ func (Unconfigured) Select(context.Context, []ItemCandidates) (*SelectResult, er
 func (Unconfigured) Translate(context.Context, string) (string, error) {
 	return "", ErrNotConfigured
 }
+
+func (Unconfigured) Describe(context.Context, string, string) (*RecognizeResult, error) {
+	return nil, ErrNotConfigured
+}

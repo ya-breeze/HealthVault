@@ -19,6 +19,8 @@ type Fake struct {
 	SelectErr             error
 	TranslateResult       string
 	TranslateErr          error
+	DescribeResult        *RecognizeResult
+	DescribeErr           error
 
 	// The *Calls fields record each operation's arguments
 	// arguments, in order, so a test can assert on what was actually sent
@@ -29,6 +31,13 @@ type Fake struct {
 	ClarifyCalls         []ClarifyCall
 	SelectCalls          [][]ItemCandidates
 	TranslateCalls       []string
+	DescribeCalls        []DescribeCall
+}
+
+// DescribeCall records one Describe invocation.
+type DescribeCall struct {
+	Description     string
+	DisplayLanguage string
 }
 
 type EstimateWeightsCall struct {
@@ -105,6 +114,17 @@ func (f *Fake) Translate(_ context.Context, query string) (string, error) {
 		return "", f.TranslateErr
 	}
 	return f.TranslateResult, nil
+}
+
+func (f *Fake) Describe(_ context.Context, description, displayLanguage string) (*RecognizeResult, error) {
+	f.DescribeCalls = append(f.DescribeCalls, DescribeCall{Description: description, DisplayLanguage: displayLanguage})
+	if f.DescribeErr != nil {
+		return nil, f.DescribeErr
+	}
+	if f.DescribeResult != nil {
+		return f.DescribeResult, nil
+	}
+	return &RecognizeResult{}, nil
 }
 
 var _ Client = (*Fake)(nil)

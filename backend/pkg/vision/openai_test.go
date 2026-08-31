@@ -306,6 +306,55 @@ func TestOpenAIClient_Clarify_SendsNoImageContent(t *testing.T) {
 	}
 }
 
+func TestOpenAIClient_Describe_SendsTextOnlyNoImage(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"борщ","canonical_name":"borscht","preparation":"boiled","state":"cooked","weight_grams":350,"confidence":0.7}],"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Describe(context.Background(), "тарелка борща со сметаной", "ru")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+
+	if store, _ := capturedBody["store"].(bool); store {
+		t.Error("expected store=false in the request body")
+	}
+	schema, _ := capturedBody["response_format"].(map[string]any)
+	jsonSchema, _ := schema["json_schema"].(map[string]any)
+	if name, _ := jsonSchema["name"].(string); name != "food_recognition" {
+		t.Errorf("expected food_recognition json_schema, got %q", name)
+	}
+
+	messages, _ := capturedBody["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	systemMsg := messages[0].(map[string]any)
+	systemContent, _ := systemMsg["content"].(string)
+	if !strings.Contains(systemContent, `BCP-47 "ru"`) {
+		t.Errorf("expected language directive for ru in system prompt, got %q", systemContent)
+	}
+	userMsg := messages[1].(map[string]any)
+	userContent, ok := userMsg["content"].(string)
+	if !ok || userContent != "тарелка борща со сметаной" {
+		t.Errorf("expected plain description text as user content, got %+v", userMsg["content"])
+	}
+
+	body, _ := json.Marshal(capturedBody)
+	if strings.Contains(string(body), "image_url") {
+		t.Error("expected no image_url content in a Describe request")
+	}
+
+	if len(result.Items) != 1 || result.Items[0].Name != "борщ" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
 func TestOpenAIClient_EstimateWeightsPreservesIndexesAndSendsImage(t *testing.T) {
 	var capturedBody map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

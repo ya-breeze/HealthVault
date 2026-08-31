@@ -180,4 +180,13 @@ type Client interface {
 	// "porridge" -> "oatmeal", "овсянка" -> "oatmeal"). Text-only, no
 	// image. See openspec/changes/multilingual-food-search/design.md.
 	Translate(ctx context.Context, query string) (string, error)
+	// Describe is text-only: it identifies foods from the user's own written
+	// description of a meal, with no image at all — the manual-entry
+	// counterpart to Recognize. It returns the same RecognizeResult shape and
+	// reuses recognizeJSONSchema, so every downstream stage (processRecognition,
+	// resolveItems, persistAnalysis, the clarify loop) works on its result
+	// exactly as it does on Recognize's. displayLanguage has the same meaning
+	// it has on Recognize: the Display Name comes back in that language, and
+	// each Item's CanonicalName is additionally produced in English.
+	Describe(ctx context.Context, description, displayLanguage string) (*RecognizeResult, error)
 }
