@@ -546,6 +546,10 @@ func (slowRecognizeClient) Translate(ctx context.Context, _ string) (string, err
 	return "", ctx.Err()
 }
 
+func (slowRecognizeClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
+	return &vision.RecognizeResult{}, nil
+}
+
 func TestCreateMeal_TimeoutMarksFailed(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)

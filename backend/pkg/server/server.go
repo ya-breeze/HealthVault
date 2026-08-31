@@ -108,6 +108,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/food/meals", fh.CreateMeal).Methods("POST")
 	api.HandleFunc("/food/meals", fh.ListMeals).Methods("GET")
 	api.HandleFunc("/food/meals/manual", fh.CreateManualMeal).Methods("POST")
+	api.HandleFunc("/food/meals/describe", fh.CreateDescribedMeal).Methods("POST")
 	api.HandleFunc("/food/meals/needs-attention-count", fh.NeedsAttentionCount).Methods("GET")
 	api.HandleFunc("/food/meals/{id}", fh.GetMeal).Methods("GET")
 	api.HandleFunc("/food/meals/{id}", fh.PatchMeal).Methods("PATCH")

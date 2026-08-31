@@ -201,23 +201,23 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: Add the describe endpoint and its analysis path
-- [ ] Add `backend/pkg/server/food_describe.go` with `CreateDescribedMeal`, implementing the
+- [x] Add `backend/pkg/server/food_describe.go` with `CreateDescribedMeal`, implementing the
       request shape, the 8 KiB body cap via `http.MaxBytesReader` + `io.ReadAll`, the 1 to
       `maxDescriptionLength` (1000) rune validation, UTC normalization of `logged_at`, and the
       60-rune name derivation when `name` is omitted
-- [ ] Create the meal row (`Status: processing`, description stored, no `PhotoPath`) before any
+- [x] Create the meal row (`Status: processing`, description stored, no `PhotoPath`) before any
       model call, then run the analysis using the row's `UpdatedAt` as the lease, and respond 201
       through `reloadIfSuperseded`/`writeReloadedMeal`
-- [ ] Add `runDescribeAnalysis` and `analyzeDescribedMeal` alongside the existing helpers,
+- [x] Add `runDescribeAnalysis` and `analyzeDescribedMeal` alongside the existing helpers,
       reading the user's real Display Language via `DisplayLanguage`, calling `vision.Describe`,
       handing off to `processRecognition` with `strict=false`, and falling back to `failMeal` on
       error — documenting why `strict` is false here
-- [ ] Register `POST /api/food/meals/describe` in `backend/pkg/server/server.go`, next to the
+- [x] Register `POST /api/food/meals/describe` in `backend/pkg/server/server.go`, next to the
       existing `/food/meals/manual` route and before the `/food/meals/{id}` routes
-- [ ] Extend `RetryMeal` in `backend/pkg/server/food_retry.go` to re-run the description analysis
+- [x] Extend `RetryMeal` in `backend/pkg/server/food_retry.go` to re-run the description analysis
       for a photo-less meal that has a stored description, keeping the existing 409 for a meal
       with neither photo nor description
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Backend tests for the describe path
 - [ ] Add `backend/pkg/server/food_describe_test.go` covering: a successful describe creating a
