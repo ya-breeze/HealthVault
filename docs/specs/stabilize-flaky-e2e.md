@@ -107,38 +107,38 @@ before. The gate for this change is the suite run repeatedly, recorded in Task 4
 
 ### Task 1: Make the same-tab refresh guard independent of Web Locks
 
-- [ ] In `frontend/lib/api.ts`, record the completion time of a successful refresh in a
+- [x] In `frontend/lib/api.ts`, record the completion time of a successful refresh in a
       module-level variable alongside the existing `localStorage` write.
-- [ ] Check that variable against `dispatchedAt` in the no-Web-Locks fallback path, returning
+- [x] Check that variable against `dispatchedAt` in the no-Web-Locks fallback path, returning
       `true` without refreshing when a refresh has already completed at or after the caller's
       request was dispatched.
-- [ ] Check it in the Web Locks path too, before the `localStorage` read, so both paths apply one
+- [x] Check it in the Web Locks path too, before the `localStorage` read, so both paths apply one
       rule.
-- [ ] Update the comment at lines 54–56, which currently records the now-fixed gap as an accepted
+- [x] Update the comment at lines 54–56, which currently records the now-fixed gap as an accepted
       residual risk.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Add unit coverage for the duplicate-refresh case
 
-- [ ] Add `frontend/lib/api.test.ts` with a stubbed `fetch`.
-- [ ] Cover the failing case directly: two concurrent calls both 401, the second's 401 resolving
+- [x] Add `frontend/lib/api.test.ts` with a stubbed `fetch`.
+- [x] Cover the failing case directly: two concurrent calls both 401, the second's 401 resolving
       after the first's refresh has completed, asserting `POST /auth/refresh` is called exactly
       once and both callers are retried.
-- [ ] Prove the test bites — confirm it fails against the pre-fix code before the fix is applied.
-- [ ] Cover the case the guard must not break: a 401 dispatched *after* the last refresh
+- [x] Prove the test bites — confirm it fails against the pre-fix code before the fix is applied.
+- [x] Cover the case the guard must not break: a 401 dispatched *after* the last refresh
       completed still triggers a new refresh.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: Give the four unsynchronized reads something to wait for
 
-- [ ] `mobile-nav.spec.ts:297` — wait for the header's controls to be present before
+- [x] `mobile-nav.spec.ts:297` — wait for the header's controls to be present before
       `evaluateAll` reads them.
-- [ ] `mobile-tap-targets.spec.ts:133` — wait for at least one header control before `count()`.
-- [ ] `mobile-nav.spec.ts:421` — wait for the submit bar and the navigation bar to be visible
+- [x] `mobile-tap-targets.spec.ts:133` — wait for at least one header control before `count()`.
+- [x] `mobile-nav.spec.ts:421` — wait for the submit bar and the navigation bar to be visible
       before `boundingBox()` reads either.
-- [ ] `completeness.spec.ts:229` — register the completeness response waiter before `goto`.
-- [ ] Keep each test's existing assertions intact; the fixes add waits, never weaken a check.
-- [ ] Mark completed
+- [x] `completeness.spec.ts:229` — register the completeness response waiter before `goto`.
+- [x] Keep each test's existing assertions intact; the fixes add waits, never weaken a check.
+- [x] Mark completed
 
 ### Task 4: Prove the suite is stable
 

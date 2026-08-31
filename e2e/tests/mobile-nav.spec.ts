@@ -301,6 +301,11 @@ test.describe('More sheet', () => {
         els.map(el => el.getAttribute('data-nav-control')!).sort()
       );
 
+    // `evaluateAll` samples the DOM once and never retries, so it has to be
+    // given something to wait for: without this the read lands before React
+    // paints the header and returns [], failing the guard below rather than
+    // the comparison this test is about.
+    await expect(page.locator('header [data-nav-control]').first()).toBeAttached();
     const headerControls = await read(page.locator('header'));
     await destination(page, 'more').click();
     await expect(page.getByTestId('more-sheet')).toBeVisible();
@@ -423,6 +428,12 @@ test.describe('Bottom navigation does not occlude the app\'s own fixed elements'
     await page.goto('/food/manual/');
     const submit = page.getByRole('button', { name: 'Save Meal' });
     await expect(submit).toBeVisible();
+    // boundingBox() returns null for an element that has not laid out yet, and
+    // unlike expect() it does not poll. The submit button being visible does
+    // not imply its fixed container and the navigation bar are, so both boxes
+    // the comparison below reads need their own wait.
+    await expect(page.locator('.fixed.z-30').first()).toBeVisible();
+    await expect(bar(page)).toBeVisible();
     expect(intersects(
       await boxOf(page.locator('.fixed.z-30').first(), 'submit bar'),
       await boxOf(bar(page), 'navigation bar'),

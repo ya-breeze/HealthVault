@@ -243,6 +243,11 @@ test.describe('Day completeness', () => {
     const date = isoAtUTC(4, 8, 0).slice(0, 10);
 
     try {
+      // Registered before the navigation that triggers it. Registering it
+      // after — as this did — is a race the page usually loses but sometimes
+      // wins: when the completeness response arrives first, the waiter blocks
+      // for a second one that never comes and the test times out.
+      const completeness = page.waitForResponse(r => r.url().includes('/api/food/completeness'));
       await page.goto('/food/history/');
       // exact: true — the other two seeded meals' names both contain this
       // one as a substring ("... 2", "... 3"), which getByText's default
@@ -251,7 +256,7 @@ test.describe('Day completeness', () => {
       // Wait for the completeness fetch covering this range to actually
       // land before asserting absence — otherwise "no control" would pass
       // trivially just because the fetch hasn't resolved yet.
-      await page.waitForResponse(r => r.url().includes('/api/food/completeness'));
+      await completeness;
 
       const section = daySection(page, mealName);
       await expect(section.getByRole('button', { name: 'Mark day complete' })).toHaveCount(0);
