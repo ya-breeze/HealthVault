@@ -81,11 +81,17 @@ the `nutrition-card-today-and-on-track` change built two of its three rows on th
 
 - ~~**Card A** — today's calories/macros vs. the Phase-3 Nutrition Target.~~ **Shipped** as the
   card's top row, fed by `GET /api/summary/today`.
-- **Middle row — still to build.** A **Healthiness Label** (Good / Fair / Needs attention, rolling
-  7-day window) plus 1-2 short recommendation lines under it. The label itself is a
-  **deterministic heuristic** over already-logged `FoodMeal` macro/sugar/sodium fields —
-  explicitly *not* LLM-judged (ADR-004), so it stays free, fast, and reproducible on every
-  dashboard load regardless of entry source (photo/manual/barcode).
+- **Middle row — still to build**, tracked as
+  [idea-forge#177](https://github.com/ya-breeze/idea-forge/issues/177). A **Healthiness Label**
+  (Good / Fair / Needs attention, rolling 7-day window) plus 1-2 short recommendation lines under
+  it. The label itself is a **deterministic heuristic** over already-logged `FoodMeal`
+  macro/sugar/sodium fields — explicitly *not* LLM-judged (ADR-004), so it stays free, fast, and
+  reproducible on every dashboard load regardless of entry source (photo/manual/barcode).
+  That idea also carries a capability with no ADR yet: a **sustainability warning** for eating
+  below BMR or losing weight faster than ~1%/week, on the grounds that an over-aggressive deficit
+  predicts a relapse. Its subtlety is that the under-eating half must be gated on the gap line
+  resolving to `on_track` — otherwise it fires a starvation warning at everyone who merely
+  under-logs.
 - ~~The logging-gap line~~ — **shipped**, as the card's bottom row, and it now distinguishes "the
   log agrees with the weight trend" from "not enough data" instead of showing the latter for both.
 
