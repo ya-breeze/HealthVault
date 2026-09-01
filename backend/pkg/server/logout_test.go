@@ -71,7 +71,8 @@ func TestLogout_RevokesARefreshTokenItActuallyReceives(t *testing.T) {
 	}
 
 	if code := doRefresh(h, refreshToken).Code; code != http.StatusUnauthorized {
-		t.Fatalf("the refresh token survived logout (status %d); "+
-			"anyone holding that cookie value can mint a new access token for another year", code)
+		t.Fatalf("Logout received a refresh token and did not revoke it (status %d); "+
+			"the handler's own revocation is broken, separately from the cookie-path gap "+
+			"that stops a browser reaching this path at all", code)
 	}
 }

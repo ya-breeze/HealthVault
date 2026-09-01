@@ -105,12 +105,31 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
   // full-suite runs; both tests still passed 5/5 in isolation. See
   // docs/specs/zoom-click-race.md.
   //
-  // Day is the intermediate: a real zoom, never the default, and it fetches
-  // no bucketed data, so it cannot be mistaken for the request under test.
+  // Day is the intermediate: a real zoom and never the default. Its own
+  // zoom-windowed fetch carries no `bucket=`, so for heart_rate it issues
+  // nothing the waiter below could match. For weight it is not quite silent —
+  // the trend projection refetches on every zoom change, `bucket=day` with a
+  // 60-day window — but the weight test's `spanDays` filter already excludes
+  // that window structurally, which is the only reason this is safe there.
+  // Widen that filter and this helper stops being safe with it.
+  //
+  // The click is retried rather than issued once. The page is a static export,
+  // so the zoom buttons exist in the served HTML before React hydrates, and a
+  // click landing in that window is swallowed — under the old code that was
+  // harmless, because the mount request satisfied the waiter regardless. Now
+  // it would be a hard failure, so `toPass` re-clicks until the state actually
+  // moves. Waiting on Week's `aria-pressed` beforehand would not do: the
+  // pre-rendered HTML already carries `aria-pressed="true"` on Week, so it
+  // says nothing about hydration.
+  //
   // Do not remove this as redundant — without it the assertion that follows
   // has no action to wait for.
   async function selectAnotherZoomFirst(page: Page) {
-    await page.getByRole('button', { name: 'Day', exact: true }).click();
+    const day = page.getByRole('button', { name: 'Day', exact: true });
+    await expect(async () => {
+      await day.click();
+      await expect(day).toHaveAttribute('aria-pressed', 'true', { timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: 'Week', exact: true }))
       .toHaveAttribute('aria-pressed', 'false');
   }
@@ -172,17 +191,12 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
     expect(ticks).not.toContain('0');
   });
 
-  // Regression coverage for a bug found in code review: Year zoom's own ~12-13
-  // monthly buckets fall short of the ~14-16 periods an alpha=0.25 EMA needs to
-  // converge, so weight's trend line must widen its lookback fetch the same way
-  // Week's does — not just Week. These assert on the actual outgoing request
-  // range, since a rendered-but-unconverged trend line would still pass a mere
-  // visibility check.
-  // The premise the two tests below depend on, asserted rather than assumed.
-  // If the page's default zoom ever stops being Week, clicking Week becomes a
-  // real transition again and selectAnotherZoomFirst becomes unnecessary — and
+  // The premise selectAnotherZoomFirst exists for, asserted rather than
+  // assumed. If the page's default zoom ever stops being Week, clicking Week
+  // becomes a real transition again and the helper becomes unnecessary — and
   // if the default moves to Day, it becomes actively wrong. Either way this
-  // fails first and says so, instead of the other two going quietly flaky.
+  // fails first and says so, instead of the bucketed-fetch tests below going
+  // quietly flaky. It asserts on rendered state, not on any request.
   test('the chart opens on Week, so selecting Week is not a state change', async ({ page }) => {
     await page.goto('/data/weight/');
     await expect(page.getByRole('button', { name: 'Week', exact: true }))
@@ -191,6 +205,12 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
       .toHaveAttribute('aria-pressed', 'false');
   });
 
+  // Regression coverage for a bug found in code review: Year zoom's own ~12-13
+  // monthly buckets fall short of the ~14-16 periods an alpha=0.25 EMA needs to
+  // converge, so weight's trend line must widen its lookback fetch the same way
+  // Week's does — not just Week. These assert on the actual outgoing request
+  // range, since a rendered-but-unconverged trend line would still pass a mere
+  // visibility check.
   test('weight Week-zoom bucketed fetch widens to >= 14 days', async ({ page }) => {
     await page.goto('/data/weight/');
     await selectAnotherZoomFirst(page);

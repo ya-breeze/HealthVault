@@ -68,11 +68,18 @@ transition into the zoom under test. `Day` is the natural predecessor for both: 
 the page supports, it is not the default, and moving Day → Week is exactly the state change whose
 outgoing request these tests exist to inspect.
 
-Waiting for the intermediate zoom's own request before starting the real assertion is what makes
-the setup deterministic rather than another race. The alternative — registering the waiter before
-`goto` and asserting on the mount request — would also be green, but it would quietly convert
-these from "selecting Week widens the fetch" into "the page happens to load on a widened fetch",
-and the widening bug they were written for lives in the zoom handler.
+Wait on the intermediate zoom's *rendered state*, not on a request. Day issues no bucketed fetch
+of its own, so there is no request to wait for — the signal that it landed has to come from the
+DOM. The alternative — registering the waiter before `goto` and asserting on the mount request —
+would also be green, but it would quietly convert these from "selecting Week widens the fetch"
+into "the page happens to load on a widened fetch", and the widening bug they were written for
+lives in the zoom handler.
+
+The intermediate click is retried rather than issued once. The frontend is a static export, so the
+zoom buttons are in the served HTML before React hydrates and a click landing in that window is
+swallowed. Under the old code that was harmless — the mount request satisfied the waiter either
+way — so making the click load-bearing turns a tolerated race into a hard failure unless the click
+retries until the state moves.
 
 Waiting for the intermediate zoom needs a signal that it landed, and the zoom control has none:
 selection is expressed only as `bg-border text-accent` on the active button. Pinning a Tailwind
@@ -104,14 +111,17 @@ nothing here.
 
 ### Task 1: Make the two zoom tests assert on a real transition
 
-- [x] In `weight Week-zoom bucketed fetch widens to >= 14 days`, select `Day` and wait for its
-      request to land before the `Promise.all` that clicks `Week`.
+- [x] In `weight Week-zoom bucketed fetch widens to >= 14 days`, select `Day` and wait for that
+      selection to be reflected in the DOM before the `Promise.all` that clicks `Week`. Day issues
+      no bucketed request, so rendered state is the only available signal.
 - [x] Do the same in `heart_rate Week-zoom bucketed fetch is not widened`.
 - [x] Leave the existing matchers, the `PROJECTION_LOOKBACK_DAYS` exclusion, and the assertion
       bounds untouched — the tests' claims are right, only their setup is.
 - [x] Record in the tests why the intermediate zoom is there, so nobody removes it as redundant.
 - [x] Add `aria-pressed` to the zoom buttons in `DataTypeClient.tsx`, so the wait has a semantic
       signal rather than a Tailwind class pair, and the control announces its state.
+- [x] Retry the intermediate click until the zoom actually moves, so a click swallowed before
+      hydration does not become a new hard failure.
 - [x] Mark completed
 
 ### Task 2: Prove the fix bites

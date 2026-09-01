@@ -157,16 +157,24 @@ func (h *authHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	// cookie to Path=/api/auth/refresh, so kin_refresh is not sent here and
 	// GetRefreshToken returns empty. Logging out therefore leaves the refresh
 	// token live for its full year, and anyone holding that value can still
-	// mint a session from it. That is a deliberate trade — the path scoping is
-	// why the credential is hard to capture in the first place — and changing
-	// it is a kin-core decision, tracked in idea-forge#181, not something to
-	// work around here.
+	// mint a session from it.
 	//
-	// The call stays because it is correct for any caller that does present the
-	// cookie, and because it starts working the day the path widens.
-	// Best-effort like the blacklist write: a missing or already-revoked token
-	// is not a failure the caller can act on, and logout must still clear the
-	// cookies either way.
+	// That is accepted, not overlooked, and it is not for want of a mechanism:
+	// claims.UserID is in scope above and authdb.RevokeAllUserTokens would end
+	// the session here without touching cookie scoping. It is deliberately not
+	// called, because it revokes every refresh token the user holds — logging
+	// out of one browser would sign them out of every other device, which for a
+	// single-user deployment is a worse daily cost than the residual risk of a
+	// captured token. The alternative, widening the cookie path so this handler
+	// receives it, trades away the reason the credential is hard to capture at
+	// all: today it is only ever transmitted to one endpoint. Owner's call,
+	// recorded in idea-forge#181; revisit it there rather than here.
+	//
+	// The call below stays because it is correct for any caller that does
+	// present the cookie, and because it starts working the day the path
+	// widens. Best-effort like the blacklist write: a missing or
+	// already-revoked token is not a failure the caller can act on, and logout
+	// must still clear the cookies either way.
 	if rtToken := cookies.GetRefreshToken(r); rtToken != "" {
 		authdb.RevokeRefreshToken(h.db, rtToken) //nolint:errcheck
 	}
