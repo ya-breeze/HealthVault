@@ -376,7 +376,14 @@ test.describe('In-app camera capture', () => {
     await page.goto('/food/upload/');
     await page.getByRole('button', { name: 'Take Photo' }).click();
 
-    await expect(page.getByTestId('camera-capture-overlay')).toHaveClass(/env\(safe-area-inset-bottom\)/);
+    const overlay = page.getByTestId('camera-capture-overlay');
+    await expect(overlay).toHaveClass(/env\(safe-area-inset-bottom\)/);
+    // The class assertion above reads the attribute, which is a verbatim copy
+    // of the JSX literal — it passes even if Tailwind stops emitting the
+    // utility and the padding silently drops to 0. This checks the rule
+    // actually reaches the element: with the inset reported as 0,
+    // max(1rem, 0px) resolves to 16px, and a missing rule to 0px.
+    await expect(overlay).toHaveCSS('padding-bottom', '16px');
   });
 });
 

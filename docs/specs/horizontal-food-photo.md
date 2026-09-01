@@ -49,11 +49,15 @@ not the controls — absorb the shortfall when the viewport is short.
   region, so a shrunk preview is letterboxed against the existing black background rather than
   squashed. The frame you see stays the frame you capture: `capture()` draws from `videoWidth` and
   `videoHeight`, which are the stream's own dimensions and are unaffected by any of this.
-- **Scrolling is the fallback, not the mechanism.** The preview region gets `overflow-y-auto` for
-  the extreme case where even a shrunk preview does not fit. Because the Capture button lives in
-  the footer, outside that scroll region, it stays on screen at any viewport height — including
-  the case where the preview is scrolled. The error state renders in the same region, so a long
-  message stays readable and Cancel in the header stays reachable.
+- **Shrinking is the whole mechanism; scrolling only serves the error state.** The preview region
+  gets `overflow-y-auto`, but the video inside it is `h-full`, so that region's content is always
+  exactly its own height and no scrollbar can appear for the preview — it shrinks instead. The
+  scrollbar is real only for the error branch, whose text can genuinely exceed the space, keeping
+  a long message readable with Cancel in the header still reachable. Below roughly a 170px
+  viewport the shrink runs out: the header and footer are `shrink-0` and together exceed the
+  card's `max-h-full`, and the Capture button is clipped again. That is accepted rather than
+  fixed — no phone is that short in landscape (iPhone SE gives ~287px) — so there is deliberately
+  no fallback beneath the shrink, and this spec does not claim one.
 - **Absorb the bottom safe-area inset in the overlay's own padding.** The Capture button now sits
   at the bottom of the screen, which in landscape on a notched device is where the home indicator
   is. ADR-008 deliberately excludes full-screen overlays — `CameraCapture` among them — from the
@@ -117,8 +121,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Give the `<video>` `object-contain` so a shrunk preview is letterboxed rather than
       distorted, and confirm `capture()` still draws at the stream's own `videoWidth`/
       `videoHeight` — the captured image must not change with the preview's rendered size.
-- [x] Give the preview region `overflow-y-auto` as the last-resort fallback, and keep the Capture
-      button outside that scroll region so it cannot be scrolled off screen.
+- [x] Give the preview region `overflow-y-auto` for the error state, and keep the Capture button
+      outside that scroll region so it cannot be scrolled off screen. Do not describe it as a
+      fallback for a too-short preview: the `h-full` video makes the region's content exactly its
+      own height, so it can never scroll for the preview.
 - [x] Render the error state inside the same preview region, so a long message scrolls and the
       header's Cancel control stays reachable at any viewport height.
 - [x] Mark completed
@@ -167,4 +173,15 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
       the new landscape cases need in order to mean anything.
 - [x] Summarize which files changed and what each change does, and disclose the one part not
       covered by any automated check: the non-zero safe-area inset.
+- [x] Mark completed
+
+### Task 4: Close the review findings
+Scope added after the code review of this PR. Neither finding is a shipping bug — the component
+does what it claims at every real viewport — but both are places where a claim outran the code.
+- [x] Correct the preview region's comment and the `How` bullet: the `h-full` video means
+      `overflow-y-auto` can never scroll the preview, shrinking is the entire mechanism, and the
+      sub-170px clipping case is accepted rather than covered
+- [x] Add `toHaveCSS('padding-bottom', '16px')` beside the class-attribute assertion in the
+      safe-area test, so it fails if Tailwind ever stops emitting the utility instead of passing
+      on a verbatim copy of the JSX literal
 - [x] Mark completed

@@ -97,10 +97,18 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
             automatic minimum size is its content size, so without min-h-0
             the video would refuse to shrink below its natural height and the
             column would overflow exactly as it did before this region
-            existed. overflow-y-auto is the last-resort fallback for a
-            viewport too short even for a fully shrunk preview; the Capture
-            button lives in the footer below, outside this scroll region, so
-            it can never be scrolled off screen. */}
+            existed.
+
+            Shrinking, not scrolling, is what keeps the Capture button on
+            screen: the video below is h-full, so this region's content is
+            always exactly its own height and overflow-y-auto cannot produce
+            a scrollbar for it. The scrollbar exists only for the error
+            branch, whose text can genuinely exceed the space. Below roughly
+            a 170px viewport the shrink runs out — the header and footer are
+            shrink-0 and together exceed the card's max-h-full — and the
+            button is clipped again. No phone is that short in landscape
+            (iPhone SE gives ~287px), so the shrink is the whole mechanism
+            and there is deliberately no fallback beneath it. */}
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
           {error ? (
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
