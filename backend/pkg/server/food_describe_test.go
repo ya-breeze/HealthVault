@@ -293,4 +293,19 @@ func TestCreateDescribedMeal_ClarificationQuestionsRouteThroughExistingClarifyFl
 	if len(fake.ClarifyCalls) != 1 {
 		t.Fatalf("expected one Clarify call, got %d", len(fake.ClarifyCalls))
 	}
+
+	// The status transition above passes with or without this, because the
+	// Fake returns its canned result whatever it is handed. This is the part
+	// that actually has to hold: Describe is told to ask questions "instead
+	// of guessing", so a vague description reaches Clarify with no items at
+	// all, and the description is then the only evidence left of what was
+	// eaten. Round two has to be given it, or it is clarifying nothing.
+	call := fake.ClarifyCalls[0]
+	if len(call.PriorItems) != 0 {
+		t.Fatalf("expected the no-items case this test exists to cover, got %d prior items", len(call.PriorItems))
+	}
+	if call.Description != "some soup" {
+		t.Errorf("Clarify got description %q, want the meal's own description — without it the model "+
+			"sees an empty item list and one orphan answer, and cannot know the meal was soup", call.Description)
+	}
 }

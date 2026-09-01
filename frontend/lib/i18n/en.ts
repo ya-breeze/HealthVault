@@ -132,6 +132,8 @@ const en = {
   'describe.tooLongError': 'Description must be at most {max} characters',
   'describe.saveFailed': 'Failed to save meal',
   'describe.structuredToggle': 'Enter items manually instead',
+  'describe.backToDescribe': 'Describe the meal instead',
+  'describe.descriptionUnusedHere': 'Saving here logs the items below. Your description is not used.',
 
   'item.resolve': 'Resolve this item',
   'item.verifyEstimate': 'Verify this estimate',

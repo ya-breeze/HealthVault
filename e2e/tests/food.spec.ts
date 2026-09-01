@@ -85,14 +85,18 @@ test.describe('Manual meal entry', () => {
     await page.waitForURL(/\/food\/review\/\?meal=/);
 
     const url = new URL(page.url());
-    const mealId = url.searchParams.get('meal')!;
+    const mealId = url.searchParams.get('meal');
     expect(mealId).toBeTruthy();
 
-    await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
-    await expect(page.getByText('E2E Test Snack')).toBeVisible();
-    await expect(page.getByText('250', { exact: true })).toBeVisible();
-
-    await deleteMeal(request, cookies, mealId);
+    // The meal exists in the real account from here on, so the assertions
+    // below run inside a try: a failing one must still clean up after itself.
+    try {
+      await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
+      await expect(page.getByText('E2E Test Snack')).toBeVisible();
+      await expect(page.getByText('250', { exact: true })).toBeVisible();
+    } finally {
+      if (mealId) await deleteMeal(request, cookies, mealId);
+    }
   });
 
   // fix-ambiguous-search-button: the reference-search path on this page had
@@ -151,14 +155,18 @@ test.describe('Manual meal entry', () => {
     await page.waitForURL(/\/food\/review\/\?meal=/, { timeout: 90_000 });
 
     const url = new URL(page.url());
-    const mealId = url.searchParams.get('meal')!;
+    const mealId = url.searchParams.get('meal');
     expect(mealId).toBeTruthy();
 
-    await expect(
-      page.getByText(/Review needed|Needs clarification|Analysis failed/)
-    ).toBeVisible({ timeout: 15_000 });
-
-    await deleteMeal(request, cookies, mealId);
+    // See the first test in this file: the meal is real from here on, so the
+    // assertion below cleans up whether it passes or fails.
+    try {
+      await expect(
+        page.getByText(/Review needed|Needs clarification|Analysis failed/)
+      ).toBeVisible({ timeout: 15_000 });
+    } finally {
+      if (mealId) await deleteMeal(request, cookies, mealId);
+    }
   });
 
   // The central case idea #23 reports as broken: a non-English description
@@ -172,6 +180,12 @@ test.describe('Manual meal entry', () => {
     await login(page);
     const cookies = await cookieHeader(page);
     const priorSettings = await getSettings(request, cookies);
+    // Declared out here so the finally below can delete the meal however the
+    // try exits. The language assertion at the end of this test is the exact
+    // regression it exists to catch, so the failing path is the one that most
+    // needs to clean up — and with `retries: 1` a leak there costs two meals
+    // in the real account per run.
+    let mealId: string | null = null;
 
     try {
       await putSettings(request, cookies, { ...priorSettings, display_language: 'ru' });
@@ -182,7 +196,7 @@ test.describe('Manual meal entry', () => {
       await page.waitForURL(/\/food\/review\/\?meal=/, { timeout: 90_000 });
 
       const url = new URL(page.url());
-      const mealId = url.searchParams.get('meal')!;
+      mealId = url.searchParams.get('meal');
       expect(mealId).toBeTruthy();
 
       // The review screen's status text renders in the account's own Display
@@ -207,8 +221,10 @@ test.describe('Manual meal entry', () => {
         expect(hasNonEnglishName, `expected a non-ASCII item name, got ${JSON.stringify(items.map(i => i.name))}`).toBe(true);
       }
 
-      await deleteMeal(request, cookies, mealId);
     } finally {
+      if (mealId) {
+        await deleteMeal(request, cookies, mealId);
+      }
       await putSettings(request, cookies, priorSettings);
     }
   });

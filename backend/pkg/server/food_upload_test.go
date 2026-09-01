@@ -531,7 +531,7 @@ func (slowRecognizeClient) EstimateWeights(context.Context, []byte, string, []vi
 	return &vision.WeightEstimateResult{}, nil
 }
 
-func (slowRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
+func (slowRecognizeClient) Clarify(context.Context, string, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
 

@@ -67,6 +67,7 @@ func (f *Fake) EstimateWeights(_ context.Context, image []byte, mimeType string,
 
 // ClarifyCall records one Clarify invocation.
 type ClarifyCall struct {
+	Description     string
 	PriorItems      []Item
 	History         []ClarifyTurn
 	DisplayLanguage string
@@ -83,8 +84,8 @@ func (f *Fake) Recognize(_ context.Context, image []byte, mimeType, hint, displa
 	return &RecognizeResult{}, nil
 }
 
-func (f *Fake) Clarify(_ context.Context, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error) {
-	f.ClarifyCalls = append(f.ClarifyCalls, ClarifyCall{PriorItems: priorItems, History: history, DisplayLanguage: displayLanguage})
+func (f *Fake) Clarify(_ context.Context, description string, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error) {
+	f.ClarifyCalls = append(f.ClarifyCalls, ClarifyCall{Description: description, PriorItems: priorItems, History: history, DisplayLanguage: displayLanguage})
 	if f.ClarifyErr != nil {
 		return nil, f.ClarifyErr
 	}

@@ -38,6 +38,13 @@ export default function ManualMealPage() {
 
   const removeItem = (index: number) => setItems(prev => prev.filter((_, i) => i !== index));
 
+  // A datetime-local input reads back as '' once the user clears it, and
+  // `new Date('').toISOString()` throws RangeError — which would surface as
+  // the raw, untranslated "Invalid time value" instead of saving. Both
+  // endpoints treat logged_at as optional and default it to now, so an empty
+  // field means "now" rather than an error.
+  const loggedAtISO = () => (loggedAt ? new Date(loggedAt).toISOString() : undefined);
+
   const handleDescribeSubmit = async () => {
     setError(null);
     const trimmed = description.trim();
@@ -54,7 +61,7 @@ export default function ManualMealPage() {
       const meal = await api.describeMeal({
         description: trimmed,
         name: name || undefined,
-        logged_at: new Date(loggedAt).toISOString(),
+        logged_at: loggedAtISO(),
       });
       router.push(`/food/review/?meal=${meal.id}`);
     } catch (err) {
@@ -77,7 +84,7 @@ export default function ManualMealPage() {
     try {
       const meal = await api.createManualMeal({
         name: name || undefined,
-        logged_at: new Date(loggedAt).toISOString(),
+        logged_at: loggedAtISO(),
         items,
       });
       router.push(`/food/review/?meal=${meal.id}`);
@@ -132,18 +139,31 @@ export default function ManualMealPage() {
 
         {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-        <TapTarget
-          onClick={handleDescribeSubmit}
-          disabled={saving}
-          data-testid="describe-submit"
-          className="w-full mb-6 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-        >
-          {saving ? t('describe.submitting') : t('describe.submit')}
-        </TapTarget>
+        {/* Hidden while the structured form is open, so the page never shows
+            two green submit buttons at once. They post to different endpoints
+            with different outcomes and neither carries the other's input, so
+            a user who tapped the wrong one would silently lose what they
+            typed. The disclosure's own label says "instead", and the control
+            below reverses it. */}
+        {!showStructured && (
+          <TapTarget
+            onClick={handleDescribeSubmit}
+            disabled={saving}
+            data-testid="describe-submit"
+            className="w-full mb-6 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+          >
+            {saving ? t('describe.submitting') : t('describe.submit')}
+          </TapTarget>
+        )}
 
         {showStructured ? (
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
             <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Log a Meal Manually</h2>
+            {description.trim() && (
+              <p className="mb-3 text-sm text-amber-700 dark:text-amber-400">
+                {t('describe.descriptionUnusedHere')}
+              </p>
+            )}
             <div className="flex flex-col gap-3 mb-4">
               {items.map((item, i) => (
                 <ManualItemEditor key={i} index={i} item={item} onChange={updateItem} onRemove={removeItem} />
@@ -158,6 +178,14 @@ export default function ManualMealPage() {
             </TapTarget>
 
             {structuredError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{structuredError}</p>}
+
+            <TapTarget
+              onClick={() => setShowStructured(false)}
+              data-testid="describe-structured-back"
+              className="w-full rounded-lg border border-dashed border-gray-300 px-4 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
+            >
+              {t('describe.backToDescribe')}
+            </TapTarget>
           </div>
         ) : (
           <TapTarget

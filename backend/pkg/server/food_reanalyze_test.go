@@ -854,7 +854,7 @@ func (c *gatedRecognizeClient) EstimateWeights(context.Context, []byte, string, 
 	return &vision.WeightEstimateResult{}, nil
 }
 
-func (c *gatedRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
+func (c *gatedRecognizeClient) Clarify(context.Context, string, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
 

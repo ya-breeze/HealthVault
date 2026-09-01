@@ -281,3 +281,30 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
       the user's real Display Language is passed here while `runExpertAnalysis` forces `"en"`
 - [x] As the final commit of this change, flip ADR-011's status from `Proposed` to `Accepted`
 - [x] Mark completed
+
+### Task 8: Carry the description into clarification, and close the review's other findings
+Scope added after the code review of this PR. Task 3 routed a vague description into
+`pending_clarification` and Task 4 covered the transition, but round two runs through the
+existing `Clarify`, which is fed only the prior items and the Q&A history. Describe is
+instructed to ask questions "instead of guessing", so exactly those meals arrive with **no
+items at all** — leaving the model nothing to clarify while the description sits unread on the
+same row. Task 4's test did not catch it because its `Fake` returns a canned item whatever it
+is handed.
+- [x] Add a `description` parameter to `vision.Client.Clarify` and its four implementations,
+      documenting on the interface why text is replayed every round when the photo is not
+- [x] Send it as `user_description` from `OpenAIClient.Clarify`, under `describeSystemPrompt`
+      with framing that names it the primary evidence and an empty item list as "nothing
+      identified yet" rather than "no food"; leave the photo path's prompt and payload unchanged
+- [x] Pass `meal.Description` from `ClarifyMeal`
+- [x] Strengthen the Task 4 clarification test to assert the call carries the description and
+      that it covers the empty-prior-items case, and add an `openai_test` pair asserting the
+      description reaches the request on the describe path and no `user_description` key on the
+      photo path
+- [x] Omit `logged_at` when the datetime field is empty, instead of sending
+      `new Date('').toISOString()` — it throws `RangeError` and surfaces untranslated
+- [x] Show only one submit button at a time: hide the describe submit while the structured form
+      is open, add a control to reverse the disclosure, and warn when a typed description would
+      go unused by the structured path
+- [x] Move `deleteMeal` into a `finally` in all three `food.spec.ts` tests that create a real
+      meal, so a failing assertion cannot leave residue in the real account
+- [x] Mark completed

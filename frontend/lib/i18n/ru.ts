@@ -69,6 +69,8 @@ const ru: Dictionary = {
   'describe.tooLongError': 'Описание должно содержать не более {max} символов',
   'describe.saveFailed': 'Не удалось сохранить приём пищи',
   'describe.structuredToggle': 'Ввести блюда вручную',
+  'describe.backToDescribe': 'Вернуться к описанию',
+  'describe.descriptionUnusedHere': 'Здесь сохраняются блюда из списка ниже. Ваше описание не используется.',
 
   'item.resolve': 'Определить блюдо',
   'item.verifyEstimate': 'Проверить оценку',
