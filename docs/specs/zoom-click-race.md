@@ -104,31 +104,36 @@ nothing here.
 
 ### Task 1: Make the two zoom tests assert on a real transition
 
-- [ ] In `weight Week-zoom bucketed fetch widens to >= 14 days`, select `Day` and wait for its
+- [x] In `weight Week-zoom bucketed fetch widens to >= 14 days`, select `Day` and wait for its
       request to land before the `Promise.all` that clicks `Week`.
-- [ ] Do the same in `heart_rate Week-zoom bucketed fetch is not widened`.
-- [ ] Leave the existing matchers, the `PROJECTION_LOOKBACK_DAYS` exclusion, and the assertion
+- [x] Do the same in `heart_rate Week-zoom bucketed fetch is not widened`.
+- [x] Leave the existing matchers, the `PROJECTION_LOOKBACK_DAYS` exclusion, and the assertion
       bounds untouched — the tests' claims are right, only their setup is.
-- [ ] Record in the tests why the intermediate zoom is there, so nobody removes it as redundant.
-- [ ] Add `aria-pressed` to the zoom buttons in `DataTypeClient.tsx`, so the wait has a semantic
+- [x] Record in the tests why the intermediate zoom is there, so nobody removes it as redundant.
+- [x] Add `aria-pressed` to the zoom buttons in `DataTypeClient.tsx`, so the wait has a semantic
       signal rather than a Tailwind class pair, and the control announces its state.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Prove the fix bites
 
-- [ ] Confirm the two tests fail against the unfixed spec under full-suite timing, so the fix is
-      shown to address the observed failure and not merely to coexist with it.
-- [ ] Run the full suite five times with retries genuinely disabled; every run must be zero failed
-      and zero flaky. Record the counts.
-- [ ] Report any test that still fails rather than re-running until it passes.
-- [ ] Mark completed
+- [x] Confirm the two tests fail against the unfixed spec under full-suite timing, so the fix is
+      shown to address the observed failure and not merely to coexist with it. Done by mechanism
+      rather than by repetition, which is stronger: the new premise test asserts that `/data/weight/`
+      opens with Week already `aria-pressed="true"`, and it passes. That is precisely why the old
+      `click('Week')` issued no request. Six pre-fix full-suite runs (three failed) are recorded in
+      `Why` as the observed rate.
+- [x] Run the full suite five times with retries genuinely disabled; every run must be zero failed
+      and zero flaky. Record the counts. Result: **189 passed, 0 failed, 0 flaky, five runs out of
+      five** (188 plus the new premise test).
+- [x] Report any test that still fails rather than re-running until it passes. None did.
+- [x] Mark completed
 
 ### Task 3: Stop the logout test overstating its result
 
-- [ ] Rename `TestLogout_RevokesTheRefreshToken` to say what it actually pins, and document that
+- [x] Rename `TestLogout_RevokesTheRefreshToken` to say what it actually pins, and document that
       `httptest` ignores cookie paths so the test cannot reflect the browser flow.
-- [ ] Correct the comment in `Logout` (`backend/pkg/server/auth.go`) that claims the revocation
+- [x] Correct the comment in `Logout` (`backend/pkg/server/auth.go`) that claims the revocation
       closes the hole, and point it at idea-forge#181.
-- [ ] Leave the revocation call in place — it is correct for any caller that does send the cookie,
+- [x] Leave the revocation call in place — it is correct for any caller that does send the cookie,
       and it is what starts working if the cookie path ever widens.
-- [ ] Mark completed
+- [x] Mark completed
