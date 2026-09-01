@@ -188,3 +188,16 @@ export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// Drawn at the same 24x24 as the rest of the set but rendered small (14px on
+// the nutrition card), so the stem and the dot are separate subpaths with a
+// visible gap rather than a single glyph that would fill in at that size.
+export function InfoIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </svg>
+  );
+}
