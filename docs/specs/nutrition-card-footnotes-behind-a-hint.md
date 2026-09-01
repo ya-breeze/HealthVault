@@ -48,15 +48,25 @@ a fix, not a regression: "logged intake is estimated from photo recognition" qua
 the card is not currently showing in any of those three states.
 
 **The status line drops to `text-xs text-text-muted`** — the same weight as the macro row it sits
-under, one step below `nutrition-today-calories`'s `text-xl font-bold`. This applies to all four
-gap lines (`on_track`, `gap`, `not_enough_data`, the row-level `retrieval_error`) so the row keeps
-one voice; the ✓ glyph and the kcal/day range still carry the distinction between them.
+under, one step below `nutrition-today-calories`'s `text-xl font-bold`. That becomes the row's
+default voice, and the `gap` line is the one outcome that climbs back out of it, keeping
+`text-sm font-medium text-text`: an unlogged kcal/day range is a finding the reader is meant to
+act on, where "your log matches your weight" is a footnote confirming there is nothing to do.
+Demoting the range along with it would have answered the complaint about one line by quieting the
+line the card exists for.
+
+**The whole row is the toggle, not just the ⓘ glyph.** At `text-xs` the icon alone is a ~14px
+target, and wrapping it in `TapTarget`'s 48px touch minimum would grow the row by more height than
+the collapsed caveats save. A full-width row reaches the minimum by growing sideways instead, and
+gives a phone reader a target that is hard to miss. The button takes no `aria-label`: its
+accessible name is the status text plus a visually-hidden "show details", which says more than a
+bare label would, and `aria-expanded` carries the open/closed state.
 
 The outlier note (`loggingGap.outlierNote`) stays where it is and stays visible. It is conditional
 and rare, and unlike the caveats it reports something that actually happened to this user's data.
 
-No new i18n keys and no wording changes; `en.ts` and `ru.ts` gain only the ⓘ button's accessible
-label.
+No copy is rewritten and none is deleted: `en.ts` and `ru.ts` keep every existing `loggingGap.`
+string and gain exactly one, the toggle's visually-hidden label.
 
 ## Validation Commands
 - `make lint`
@@ -64,42 +74,43 @@ label.
 - `make test-e2e`
 
 ### Task 1: Collapse the footnotes behind a ⓘ toggle
-- [ ] In `frontend/components/LoggingGapCard.tsx`, add a `hintOpen` `useState(false)` and render
+- [x] In `frontend/components/LoggingGapCard.tsx`, add a `hintOpen` `useState(false)` and render
       the two `loggingGap.caveat*` paragraphs only inside the expanded block, removing the
       always-on `<div className="text-xs text-text-muted mt-2 space-y-1">` that sits after
       `renderContent()`
-- [ ] Render the ⓘ as a `<button type="button">` at the end of the gap-line row in `renderGap`,
-      carrying `aria-expanded`, `aria-controls` pointing at the expanded block's `id`, an
-      `aria-label` from a new i18n key, and `data-testid="logging-gap-hint-toggle"`
-- [ ] Give the expanded block `data-testid="logging-gap-hint"` and have it render
+- [x] Make the gap-line row itself the disclosure control: a `TapTarget compactOnMouse` wrapping
+      the status text and a trailing `InfoIcon`, carrying `aria-expanded`, `aria-controls` from
+      `useId()`, a visually-hidden label from a new i18n key, and
+      `data-testid="logging-gap-hint-toggle"`
+- [x] Give the expanded block `data-testid="logging-gap-hint"` and have it render
       `loggingGap.onTrackDetail` first **only** when the gap kind is `on_track`, then
       `caveatPhoto` and `caveatActivity` in both cases
-- [ ] Remove the unconditional `<p>{t('loggingGap.onTrackDetail')}</p>` from the `on_track` branch
-- [ ] Add `loggingGap.hintToggle` to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`
+- [x] Remove the unconditional `<p>{t('loggingGap.onTrackDetail')}</p>` from the `on_track` branch
+- [x] Add `loggingGap.hintToggle` to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`
       ("Show details" / "Подробнее")
-- [ ] Add an `InfoIcon` to `frontend/components/icons.tsx` following the existing
+- [x] Add an `InfoIcon` to `frontend/components/icons.tsx` following the existing
       `SVGProps<SVGSVGElement>` icons' shape, or use a text ⓘ if that reads better at 14px
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Demote the gap line to supporting text
-- [ ] Change the `on_track` and `gap` lines in `renderGap` from `text-sm font-medium text-text` to
-      `text-xs text-text-muted`, matching the existing `not_enough_data` and `retrieval_error`
-      lines, and drop `text-sm` from those two so all four are `text-xs`
-- [ ] Confirm the ✓ glyph and the ⓘ button align on the baseline of the shrunken line, and that
-      the ⓘ's tap target still clears the 44px minimum the card's other controls use
-      (`TapTarget`); if it does not, keep the icon at 14px and pad the button rather than growing
-      the icon
-- [ ] Mark completed
+- [x] Set `text-xs text-text-muted` on the row, so `on_track`, `not_enough_data` and the row-level
+      `retrieval_error` all inherit it and the `on_track` line loses its `text-sm font-medium
+      text-text`
+- [x] Keep the `gap` line at `text-sm font-medium text-text` as a local override, so a detected
+      range stays the loudest thing in the row
+- [x] Confirm the row clears `TapTarget`'s 48px touch minimum without the icon growing: the icon
+      stays at `w-3.5 h-3.5` and the row reaches the minimum by being full-width
+- [x] Mark completed
 
 ### Task 3: Update the tests that read the caveats off the card
-- [ ] In `e2e/tests/logging-gap.spec.ts`, the "a clear gap renders as a kcal/day range with both
+- [x] In `e2e/tests/logging-gap.spec.ts`, the "a clear gap renders as a kcal/day range with both
       caveats" test asserts `card` contains both caveat strings; make it click
       `logging-gap-hint-toggle` first and assert the strings inside `logging-gap-hint`
-- [ ] Add to the same test that both caveat strings are absent before the toggle is clicked — the
+- [x] Add to the same test that both caveat strings are absent before the toggle is clicked — the
       point of the change is that they are not in the default view
-- [ ] Extend the on-track test to click the toggle and assert `logging-gap-hint` contains the
+- [x] Extend the on-track test to click the toggle and assert `logging-gap-hint` contains the
       `onTrackDetail` sentence, and that the sentence is absent before the click
-- [ ] Add a case asserting `logging-gap-hint` in the `not_enough_data` state contains the two
+- [x] Add a case asserting `logging-gap-hint` in the `not_enough_data` state contains the two
       caveats but **not** the `onTrackDetail` sentence
-- [ ] Run `make lint`, `make test` and `make test-e2e` against the deployed `hcw-wip` stack
-- [ ] Mark completed
+- [x] Run `make lint`, `make test` and `make test-e2e` against the deployed `hcw-wip` stack
+- [x] Mark completed

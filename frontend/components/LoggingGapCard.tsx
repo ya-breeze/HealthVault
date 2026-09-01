@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { api, NutritionTargetUnmetReason, DayCompletenessState, TodaySummary } from '@/lib/api';
 import { emaSeries, linearRegression, toDayOffset } from '@/lib/dataTypeMeta';
 import { loggedDayKey } from '@/lib/loggedDay';
@@ -17,7 +17,7 @@ import {
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
-import { EyeIcon, EyeOffIcon } from './icons';
+import { EyeIcon, EyeOffIcon, InfoIcon } from './icons';
 
 // Today's intake beside the target it is measured against — the card's top
 // row. Both halves are carried together because neither is meaningful alone:
@@ -98,6 +98,14 @@ export default function LoggingGapCard({
   const { t } = useLanguage();
   const [state, setState] = useState<ContentState>({ kind: 'loading' });
   const [outlierExcluded, setOutlierExcluded] = useState(false);
+  // Collapsed by default: the caveats below are worth reading once and carry
+  // no per-day information, so leaving them open would cost the card's whole
+  // lower half every day to repeat what the reader already knows.
+  const [hintOpen, setHintOpen] = useState(false);
+  // Generated rather than a fixed string: `aria-controls` has to name a
+  // unique element, and only the dashboard's own layout keeps this card to
+  // one instance per page.
+  const hintId = useId();
 
   useEffect(() => {
     let cancelled = false;
@@ -316,35 +324,33 @@ export default function LoggingGapCard({
     );
   }
 
-  function renderGap(gap: GapLine) {
+  // The status line's four outcomes, each as the span that sits inside the
+  // disclosure button below and each keeping the testid it carried when it
+  // was a standalone paragraph.
+  //
+  // The row's default voice is the muted `text-xs` set on the button — the
+  // same weight as the macro row, one step under today's calorie figure. The
+  // gap line alone climbs back out of it: an unlogged range is a finding the
+  // reader is meant to act on, where "your log matches your weight" is a
+  // footnote confirming there is nothing to do.
+  function renderGapLine(gap: GapLine) {
     switch (gap.kind) {
       case 'retrieval_error':
         // Reuses the card-level wording and testid: from the reader's side
         // this is the same event, just confined to one row.
-        return (
-          <p className="text-sm text-text-muted" data-testid="logging-gap-error">
-            {t('loggingGap.retrievalError')}
-          </p>
-        );
+        return <span data-testid="logging-gap-error">{t('loggingGap.retrievalError')}</span>;
       case 'not_enough_data':
-        return (
-          <p className="text-sm text-text-muted" data-testid="logging-gap-not-enough-data">
-            {t('loggingGap.notEnoughData')}
-          </p>
-        );
+        return <span data-testid="logging-gap-not-enough-data">{t('loggingGap.notEnoughData')}</span>;
       case 'on_track':
         // Deliberately not "all good": the silence rule this state comes from
         // compares the log against the weight trend and checks nothing else —
         // not whether weight moves toward the goal, not whether intake is
         // sane. The praise is real but scoped to what was actually measured.
         return (
-          <div data-testid="logging-gap-on-track">
-            <p className="text-sm font-medium text-text">
-              <span aria-hidden="true">✓ </span>
-              {t('loggingGap.onTrack')}
-            </p>
-            <p className="text-xs text-text-muted mt-0.5">{t('loggingGap.onTrackDetail')}</p>
-          </div>
+          <span data-testid="logging-gap-on-track">
+            <span aria-hidden="true">✓ </span>
+            {t('loggingGap.onTrack')}
+          </span>
         );
       case 'gap': {
         // Never a negative-to-negative range (spec's "Logging Gap Card
@@ -356,12 +362,54 @@ export default function LoggingGapCard({
         const upper = Math.round(Math.abs(gap.value) + gap.interval);
         const range = `${lower}–${upper}`;
         return (
-          <p className="text-sm font-medium text-text" data-testid="logging-gap-value">
+          <span className="text-sm font-medium text-text" data-testid="logging-gap-value">
             {interpolate(t(unlogged ? 'loggingGap.unlogged' : 'loggingGap.loggedMore'), { range })}
-          </p>
+          </span>
         );
       }
     }
+  }
+
+  function renderGap(gap: GapLine) {
+    return (
+      <div>
+        {/* The whole row is the toggle, not just the ⓘ: at `text-xs` the icon
+            alone would be a ~14px target, and TapTarget's 48px minimum would
+            then inflate the row by more height than the collapsed caveats
+            saved. A full-width row reaches the minimum by growing sideways.
+            No aria-label — the button's accessible name is the status line
+            itself plus the visually-hidden label, which says more than a bare
+            "Show details" would, and aria-expanded carries the open state. */}
+        <TapTarget
+          compactOnMouse
+          onClick={() => setHintOpen(open => !open)}
+          aria-expanded={hintOpen}
+          aria-controls={hintId}
+          data-testid="logging-gap-hint-toggle"
+          className="flex w-full items-center justify-between gap-2 text-left text-xs text-text-muted"
+        >
+          {renderGapLine(gap)}
+          <span className="sr-only">{t('loggingGap.hintToggle')}</span>
+          <InfoIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        </TapTarget>
+        {/* Rendered even while collapsed, and hidden with the `hidden`
+            attribute: `aria-controls` above has to name an element that
+            exists, and conditional rendering would leave it dangling in the
+            state the reader spends all their time in. */}
+        <div
+          id={hintId}
+          hidden={!hintOpen}
+          data-testid="logging-gap-hint"
+          className="text-xs text-text-muted mt-1.5 space-y-1"
+        >
+          {/* Only in `on_track`, because it explains that state rather than
+              the card: the other three rows say what they mean already. */}
+          {gap.kind === 'on_track' && <p>{t('loggingGap.onTrackDetail')}</p>}
+          <p>{t('loggingGap.caveatPhoto')}</p>
+          <p>{t('loggingGap.caveatActivity')}</p>
+        </div>
+      </div>
+    );
   }
 
   function renderContent() {
@@ -432,10 +480,6 @@ export default function LoggingGapCard({
           {t('loggingGap.outlierNote')}
         </p>
       )}
-      <div className={`text-xs text-text-muted mt-2 space-y-1${dim}`}>
-        <p>{t('loggingGap.caveatPhoto')}</p>
-        <p>{t('loggingGap.caveatActivity')}</p>
-      </div>
     </>
   );
 
