@@ -25,7 +25,14 @@
 // Russian description is the central case this path exists for. The
 // structured item-by-item form it demotes behind a collapsed disclosure
 // stays English, unchanged, along with the components it's built from
-// (ManualItemEditor is already in the list above).
+// (ManualItemEditor is already in the list above) — with two exceptions that
+// belong to the disclosure rather than to the form: the control that closes
+// it again (describe.backToDescribe) and the warning that a typed
+// description will not be used by the structured submit
+// (describe.descriptionUnusedHere). Both exist only because the two submit
+// paths are mutually exclusive, which is a property of the description path,
+// and a Russian user who typed a Russian description is precisely who needs
+// to be told it is about to be discarded.
 //
 // This list is not just a comment: the display-language spec's out-of-scope
 // paragraph defers to it by name ("the food entry/editing chrome enumerated
