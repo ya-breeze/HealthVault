@@ -35,10 +35,16 @@ The app ships English and Russian strings and follows the caller's Display Langu
 **Excluded on purpose.** Native camera capture, any write path, and native Google Sign-In stay deferred exactly as idea #12 settled them. There is no Play Store release and no release signing configuration; the deliverable is a debug APK. The path-scoped Cloudflare Access **Bypass** policy on `/api/*` is zone configuration outside this repository and remains the owner's step — until it exists, the app reaches the API only on the LAN. The client detects that case specifically: a redirect to `*.cloudflareaccess.com` or an HTML body where JSON was expected surfaces as "this server needs an Access bypass on /api/*", never as "invalid credentials". `RequireAuth` still gains no Bearer path.
 
 ## Validation Commands
-
 - `make lint`
 - `make test`
 - `make test-e2e`
+
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Android module and build wiring
 
