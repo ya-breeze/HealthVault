@@ -133,9 +133,18 @@ nothing here.
       `click('Week')` issued no request. Six pre-fix full-suite runs (three failed) are recorded in
       `Why` as the observed rate.
 - [x] Run the full suite five times with retries genuinely disabled; every run must be zero failed
-      and zero flaky. Record the counts. Result: **189 passed, 0 failed, 0 flaky, five runs out of
-      five** (188 plus the new premise test).
-- [x] Report any test that still fails rather than re-running until it passes. None did.
+      and zero flaky. Record the counts. Result before the review fixes: **189 passed, five runs
+      out of five** (188 plus the new premise test). Re-run afterwards: **four clean, one failed**
+      — `auth.spec.ts:106`, not either test this branch touches.
+- [x] Report any test that still fails rather than re-running until it passes. One did, and it is
+      recorded rather than retried away: `auth.spec.ts:106`. Running that spec alone eight times
+      reproduced it once, on a warm backend, and the retained trace named the cause — an aborted
+      `POST /api/auth/refresh` (`net::ERR_ABORTED`) that the server had already processed. Rotation
+      consumes the presented token and returns its replacement only in the response, so a lost
+      response leaves the client holding a token the server now reads as theft; reuse detection
+      then revokes every session the user has. That is a product bug, not a flake, filed as
+      idea-forge#182 and deliberately out of scope here — it needs a kin-core change. The two tests
+      this branch fixes have not failed once in thirteen full-suite runs.
 - [x] Mark completed
 
 ### Task 3: Stop the logout test overstating its result
