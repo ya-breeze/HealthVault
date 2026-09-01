@@ -19,13 +19,28 @@ func doRefresh(h *authHandlers, refreshToken string) *httptest.ResponseRecorder 
 	return rec
 }
 
-// Logout must end the session, not just the next 15 minutes of it.
+// Logout revokes a refresh token that reaches it — which, in a browser, none
+// does.
 //
-// Clearing the cookies is a client-side gesture: anyone who kept a copy of the
-// refresh token value can still POST /api/auth/refresh with it. The refresh
-// token's TTL is a year (Login), so without an explicit revocation the session
-// logout claims to have ended outlives the logout by that year.
-func TestLogout_RevokesTheRefreshToken(t *testing.T) {
+// Read the name literally: this pins the handler's logic, not the product's
+// behaviour. kin-core's SetRefreshCookie scopes the cookie to
+// Path=/api/auth/refresh, so a browser never sends kin_refresh to
+// /api/auth/logout; cookies.GetRefreshToken returns empty there and the
+// revocation below never runs in the real flow. Verified against a deployed
+// stack: log in, log out, replay the refresh token — still 204, still mints a
+// new session.
+//
+// The test passes anyway because httptest.NewRequest + AddCookie attaches
+// whatever cookie a test names, ignoring path scoping. That gap is exactly why
+// this comment exists: without it, a green test reads as proof of a revocation
+// the product does not perform.
+//
+// The behaviour is deliberate, not an oversight to fix here. Scoping a
+// year-long credential to one endpoint is why it is hard to steal; widening
+// the path to make logout work would put it on every request instead. See
+// idea-forge#181. This test stays as the guard for the day that changes, and
+// for any non-browser caller that does send the cookie.
+func TestLogout_RevokesARefreshTokenItActuallyReceives(t *testing.T) {
 	h, storage := newLoginTestHandlers(t)
 	username := "logout-" + uuid.NewString()
 	createLoginTestUser(t, storage, username, "correct-password")
@@ -56,7 +71,8 @@ func TestLogout_RevokesTheRefreshToken(t *testing.T) {
 	}
 
 	if code := doRefresh(h, refreshToken).Code; code != http.StatusUnauthorized {
-		t.Fatalf("the refresh token survived logout (status %d); "+
-			"anyone holding that cookie value can mint a new access token for another year", code)
+		t.Fatalf("Logout received a refresh token and did not revoke it (status %d); "+
+			"the handler's own revocation is broken, separately from the cookie-path gap "+
+			"that stops a browser reaching this path at all", code)
 	}
 }
