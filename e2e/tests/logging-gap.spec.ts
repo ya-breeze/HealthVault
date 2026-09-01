@@ -206,7 +206,7 @@ function onTrackFixture(): LoggingGapFixture {
 }
 
 test.describe('Logging Gap Card', () => {
-  test('a clear gap renders as a kcal/day range with both caveats, never a bare number', async ({ page, request }) => {
+  test('a clear gap renders as a kcal/day range with both caveats behind the hint, never a bare number', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
     const original = await getSettings(request, cookies);
@@ -224,8 +224,20 @@ test.describe('Logging Gap Card', () => {
       await expect(value).toContainText(/\d+\s*[–-]\s*\d+/);
       await expect(value).toContainText(/kcal\/day/);
 
-      await expect(card).toContainText('Logged intake is estimated from photo recognition');
-      await expect(card).toContainText("doesn't separately account for error in your activity multiplier");
+      // The caveats are still on the card, but reaching them is now the
+      // reader's choice — the default view must not show them.
+      const hint = card.getByTestId('logging-gap-hint');
+      const toggle = card.getByTestId('logging-gap-hint-toggle');
+      await expect(hint).toBeHidden();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+      await toggle.click();
+      await expect(hint).toBeVisible();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(hint).toContainText('Logged intake is estimated from photo recognition');
+      await expect(hint).toContainText("doesn't separately account for error in your activity multiplier");
+      // The on-track sentence explains a state this card is not in.
+      await expect(hint).not.toContainText('intake and weight trend agree');
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -248,6 +260,18 @@ test.describe('Logging Gap Card', () => {
       // data" copy nor a gap figure may appear alongside it.
       await expect(card.getByTestId('logging-gap-not-enough-data')).toHaveCount(0);
       await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
+
+      // The sentence that explains this state is a hint, not part of the row:
+      // hidden until asked for, and first in the panel when it is.
+      const hint = card.getByTestId('logging-gap-hint');
+      await expect(hint).toBeHidden();
+      await card.getByTestId('logging-gap-hint-toggle').click();
+      await expect(hint).toBeVisible();
+      await expect(hint).toContainText('intake and weight trend agree');
+      await expect(hint).toContainText('Logged intake is estimated from photo recognition');
+      // on_track is a real comparison against the weight trend, so the caveat
+      // about the activity multiplier applies to it as much as to a gap.
+      await expect(hint).toContainText("doesn't separately account for error in your activity multiplier");
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -360,6 +384,19 @@ test.describe('Logging Gap Card', () => {
       await expect(card.getByTestId('logging-gap-not-enough-data')).toBeVisible({ timeout: 15_000 });
       await expect(card).toContainText('Not enough data yet');
       await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
+
+      // The hint travels with the row, so it is reachable here too — but it
+      // carries only what applies. The photo caveat qualifies today's calorie
+      // figure at the top of the card, which is on screen; the activity
+      // caveat qualifies a comparison against the weight trend that produced
+      // nothing here, and the on-track sentence explains a state this is not.
+      const hint = card.getByTestId('logging-gap-hint');
+      await expect(hint).toBeHidden();
+      await card.getByTestId('logging-gap-hint-toggle').click();
+      await expect(hint).toBeVisible();
+      await expect(hint).toContainText('Logged intake is estimated from photo recognition');
+      await expect(hint).not.toContainText("doesn't separately account for error in your activity multiplier");
+      await expect(hint).not.toContainText('intake and weight trend agree');
     } finally {
       await putSettings(request, cookies, original);
     }
