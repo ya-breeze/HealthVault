@@ -616,6 +616,10 @@ export default function DataTypeClient({ type }: Props) {
               <TapTarget
                 key={z.key}
                 compactOnMouse
+                // The selected zoom is otherwise conveyed only by background
+                // and text colour, which assistive technology does not read
+                // and a test cannot address without pinning Tailwind classes.
+                aria-pressed={zoom === z.key}
                 onClick={() => setZoom(z.key)}
                 className={`font-[family-name:var(--font-data)] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ${
                   zoom === z.key ? 'bg-border text-accent' : 'text-text-muted hover:text-text'
