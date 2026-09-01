@@ -269,6 +269,9 @@ test.describe('Logging Gap Card', () => {
       await expect(hint).toBeVisible();
       await expect(hint).toContainText('intake and weight trend agree');
       await expect(hint).toContainText('Logged intake is estimated from photo recognition');
+      // on_track is a real comparison against the weight trend, so the caveat
+      // about the activity multiplier applies to it as much as to a gap.
+      await expect(hint).toContainText("doesn't separately account for error in your activity multiplier");
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -382,14 +385,17 @@ test.describe('Logging Gap Card', () => {
       await expect(card).toContainText('Not enough data yet');
       await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
 
-      // The hint travels with the row, so it is reachable here too — carrying
-      // the two card-wide caveats but not the on-track sentence.
+      // The hint travels with the row, so it is reachable here too — but it
+      // carries only what applies. The photo caveat qualifies today's calorie
+      // figure at the top of the card, which is on screen; the activity
+      // caveat qualifies a comparison against the weight trend that produced
+      // nothing here, and the on-track sentence explains a state this is not.
       const hint = card.getByTestId('logging-gap-hint');
       await expect(hint).toBeHidden();
       await card.getByTestId('logging-gap-hint-toggle').click();
       await expect(hint).toBeVisible();
       await expect(hint).toContainText('Logged intake is estimated from photo recognition');
-      await expect(hint).toContainText("doesn't separately account for error in your activity multiplier");
+      await expect(hint).not.toContainText("doesn't separately account for error in your activity multiplier");
       await expect(hint).not.toContainText('intake and weight trend agree');
     } finally {
       await putSettings(request, cookies, original);

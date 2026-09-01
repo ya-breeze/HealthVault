@@ -110,3 +110,11 @@ activity multiplier.** Concretely, on the Logging Gap Card:
   caveats instead of being folded into the number, so a user reading only the range still sees the
   disclosure. If either is ever quantified from real usage data, the interval formula would need
   revisiting (see `design.md` "Risks").
+
+  > **Update (`docs/specs/nutrition-card-footnotes-behind-a-hint.md`):** the two caveats are no
+  > longer static — they sit behind a ⓘ disclosure on the status row, collapsed by default. The
+  > decision this ADR records is unchanged (the error sources stay outside the interval and stay
+  > disclosed rather than folded into the number), but "a user reading only the range still sees
+  > the disclosure" is now false: they see the range and the ⓘ, and reach the text with one tap.
+  > That was a deliberate trade made on the card's owner's instruction, after the always-on copy
+  > grew to roughly eight wrapped lines on a phone and outweighed the numbers it qualified.

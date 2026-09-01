@@ -373,10 +373,12 @@ export default function LoggingGapCard({
   function renderGap(gap: GapLine) {
     return (
       <div>
-        {/* The whole row is the toggle, not just the ⓘ: at `text-xs` the icon
-            alone would be a ~14px target, and TapTarget's 48px minimum would
-            then inflate the row by more height than the collapsed caveats
-            saved. A full-width row reaches the minimum by growing sideways.
+        {/* The whole row is the toggle, not just the ⓘ. On touch TapTarget's
+            48px minimum applies either way — `compactOnMouse` releases it only
+            under `pointer: fine` — so the row is 48px tall on a phone whether
+            the target is the glyph or the line. Given that the height is spent
+            regardless, spending it on a full-width row buys a target that is
+            hard to miss instead of a 14px one floating in it.
             No aria-label — the button's accessible name is the status line
             itself plus the visually-hidden label, which says more than a bare
             "Show details" would, and aria-expanded carries the open state. */}
@@ -405,8 +407,16 @@ export default function LoggingGapCard({
           {/* Only in `on_track`, because it explains that state rather than
               the card: the other three rows say what they mean already. */}
           {gap.kind === 'on_track' && <p>{t('loggingGap.onTrackDetail')}</p>}
+          {/* Unconditional: it qualifies today's calorie figure at the top of
+              the card, which is photo-derived and on screen in every one of
+              these states, not only the gap the row may or may not carry. */}
           <p>{t('loggingGap.caveatPhoto')}</p>
-          <p>{t('loggingGap.caveatActivity')}</p>
+          {/* Conditional, because it qualifies the comparison against the
+              weight trend specifically. In `not_enough_data` and the row-level
+              `retrieval_error` that comparison produced nothing, and saying an
+              absent number doesn't account for activity error only invites the
+              reader to look for a number that isn't there. */}
+          {(gap.kind === 'gap' || gap.kind === 'on_track') && <p>{t('loggingGap.caveatActivity')}</p>}
         </div>
       </div>
     );
