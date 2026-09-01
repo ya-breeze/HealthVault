@@ -93,6 +93,28 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
     return page.locator('.recharts-yAxis-tick-labels text').allTextContents();
   }
 
+  // Moves the chart off Week and waits until it has actually got there.
+  //
+  // The page opens on Week (DataTypeClient's `useState<Zoom>('week')`), so
+  // clicking Week sets state to the value it already holds: React re-renders
+  // nothing and no request goes out. A `Promise.all([waitForRequest, click])`
+  // around that click is therefore not synchronizing with the click at all —
+  // the only request that can satisfy it is the one the page fired on mount,
+  // and whether that lands before or after the listener is registered is a
+  // race against `page.goto` resolving. It cost three failures in six
+  // full-suite runs; both tests still passed 5/5 in isolation. See
+  // docs/specs/zoom-click-race.md.
+  //
+  // Day is the intermediate: a real zoom, never the default, and it fetches
+  // no bucketed data, so it cannot be mistaken for the request under test.
+  // Do not remove this as redundant — without it the assertion that follows
+  // has no action to wait for.
+  async function selectAnotherZoomFirst(page: Page) {
+    await page.getByRole('button', { name: 'Day', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Week', exact: true }))
+      .toHaveAttribute('aria-pressed', 'false');
+  }
+
   test('weight Year-zoom Y-axis does not zero-anchor', async ({ page }) => {
     await page.goto('/data/weight/');
     await page.getByRole('button', { name: 'Year', exact: true }).click();
@@ -156,8 +178,22 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
   // Week's does — not just Week. These assert on the actual outgoing request
   // range, since a rendered-but-unconverged trend line would still pass a mere
   // visibility check.
+  // The premise the two tests below depend on, asserted rather than assumed.
+  // If the page's default zoom ever stops being Week, clicking Week becomes a
+  // real transition again and selectAnotherZoomFirst becomes unnecessary — and
+  // if the default moves to Day, it becomes actively wrong. Either way this
+  // fails first and says so, instead of the other two going quietly flaky.
+  test('the chart opens on Week, so selecting Week is not a state change', async ({ page }) => {
+    await page.goto('/data/weight/');
+    await expect(page.getByRole('button', { name: 'Week', exact: true }))
+      .toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'Day', exact: true }))
+      .toHaveAttribute('aria-pressed', 'false');
+  });
+
   test('weight Week-zoom bucketed fetch widens to >= 14 days', async ({ page }) => {
     await page.goto('/data/weight/');
+    await selectAnotherZoomFirst(page);
     // The trend projection also issues an /api/data/weight?...bucket=day
     // request, with a fixed 60-day lookback that satisfies ">= 14" on its own.
     // Matching the bare URL pattern would let this test pass on that request
@@ -196,6 +232,7 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
 
   test('heart_rate Week-zoom bucketed fetch is not widened', async ({ page }) => {
     await page.goto('/data/heart_rate/');
+    await selectAnotherZoomFirst(page);
     const [req] = await Promise.all([
       page.waitForRequest(r => /\/api\/data\/heart_rate\?.*bucket=day/.test(r.url())),
       page.getByRole('button', { name: 'Week', exact: true }).click(),

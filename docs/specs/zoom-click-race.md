@@ -74,9 +74,16 @@ the setup deterministic rather than another race. The alternative — registerin
 these from "selecting Week widens the fetch" into "the page happens to load on a widened fetch",
 and the widening bug they were written for lives in the zoom handler.
 
+Waiting for the intermediate zoom needs a signal that it landed, and the zoom control has none:
+selection is expressed only as `bg-border text-accent` on the active button. Pinning a Tailwind
+class pair is the brittleness a code review flagged on the previous branch, so the control gets
+`aria-pressed` instead. That is the correct markup for a toggle group regardless — today the
+selected zoom is conveyed by colour alone, which assistive technology does not announce — and it
+gives the test a semantic handle that survives restyling.
+
 Not changed: the `PROJECTION_LOOKBACK_DAYS` structural exclusion in the weight test, the assertion
-bounds, or anything in `DataTypeClient.tsx`. The application behaviour is correct; only the tests
-are wrong about what they exercise.
+bounds, or any zoom/fetch behaviour in `DataTypeClient.tsx`. The application logic is correct;
+only the tests are wrong about what they exercise.
 
 **Correct the logout test to say what it verifies.** Keep it — the handler logic it covers is
 real, and it is the regression guard if the cookie path ever widens — but rename it and document
@@ -103,6 +110,8 @@ nothing here.
 - [ ] Leave the existing matchers, the `PROJECTION_LOOKBACK_DAYS` exclusion, and the assertion
       bounds untouched — the tests' claims are right, only their setup is.
 - [ ] Record in the tests why the intermediate zoom is there, so nobody removes it as redundant.
+- [ ] Add `aria-pressed` to the zoom buttons in `DataTypeClient.tsx`, so the wait has a semantic
+      signal rather than a Tailwind class pair, and the control announces its state.
 - [ ] Mark completed
 
 ### Task 2: Prove the fix bites
