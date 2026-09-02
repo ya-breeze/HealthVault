@@ -281,6 +281,10 @@ const en = {
   'vitals.trend7d': '7d trend',
   'vitals.moveUp': 'Move {metric} up',
   'vitals.moveDown': 'Move {metric} down',
+  // Shown on a Vital Card only when its value's source bucket isn't today's
+  // (check-the-health-data spec) — e.g. today has no records yet, so the
+  // card is showing yesterday's full-day total.
+  'vitals.asOf': 'As of {date}',
 
   // The `loggingGap.` prefix is kept for the whole card, including the keys
   // below that have nothing to do with the gap. Renaming it is deferred to

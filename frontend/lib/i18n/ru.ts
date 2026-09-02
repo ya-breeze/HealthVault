@@ -187,6 +187,7 @@ const ru: Dictionary = {
   'vitals.trend7d': 'тренд за 7 дней',
   'vitals.moveUp': 'Переместить «{metric}» вверх',
   'vitals.moveDown': 'Переместить «{metric}» вниз',
+  'vitals.asOf': 'На {date}',
 
   'loggingGap.title': 'Питание',
   'loggingGap.loading': 'Загружаем данные о питании…',

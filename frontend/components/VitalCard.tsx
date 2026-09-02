@@ -20,6 +20,15 @@ function sparkPath(data: number[], w: number, h: number, pad: number) {
 
 const TREND_ARROW: Record<VitalResult['trend'], string> = { up: '↑', down: '↓', flat: '→' };
 
+// Calendar-date equality, not timestamp equality: `asOf` is a bucket_start
+// (always midnight UTC — see bucketExpr in storage_impl.go), so comparing
+// getTime() against "now" would read as "not today" for the rest of every
+// day everywhere east of UTC. Comparing the local calendar date each instant
+// converts to is what "today" means to the person reading the card.
+function isToday(iso: string): boolean {
+  return new Date(iso).toDateString() === new Date().toDateString();
+}
+
 interface VitalCardProps {
   type: DataType;
   label: string;
@@ -124,6 +133,11 @@ export default function VitalCard({
           <div className="font-[family-name:var(--font-data)] text-[11px] font-bold mt-0.5">
             {TREND_ARROW[result.trend]} {t('vitals.trend7d')}
           </div>
+          {result.asOf && !isToday(result.asOf) && (
+            <p className="text-[11px] text-text-muted mt-0.5" data-testid={`vital-card-${type}-as-of`}>
+              {interpolate(t('vitals.asOf'), { date: new Date(result.asOf).toLocaleDateString() })}
+            </p>
+          )}
           {spark && (
             <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full h-[30px] mt-2 block">
               <path

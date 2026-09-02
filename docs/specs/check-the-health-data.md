@@ -81,11 +81,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 5: Label a Vital Card value that is not today's
-- [ ] Add an optional `asOf` field (the source bucket's `bucket_start`) to `VitalResult` in `frontend/lib/vitals.ts`, and set it in every `extractVital` branch from the last row's `bucket_start`.
-- [ ] In `frontend/components/VitalCard.tsx`, render a short "as of <date>" line under the value when `asOf` is not today, and render nothing extra when it is. Compare calendar dates, not timestamps.
-- [ ] Add the label keys to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`.
-- [ ] Extend `frontend/lib/vitals.test.ts` with cases proving `asOf` is set from the last bucket for a cumulative type and for a point type, and that it is absent when the row carries no `bucket_start`.
-- [ ] Mark completed
+- [x] Add an optional `asOf` field (the source bucket's `bucket_start`) to `VitalResult` in `frontend/lib/vitals.ts`, and set it in every `extractVital` branch from the last row's `bucket_start`.
+- [x] In `frontend/components/VitalCard.tsx`, render a short "as of <date>" line under the value when `asOf` is not today, and render nothing extra when it is. Compare calendar dates, not timestamps.
+- [x] Add the label keys to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`.
+- [x] Extend `frontend/lib/vitals.test.ts` with cases proving `asOf` is set from the last bucket for a cumulative type and for a point type, and that it is absent when the row carries no `bucket_start`.
+- [x] Mark completed
 
 ### Task 6: ADR, terminology, and end-to-end coverage
 - [ ] Add `docs/adr/ADR-012-steps-collapse-overlapping-intervals-on-read.md` with Status: Proposed. Record the decision to collapse on read rather than deduplicate on write, the watermark rule and its refusal to apportion counts, the choice of a dedicated `QueryAggregateSteps` over special-casing the generic aggregate, and that UTC day bucketing is left unchanged and measured rather than fixed here.
