@@ -15,4 +15,29 @@
     <string name="setup_error_access_challenge">This server needs an Access bypass on /api/*.</string>
     <string name="setup_error_unreachable">Couldn\'t reach that server. Check the URL and your connection.</string>
     <string name="setup_error_server">Server error (%1$d). Try again.</string>
+
+    <!-- Today screen -->
+    <string name="today_sign_out">Sign out</string>
+    <string name="today_loading">Loading…</string>
+    <string name="today_stale_snapshot">Showing the last update — couldn\'t refresh just now.</string>
+    <string name="today_meal_count">%1$d meals logged</string>
+    <string name="today_log_food">Log food</string>
+    <string name="today_calories_of_target">%1$d / %2$d kcal</string>
+    <string name="today_calories_no_target">%1$d kcal consumed</string>
+    <string name="today_macro_protein">Protein</string>
+    <string name="today_macro_carbs">Carbs</string>
+    <string name="today_macro_fat">Fat</string>
+    <string name="today_no_meals_logged">No meals logged yet</string>
+    <string name="today_last_logged_just_now">Just now</string>
+    <string name="today_last_logged_minutes_ago">%1$d min ago</string>
+    <string name="today_last_logged_hours_ago">%1$d h ago</string>
+    <string name="today_last_logged_days_ago">%1$d d ago</string>
+
+    <!-- Nutrition target unavailability reasons — mirror the four reason
+         codes computeUserNutritionTarget can send (see TodaySummaryTarget). -->
+    <string name="target_reason_missing_profile">Add your profile to see a daily target.</string>
+    <string name="target_reason_missing_measurements">Add your height and weight to see a daily target.</string>
+    <string name="target_reason_missing_goal_weight">Set a goal weight to see a daily target.</string>
+    <string name="target_reason_insufficient_activity_data">Not enough activity data yet for a daily target.</string>
+    <string name="target_reason_unknown">No daily target available right now.</string>
 </resources>

@@ -78,12 +78,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 4: Native today screen
 
-- [ ] Add `ui/TodayScreen.kt` rendering consumed calories against target calories, the four macros, meal count, and a relative last-logged time
-- [ ] Render the target's unavailability reason as its own message when `target.available` is false, and show consumed values alone rather than a fabricated denominator
-- [ ] Add pull-to-refresh and render the cached snapshot with a staleness marker whenever the refresh fails
-- [ ] Add a **Log food** action opening `<server>/food/upload/` in a Chrome Custom Tab, building the URL from the stored server URL only
-- [ ] Add `values/strings.xml` and `values-ru/strings.xml`, and apply the per-app locale from the response's `display_language` when it names a language in `shippedUILanguages`, falling back to the device locale
-- [ ] Mark completed
+- [x] Add `ui/TodayScreen.kt` rendering consumed calories against target calories, the four macros, meal count, and a relative last-logged time
+- [x] Render the target's unavailability reason as its own message when `target.available` is false, and show consumed values alone rather than a fabricated denominator
+- [x] Add pull-to-refresh and render the cached snapshot with a staleness marker whenever the refresh fails
+- [x] Add a **Log food** action opening `<server>/food/upload/` in a Chrome Custom Tab, building the URL from the stored server URL only
+- [x] Add `values/strings.xml` and `values-ru/strings.xml`, and apply the per-app locale from the response's `display_language` when it names a language in `shippedUILanguages`, falling back to the device locale
+- [x] Mark completed
 
 ### Task 5: Home-screen widget
 

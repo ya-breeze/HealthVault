@@ -22,6 +22,22 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Persists AppCompatDelegate.setApplicationLocales across process
+          restarts without requiring MainActivity to extend AppCompatActivity
+          — a widget update runs in a freshly started process almost every
+          time, so the per-app Display Language override (ui/DisplayLanguage.kt)
+          must survive that restart on its own.
+        -->
+        <service
+            android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
+            android:enabled="false"
+            android:exported="false">
+            <meta-data
+                android:name="autoStoreLocales"
+                android:value="true" />
+        </service>
+
         <receiver
             android:name=".widget.SummaryWidgetReceiver"
             android:exported="false"

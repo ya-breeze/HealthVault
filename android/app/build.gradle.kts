@@ -72,6 +72,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.browser)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.appcompat) // AppCompatDelegate.setApplicationLocales: per-app language back-ported below API 33.
 
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
