@@ -65,12 +65,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: Step diagnostics endpoint
-- [ ] Add `backend/pkg/server/steps_diagnostics.go` with `StepsDiagnosticsHandler(storage database.Storage) http.HandlerFunc`, following the auth and user-resolution pattern of `DataHandler`: reject a missing claims context with 401, resolve the target user with `resolveUser`, and parse the range with `parseTimeRange`.
-- [ ] Return a JSON array, one object per UTC day in the range that has at least one record: `bucket_start`, `raw_count`, `raw_sum`, `collapsed_sum`, `dropped_records`, `payload_count` (distinct `source_payload_id`), and `local_day_sum` (the collapsed total for the same calendar date resolved in the caller's stored timezone).
-- [ ] Resolve the timezone with `database.ResolveTimezone` over the caller's `UserSettings` blob, which already falls back to UTC on a missing or invalid zone. When the resolved zone is UTC, `local_day_sum` equals `collapsed_sum`; state that in the handler's doc comment so a reader does not mistake the equality for a bug.
-- [ ] Register the route in `backend/pkg/server/server.go` as `api.HandleFunc("/data/steps/diagnostics", StepsDiagnosticsHandler(storage)).Methods("GET")`, above the `/data/{type}` registrations.
-- [ ] Add `backend/pkg/server/steps_diagnostics_test.go` covering: a day with overlapping records reports `raw_sum` above `collapsed_sum` and a nonzero `dropped_records`; a day whose records came from two payloads reports `payload_count` 2; a non-UTC stored timezone shifts `local_day_sum` away from `collapsed_sum`; an unauthenticated request returns 401; and another family member's data is never returned.
-- [ ] Mark completed
+- [x] Add `backend/pkg/server/steps_diagnostics.go` with `StepsDiagnosticsHandler(storage database.Storage) http.HandlerFunc`, following the auth and user-resolution pattern of `DataHandler`: reject a missing claims context with 401, resolve the target user with `resolveUser`, and parse the range with `parseTimeRange`.
+- [x] Return a JSON array, one object per UTC day in the range that has at least one record: `bucket_start`, `raw_count`, `raw_sum`, `collapsed_sum`, `dropped_records`, `payload_count` (distinct `source_payload_id`), and `local_day_sum` (the collapsed total for the same calendar date resolved in the caller's stored timezone).
+- [x] Resolve the timezone with `database.ResolveTimezone` over the caller's `UserSettings` blob, which already falls back to UTC on a missing or invalid zone. When the resolved zone is UTC, `local_day_sum` equals `collapsed_sum`; state that in the handler's doc comment so a reader does not mistake the equality for a bug.
+- [x] Register the route in `backend/pkg/server/server.go` as `api.HandleFunc("/data/steps/diagnostics", StepsDiagnosticsHandler(storage)).Methods("GET")`, above the `/data/{type}` registrations.
+- [x] Add `backend/pkg/server/steps_diagnostics_test.go` covering: a day with overlapping records reports `raw_sum` above `collapsed_sum` and a nonzero `dropped_records`; a day whose records came from two payloads reports `payload_count` 2; a non-UTC stored timezone shifts `local_day_sum` away from `collapsed_sum`; an unauthenticated request returns 401; and another family member's data is never returned.
+- [x] Mark completed
 
 ### Task 4: Show the diagnostic on the steps page
 - [ ] Add a `stepsDiagnostics(from, to)` call to `frontend/lib/api.ts` alongside the existing `data` call.
