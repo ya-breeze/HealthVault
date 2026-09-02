@@ -140,12 +140,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: The sustainability computation
-- [ ] Create `frontend/lib/sustainability.ts` with `MAX_SUSTAINABLE_LOSS_PCT_PER_WEEK`, `BMR_SHORTFALL_MARGIN`, the `SustainabilityWarning` union, `SustainabilityInputs`, and `evaluateSustainability`, framework-free like `loggingGap.ts`
-- [ ] Implement `loss_too_fast`: require a trend with a non-null `se`, a finite positive `weightAtWindowEnd` and a negative slope; fire on the conservative `slope + se` bound clearing the band, and report the point-estimate percentage
-- [ ] Implement `intake_below_bmr`: require `gap.kind === 'on_track'`, finite `meanLoggedIntake`, finite `bmr > 0`, and a shortfall past `BMR_SHORTFALL_MARGIN`
-- [ ] Return the warnings ordered `loss_too_fast` first, and document why that order and why the intake check alone is gated
-- [ ] Add `frontend/lib/sustainability.test.ts` covering: the worked example (rate silent at 0.65%/week, intake firing at 1617 against a 1799 BMR under `on_track`); the same intake numbers with `gap.kind === 'gap'` returning no intake warning; the same with `not_enough_data`; `se === null` suppressing the rate check; a positive slope suppressing it; a slope inside the band suppressing it; a slope past the band whose `slope + se` bound is not suppressing it; a shortfall inside the margin suppressing the intake check; both warnings firing together in order
-- [ ] Mark completed
+- [x] Create `frontend/lib/sustainability.ts` with `MAX_SUSTAINABLE_LOSS_PCT_PER_WEEK`, `BMR_SHORTFALL_MARGIN`, the `SustainabilityWarning` union, `SustainabilityInputs`, and `evaluateSustainability`, framework-free like `loggingGap.ts`
+- [x] Implement `loss_too_fast`: require a trend with a non-null `se`, a finite positive `weightAtWindowEnd` and a negative slope; fire on the conservative `slope + se` bound clearing the band, and report the point-estimate percentage
+- [x] Implement `intake_below_bmr`: require `gap.kind === 'on_track'`, finite `meanLoggedIntake`, finite `bmr > 0`, and a shortfall past `BMR_SHORTFALL_MARGIN`
+- [x] Return the warnings ordered `loss_too_fast` first, and document why that order and why the intake check alone is gated
+- [x] Add `frontend/lib/sustainability.test.ts` covering: the worked example (rate silent at 0.65%/week, intake firing at 1617 against a 1799 BMR under `on_track`); the same intake numbers with `gap.kind === 'gap'` returning no intake warning; the same with `not_enough_data`; `se === null` suppressing the rate check; a positive slope suppressing it; a slope inside the band suppressing it; a slope past the band whose `slope + se` bound is not suppressing it; a shortfall inside the margin suppressing the intake check; both warnings firing together in order
+- [x] Mark completed
 
 ### Task 4: Wire the card and render the middle row
 - [ ] Add `bmr: number` to `TodaySummaryTarget`'s available branch and to `NutritionTarget` in `frontend/lib/api.ts`
