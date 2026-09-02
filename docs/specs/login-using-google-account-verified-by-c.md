@@ -85,12 +85,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 4: Validate against a stack with the feature off
 
-- [ ] Add `e2e/tests/cf-access.spec.ts` with a header comment stating that the e2e target is plain HTTP on the LAN and never passes through Cloudflare, so no test here can present a real Access Assertion, and that the verification coverage lives in `backend/pkg/cfaccess`
-- [ ] Assert `POST /api/auth/cf-access` answers 404 on the deployed stack and sets no cookies
-- [ ] Assert the login page still renders the username and password fields and does not hang on the mount-time exchange attempt
-- [ ] Assert password login still reaches the dashboard, and that logging out lands on `/login` and stays there rather than bouncing back to `/`
-- [ ] Run `make lint`, `make test` and `make test-e2e` against the deployed stack and fix what they report
-- [ ] Mark completed
+- [x] Add `e2e/tests/cf-access.spec.ts` with a header comment stating that the e2e target is plain HTTP on the LAN and never passes through Cloudflare, so no test here can present a real Access Assertion, and that the verification coverage lives in `backend/pkg/cfaccess`
+- [x] Assert `POST /api/auth/cf-access` answers 404 on the deployed stack and sets no cookies
+- [x] Assert the login page still renders the username and password fields and does not hang on the mount-time exchange attempt
+- [x] Assert password login still reaches the dashboard, and that logging out lands on `/login` and stays there rather than bouncing back to `/`
+- [x] Run `make lint`, `make test` and `make test-e2e` against the deployed stack and fix what they report
+- [x] Mark completed
 
 ### Task 5: Record the decision
 
