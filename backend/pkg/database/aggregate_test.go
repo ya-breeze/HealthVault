@@ -29,7 +29,7 @@ func TestQueryAggregate_CumulativeSumsPerDayBucket(t *testing.T) {
 	}
 
 	tr := database.TimeRange{From: day1.Add(-time.Hour), To: day2.Add(time.Hour)}
-	results, err := s.QueryAggregate("steps", "start_time", "count", database.AggFamilyCumulative, database.BucketDay, userID, tr)
+	results, err := s.QueryAggregate("steps", "start_time", "count", database.AggFamilyCumulative, database.BucketDay, time.UTC, userID, tr)
 	if err != nil {
 		t.Fatalf("QueryAggregate: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestQueryAggregate_PointAvgMinMaxPerBucket(t *testing.T) {
 	}
 
 	tr := database.TimeRange{From: day1.Add(-time.Hour), To: day1.Add(24 * time.Hour)}
-	results, err := s.QueryAggregate("heart_rates", "time", "bpm", database.AggFamilyPoint, database.BucketDay, userID, tr)
+	results, err := s.QueryAggregate("heart_rates", "time", "bpm", database.AggFamilyPoint, database.BucketDay, time.UTC, userID, tr)
 	if err != nil {
 		t.Fatalf("QueryAggregate: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestQueryAggregate_MonthBucketGroupsAcrossDays(t *testing.T) {
 		From: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		To:   time.Date(2026, time.April, 30, 0, 0, 0, 0, time.UTC),
 	}
-	results, err := s.QueryAggregate("steps", "start_time", "count", database.AggFamilyCumulative, database.BucketMonth, userID, tr)
+	results, err := s.QueryAggregate("steps", "start_time", "count", database.AggFamilyCumulative, database.BucketMonth, time.UTC, userID, tr)
 	if err != nil {
 		t.Fatalf("QueryAggregate: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestQueryAggregateBloodPressure_DualColumns(t *testing.T) {
 	}
 
 	tr := database.TimeRange{From: day1.Add(-time.Hour), To: day1.Add(3 * time.Hour)}
-	results, err := s.QueryAggregateBloodPressure(database.BucketDay, userID, tr)
+	results, err := s.QueryAggregateBloodPressure(database.BucketDay, time.UTC, userID, tr)
 	if err != nil {
 		t.Fatalf("QueryAggregateBloodPressure: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestQueryAggregateNutrition_SevenColumnsIgnoreNulls(t *testing.T) {
 	}
 
 	tr := database.TimeRange{From: day1.Add(-time.Hour), To: day1.Add(3 * time.Hour)}
-	results, err := s.QueryAggregateNutrition(database.BucketDay, userID, tr)
+	results, err := s.QueryAggregateNutrition(database.BucketDay, time.UTC, userID, tr)
 	if err != nil {
 		t.Fatalf("QueryAggregateNutrition: %v", err)
 	}

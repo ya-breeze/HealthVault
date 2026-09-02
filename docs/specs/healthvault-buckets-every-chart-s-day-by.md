@@ -83,47 +83,47 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 2: Pre-aggregate at 15-minute slots in SQL
 
-- [ ] In `backend/pkg/database/storage_impl.go`, replace `bucketExpr` with `slotExpr(timeCol string) string` returning `CAST(strftime('%s', <timeCol>) AS INTEGER) / 900`, and a `slotSeconds = 900` constant.
-- [ ] Document on `slotSeconds` why 15 minutes is the right width: every modern IANA offset is a whole number of 15-minute steps (+05:45, +08:45, +12:45 are the finest) and every DST transition lands on a slot edge, so no slot ever straddles a local-day or local-month boundary. Note the pre-1970 truncation limit.
-- [ ] Change `QueryAggregate` to select `slot`, `COUNT(*) AS count` and `SUM(<valueCol>) AS sum` for the cumulative family, and `slot`, `COUNT(*) AS count`, `COUNT(<valueCol>) AS value_count`, `SUM(<valueCol>) AS sum`, `MIN(<valueCol>) AS min`, `MAX(<valueCol>) AS max` for the point family, grouped and ordered by the slot expression.
-- [ ] Change `QueryAggregateBloodPressure` to select per-slot `COUNT(*)`, plus `COUNT`/`SUM`/`MIN`/`MAX` for `systolic` and `diastolic`.
-- [ ] Change `QueryAggregateNutrition` to select per-slot `COUNT(*)` plus the same seven `SUM(...)` columns it selects today.
-- [ ] Leave the `WHERE user_id = ? AND <timeCol> >= ? AND <timeCol> <= ?` clause and the existing indexes untouched.
-- [ ] Mark completed
+- [x] In `backend/pkg/database/storage_impl.go`, replace `bucketExpr` with `slotExpr(timeCol string) string` returning `CAST(strftime('%s', <timeCol>) AS INTEGER) / 900`, and a `slotSeconds = 900` constant.
+- [x] Document on `slotSeconds` why 15 minutes is the right width: every modern IANA offset is a whole number of 15-minute steps (+05:45, +08:45, +12:45 are the finest) and every DST transition lands on a slot edge, so no slot ever straddles a local-day or local-month boundary. Note the pre-1970 truncation limit.
+- [x] Change `QueryAggregate` to select `slot`, `COUNT(*) AS count` and `SUM(<valueCol>) AS sum` for the cumulative family, and `slot`, `COUNT(*) AS count`, `COUNT(<valueCol>) AS value_count`, `SUM(<valueCol>) AS sum`, `MIN(<valueCol>) AS min`, `MAX(<valueCol>) AS max` for the point family, grouped and ordered by the slot expression.
+- [x] Change `QueryAggregateBloodPressure` to select per-slot `COUNT(*)`, plus `COUNT`/`SUM`/`MIN`/`MAX` for `systolic` and `diastolic`.
+- [x] Change `QueryAggregateNutrition` to select per-slot `COUNT(*)` plus the same seven `SUM(...)` columns it selects today.
+- [x] Leave the `WHERE user_id = ? AND <timeCol> >= ? AND <timeCol> <= ?` clause and the existing indexes untouched.
+- [x] Mark completed
 
 ### Task 3: Regroup slots into local buckets in Go
 
-- [ ] Add `backend/pkg/database/bucket_regroup.go` with `LocalBucketKey(t time.Time, bucket Bucket, loc *time.Location) string`: convert with `t.In(loc)`, then format the local calendar date as `YYYY-MM-DDT00:00:00Z` for `BucketDay` and the first of the local month as `YYYY-MM-01T00:00:00Z` for `BucketMonth`.
-- [ ] Document on `LocalBucketKey` that `bucket_start` is a calendar-date label serialized at UTC midnight, not the instant local midnight occurred, and why that representation was chosen over a real local-midnight offset (see the spec's `How`).
-- [ ] Add the fold that walks slot rows in ascending slot order, converts each slot index to its start instant (`time.Unix(slot*slotSeconds, 0).UTC()`), resolves its bucket key, and accumulates sums, counts, minima and maxima per bucket. Emit `[]map[string]any` in ascending bucket order.
-- [ ] Make the fold generic enough to serve all three query methods — a per-output-column description of which slot column it folds and how — rather than writing the accumulation three times.
-- [ ] Compute the point family's `avg` as total sum over total non-null count, and drop the `value_count` helper column from the emitted maps, so the response keys stay exactly `bucket_start`, `count`, `avg`, `min`, `max`.
-- [ ] Preserve nutrition's NULL semantics: track per output column whether any slot contributed a non-null value, and emit `nil` for a column where none did.
-- [ ] Normalize the raw driver values the same way `derefAny`/`toFloat64` already do, since GORM scans computed columns through `*interface{}`.
-- [ ] Mark completed
+- [x] Add `backend/pkg/database/bucket_regroup.go` with `LocalBucketKey(t time.Time, bucket Bucket, loc *time.Location) string`: convert with `t.In(loc)`, then format the local calendar date as `YYYY-MM-DDT00:00:00Z` for `BucketDay` and the first of the local month as `YYYY-MM-01T00:00:00Z` for `BucketMonth`.
+- [x] Document on `LocalBucketKey` that `bucket_start` is a calendar-date label serialized at UTC midnight, not the instant local midnight occurred, and why that representation was chosen over a real local-midnight offset (see the spec's `How`).
+- [x] Add the fold that walks slot rows in ascending slot order, converts each slot index to its start instant (`time.Unix(slot*slotSeconds, 0).UTC()`), resolves its bucket key, and accumulates sums, counts, minima and maxima per bucket. Emit `[]map[string]any` in ascending bucket order.
+- [x] Make the fold generic enough to serve all three query methods — a per-output-column description of which slot column it folds and how — rather than writing the accumulation three times.
+- [x] Compute the point family's `avg` as total sum over total non-null count, and drop the `value_count` helper column from the emitted maps, so the response keys stay exactly `bucket_start`, `count`, `avg`, `min`, `max`.
+- [x] Preserve nutrition's NULL semantics: track per output column whether any slot contributed a non-null value, and emit `nil` for a column where none did.
+- [x] Normalize the raw driver values the same way `derefAny`/`toFloat64` already do, since GORM scans computed columns through `*interface{}`.
+- [x] Mark completed
 
 ### Task 4: Thread the location through the storage interface
 
-- [ ] Add a `loc *time.Location` parameter to `QueryAggregate`, `QueryAggregateBloodPressure` and `QueryAggregateNutrition` in `backend/pkg/database/storage.go`, and update their doc comments to say the bucket resolves in `loc`.
-- [ ] Update the `Bucket` type's doc comment: day and month buckets are local calendar days and months, and `bucket_start` labels a local calendar date.
-- [ ] Update the implementations in `storage_impl.go` and the `mockStorage` in `backend/pkg/server/delete_handler_test.go`.
-- [ ] Treat a nil `loc` as `time.UTC` rather than panicking, so an unconverted caller degrades to today's behaviour.
-- [ ] Mark completed
+- [x] Add a `loc *time.Location` parameter to `QueryAggregate`, `QueryAggregateBloodPressure` and `QueryAggregateNutrition` in `backend/pkg/database/storage.go`, and update their doc comments to say the bucket resolves in `loc`.
+- [x] Update the `Bucket` type's doc comment: day and month buckets are local calendar days and months, and `bucket_start` labels a local calendar date.
+- [x] Update the implementations in `storage_impl.go` and the `mockStorage` in `backend/pkg/server/delete_handler_test.go`.
+- [x] Treat a nil `loc` as `time.UTC` rather than panicking, so an unconverted caller degrades to today's behaviour.
+- [x] Mark completed
 
 ### Task 5: Resolve the viewer's zone in the data handler
 
-- [ ] Add a helper in `backend/pkg/server/api.go` that resolves a user's `*time.Location` from `readUserSettingsJSON` plus `database.ResolveTimezone`, with a comment stating that the zone comes from the **target** user (the one `resolveUser` returned), not the caller, because a family member's chart is their data.
-- [ ] Add `loc` to `queryBucketed` and pass it to the three storage calls. Leave `errInvalidBucket` and the `food_meal` rejection unchanged.
-- [ ] Call the helper from `DataHandler` on the bucketed branch only, and return a 500 on a genuine settings read error while treating a missing settings row as UTC.
-- [ ] Mark completed
+- [x] Add a helper in `backend/pkg/server/api.go` that resolves a user's `*time.Location` from `readUserSettingsJSON` plus `database.ResolveTimezone`, with a comment stating that the zone comes from the **target** user (the one `resolveUser` returned), not the caller, because a family member's chart is their data.
+- [x] Add `loc` to `queryBucketed` and pass it to the three storage calls. Leave `errInvalidBucket` and the `food_meal` rejection unchanged.
+- [x] Call the helper from `DataHandler` on the bucketed branch only, and return a 500 on a genuine settings read error while treating a missing settings row as UTC.
+- [x] Mark completed
 
 ### Task 6: Move the Activity Level window to local days
 
-- [ ] Add a `loc *time.Location` parameter to `fetchDailySteps` and `resolveActivityTier` in `backend/pkg/server/nutrition_target.go`, and thread it from `computeUserNutritionTarget` and `computeNutritionTargetForProfile`.
-- [ ] Have `computeUserNutritionTarget` read the zone itself, and have `SummaryTodayHandler` pass the `loc` it already resolved so one settings read still serves the whole response.
-- [ ] In `fetchDailySteps`, derive the user's local calendar today from `now.In(loc)`, express it as that date at UTC midnight, and set the range's lower bound to the UTC instant of the first local midnight in the 28-day window. Update the doc comment.
-- [ ] Update `dailySteps`' comment in `backend/pkg/server/activity_level.go`: `Date` is now a local calendar day carried as a UTC-midnight label, which is exactly why `trailingStepsAverage`'s date arithmetic keeps working unchanged across DST.
-- [ ] Mark completed
+- [x] Add a `loc *time.Location` parameter to `fetchDailySteps` and `resolveActivityTier` in `backend/pkg/server/nutrition_target.go`, and thread it from `computeUserNutritionTarget` and `computeNutritionTargetForProfile`.
+- [x] Have `computeUserNutritionTarget` read the zone itself, and have `SummaryTodayHandler` pass the `loc` it already resolved so one settings read still serves the whole response.
+- [x] In `fetchDailySteps`, derive the user's local calendar today from `now.In(loc)`, express it as that date at UTC midnight, and set the range's lower bound to the UTC instant of the first local midnight in the 28-day window. Update the doc comment.
+- [x] Update `dailySteps`' comment in `backend/pkg/server/activity_level.go`: `Date` is now a local calendar day carried as a UTC-midnight label, which is exactly why `trailingStepsAverage`'s date arithmetic keeps working unchanged across DST.
+- [x] Mark completed
 
 ### Task 7: Label and window the frontend against local dates
 
