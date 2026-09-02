@@ -1,7 +1,7 @@
 # ADR-012: Cloudflare-Verified Identity as a Second, Optional Sign-In
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 

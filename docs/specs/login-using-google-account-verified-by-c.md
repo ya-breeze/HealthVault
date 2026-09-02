@@ -98,5 +98,5 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Record the Android finding in that ADR: the Health Connect exporter posts to the unauthenticated `POST /webhook/{username}` and cannot complete an interactive Google login, so it can never carry an Access Assertion and must keep its current route; exposing that path publicly would need an Access service token or a bypass policy, which this change does not do
 - [x] Add glossary entries for **Access Assertion** and **Access Identity Map** to `CONTEXT.md`, each with its `_Avoid_` line, following the existing entries' shape
 - [x] Document the three new environment variables and the feature-off default in `frontend/README.md`'s configuration notes or the equivalent backend notes, whichever already lists `HCW_MCP_TOKEN`
-- [ ] Flip ADR-012 from `Proposed` to `Accepted` as the last commit on the branch
-- [ ] Mark completed
+- [x] Flip ADR-012 from `Proposed` to `Accepted` as the last commit on the branch
+- [x] Mark completed
