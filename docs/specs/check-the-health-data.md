@@ -48,11 +48,11 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Collapse overlapping step intervals
-- [ ] Add `backend/pkg/database/steps_overlap.go` with a `stepInterval` struct (`StartTime`, `EndTime`, `Count`) and an exported `CollapseOverlappingSteps` that applies the watermark rule from `How`: input sorted by `StartTime` then `EndTime`, drop any record whose `EndTime` is at or before the running watermark, keep every other record whole and advance the watermark to its `EndTime`.
-- [ ] Return both the kept records and the number dropped, so the diagnostic in Task 3 can report the drop count without repeating the walk.
-- [ ] Document in the function's doc comment that a partial overlap keeps the whole record, and why apportioning a count is not an option.
-- [ ] Add `backend/pkg/database/steps_overlap_test.go` covering: no overlap (nothing dropped); exact duplicate intervals; one record fully containing several smaller ones; a chain of partial overlaps; two records sharing a `StartTime` with different `EndTime`; adjacent records that touch but do not overlap (nothing dropped); a zero-length interval; and an empty input.
-- [ ] Mark completed
+- [x] Add `backend/pkg/database/steps_overlap.go` with a `stepInterval` struct (`StartTime`, `EndTime`, `Count`) and an exported `CollapseOverlappingSteps` that applies the watermark rule from `How`: input sorted by `StartTime` then `EndTime`, drop any record whose `EndTime` is at or before the running watermark, keep every other record whole and advance the watermark to its `EndTime`.
+- [x] Return both the kept records and the number dropped, so the diagnostic in Task 3 can report the drop count without repeating the walk.
+- [x] Document in the function's doc comment that a partial overlap keeps the whole record, and why apportioning a count is not an option.
+- [x] Add `backend/pkg/database/steps_overlap_test.go` covering: no overlap (nothing dropped); exact duplicate intervals; one record fully containing several smaller ones; a chain of partial overlaps; two records sharing a `StartTime` with different `EndTime`; adjacent records that touch but do not overlap (nothing dropped); a zero-length interval; and an empty input.
+- [x] Mark completed
 
 ### Task 2: Route every step read through the collapse
 - [ ] Add `QueryAggregateSteps(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)` to the `Storage` interface in `backend/pkg/database/storage.go`, next to `QueryAggregateBloodPressure` and `QueryAggregateNutrition`.
