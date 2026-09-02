@@ -117,6 +117,13 @@ Gating a user-facing assertion on a corroborating signal is a cross-cutting rule
 - `make test`
 - `make test-e2e`
 
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
+
 ### Task 1: Return BMR from the backend
 - [ ] Add a `bmr` return value to `computeNutritionTarget` in `backend/pkg/server/nutrition_target.go`, unrounded like the other four, and update its doc comment
 - [ ] Add `BMR int \`json:"bmr"\`` to `nutritionTargetValues`, set from `roundToInt(bmr)` in `computeNutritionTargetForProfile`
