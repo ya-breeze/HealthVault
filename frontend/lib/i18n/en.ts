@@ -336,6 +336,9 @@ const en = {
   'loggingGap.outlierNote': 'One or more weigh-ins were excluded as outliers.',
   'loggingGap.caveatPhoto': 'Logged intake is estimated from photo recognition and may carry its own bias.',
   'loggingGap.caveatActivity': "This doesn't separately account for error in your activity multiplier — a misestimate of activity can look like unlogged (or over-logged) intake.",
+  'loggingGap.lossTooFast': 'You are losing {percent}% of body weight a week, faster than the sustainable 1%.',
+  'loggingGap.intakeBelowBmr': 'You average {intake} kcal a day, below your BMR of {bmr} kcal.',
+  'loggingGap.sustainabilityDetail': "Too steep a deficit is hard to hold, and a relapse is the usual outcome. These numbers are estimates from the same trend and the same log the rest of this card uses, and this isn't medical advice.",
 
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing

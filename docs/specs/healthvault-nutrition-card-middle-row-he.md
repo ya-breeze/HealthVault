@@ -156,11 +156,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 5: Copy in both languages
-- [ ] Add `loggingGap.lossTooFast`, `loggingGap.intakeBelowBmr` and `loggingGap.sustainabilityDetail` to `frontend/lib/i18n/ru.ts` and `frontend/lib/i18n/en.ts`, keeping the `loggingGap.` prefix
-- [ ] Keep both lines to stated measurements with no calorie prescription, and put the adherence framing plus the "not medical advice" note in the detail key only
-- [ ] Render `{percent}` to one decimal place and round `{intake}` and `{bmr}` to whole kcal at the call site, matching how the today row rounds
-- [ ] Confirm the two dictionaries have identical key sets
-- [ ] Mark completed
+- [x] Add `loggingGap.lossTooFast`, `loggingGap.intakeBelowBmr` and `loggingGap.sustainabilityDetail` to `frontend/lib/i18n/ru.ts` and `frontend/lib/i18n/en.ts`, keeping the `loggingGap.` prefix
+- [x] Keep both lines to stated measurements with no calorie prescription, and put the adherence framing plus the "not medical advice" note in the detail key only
+- [x] Render `{percent}` to one decimal place and round `{intake}` and `{bmr}` to whole kcal at the call site, matching how the today row rounds
+- [x] Confirm the two dictionaries have identical key sets
+- [x] Mark completed
 
 ### Task 6: End-to-end coverage
 - [ ] Add a `bmr` field to `mockLoggingGapApis`'s target fixture in `e2e/tests/logging-gap.spec.ts`, defaulting low enough that every existing fixture keeps its current assertions unchanged
