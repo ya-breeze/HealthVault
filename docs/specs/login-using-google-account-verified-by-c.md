@@ -94,9 +94,9 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 5: Record the decision
 
-- [ ] Add `docs/adr/ADR-012-cloudflare-verified-identity-as-a-second-sign-in.md` with `Status: Proposed`, covering the exchange-endpoint choice over middleware, the signature-only trust rule, the explicit email map over auto-provisioning, and why password login stays
-- [ ] Record the Android finding in that ADR: the Health Connect exporter posts to the unauthenticated `POST /webhook/{username}` and cannot complete an interactive Google login, so it can never carry an Access Assertion and must keep its current route; exposing that path publicly would need an Access service token or a bypass policy, which this change does not do
-- [ ] Add glossary entries for **Access Assertion** and **Access Identity Map** to `CONTEXT.md`, each with its `_Avoid_` line, following the existing entries' shape
-- [ ] Document the three new environment variables and the feature-off default in `frontend/README.md`'s configuration notes or the equivalent backend notes, whichever already lists `HCW_MCP_TOKEN`
+- [x] Add `docs/adr/ADR-012-cloudflare-verified-identity-as-a-second-sign-in.md` with `Status: Proposed`, covering the exchange-endpoint choice over middleware, the signature-only trust rule, the explicit email map over auto-provisioning, and why password login stays
+- [x] Record the Android finding in that ADR: the Health Connect exporter posts to the unauthenticated `POST /webhook/{username}` and cannot complete an interactive Google login, so it can never carry an Access Assertion and must keep its current route; exposing that path publicly would need an Access service token or a bypass policy, which this change does not do
+- [x] Add glossary entries for **Access Assertion** and **Access Identity Map** to `CONTEXT.md`, each with its `_Avoid_` line, following the existing entries' shape
+- [x] Document the three new environment variables and the feature-off default in `frontend/README.md`'s configuration notes or the equivalent backend notes, whichever already lists `HCW_MCP_TOKEN`
 - [ ] Flip ADR-012 from `Proposed` to `Accepted` as the last commit on the branch
 - [ ] Mark completed
