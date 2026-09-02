@@ -87,13 +87,13 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 5: Home-screen widget
 
-- [ ] Add `widget/SummaryWidget.kt` as a Glance widget using `SizeMode.Responsive` with a compact (about 110x110dp) and a wide (about 250x110dp) layout, plus `widget/SummaryWidgetReceiver.kt` and the widget provider XML
-- [ ] Render calories consumed against target in the compact layout, and calories plus four macro bars plus a **Log food** button in the wide layout
-- [ ] Reserve a single-line recommendation slot in the wide layout that renders only when `recommendation` is non-null
-- [ ] Add a pure `widgetState(snapshot, fetchedAt, now, session)` mapping to loaded, stale (snapshot older than 6 hours), signed-out, or error states, kept free of Android types so it is JVM-testable
-- [ ] Wire widget taps: the body opens the today screen, **Log food** opens the Custom Tab, and a refresh affordance enqueues an immediate update
-- [ ] Set `updatePeriodMillis` to 0 in the provider XML so all updates come from WorkManager
-- [ ] Mark completed
+- [x] Add `widget/SummaryWidget.kt` as a Glance widget using `SizeMode.Responsive` with a compact (about 110x110dp) and a wide (about 250x110dp) layout, plus `widget/SummaryWidgetReceiver.kt` and the widget provider XML
+- [x] Render calories consumed against target in the compact layout, and calories plus four macro bars plus a **Log food** button in the wide layout
+- [x] Reserve a single-line recommendation slot in the wide layout that renders only when `recommendation` is non-null
+- [x] Add a pure `widgetState(snapshot, fetchedAt, now, session)` mapping to loaded, stale (snapshot older than 6 hours), signed-out, or error states, kept free of Android types so it is JVM-testable
+- [x] Wire widget taps: the body opens the today screen, **Log food** opens the Custom Tab, and a refresh affordance enqueues an immediate update
+- [x] Set `updatePeriodMillis` to 0 in the provider XML so all updates come from WorkManager
+- [x] Mark completed
 
 ### Task 6: Background refresh and update triggers
 

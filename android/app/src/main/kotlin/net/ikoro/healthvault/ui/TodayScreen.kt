@@ -36,6 +36,7 @@ import net.ikoro.healthvault.api.HealthVaultApi
 import net.ikoro.healthvault.api.TodaySummary
 import net.ikoro.healthvault.store.SecureStore
 import net.ikoro.healthvault.store.SummarySnapshot
+import net.ikoro.healthvault.widget.WIDGET_STALE_AFTER_MILLIS
 
 /** Matches the four reason codes computeUserNutritionTarget can send (see TodaySummaryTarget). */
 @Composable
@@ -61,9 +62,6 @@ private fun relativeTimeText(iso8601: String?, nowMillis: Long): String {
         else -> stringResource(R.string.today_last_logged_days_ago, minutes / (60 * 24))
     }
 }
-
-/** 6 hours, matching the widget's own staleness threshold (widget/WidgetState.kt). */
-private const val STALE_AFTER_MILLIS = 6L * 60 * 60 * 1000
 
 @Composable
 fun TodayScreen(
@@ -98,7 +96,7 @@ fun TodayScreen(
 
     val now = System.currentTimeMillis()
     val current = snapshot
-    val isStale = current != null && now - current.fetchedAtMillis > STALE_AFTER_MILLIS
+    val isStale = current != null && now - current.fetchedAtMillis > WIDGET_STALE_AFTER_MILLIS
 
     Surface(modifier = Modifier.fillMaxSize()) {
         PullToRefreshBox(
