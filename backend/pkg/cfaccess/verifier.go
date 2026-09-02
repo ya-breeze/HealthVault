@@ -82,6 +82,21 @@ func New(teamDomain, aud string) *Verifier {
 	}
 }
 
+// NewWithEndpoint builds a Verifier against an explicit certsURL and issuer
+// instead of deriving both from a team domain over HTTPS. New always dials
+// HTTPS, which an httptest.Server cannot serve without a self-signed cert a
+// caller then has to make the client trust — this exists so tests outside
+// this package (e.g. the exchange endpoint in backend/pkg/server) can point
+// a real Verifier at a plain-HTTP httptest.Server instead.
+func NewWithEndpoint(certsURL, issuer, aud string) *Verifier {
+	return &Verifier{
+		issuer:     issuer,
+		aud:        aud,
+		certsURL:   certsURL,
+		httpClient: &http.Client{Timeout: fetchTimeout},
+	}
+}
+
 // Verify validates token as a Cloudflare Access Assertion: RS256 only,
 // issuer equal to this Verifier's team domain, audience containing its AUD
 // tag, and exp/nbf checked with 60 seconds of leeway. On success it returns

@@ -61,16 +61,16 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 2: Exchange a verified identity for a session
 
-- [ ] Add `cfVerifier *cfaccess.Verifier` and `cfEmailMap map[string]string` fields to `authHandlers` in `backend/pkg/server/auth.go`
-- [ ] Parse `HCW_CF_ACCESS_EMAIL_MAP` into that map in `Run` (`backend/pkg/server/server.go`), lower-casing and trimming each email, and return a startup error on a malformed entry the way `database.SeedUsers` does
-- [ ] Create `backend/pkg/server/auth_cf_access.go` with a `CFAccess` handler that reads the assertion from the `Cf-Access-Jwt-Assertion` header and falls back to the `CF_Authorization` cookie
-- [ ] Respond 404 when the team domain, the AUD tag, or the map is unset, so a deployment with no Cloudflare in front reports the feature as absent rather than as a failed sign-in
-- [ ] Respond 401 on a missing or unverifiable assertion, and 403 with an `unknown_identity` error body when the assertion verifies but its email is not in the map or its username has no user row
-- [ ] On success mint the same session `Login` mints — `generateAccessToken` for 15 minutes, `authdb.CreateRefreshToken` for a year, both set through `cookies.SetAccessCookie` and `cookies.SetRefreshCookie` — and return `{"status":"ok"}`
-- [ ] Register `POST /api/auth/cf-access` beside the other auth routes in `Run`, outside the `RequireAuth` subrouter, and leave `/api/auth/login`, `/webhook/{username}` and `/mcp` untouched
-- [ ] Comment on why this handler skips the login limiter: there is no guessable secret to spread over attempts, and a signature check is not a bcrypt compare
-- [ ] Add `backend/pkg/server/auth_cf_access_test.go` covering disabled config to 404, a spoofed unsigned header to 401, a verified but unmapped email to 403, and a mapped email to 200 with both cookies present
-- [ ] Mark completed
+- [x] Add `cfVerifier *cfaccess.Verifier` and `cfEmailMap map[string]string` fields to `authHandlers` in `backend/pkg/server/auth.go`
+- [x] Parse `HCW_CF_ACCESS_EMAIL_MAP` into that map in `Run` (`backend/pkg/server/server.go`), lower-casing and trimming each email, and return a startup error on a malformed entry the way `database.SeedUsers` does
+- [x] Create `backend/pkg/server/auth_cf_access.go` with a `CFAccess` handler that reads the assertion from the `Cf-Access-Jwt-Assertion` header and falls back to the `CF_Authorization` cookie
+- [x] Respond 404 when the team domain, the AUD tag, or the map is unset, so a deployment with no Cloudflare in front reports the feature as absent rather than as a failed sign-in
+- [x] Respond 401 on a missing or unverifiable assertion, and 403 with an `unknown_identity` error body when the assertion verifies but its email is not in the map or its username has no user row
+- [x] On success mint the same session `Login` mints — `generateAccessToken` for 15 minutes, `authdb.CreateRefreshToken` for a year, both set through `cookies.SetAccessCookie` and `cookies.SetRefreshCookie` — and return `{"status":"ok"}`
+- [x] Register `POST /api/auth/cf-access` beside the other auth routes in `Run`, outside the `RequireAuth` subrouter, and leave `/api/auth/login`, `/webhook/{username}` and `/mcp` untouched
+- [x] Comment on why this handler skips the login limiter: there is no guessable secret to spread over attempts, and a signature check is not a bcrypt compare
+- [x] Add `backend/pkg/server/auth_cf_access_test.go` covering disabled config to 404, a spoofed unsigned header to 401, a verified but unmapped email to 403, and a mapped email to 200 with both cookies present
+- [x] Mark completed
 
 ### Task 3: Use the exchange from the browser
 
