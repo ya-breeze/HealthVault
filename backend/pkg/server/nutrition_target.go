@@ -36,6 +36,7 @@ type nutritionTargetValues struct {
 	ProteinGrams       int     `json:"protein_grams"`
 	CarbsGrams         int     `json:"carbs_grams"`
 	FatGrams           int     `json:"fat_grams"`
+	BMR                int     `json:"bmr"`
 	MeasuredWeightKg   float64 `json:"measured_weight_kg"`
 	GoalWeightKg       float64 `json:"goal_weight_kg"`
 	HeightM            float64 `json:"height_m"`
@@ -134,7 +135,7 @@ func computeNutritionTargetForProfile(
 	}
 
 	ageYears := calendarAge(profile.Birthdate, now)
-	calories, proteinGrams, carbsGrams, fatGrams := computeNutritionTarget(
+	calories, proteinGrams, carbsGrams, fatGrams, bmr := computeNutritionTarget(
 		weightKg, heightM, ageYears, profile.Sex, multiplier, goalWeightKg,
 	)
 
@@ -143,6 +144,7 @@ func computeNutritionTargetForProfile(
 		ProteinGrams:       roundToInt(proteinGrams),
 		CarbsGrams:         roundToInt(carbsGrams),
 		FatGrams:           roundToInt(fatGrams),
+		BMR:                roundToInt(bmr),
 		MeasuredWeightKg:   weightKg,
 		GoalWeightKg:       goalWeightKg,
 		HeightM:            heightM,
@@ -158,15 +160,17 @@ func computeNutritionTargetForProfile(
 // formula's native units (height in metres, converted to cm here); outputs
 // are unrounded — the caller rounds once, at the response boundary, since
 // the fat-floor recomputation of carbs needs the unrounded remaining kcal.
+// bmr is the Mifflin-St Jeor value before the activity multiplier is
+// applied; calories is bmr * activityMultiplier.
 func computeNutritionTarget(
 	weightKg, heightM float64, ageYears int, sex string, activityMultiplier, goalWeightKg float64,
-) (calories, proteinGrams, carbsGrams, fatGrams float64) {
+) (calories, proteinGrams, carbsGrams, fatGrams, bmr float64) {
 	sexTerm := sexTermFemale
 	if sex == "male" {
 		sexTerm = sexTermMale
 	}
 	heightCm := heightM * 100
-	bmr := 10*weightKg + 6.25*heightCm - 5*float64(ageYears) + sexTerm
+	bmr = 10*weightKg + 6.25*heightCm - 5*float64(ageYears) + sexTerm
 	calories = bmr * activityMultiplier
 
 	proteinGrams = proteinGramsPerKgGoal * goalWeightKg
@@ -183,7 +187,7 @@ func computeNutritionTarget(
 	if carbsGrams < 0 {
 		carbsGrams = 0
 	}
-	return calories, proteinGrams, carbsGrams, fatGrams
+	return calories, proteinGrams, carbsGrams, fatGrams, bmr
 }
 
 // resolveActivityTier resolves the caller's activity tier: their

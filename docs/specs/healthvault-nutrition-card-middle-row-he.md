@@ -125,12 +125,12 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Return BMR from the backend
-- [ ] Add a `bmr` return value to `computeNutritionTarget` in `backend/pkg/server/nutrition_target.go`, unrounded like the other four, and update its doc comment
-- [ ] Add `BMR int \`json:"bmr"\`` to `nutritionTargetValues`, set from `roundToInt(bmr)` in `computeNutritionTargetForProfile`
-- [ ] Add the same `BMR int \`json:"bmr"\`` field to `summaryTargetPayload` in `backend/pkg/server/summary_today.go`, set only in the available branch, and extend that struct's existing doc comment so the no-`omitempty` rule covers the new field for the same reason
-- [ ] Assert in `backend/pkg/server/nutrition_target_test.go` (or the internal test) that `bmr` matches the Mifflin-St Jeor value for a known profile, and that `calories` equals `bmr * activity_multiplier` rounded
-- [ ] Extend `backend/pkg/server/summary_today_test.go`'s raw-JSON key assertion so `bmr` is present whenever `available` is true, and absent from neither branch's decoding
-- [ ] Mark completed
+- [x] Add a `bmr` return value to `computeNutritionTarget` in `backend/pkg/server/nutrition_target.go`, unrounded like the other four, and update its doc comment
+- [x] Add `BMR int \`json:"bmr"\`` to `nutritionTargetValues`, set from `roundToInt(bmr)` in `computeNutritionTargetForProfile`
+- [x] Add the same `BMR int \`json:"bmr"\`` field to `summaryTargetPayload` in `backend/pkg/server/summary_today.go`, set only in the available branch, and extend that struct's existing doc comment so the no-`omitempty` rule covers the new field for the same reason
+- [x] Assert in `backend/pkg/server/nutrition_target_test.go` (or the internal test) that `bmr` matches the Mifflin-St Jeor value for a known profile, and that `calories` equals `bmr * activity_multiplier` rounded
+- [x] Extend `backend/pkg/server/summary_today_test.go`'s raw-JSON key assertion so `bmr` is present whenever `available` is true, and absent from neither branch's decoding
+- [x] Mark completed
 
 ### Task 2: Expose Mean Logged Intake and the weight-only floor
 - [ ] Export `meanLoggedIntake(perDayWindowData, windowStartDayOffset, windowLastDayOffset): number | null` from `frontend/lib/loggingGap.ts`, returning `null` for an empty valid-day set, and have `computeLoggingGap` use it instead of its inline average
