@@ -58,14 +58,14 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 2: API client, session storage, and single-flight refresh
 
-- [ ] Add `api/TodaySummary.kt`: kotlinx.serialization models mirroring `summaryTodayResponse` and `summaryTargetPayload` field for field, with `last_logged_at` and `recommendation` nullable and the four target numbers non-optional
-- [ ] Add `store/SecureStore.kt`: a Keystore-backed AES-GCM encrypted store holding server URL, username, password, serialized cookies, and the last summary snapshot with its fetch time
-- [ ] Add `api/SessionCookieJar.kt`: a persistent `CookieJar` that honours domain, path and expiry, so `kin_refresh` is sent only to `/api/auth/refresh`, and that writes through to `SecureStore` synchronously on every change
-- [ ] Add `api/RefreshInterceptor.kt`: record each request's dispatch time, and on a 401 for a non-exempt path run a mutex-guarded refresh that returns early when a refresh completed at or after that dispatch time, then retry the request once
-- [ ] Exempt `/api/auth/login` and `/api/auth/refresh` from the interceptor, mirroring `isAuthExemptPath` in `frontend/lib/api.ts`
-- [ ] Add `api/HealthVaultApi.kt` with `login`, `refresh`, `summaryToday`, and a re-login-from-stored-credentials fallback used once when refresh fails
-- [ ] Add `api/ApiResult.kt` classifying outcomes as success, unauthenticated, rate limited with a `Retry-After` duration, Cloudflare Access challenge, network failure, or server error
-- [ ] Mark completed
+- [x] Add `api/TodaySummary.kt`: kotlinx.serialization models mirroring `summaryTodayResponse` and `summaryTargetPayload` field for field, with `last_logged_at` and `recommendation` nullable and the four target numbers non-optional
+- [x] Add `store/SecureStore.kt`: a Keystore-backed AES-GCM encrypted store holding server URL, username, password, serialized cookies, and the last summary snapshot with its fetch time
+- [x] Add `api/SessionCookieJar.kt`: a persistent `CookieJar` that honours domain, path and expiry, so `kin_refresh` is sent only to `/api/auth/refresh`, and that writes through to `SecureStore` synchronously on every change
+- [x] Add `api/RefreshInterceptor.kt`: record each request's dispatch time, and on a 401 for a non-exempt path run a mutex-guarded refresh that returns early when a refresh completed at or after that dispatch time, then retry the request once
+- [x] Exempt `/api/auth/login` and `/api/auth/refresh` from the interceptor, mirroring `isAuthExemptPath` in `frontend/lib/api.ts`
+- [x] Add `api/HealthVaultApi.kt` with `login`, `refresh`, `summaryToday`, and a re-login-from-stored-credentials fallback used once when refresh fails
+- [x] Add `api/ApiResult.kt` classifying outcomes as success, unauthenticated, rate limited with a `Retry-After` duration, Cloudflare Access challenge, network failure, or server error
+- [x] Mark completed
 
 ### Task 3: First-run setup and sign-in
 
