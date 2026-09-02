@@ -36,10 +36,16 @@ Deliberately excluded: a direct Google OAuth integration in the app (Cloudflare 
 One honest limit on validation: the e2e stack is plain HTTP on the LAN and never passes through Cloudflare, so no end-to-end test can present a real Access Assertion. The e2e suite covers the feature-off behaviour — the endpoint 404s, the password form still renders, login and logout are unchanged. Real verification coverage lives in Go unit tests that generate an RSA key, serve a JWKS from `httptest`, and sign their own tokens.
 
 ## Validation Commands
+- `make lint`
+- `make test`
+- `make test-e2e`
 
-- make lint
-- make test
-- make test-e2e
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Verify an Access Assertion
 
