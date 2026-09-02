@@ -127,12 +127,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 7: Label and window the frontend against local dates
 
-- [ ] Format `bucket_start` with `timeZone: 'UTC'` in `bucketLabel` (`frontend/app/data/[type]/DataTypeClient.tsx`), with a comment that `bucket_start` is a local calendar date carried at UTC midnight, so browser-local formatting would shift the label by a day.
-- [ ] Format the projection's `crossingDate` with `timeZone: 'UTC'` for the same reason, since it is derived from a day offset.
-- [ ] In `frontend/app/page.tsx`, over-fetch the sparkline range by one extra day and drop any returned bucket whose date sorts before the local date 6 days ago, computed with `loggedDayKey` against the `timezone` already held in state. Explain in a comment that a UTC-midnight lower bound clips the earliest local day for a viewer ahead of UTC.
-- [ ] Confirm `frontend/lib/vitals.ts` needs no change — `extractVital` reads only value columns, never `bucket_start` — and leave it alone.
-- [ ] Confirm `frontend/components/LoggingGapCard.tsx` needs no change — it keys raw weigh-ins with `loggedDayKey` and never reads `bucket_start` — and leave it alone.
-- [ ] Mark completed
+- [x] Format `bucket_start` with `timeZone: 'UTC'` in `bucketLabel` (`frontend/app/data/[type]/DataTypeClient.tsx`), with a comment that `bucket_start` is a local calendar date carried at UTC midnight, so browser-local formatting would shift the label by a day.
+- [x] Format the projection's `crossingDate` with `timeZone: 'UTC'` for the same reason, since it is derived from a day offset.
+- [x] In `frontend/app/page.tsx`, over-fetch the sparkline range by one extra day and drop any returned bucket whose date sorts before the local date 6 days ago, computed with `loggedDayKey` against the `timezone` already held in state. Explain in a comment that a UTC-midnight lower bound clips the earliest local day for a viewer ahead of UTC.
+- [x] Confirm `frontend/lib/vitals.ts` needs no change — `extractVital` reads only value columns, never `bucket_start` — and leave it alone.
+- [x] Confirm `frontend/components/LoggingGapCard.tsx` needs no change — it keys raw weigh-ins with `loggedDayKey` and never reads `bucket_start` — and leave it alone.
+- [x] Mark completed
 
 ### Task 8: Test the boundary, including both DST days
 
