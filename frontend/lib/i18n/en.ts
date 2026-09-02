@@ -19,7 +19,9 @@
 // DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
 // ReanalyzeControl. (AddItemForm's own chrome is English, but the
 // ItemResolver panel it embeds is covered, so that form is partly translated
-// rather than wholly English.)
+// rather than wholly English. The steps detail page is the same shape: its
+// chrome is English, but the diagnostic disclosure the check-the-health-data
+// spec added — DataTypeClient.tsx's `stepsDiagnostics.*` keys — is covered.)
 //
 // This list is not just a comment: the display-language spec's out-of-scope
 // paragraph defers to it by name ("the food entry/editing chrome enumerated
@@ -302,6 +304,23 @@ const en = {
   'loggingGap.outlierNote': 'One or more weigh-ins were excluded as outliers.',
   'loggingGap.caveatPhoto': 'Logged intake is estimated from photo recognition and may carry its own bias.',
   'loggingGap.caveatActivity': "This doesn't separately account for error in your activity multiplier — a misestimate of activity can look like unlogged (or over-logged) intake.",
+
+  // The steps detail page's diagnostic disclosure (check-the-health-data
+  // spec) — collapsed by default, same hint-then-detail pattern as the
+  // loggingGap keys above. The only translated strings on the per-type data
+  // detail pages; see the scope comment at the top of this file.
+  'stepsDiagnostics.hintToggle': 'Show diagnostic',
+  'stepsDiagnostics.title': 'Step diagnostics',
+  'stepsDiagnostics.columnDay': 'Day',
+  'stepsDiagnostics.columnRaw': 'Raw total',
+  'stepsDiagnostics.columnCollapsed': 'Counted total',
+  'stepsDiagnostics.columnDropped': 'Records dropped',
+  'stepsDiagnostics.columnPayloads': 'Syncs contributing',
+  'stepsDiagnostics.columnLocalDay': 'Local-day total',
+  'stepsDiagnostics.readingDuplicates': 'Duplicate step records in the database are inflating the raw total.',
+  'stepsDiagnostics.readingMultipleSyncs': 'More than one sync wrote steps for the same day.',
+  'stepsDiagnostics.readingDayBoundary': "Your local day boundary differs from this chart's UTC day.",
+  'stepsDiagnostics.readingNothing': 'Nothing to report — raw, counted and local-day totals agree.',
 
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing

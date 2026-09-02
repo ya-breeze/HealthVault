@@ -398,6 +398,22 @@ export interface DailyTotal {
   unconfirmed_meals: number;
 }
 
+// One UTC day's row from GET /api/data/steps/diagnostics — mirrors the
+// backend's stepsDiagnosticDay (steps_diagnostics.go). See
+// check-the-health-data spec: raw_sum > collapsed_sum means duplicate
+// intervals in the database, payload_count > 1 means more than one sync
+// wrote the day, and local_day_sum != collapsed_sum means the chart's UTC
+// day boundary isn't the caller's day boundary.
+export interface StepsDiagnosticDay {
+  bucket_start: string;
+  raw_count: number;
+  raw_sum: number;
+  collapsed_sum: number;
+  dropped_records: number;
+  payload_count: number;
+  local_day_sum: number;
+}
+
 // Both error classes below set `.name` explicitly and restore the prototype
 // chain via Object.setPrototypeOf in their constructors. TypeScript/SWC
 // transpilation of `class X extends Error` can silently break `instanceof`
@@ -624,6 +640,18 @@ export const api = {
     if (user) params.set('user', user);
     if (bucket) params.set('bucket', bucket);
     return apiFetch<Record<string, unknown>[]>(`/data/${type}?${params}`);
+  },
+
+  // Self-only diagnostic backing the steps page's disclosure (see
+  // DataTypeClient.tsx): per-UTC-day raw vs. collapsed step totals, the
+  // number the collapse dropped, how many distinct syncs contributed, and
+  // the same day's total under the caller's stored timezone. Mirrors
+  // GET /api/data/steps/diagnostics — see steps_diagnostics.go.
+  stepsDiagnostics: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return apiFetch<StepsDiagnosticDay[]>(`/data/steps/diagnostics?${params}`);
   },
 
   summary: (from?: string, to?: string, user?: string) => {

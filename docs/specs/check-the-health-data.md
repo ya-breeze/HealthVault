@@ -73,12 +73,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Show the diagnostic on the steps page
-- [ ] Add a `stepsDiagnostics(from, to)` call to `frontend/lib/api.ts` alongside the existing `data` call.
-- [ ] In `frontend/app/data/[type]/DataTypeClient.tsx`, render the diagnostic for `steps` only, behind a disclosure control that is collapsed by default — the same hint-then-detail pattern the nutrition card's footnotes use. Show one row per day with the raw total, the counted total, the records dropped, the contributing payload count, and the local-day total.
-- [ ] Show a short plain-language reading beneath the table that names the layer: duplicates in the database when `raw_sum` exceeds `collapsed_sum`, more than one sync writing the same day when `payload_count` is above 1, a day-boundary difference when `local_day_sum` differs from `collapsed_sum`, and nothing to report when all three agree.
-- [ ] Add the new keys to both `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`. Neither file may be left with a key the other lacks.
-- [ ] Fail quietly: a failed diagnostics fetch leaves the chart and table untouched and hides the disclosure, matching how the page already isolates its raw and chart fetches from each other.
-- [ ] Mark completed
+- [x] Add a `stepsDiagnostics(from, to)` call to `frontend/lib/api.ts` alongside the existing `data` call.
+- [x] In `frontend/app/data/[type]/DataTypeClient.tsx`, render the diagnostic for `steps` only, behind a disclosure control that is collapsed by default — the same hint-then-detail pattern the nutrition card's footnotes use. Show one row per day with the raw total, the counted total, the records dropped, the contributing payload count, and the local-day total.
+- [x] Show a short plain-language reading beneath the table that names the layer: duplicates in the database when `raw_sum` exceeds `collapsed_sum`, more than one sync writing the same day when `payload_count` is above 1, a day-boundary difference when `local_day_sum` differs from `collapsed_sum`, and nothing to report when all three agree.
+- [x] Add the new keys to both `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`. Neither file may be left with a key the other lacks.
+- [x] Fail quietly: a failed diagnostics fetch leaves the chart and table untouched and hides the disclosure, matching how the page already isolates its raw and chart fetches from each other.
+- [x] Mark completed
 
 ### Task 5: Label a Vital Card value that is not today's
 - [ ] Add an optional `asOf` field (the source bucket's `bucket_start`) to `VitalResult` in `frontend/lib/vitals.ts`, and set it in every `extractVital` branch from the last row's `bucket_start`.
