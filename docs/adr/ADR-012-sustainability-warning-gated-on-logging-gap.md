@@ -1,7 +1,7 @@
 # ADR-012: Sustainability Warning Gated on the Logging Gap's Corroboration
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 

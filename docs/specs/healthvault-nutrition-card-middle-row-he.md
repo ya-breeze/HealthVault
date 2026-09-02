@@ -174,6 +174,6 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Write `docs/adr/ADR-012-sustainability-warning-gated-on-logging-gap.md` with `Status: Proposed`, recording the `on_track` gate on the intake check, the absence of a gate on the rate check, and the middle row's precedence order
 - [x] Update `todo.md`'s Phase 4 section so it records the sustainability warning as shipped and names what remains of the middle row
 - [x] Run `make lint` and `make test` and fix everything they report
-- [ ] Deploy the branch to the WIP stack and run `make test-e2e` against it, fixing every failure rather than recording it as pre-existing
-- [ ] Flip ADR-012 from `Proposed` to `Accepted` as the last commit
-- [ ] Mark completed
+- [x] Deploy the branch to the WIP stack and run `make test-e2e` against it, fixing every failure rather than recording it as pre-existing
+- [x] Flip ADR-012 from `Proposed` to `Accepted` as the last commit
+- [x] Mark completed
