@@ -1,7 +1,7 @@
 # ADR-012: The Android Client Lives In This Repository, With a Build That Skips Without an SDK
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 

@@ -125,11 +125,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 9: Documentation, ADRs, and verification
 
-- [ ] Add `docs/adr/ADR-012-android-client-in-repo.md`: the client lives here rather than in a separate repository, and its Gradle build is skipped when no SDK is present — with the gap that leaves stated outright
-- [ ] Add `docs/adr/ADR-013-android-cookie-session-auth.md`: cookie-session auth with a persistent encrypted jar instead of a Bearer token, the single-flight rotation hazard, and why credentials are stored for unattended recovery
-- [ ] Create both ADRs as `Proposed` and flip them to `Accepted` as the last commit of the change
-- [ ] Add `android/README.md` covering SDK prerequisites, building the debug APK, and pointing the app at a LAN stack
-- [ ] Note in the pull request that the `/api/*` Cloudflare Access bypass is an operator step outside this repository, and that the app is LAN-only until it exists
-- [ ] Run `make lint` and `make test`, and record in the pull request that the Android targets skipped for want of an SDK if they did
-- [ ] Run `make test-e2e` against the deployed stack and fix any failure before finishing
-- [ ] Mark completed
+- [x] Add `docs/adr/ADR-012-android-client-in-repo.md`: the client lives here rather than in a separate repository, and its Gradle build is skipped when no SDK is present — with the gap that leaves stated outright
+- [x] Add `docs/adr/ADR-013-android-cookie-session-auth.md`: cookie-session auth with a persistent encrypted jar instead of a Bearer token, the single-flight rotation hazard, and why credentials are stored for unattended recovery
+- [x] Create both ADRs as `Proposed` and flip them to `Accepted` as the last commit of the change
+- [x] Add `android/README.md` covering SDK prerequisites, building the debug APK, and pointing the app at a LAN stack
+- [x] Note in the pull request that the `/api/*` Cloudflare Access bypass is an operator step outside this repository, and that the app is LAN-only until it exists
+- [x] Run `make lint` and `make test`, and record in the pull request that the Android targets skipped for want of an SDK if they did
+- [x] Run `make test-e2e` against the deployed stack and fix any failure before finishing
+- [x] Mark completed

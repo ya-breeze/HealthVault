@@ -1,7 +1,7 @@
 # ADR-013: The Android Client Authenticates With a Persistent Cookie Jar, Not a Bearer Token
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
