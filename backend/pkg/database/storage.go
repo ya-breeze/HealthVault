@@ -62,6 +62,17 @@ type Storage interface {
 	// single-valueCol shape can't express.
 	QueryAggregateBloodPressure(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
 	QueryAggregateNutrition(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
+	// QueryAggregateSteps is steps' own aggregate query, not the generic
+	// QueryAggregate: Health Connect stores one set of step records per
+	// source (phone sensor, watch, a fitness app, ...), and those sources'
+	// intervals overlap, so a plain SUM(count) double-counts the overlap.
+	// This streams the user's raw (start_time, end_time, count) rows
+	// ordered by start_time then end_time and folds them through the
+	// CollapseOverlappingSteps watermark rule in a single pass, crediting
+	// each kept record's count to the bucket its own start_time falls in.
+	// Returns the same {bucket_start, count, sum} shape QueryAggregate
+	// produces for the cumulative family, so callers don't have to change.
+	QueryAggregateSteps(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
 	// DeleteRecord hard-deletes a single record by ID, scoped to userID.
 	// Returns ErrNotFound if no matching row exists or the row belongs to another user.
 	DeleteRecord(tableName string, id uuid.UUID, userID uuid.UUID) error

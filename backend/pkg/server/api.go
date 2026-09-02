@@ -182,8 +182,10 @@ func CreateRecordHandler(storage database.Storage) http.HandlerFunc {
 }
 
 // queryBucketed dispatches a bucketed aggregation query to the right storage
-// method: the two multi-value-column special cases, or the generic
-// single-valueCol path for every other type.
+// method: the multi-value-column special cases, steps (whose own overlap
+// collapse the generic SUM(count) path can't express — see
+// QueryAggregateSteps), or the generic single-valueCol path for every other
+// type.
 func queryBucketed(
 	storage database.Storage, typeName string, info typeInfo, bucket database.Bucket, userID uuid.UUID, tr database.TimeRange,
 ) ([]map[string]any, error) {
@@ -198,6 +200,8 @@ func queryBucketed(
 		return storage.QueryAggregateBloodPressure(bucket, userID, tr)
 	case "nutrition":
 		return storage.QueryAggregateNutrition(bucket, userID, tr)
+	case "steps":
+		return storage.QueryAggregateSteps(bucket, userID, tr)
 	default:
 		return storage.QueryAggregate(info.table, info.timeCol, info.valueCol, info.family, bucket, userID, tr)
 	}

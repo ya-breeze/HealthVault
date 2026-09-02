@@ -31,14 +31,33 @@ type stepInterval struct {
 // Returns the kept intervals (in the same order) and the number dropped.
 func CollapseOverlappingSteps(intervals []stepInterval) (kept []stepInterval, dropped int) {
 	kept = make([]stepInterval, 0, len(intervals))
-	var watermark time.Time // zero value predates every real record, so the first record is always kept
+	var wm stepWatermark
 	for _, iv := range intervals {
-		if !iv.EndTime.After(watermark) {
+		if !wm.admit(iv.EndTime) {
 			dropped++
 			continue
 		}
 		kept = append(kept, iv)
-		watermark = iv.EndTime
 	}
 	return kept, dropped
+}
+
+// stepWatermark is the collapse rule's keep/drop decision, factored out so
+// CollapseOverlappingSteps (which runs it over a pre-loaded, caller-sorted
+// slice) and the streaming aggregate queries in storage_impl.go (which run
+// it over a *sql.Rows cursor without buffering the input) apply the exact
+// same rule instead of two hand-copies of it drifting apart.
+type stepWatermark struct {
+	t time.Time // zero value predates every real record, so the first record is always admitted
+}
+
+// admit reports whether a record ending at end extends past the watermark.
+// If so, it is kept and the watermark advances to end; otherwise it's
+// entirely covered by already-counted time and is dropped.
+func (w *stepWatermark) admit(end time.Time) bool {
+	if !end.After(w.t) {
+		return false
+	}
+	w.t = end
+	return true
 }

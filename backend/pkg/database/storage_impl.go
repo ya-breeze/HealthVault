@@ -233,12 +233,99 @@ func (s *storageImpl) QueryAggregateNutrition(bucket Bucket, userID uuid.UUID, t
 	return results, err
 }
 
-func (s *storageImpl) SummarySteps(userID uuid.UUID, tr TimeRange) (int, error) {
-	var total int
-	err := s.db.Model(&Steps{}).
+// stepsBucketKey computes the same bucket_start string bucketExpr's SQL
+// expression would produce for t, in Go — needed because QueryAggregateSteps
+// and SummarySteps assign a kept record to its bucket after streaming it
+// off a *sql.Rows cursor, not via a SQL GROUP BY.
+func stepsBucketKey(bucket Bucket, t time.Time) (string, error) {
+	t = t.UTC()
+	switch bucket {
+	case BucketDay:
+		return fmt.Sprintf("%04d-%02d-%02dT00:00:00Z", t.Year(), t.Month(), t.Day()), nil
+	case BucketMonth:
+		return fmt.Sprintf("%04d-%02d-01T00:00:00Z", t.Year(), t.Month()), nil
+	default:
+		return "", fmt.Errorf("unknown bucket %q", bucket)
+	}
+}
+
+func (s *storageImpl) QueryAggregateSteps(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error) {
+	if bucket != BucketDay && bucket != BucketMonth {
+		return nil, fmt.Errorf("unknown bucket %q", bucket)
+	}
+	rows, err := s.db.Model(&Steps{}).
+		Select("start_time, end_time, count").
 		Where("user_id = ? AND start_time >= ? AND start_time <= ?", userID, tr.From, tr.To).
-		Select("COALESCE(SUM(count), 0)").Scan(&total).Error
-	return total, err
+		Order("start_time, end_time").
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck
+
+	type bucketAccum struct {
+		bucketStart string
+		count       int64
+		sum         int64
+	}
+	var buckets []bucketAccum
+	var wm stepWatermark
+	for rows.Next() {
+		var start, end time.Time
+		var count int
+		if err := rows.Scan(&start, &end, &count); err != nil {
+			return nil, err
+		}
+		if !wm.admit(end) {
+			continue
+		}
+		key, err := stepsBucketKey(bucket, start)
+		if err != nil {
+			return nil, err
+		}
+		if n := len(buckets); n > 0 && buckets[n-1].bucketStart == key {
+			buckets[n-1].count++
+			buckets[n-1].sum += int64(count)
+		} else {
+			buckets = append(buckets, bucketAccum{bucketStart: key, count: 1, sum: int64(count)})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	results := make([]map[string]any, len(buckets))
+	for i, b := range buckets {
+		results[i] = map[string]any{"bucket_start": b.bucketStart, "count": b.count, "sum": b.sum}
+	}
+	return results, nil
+}
+
+func (s *storageImpl) SummarySteps(userID uuid.UUID, tr TimeRange) (int, error) {
+	rows, err := s.db.Model(&Steps{}).
+		Select("start_time, end_time, count").
+		Where("user_id = ? AND start_time >= ? AND start_time <= ?", userID, tr.From, tr.To).
+		Order("start_time, end_time").
+		Rows()
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var total int
+	var wm stepWatermark
+	for rows.Next() {
+		var start, end time.Time
+		var count int
+		if err := rows.Scan(&start, &end, &count); err != nil {
+			return 0, err
+		}
+		if !wm.admit(end) {
+			continue
+		}
+		total += count
+	}
+	return total, rows.Err()
 }
 
 func (s *storageImpl) SummaryAvgHeartRate(userID uuid.UUID, tr TimeRange) (float64, error) {

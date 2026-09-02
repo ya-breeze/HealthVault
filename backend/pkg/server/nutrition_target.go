@@ -213,20 +213,21 @@ func resolveActivityTier(
 }
 
 // fetchDailySteps loads the per-day step sums trailingStepsAverage needs,
-// reusing the existing GET /api/data/steps?bucket=day aggregation
-// (design.md: "without needing per-record timestamps finer than what
-// ...already returns"). The range's upper bound includes today itself; that
-// row is harmless here, since trailingStepsAverage never looks up "today" in
-// its day map — it only ever walks today-1 through today-28.
+// via QueryAggregateSteps rather than the generic ?bucket=day aggregation:
+// the generic path is a plain SUM(count) with no overlap handling, and an
+// over-counted step history (see check-the-health-data spec) would push the
+// inferred Activity Level tier up and inflate the Nutrition Target's
+// calorie budget through the multiplier. The range's upper bound includes
+// today itself; that row is harmless here, since trailingStepsAverage never
+// looks up "today" in its day map — it only ever walks today-1 through
+// today-28.
 func fetchDailySteps(storage database.Storage, userID uuid.UUID, today time.Time) ([]dailySteps, error) {
 	today = today.UTC().Truncate(24 * time.Hour)
 	tr := database.TimeRange{
 		From: today.AddDate(0, 0, -trailingWindowDays),
 		To:   today,
 	}
-	rows, err := storage.QueryAggregate(
-		"steps", "start_time", "count", database.AggFamilyCumulative, database.BucketDay, userID, tr,
-	)
+	rows, err := storage.QueryAggregateSteps(database.BucketDay, userID, tr)
 	if err != nil {
 		return nil, err
 	}

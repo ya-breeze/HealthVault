@@ -48,6 +48,9 @@ func (m *mockStorage) QueryAggregateBloodPressure(_ database.Bucket, _ uuid.UUID
 func (m *mockStorage) QueryAggregateNutrition(_ database.Bucket, _ uuid.UUID, _ database.TimeRange) ([]map[string]any, error) {
 	return nil, nil
 }
+func (m *mockStorage) QueryAggregateSteps(_ database.Bucket, _ uuid.UUID, _ database.TimeRange) ([]map[string]any, error) {
+	return nil, nil
+}
 func (m *mockStorage) SummarySteps(_ uuid.UUID, _ database.TimeRange) (int, error)            { return 0, nil }
 func (m *mockStorage) SummaryAvgHeartRate(_ uuid.UUID, _ database.TimeRange) (float64, error) { return 0, nil }
 func (m *mockStorage) SummarySleepSeconds(_ uuid.UUID, _ database.TimeRange) (int, error)     { return 0, nil }

@@ -55,14 +55,14 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Route every step read through the collapse
-- [ ] Add `QueryAggregateSteps(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)` to the `Storage` interface in `backend/pkg/database/storage.go`, next to `QueryAggregateBloodPressure` and `QueryAggregateNutrition`.
-- [ ] Implement it in `backend/pkg/database/storage_impl.go`: select `start_time, end_time, count` for the user and range ordered by `start_time, end_time`, stream the rows with `Rows()`, fold them through the Task 1 rule in a single pass, and credit each kept record's count to the bucket its own `start_time` falls in. Return rows shaped exactly like the existing cumulative path — `bucket_start`, `count`, `sum` — so no caller or frontend has to change shape. Reuse `bucketExpr`'s day and month formats for `bucket_start` so the values stay byte-identical to what `QueryAggregate` produced.
-- [ ] Dispatch `steps` to it from `queryBucketed` in `backend/pkg/server/api.go`, alongside the `blood_pressure` and `nutrition` cases, and update that function's doc comment to say why steps now needs its own query.
-- [ ] Rewrite `SummarySteps` in `backend/pkg/database/storage_impl.go` to use the same streaming collapse instead of `COALESCE(SUM(count), 0)`.
-- [ ] Point `fetchDailySteps` in `backend/pkg/server/nutrition_target.go` at `QueryAggregateSteps`, and update its doc comment, which currently states it reuses the generic `?bucket=day` aggregation.
-- [ ] Add tests in `backend/pkg/database/aggregate_test.go` proving that two overlapping step records in one day sum once, that two non-overlapping records in one day sum to their total, and that a record straddling midnight lands wholly in its start day's bucket.
-- [ ] Add a test in `backend/pkg/server/nutrition_target_test.go` proving that duplicated step records no longer push the inferred Activity Level tier up.
-- [ ] Mark completed
+- [x] Add `QueryAggregateSteps(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)` to the `Storage` interface in `backend/pkg/database/storage.go`, next to `QueryAggregateBloodPressure` and `QueryAggregateNutrition`.
+- [x] Implement it in `backend/pkg/database/storage_impl.go`: select `start_time, end_time, count` for the user and range ordered by `start_time, end_time`, stream the rows with `Rows()`, fold them through the Task 1 rule in a single pass, and credit each kept record's count to the bucket its own `start_time` falls in. Return rows shaped exactly like the existing cumulative path — `bucket_start`, `count`, `sum` — so no caller or frontend has to change shape. Reuse `bucketExpr`'s day and month formats for `bucket_start` so the values stay byte-identical to what `QueryAggregate` produced.
+- [x] Dispatch `steps` to it from `queryBucketed` in `backend/pkg/server/api.go`, alongside the `blood_pressure` and `nutrition` cases, and update that function's doc comment to say why steps now needs its own query.
+- [x] Rewrite `SummarySteps` in `backend/pkg/database/storage_impl.go` to use the same streaming collapse instead of `COALESCE(SUM(count), 0)`.
+- [x] Point `fetchDailySteps` in `backend/pkg/server/nutrition_target.go` at `QueryAggregateSteps`, and update its doc comment, which currently states it reuses the generic `?bucket=day` aggregation.
+- [x] Add tests in `backend/pkg/database/aggregate_test.go` proving that two overlapping step records in one day sum once, that two non-overlapping records in one day sum to their total, and that a record straddling midnight lands wholly in its start day's bucket.
+- [x] Add a test in `backend/pkg/server/nutrition_target_test.go` proving that duplicated step records no longer push the inferred Activity Level tier up.
+- [x] Mark completed
 
 ### Task 3: Step diagnostics endpoint
 - [ ] Add `backend/pkg/server/steps_diagnostics.go` with `StepsDiagnosticsHandler(storage database.Storage) http.HandlerFunc`, following the auth and user-resolution pattern of `DataHandler`: reject a missing claims context with 401, resolve the target user with `resolveUser`, and parse the range with `parseTimeRange`.
