@@ -148,12 +148,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Wire the card and render the middle row
-- [ ] Add `bmr: number` to `TodaySummaryTarget`'s available branch and to `NutritionTarget` in `frontend/lib/api.ts`
-- [ ] Restructure `LoggingGapCard.tsx`'s effect to compute the EMA, regression and standard error whenever `checkWeightFloor` is `false`, and to compute the gap from that same trend only when `checkHardFloor` is also `false`, leaving the gap line's behaviour identical
-- [ ] Call `evaluateSustainability` with the gap result, `meanLoggedIntake`, `target.bmr` and the trend, passing `weightAtWindowEnd` as `intercept + slope * windowLastDayOffset`; return an empty array on the gap-only `retrieval_error` path
-- [ ] Add `warnings: SustainabilityWarning[]` to `ContentState`'s `ready` variant and render the middle row between the today row and the gap line, behind its own divider, only when the array is non-empty
-- [ ] Give the block and its two lines the `nutrition-sustainability`, `nutrition-sustainability-loss-rate` and `nutrition-sustainability-below-bmr` testids, and show `loggingGap.sustainabilityDetail` inside the existing hint disclosure whenever any warning fires
-- [ ] Mark completed
+- [x] Add `bmr: number` to `TodaySummaryTarget`'s available branch and to `NutritionTarget` in `frontend/lib/api.ts`
+- [x] Restructure `LoggingGapCard.tsx`'s effect to compute the EMA, regression and standard error whenever `checkWeightFloor` is `false`, and to compute the gap from that same trend only when `checkHardFloor` is also `false`, leaving the gap line's behaviour identical
+- [x] Call `evaluateSustainability` with the gap result, `meanLoggedIntake`, `target.bmr` and the trend, passing `weightAtWindowEnd` as `intercept + slope * windowLastDayOffset`; return an empty array on the gap-only `retrieval_error` path
+- [x] Add `warnings: SustainabilityWarning[]` to `ContentState`'s `ready` variant and render the middle row between the today row and the gap line, behind its own divider, only when the array is non-empty
+- [x] Give the block and its two lines the `nutrition-sustainability`, `nutrition-sustainability-loss-rate` and `nutrition-sustainability-below-bmr` testids, and show `loggingGap.sustainabilityDetail` inside the existing hint disclosure whenever any warning fires
+- [x] Mark completed
 
 ### Task 5: Copy in both languages
 - [ ] Add `loggingGap.lossTooFast`, `loggingGap.intakeBelowBmr` and `loggingGap.sustainabilityDetail` to `frontend/lib/i18n/ru.ts` and `frontend/lib/i18n/en.ts`, keeping the `loggingGap.` prefix

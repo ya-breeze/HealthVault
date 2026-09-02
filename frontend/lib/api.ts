@@ -463,6 +463,7 @@ export interface NutritionTarget {
   protein_grams: number;
   carbs_grams: number;
   fat_grams: number;
+  bmr: number;
   measured_weight_kg: number;
   goal_weight_kg: number;
   height_m: number;
@@ -492,6 +493,7 @@ export type TodaySummaryTarget =
       protein_grams: number;
       carbs_grams: number;
       fat_grams: number;
+      bmr: number;
     };
 
 /**
