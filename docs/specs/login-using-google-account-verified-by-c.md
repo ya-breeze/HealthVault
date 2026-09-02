@@ -49,15 +49,15 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 1: Verify an Access Assertion
 
-- [ ] Add `CFAccessTeamDomain`, `CFAccessAUD` and `CFAccessEmailMap` to `Config` in `backend/pkg/config/config.go`, read from `HCW_CF_ACCESS_TEAM_DOMAIN`, `HCW_CF_ACCESS_AUD` and `HCW_CF_ACCESS_EMAIL_MAP`, all defaulting to empty
-- [ ] Pass the three new variables through `docker-compose.yml`'s `backend` service, defaulting to empty like `HCW_MCP_TOKEN` does
-- [ ] Create `backend/pkg/cfaccess/verifier.go` with an `Identity` struct (`Email`, `Subject`), a `Verifier` type, `New(teamDomain, aud string) *Verifier`, and `Verify(ctx context.Context, token string) (Identity, error)`
-- [ ] Fetch the key set from `https://<team domain>/cdn-cgi/access/certs` with a 5-second timeout, and decode each RSA entry's base64url `n` and `e` into an `rsa.PublicKey` using `encoding/base64` and `math/big`, adding no module dependency
-- [ ] Cache the key set for 10 minutes behind a mutex, and refetch on an unknown `kid` at most once a minute so an attacker cannot drive unbounded outbound requests
-- [ ] Validate with `github.com/golang-jwt/jwt/v5`: accept RS256 only, require `iss` equal to `https://<team domain>`, require `aud` to contain the configured AUD tag, and check `exp`/`nbf` with 60 seconds of leeway
-- [ ] Document in the package comment why `Cf-Access-Authenticated-User-Email` is never read: the LAN port bypasses Cloudflare, so an unsigned header is spoofable and the signature is the only real check
-- [ ] Add `backend/pkg/cfaccess/verifier_test.go` covering a valid token, a wrong AUD, a wrong issuer, an expired token, an `alg: none` token, an unknown `kid`, and an unreachable JWKS endpoint
-- [ ] Mark completed
+- [x] Add `CFAccessTeamDomain`, `CFAccessAUD` and `CFAccessEmailMap` to `Config` in `backend/pkg/config/config.go`, read from `HCW_CF_ACCESS_TEAM_DOMAIN`, `HCW_CF_ACCESS_AUD` and `HCW_CF_ACCESS_EMAIL_MAP`, all defaulting to empty
+- [x] Pass the three new variables through `docker-compose.yml`'s `backend` service, defaulting to empty like `HCW_MCP_TOKEN` does
+- [x] Create `backend/pkg/cfaccess/verifier.go` with an `Identity` struct (`Email`, `Subject`), a `Verifier` type, `New(teamDomain, aud string) *Verifier`, and `Verify(ctx context.Context, token string) (Identity, error)`
+- [x] Fetch the key set from `https://<team domain>/cdn-cgi/access/certs` with a 5-second timeout, and decode each RSA entry's base64url `n` and `e` into an `rsa.PublicKey` using `encoding/base64` and `math/big`, adding no module dependency
+- [x] Cache the key set for 10 minutes behind a mutex, and refetch on an unknown `kid` at most once a minute so an attacker cannot drive unbounded outbound requests
+- [x] Validate with `github.com/golang-jwt/jwt/v5`: accept RS256 only, require `iss` equal to `https://<team domain>`, require `aud` to contain the configured AUD tag, and check `exp`/`nbf` with 60 seconds of leeway
+- [x] Document in the package comment why `Cf-Access-Authenticated-User-Email` is never read: the LAN port bypasses Cloudflare, so an unsigned header is spoofable and the signature is the only real check
+- [x] Add `backend/pkg/cfaccess/verifier_test.go` covering a valid token, a wrong AUD, a wrong issuer, an expired token, an `alg: none` token, an unknown `kid`, and an unreachable JWKS endpoint
+- [x] Mark completed
 
 ### Task 2: Exchange a verified identity for a session
 
