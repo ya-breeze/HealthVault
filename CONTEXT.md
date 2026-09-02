@@ -27,8 +27,7 @@ A group of a Logged Day's Food Meals collapsed by proximity — a new occasion s
 _Avoid_: Meal count, session (too generic)
 
 **Logged Day**:
-The calendar date (`YYYY-MM-DD`) a Food Meal's `LoggedAt` falls on, computed in the user's stored `timezone` setting (absent/invalid → UTC) — not the browser's local zone, and not the same UTC bucketing the general `/api/data/{type}` charts use. "Today" in the user's zone is always excluded from Day Completeness.
-_Avoid_: Day (ambiguous with the unrelated UTC day-bucketing used elsewhere)
+The calendar date (`YYYY-MM-DD`) a Food Meal's `LoggedAt` falls on, computed in the user's stored `timezone` setting (absent/invalid → UTC) — not the browser's local zone. "Today" in the user's zone is always excluded from Day Completeness.
 
 **Usual Meals Per Day**:
 The per-user `usual_meals_per_day` setting (positive integer, default 3): the Eating Occasion count a Logged Day must reach to be classified automatically Complete. Read fresh on every Day Completeness computation, not snapshotted, so changing it re-evaluates past days too.
@@ -132,6 +131,10 @@ A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nu
 _Avoid_: Health score, nutrition score
 
 ### Weight chart
+
+**Bucket Start**:
+The local calendar date (or, for a month bucket, the first of the local calendar month) a bucketed `GET /api/data/{type}?bucket=day|month` row covers, resolved in the user's stored `timezone` setting (absent/invalid → UTC — the same fallback Logged Day uses) and serialized as the `bucket_start` field, a `YYYY-MM-DDT00:00:00Z` string naming that calendar date at UTC midnight, not the instant local midnight occurred.
+_Avoid_: bucket date, bucket timestamp
 
 **Manual Record**:
 A metric-type record (`weight`, `height`, or `weight_goal` only — the write allowlist) created directly by the user through the Add-record form, via `POST /api/data/{type}`, rather than by ingestion (CSV import, MCP tool call, food-photo recognition). The distinction matters only at write time; a Manual Record reads back identically to an ingested one.
