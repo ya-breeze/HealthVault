@@ -1,7 +1,7 @@
 # ADR-012: Chart Buckets Resolve in the User's Timezone, via 15-Minute SQL Pre-Aggregation
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 

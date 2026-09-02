@@ -153,5 +153,5 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Amend `CONTEXT.md`'s **Logged Day** entry: drop the clause claiming the general `/api/data/{type}` charts use a different, UTC bucketing, and drop the `_Avoid_` note that reserves "Day" because of it.
 - [x] Add a **Bucket Start** term to `CONTEXT.md` defining it as the local calendar date (or first of the local month) a bucket covers, resolved in the user's stored `timezone` and serialized at UTC midnight, with `_Avoid_`: bucket date, bucket timestamp.
 - [x] Write `docs/adr/ADR-012-local-day-chart-buckets.md` with `Status: Proposed`, covering the decision to resolve chart buckets in the user's stored zone, the 15-minute SQL pre-aggregation plus Go regrouping mechanism and why exactness across DST ruled out a fixed-offset shift, the choice to keep `bucket_start` as a UTC-midnight calendar-date label, and the embedded `time/tzdata` dependency.
-- [ ] As the last change before finishing, flip ADR-012 from `Proposed` to `Accepted`.
-- [ ] Mark completed
+- [x] As the last change before finishing, flip ADR-012 from `Proposed` to `Accepted`.
+- [x] Mark completed
