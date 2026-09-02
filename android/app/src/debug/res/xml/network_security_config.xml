@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-build override of src/main/res/xml/network_security_config.xml: permits cleartext HTTP
+  everywhere so a debug build can point at a LAN stack (e.g. http://192.168.1.54:8892) whose
+  server URL is entered by the owner on first run and is not known at build time. Release builds
+  never merge this file and keep the HTTPS-only base config.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

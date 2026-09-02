@@ -15,3 +15,13 @@ playwright-report/
 
 # ralphex agent state
 .ralphex/
+
+# Android build output and local SDK/toolchain config — local.properties
+# holds a machine-specific sdk.dir path and is never checked in.
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+android/*.hprof
+android/captures/
+

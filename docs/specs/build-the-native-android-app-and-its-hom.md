@@ -48,13 +48,13 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 1: Android module and build wiring
 
-- [ ] Add the Gradle project under `android/`: `settings.gradle.kts`, root `build.gradle.kts`, `gradle.properties`, `gradle/libs.versions.toml`, the wrapper, and `app/build.gradle.kts` with application ID `net.ikoro.healthvault`, Kotlin, Compose, and Glance
-- [ ] Declare dependencies in the version catalogue: Compose, Glance for app widgets, WorkManager, OkHttp, kotlinx.serialization, and AndroidX Browser for Custom Tabs
-- [ ] Add `app/src/main/AndroidManifest.xml` with the internet permission, `MainActivity`, the widget receiver, and a debug-only network security config permitting cleartext
-- [ ] Add `test-android` and `lint-android` Makefile targets that run `./gradlew testDebugUnitTest` and `./gradlew lintDebug`, and print a visible skip notice when `ANDROID_HOME` is unset and `android/local.properties` is absent
-- [ ] Wire those targets into `test` and `lint`, and add an `android-apk` target producing the debug APK
-- [ ] Add Gradle build output, `local.properties` and `.gradle/` to `.gitignore`, and `android/` to `.dockerignore` so the backend image build context is unchanged
-- [ ] Mark completed
+- [x] Add the Gradle project under `android/`: `settings.gradle.kts`, root `build.gradle.kts`, `gradle.properties`, `gradle/libs.versions.toml`, the wrapper, and `app/build.gradle.kts` with application ID `net.ikoro.healthvault`, Kotlin, Compose, and Glance
+- [x] Declare dependencies in the version catalogue: Compose, Glance for app widgets, WorkManager, OkHttp, kotlinx.serialization, and AndroidX Browser for Custom Tabs
+- [x] Add `app/src/main/AndroidManifest.xml` with the internet permission, `MainActivity`, the widget receiver, and a debug-only network security config permitting cleartext
+- [x] Add `test-android` and `lint-android` Makefile targets that run `./gradlew testDebugUnitTest` and `./gradlew lintDebug`, and print a visible skip notice when `ANDROID_HOME` is unset and `android/local.properties` is absent
+- [x] Wire those targets into `test` and `lint`, and add an `android-apk` target producing the debug APK
+- [x] Add Gradle build output, `local.properties` and `.gradle/` to `.gitignore`, and `android/` to `.dockerignore` so the backend image build context is unchanged
+- [x] Mark completed
 
 ### Task 2: API client, session storage, and single-flight refresh
 

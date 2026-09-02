@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A plain plus-in-circle mark; this app ships no designer asset. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24 A30,30 0 1,1 53.9,24 Z M54,24 L54,24"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,38 L58,38 L58,50 L70,50 L70,58 L58,58 L58,70 L50,70 L50,58 L38,58 L38,50 L50,50 Z" />
+</vector>
