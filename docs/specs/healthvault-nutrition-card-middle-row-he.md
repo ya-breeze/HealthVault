@@ -163,12 +163,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 6: End-to-end coverage
-- [ ] Add a `bmr` field to `mockLoggingGapApis`'s target fixture in `e2e/tests/logging-gap.spec.ts`, defaulting low enough that every existing fixture keeps its current assertions unchanged
-- [ ] Add a too-fast-loss case: a weight series losing about 1.4%/week, asserting `nutrition-sustainability-loss-rate` is visible and carries the percentage
-- [ ] Add a below-BMR case: `on_track` numbers whose mean logged intake sits clearly under the mocked `bmr`, with a loss rate inside the band, asserting `nutrition-sustainability-below-bmr` is visible and `nutrition-sustainability-loss-rate` is not
-- [ ] Add the gating regression: the same intake and BMR with logged calories low enough that the gap line reports a gap rather than `on_track`, asserting `nutrition-sustainability-below-bmr` is absent
-- [ ] Assert the middle row is absent entirely for the existing `on_track` and `not_enough_data` fixtures, and on the gap-only `retrieval_error` path
-- [ ] Mark completed
+- [x] Add a `bmr` field to `mockLoggingGapApis`'s target fixture in `e2e/tests/logging-gap.spec.ts`, defaulting low enough that every existing fixture keeps its current assertions unchanged
+- [x] Add a too-fast-loss case: a weight series losing about 1.4%/week, asserting `nutrition-sustainability-loss-rate` is visible and carries the percentage
+- [x] Add a below-BMR case: `on_track` numbers whose mean logged intake sits clearly under the mocked `bmr`, with a loss rate inside the band, asserting `nutrition-sustainability-below-bmr` is visible and `nutrition-sustainability-loss-rate` is not
+- [x] Add the gating regression: the same intake and BMR with logged calories low enough that the gap line reports a gap rather than `on_track`, asserting `nutrition-sustainability-below-bmr` is absent
+- [x] Assert the middle row is absent entirely for the existing `on_track` and `not_enough_data` fixtures, and on the gap-only `retrieval_error` path
+- [x] Mark completed
 
 ### Task 7: Documentation and validation
 - [ ] Write `docs/adr/ADR-012-sustainability-warning-gated-on-logging-gap.md` with `Status: Proposed`, recording the `on_track` gate on the intake check, the absence of a gate on the rate check, and the middle row's precedence order
