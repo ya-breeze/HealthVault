@@ -33,3 +33,45 @@ export function rememberSession(me: Me): void {
 export function clearSession(): void {
   cached = null;
 }
+
+// Suppresses the login page's automatic Cf-Access exchange attempt — see
+// useLogout, which sets this right after ending a session, and the login
+// page, which reads it on mount and clears it only when the user clicks the
+// explicit Access sign-in button.
+//
+// Without this, loading any page after logging out would silently
+// re-authenticate through Access on the very next mount-time attempt, and
+// logout would look broken: the user would never actually land on /login.
+//
+// sessionStorage, not localStorage: the suppression is per-tab and
+// per-session on purpose, so it should not outlive the browser tab that
+// logged out, and should not follow the user into a different tab that is
+// still signed in.
+const ACCESS_SIGN_IN_SUPPRESSED_KEY = 'hcw:accessSignInSuppressed';
+
+export function accessSignInSuppressed(): boolean {
+  try {
+    return sessionStorage.getItem(ACCESS_SIGN_IN_SUPPRESSED_KEY) === '1';
+  } catch {
+    // sessionStorage may be unavailable (e.g. private browsing) — matches
+    // lib/api.ts's guard around localStorage. Unsuppressed is the safe
+    // default: the exchange simply gets attempted again, same as a first visit.
+    return false;
+  }
+}
+
+export function suppressAccessSignIn(): void {
+  try {
+    sessionStorage.setItem(ACCESS_SIGN_IN_SUPPRESSED_KEY, '1');
+  } catch {
+    // Same guard as above; the suppression just doesn't persist.
+  }
+}
+
+export function clearAccessSignInSuppression(): void {
+  try {
+    sessionStorage.removeItem(ACCESS_SIGN_IN_SUPPRESSED_KEY);
+  } catch {
+    // Same guard as above.
+  }
+}

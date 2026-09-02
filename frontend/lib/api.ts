@@ -10,7 +10,7 @@ const AUTH_REFRESH_LOCK = 'hcw-auth-refresh';
 const LAST_REFRESH_KEY = 'hcw:lastAuthRefreshAt';
 
 function isAuthExemptPath(path: string): boolean {
-  return path === '/auth/login' || path === '/auth/refresh';
+  return path === '/auth/login' || path === '/auth/refresh' || path === '/auth/cf-access';
 }
 
 // Completion time of the last successful refresh in *this* tab. The
@@ -93,16 +93,34 @@ function coordinatedRefresh(dispatchedAt: number): Promise<boolean> {
   return refreshPromise;
 }
 
+// POSTs /auth/cf-access directly (no retry wrapping — this IS the recovery
+// step fetchWithAuthRetry falls back to below, and what the login page's
+// mount-time attempt and its explicit sign-in button both call through
+// api.cfAccessLogin). Returns the raw Response so callers can distinguish
+// 404 (feature off) from 401/403 (feature on, this attempt didn't get in)
+// from 200 (exchanged).
+async function cfAccessExchange(): Promise<Response> {
+  return fetch(`${BASE}/auth/cf-access`, { method: 'POST', credentials: 'include' });
+}
+
 // The one place that calls fetch() and reacts to a 401 by transparently
 // refreshing and retrying — apiRawFetch, apiFetchNoBody, and apiFetchForm all
 // delegate here so the retry logic exists exactly once.
+//
+// A 401 that refresh could not fix (no refresh token, or a dead one) gets a
+// second recovery step: the Cf-Access exchange, once. It costs nothing on a
+// deployment with no Cloudflare in front — cfAccessExchange there just 404s
+// and this falls through to returning the original 401, same as today.
 async function fetchWithAuthRetry(path: string, options: RequestInit): Promise<Response> {
   const dispatchedAt = Date.now();
   const res = await fetch(`${BASE}${path}`, options);
   if (res.status !== 401 || isAuthExemptPath(path)) return res;
 
   const refreshed = await coordinatedRefresh(dispatchedAt);
-  if (!refreshed) return res;
+  if (refreshed) return fetch(`${BASE}${path}`, options);
+
+  const exchanged = await cfAccessExchange();
+  if (!exchanged.ok) return res;
 
   return fetch(`${BASE}${path}`, options);
 }
@@ -547,6 +565,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+
+  // Exchanges a Cloudflare Access Assertion (carried by the browser, not by
+  // this call) for a session, the same way login() exchanges a password.
+  // `apiFetchNoBody`, not `apiFetch`, for the same reason as logout below —
+  // and because callers branch on ApiError.status (404 feature-off, 401/403
+  // this attempt didn't get in) rather than reading a response body.
+  cfAccessLogin: () => apiFetchNoBody('/auth/cf-access', { method: 'POST' }),
 
   // `apiFetchNoBody`, not `apiFetch`: the endpoint answers 204 with an empty
   // body, so parsing it as JSON throws — and every caller awaits this before

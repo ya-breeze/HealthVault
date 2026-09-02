@@ -74,14 +74,14 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 3: Use the exchange from the browser
 
-- [ ] Add `api.cfAccessLogin()` to `frontend/lib/api.ts`, posting to `/auth/cf-access`, and add that path to `isAuthExemptPath` so it cannot recurse into its own retry
-- [ ] Extend `fetchWithAuthRetry` so a 401 that `coordinatedRefresh` could not fix tries the exchange once before giving up, and retries the original request when it succeeds
-- [ ] Add `accessSignInSuppressed()` and `suppressAccessSignIn()` helpers backed by `sessionStorage` in `frontend/lib/session.ts`, guarded against a `sessionStorage` that throws, matching how `lib/api.ts` guards `localStorage`
-- [ ] Call `suppressAccessSignIn()` from `frontend/components/useLogout.ts` alongside `clearSession()`, so logging out does not immediately re-authenticate through Access
-- [ ] In `frontend/app/login/page.tsx`, attempt the exchange on mount unless suppressed: route to `/` on success, hide the Access control on 404, and on 401 or 403 show the password form plus a short message and an explicit sign-in button that clears the suppression flag and retries
-- [ ] Keep the username and password form and its 429 lockout handling exactly as they are, and keep the new strings hardcoded English to match the rest of the page
-- [ ] Add cases to `frontend/lib/api.test.ts` for the new 401 recovery: refresh fails then exchange succeeds and the request is retried, and both fail so the original 401 is returned
-- [ ] Mark completed
+- [x] Add `api.cfAccessLogin()` to `frontend/lib/api.ts`, posting to `/auth/cf-access`, and add that path to `isAuthExemptPath` so it cannot recurse into its own retry
+- [x] Extend `fetchWithAuthRetry` so a 401 that `coordinatedRefresh` could not fix tries the exchange once before giving up, and retries the original request when it succeeds
+- [x] Add `accessSignInSuppressed()` and `suppressAccessSignIn()` helpers backed by `sessionStorage` in `frontend/lib/session.ts`, guarded against a `sessionStorage` that throws, matching how `lib/api.ts` guards `localStorage`
+- [x] Call `suppressAccessSignIn()` from `frontend/components/useLogout.ts` alongside `clearSession()`, so logging out does not immediately re-authenticate through Access
+- [x] In `frontend/app/login/page.tsx`, attempt the exchange on mount unless suppressed: route to `/` on success, hide the Access control on 404, and on 401 or 403 show the password form plus a short message and an explicit sign-in button that clears the suppression flag and retries
+- [x] Keep the username and password form and its 429 lockout handling exactly as they are, and keep the new strings hardcoded English to match the rest of the page
+- [x] Add cases to `frontend/lib/api.test.ts` for the new 401 recovery: refresh fails then exchange succeeds and the request is retried, and both fail so the original 401 is returned
+- [x] Mark completed
 
 ### Task 4: Validate against a stack with the feature off
 

@@ -133,3 +133,59 @@ describe('transparent refresh on 401', () => {
     expect(refreshes).toBe(1);
   });
 });
+
+describe('Cf-Access exchange as a second recovery step', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('tries the exchange once when refresh fails, and retries the original request on success', async () => {
+    let refreshes = 0;
+    let exchanges = 0;
+    let exchanged = false;
+
+    installFetch(async path => {
+      if (path.endsWith('/auth/refresh')) {
+        refreshes++;
+        return unauthorized();
+      }
+      if (path.endsWith('/auth/cf-access')) {
+        exchanges++;
+        exchanged = true;
+        return noContent();
+      }
+      if (path.includes('/summary/today')) {
+        if (exchanged) return json({ date: '2026-08-31' });
+        return unauthorized();
+      }
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await expect(api.getTodaySummary()).resolves.toBeTruthy();
+    expect(refreshes, 'refresh is tried first, same as any other 401').toBe(1);
+    expect(exchanges, 'the exchange is the fallback once refresh has failed').toBe(1);
+  });
+
+  it('gives up and returns the original 401 when both refresh and the exchange fail', async () => {
+    let refreshes = 0;
+    let exchanges = 0;
+
+    installFetch(async path => {
+      if (path.endsWith('/auth/refresh')) {
+        refreshes++;
+        return unauthorized();
+      }
+      if (path.endsWith('/auth/cf-access')) {
+        exchanges++;
+        return unauthorized();
+      }
+      return unauthorized();
+    });
+
+    const api = await freshApi();
+    await expect(api.getTodaySummary()).rejects.toMatchObject({ status: 401 });
+    expect(refreshes).toBe(1);
+    expect(exchanges, 'the exchange is tried exactly once, never looped').toBe(1);
+  });
+});
