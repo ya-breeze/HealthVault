@@ -64,10 +64,16 @@ Deliberately excluded:
 - **Pre-1970 timestamps.** Integer division of a negative epoch second truncates toward zero and would mis-slot such a row. Health data is post-1970; note the limit in the code comment rather than handling it.
 
 ## Validation Commands
-
 - `make lint`
 - `make test`
 - `make test-e2e`
+
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Put a zone database in the deployed binary
 
