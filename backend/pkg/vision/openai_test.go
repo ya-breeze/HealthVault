@@ -293,7 +293,7 @@ func TestOpenAIClient_Clarify_SendsNoImageContent(t *testing.T) {
 			`{"items":[{"display_name":"sauce","canonical_name":"","preparation":"unknown","state":"unknown","weight_grams":30,"confidence":0.6}],"clarification_questions":[]}`)))
 	})
 
-	_, err := c.Clarify(context.Background(),
+	_, err := c.Clarify(context.Background(), "",
 		[]vision.Item{{Name: "sauce", WeightGrams: 30}},
 		[]vision.ClarifyTurn{{Question: "Cream or tomato based?", Answer: "Tomato-based"}}, "en")
 	if err != nil {
@@ -303,6 +303,85 @@ func TestOpenAIClient_Clarify_SendsNoImageContent(t *testing.T) {
 	b, _ := json.Marshal(capturedBody)
 	if strings.Contains(string(b), "image_url") {
 		t.Error("expected no image_url content in a Clarify request")
+	}
+	if strings.Contains(string(b), "user_description") {
+		t.Error("expected no user_description key on the photo path, where there is no description")
+	}
+}
+
+// On the describe path the description is the meal's only evidence, and a
+// vague one arrives here with an empty item list, so it has to be in the
+// request rather than merely stored on the row.
+func TestOpenAIClient_Clarify_ReplaysTheDescription(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody) //nolint:errcheck
+		w.Write([]byte(chatResponse(t,                //nolint:errcheck
+			`{"items":[{"display_name":"borscht","canonical_name":"","preparation":"unknown","state":"unknown","weight_grams":300,"confidence":0.6}],"clarification_questions":[]}`)))
+	})
+
+	_, err := c.Clarify(context.Background(), "тарелка борща",
+		nil,
+		[]vision.ClarifyTurn{{Question: "How big was the portion?", Answer: "about 300 g"}}, "ru")
+	if err != nil {
+		t.Fatalf("Clarify: %v", err)
+	}
+
+	b, _ := json.Marshal(capturedBody)
+	if !strings.Contains(string(b), "тарелка борща") {
+		t.Errorf("expected the user's description in the Clarify request, got: %s", string(b))
+	}
+	if strings.Contains(string(b), "No new photo is attached") {
+		t.Error("expected the described-meal framing, not the photo path's instruction")
+	}
+}
+
+func TestOpenAIClient_Describe_SendsTextOnlyNoImage(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"борщ","canonical_name":"borscht","preparation":"boiled","state":"cooked","weight_grams":350,"confidence":0.7}],"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Describe(context.Background(), "тарелка борща со сметаной", "ru")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+
+	if store, _ := capturedBody["store"].(bool); store {
+		t.Error("expected store=false in the request body")
+	}
+	schema, _ := capturedBody["response_format"].(map[string]any)
+	jsonSchema, _ := schema["json_schema"].(map[string]any)
+	if name, _ := jsonSchema["name"].(string); name != "food_recognition" {
+		t.Errorf("expected food_recognition json_schema, got %q", name)
+	}
+
+	messages, _ := capturedBody["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	systemMsg := messages[0].(map[string]any)
+	systemContent, _ := systemMsg["content"].(string)
+	if !strings.Contains(systemContent, `BCP-47 "ru"`) {
+		t.Errorf("expected language directive for ru in system prompt, got %q", systemContent)
+	}
+	userMsg := messages[1].(map[string]any)
+	userContent, ok := userMsg["content"].(string)
+	if !ok || userContent != "тарелка борща со сметаной" {
+		t.Errorf("expected plain description text as user content, got %+v", userMsg["content"])
+	}
+
+	body, _ := json.Marshal(capturedBody)
+	if strings.Contains(string(body), "image_url") {
+		t.Error("expected no image_url content in a Describe request")
+	}
+
+	if len(result.Items) != 1 || result.Items[0].Name != "борщ" {
+		t.Fatalf("unexpected result: %+v", result)
 	}
 }
 

@@ -87,6 +87,65 @@ If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
 instead of guessing. Otherwise leave clarification_questions empty.`
 
+// describeSystemPrompt is Describe's counterpart to recognizeSystemPrompt:
+// same item-splitting/merging rules and the same response contract, but the
+// evidence is a user-written description, not a photo, so every visual-
+// judgment instruction is replaced with instructions for reading quantities
+// and detail out of text instead.
+const describeSystemPrompt = `You are a nutrition assistant identifying foods from a user's written description of a meal they ate.
+
+Return one item per food that was served as its own separate portion, and
+merge components into a single item only when they were mixed, chopped,
+tossed, or cooked/sauced together into one combined preparation (e.g. a
+curry, a stew, a stir-fry, a mixed salad, a pre-mixed side) — a homogeneous
+composite dish is one item even when individual ingredients within it remain
+separately nameable. The test is whether each component was ever served as
+its own separate portion — not whether it plays a different role from its
+neighbor (a protein and a side split the same way as two different
+vegetable sides), and not whether an individual ingredient can be pointed to
+and named, since an ingredient inside a combined preparation almost always
+can be and that alone must not trigger a split. A minor garnish or condiment
+that isn't itself a portion-sized food stays folded into its main item
+rather than becoming its own item.
+
+For each item, estimate its display_name, canonical_name, preparation, state,
+brand, weight in grams, and your confidence (0-1). display_name is the food's
+name written in the requested display language (see instructions appended
+below). canonical_name is the same food's standard name in English — leave it
+empty only when the display language is itself English, since duplicating an
+identical English string in both fields wastes nothing but is unnecessary.
+
+preparation must be one of: raw, boiled, steamed, roasted, baked, grilled,
+fried, breaded_fried, braised, unknown.
+state must be one of: raw, cooked, unknown.
+Use "unknown" rather than guessing when the text does not make it clear.
+
+Read quantities directly out of the user's own text and convert them to
+grams (e.g. "две сосиски", "тарелка борща", "150 г риса" all name a
+quantity to convert). When the text names no quantity for a food, estimate a
+typical portion for that food and reflect the resulting uncertainty in a
+lower confidence rather than refusing to estimate.
+
+brand is the manufacturer or product brand name, set only when the user
+actually names one in their text — do not guess a brand from the food alone.
+preparation and state are set only when the text states or plainly implies
+them; otherwise leave them "unknown".
+
+Also estimate each item's own per-100g nutrition as estimated_profile — your
+best guess from the description, even for an item you expect will be matched
+to a known food or product afterward. On this path there is usually no other
+source of macros for the item, so make your best estimate rather than
+leaving it null whenever you can reasonably guess. Units: calories_per_100g
+is kcal; every other field (protein, carbs, fat, sugar, sodium,
+dietary_fiber) is grams per 100g — sodium included: a milligram sodium value
+must be converted to grams (divide by 1000) before reporting it here. Set
+estimated_profile to null only if you genuinely cannot make any reasonable
+estimate for that item.
+
+If the description is too vague to size or identify an item confidently,
+list one or two short clarification_questions for the user instead of
+guessing. Otherwise leave clarification_questions empty.`
+
 // IsEnglishDisplayLanguage reports whether displayLanguage means English —
 // either explicitly (a "en" primary subtag, case-insensitively — the
 // frontend only ever writes exact lowercase "en", but display_language is an
@@ -427,6 +486,21 @@ func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hi
 	return toRecognizeResult(resp, latency, displayLanguage)
 }
 
+// Describe sends the user's own written description of a meal and asks the
+// model to identify its foods — text-only, no image. See Client.Describe
+// for displayLanguage's meaning.
+func (c *OpenAIClient) Describe(ctx context.Context, description, displayLanguage string) (*RecognizeResult, error) {
+	messages := []chatMessage{
+		{Role: "system", Content: describeSystemPrompt + languageDirective(displayLanguage)},
+		{Role: "user", Content: description},
+	}
+	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
+	if err != nil {
+		return nil, err
+	}
+	return toRecognizeResult(resp, latency, displayLanguage)
+}
+
 var weightEstimateJSONSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -488,26 +562,48 @@ func (c *OpenAIClient) EstimateWeights(ctx context.Context, image []byte, mimeTy
 
 // Clarify is text-only: it replays the items recognized so far and the full
 // question/answer history, without re-sending the photo. See
-// Client.Clarify for displayLanguage's meaning.
-func (c *OpenAIClient) Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error) {
+// Client.Clarify for displayLanguage's meaning and for why a non-empty
+// description is replayed every round.
+func (c *OpenAIClient) Clarify(ctx context.Context, description string, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error) {
 	contextPayload := map[string]any{
 		"previously_recognized_items": priorItems,
 		"question_answer_history":     history,
+	}
+	if description != "" {
+		contextPayload["user_description"] = description
 	}
 	contextJSON, err := json.Marshal(contextPayload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal clarify context: %w", err)
 	}
 
+	// A described meal is clarified under describeSystemPrompt, whose evidence
+	// is written text rather than a photo; it carries the same item-splitting
+	// rules and the same response contract, so only the framing differs.
+	systemPrompt := recognizeSystemPrompt
+	instruction := "Here is what was previously recognized and the clarification " +
+		"answers given so far. No new photo is attached to this message, so you have no new " +
+		"visual evidence about item boundaries — keep the previously_recognized_items split " +
+		"exactly as given (do not merge or re-split them) unless a clarification answer " +
+		"explicitly says two of them are actually one food or that one is actually two. " +
+		"Update the items' other fields accordingly, or ask further clarification_questions " +
+		"if still unsure:\n"
+	if description != "" {
+		systemPrompt = describeSystemPrompt
+		instruction = "user_description is the user's own description of the meal — it is the " +
+			"only evidence about what was eaten, so treat it as the primary source and read " +
+			"the items back out of it. previously_recognized_items is what a previous round " +
+			"made of that same description and may legitimately be empty, which means no item " +
+			"was identified yet rather than that the meal had no food in it. Keep any items it " +
+			"does contain split exactly as given (do not merge or re-split them) unless a " +
+			"clarification answer explicitly says two of them are actually one food or that " +
+			"one is actually two. Apply the clarification answers, then return the full item " +
+			"list, or ask further clarification_questions if still unsure:\n"
+	}
+
 	messages := []chatMessage{
-		{Role: "system", Content: recognizeSystemPrompt + languageDirective(displayLanguage)},
-		{Role: "user", Content: "Here is what was previously recognized and the clarification " +
-			"answers given so far. No new photo is attached to this message, so you have no new " +
-			"visual evidence about item boundaries — keep the previously_recognized_items split " +
-			"exactly as given (do not merge or re-split them) unless a clarification answer " +
-			"explicitly says two of them are actually one food or that one is actually two. " +
-			"Update the items' other fields accordingly, or ask further clarification_questions " +
-			"if still unsure:\n" + string(contextJSON)},
+		{Role: "system", Content: systemPrompt + languageDirective(displayLanguage)},
+		{Role: "user", Content: instruction + string(contextJSON)},
 	}
 	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
 	if err != nil {

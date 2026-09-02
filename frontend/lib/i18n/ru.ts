@@ -54,6 +54,23 @@ const ru: Dictionary = {
   'review.confirmFailed': 'Не удалось подтвердить',
   'review.offAttributionPrefix': 'Данные о некоторых продуктах — из ',
   'review.offAttributionMiddle': ', доступны по лицензии ',
+  'review.descriptionLabel': 'Описание',
+
+  'describe.title': 'Записать приём пищи',
+  'describe.nameLabel': 'Название (необязательно)',
+  'describe.whenLabel': 'Когда',
+  'describe.textareaLabel': 'Опишите, что вы съели',
+  'describe.placeholder': 'например: «тарелка борща со сметаной и два куска хлеба»',
+  'describe.disclosure':
+    'Ваше описание отправляется внешней модели ИИ (OpenAI) для распознавания блюд и оценки порций — проверьте и подтвердите перед сохранением.',
+  'describe.submit': 'Записать',
+  'describe.submitting': 'Анализ…',
+  'describe.emptyError': 'Опишите, что вы съели, прежде чем сохранять.',
+  'describe.tooLongError': 'Описание должно содержать не более {max} символов',
+  'describe.saveFailed': 'Не удалось сохранить приём пищи',
+  'describe.structuredToggle': 'Ввести блюда вручную',
+  'describe.backToDescribe': 'Вернуться к описанию',
+  'describe.descriptionUnusedHere': 'Здесь сохраняются блюда из списка ниже. Ваше описание не используется.',
 
   'item.resolve': 'Определить блюдо',
   'item.verifyEstimate': 'Проверить оценку',

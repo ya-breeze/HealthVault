@@ -531,7 +531,7 @@ func (slowRecognizeClient) EstimateWeights(context.Context, []byte, string, []vi
 	return &vision.WeightEstimateResult{}, nil
 }
 
-func (slowRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
+func (slowRecognizeClient) Clarify(context.Context, string, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
 
@@ -544,6 +544,10 @@ func (slowRecognizeClient) Select(context.Context, []vision.ItemCandidates) (*vi
 func (slowRecognizeClient) Translate(ctx context.Context, _ string) (string, error) {
 	<-ctx.Done()
 	return "", ctx.Err()
+}
+
+func (slowRecognizeClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
+	return &vision.RecognizeResult{}, nil
 }
 
 func TestCreateMeal_TimeoutMarksFailed(t *testing.T) {

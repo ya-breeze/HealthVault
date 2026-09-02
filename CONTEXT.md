@@ -10,6 +10,10 @@ A personal health-tracking app. Its food-logging capability lets a user photogra
 A single photographed/logged eating occasion, made up of one or more Food Items.
 _Avoid_: Meal photo, entry (too generic — could mean any logged record)
 
+**Meal Description**:
+The user's own free-text account of a meal, written when logging it through the description-first manual entry path instead of a photo — the input to `vision.Client.Describe`. Persisted on the Food Meal (empty for a photographed or structured-manual entry) so a failed or retried analysis can replay it. Distinct from the photo `Hint`: a Hint only decorates a single `Recognize` call for a photographed meal and is never stored, while a Meal Description *is* the meal's only input and has to survive across a retry.
+_Avoid_: Hint, note (too generic, and collides with the unrelated photo Hint)
+
 **Food Item**:
 One recognized food or ingredient occurrence within a Food Meal.
 _Avoid_: Ingredient (reserve for informal use only — a Food Item can be a whole dish, not just a component)
