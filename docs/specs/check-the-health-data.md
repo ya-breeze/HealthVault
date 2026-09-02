@@ -93,6 +93,6 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Add an e2e test to `e2e/tests/data-types.spec.ts` that posts two overlapping step records to `/webhook/alice` for a date far enough in the past that no other spec's window covers it, then asserts `GET /api/data/steps?bucket=day` with an explicit `from`/`to` counts them once.
 - [x] Add an e2e test asserting `GET /api/data/steps/diagnostics` over that same range reports `raw_sum` above `collapsed_sum` and a nonzero `dropped_records`.
 - [x] Add an e2e test asserting the steps page's diagnostic disclosure is collapsed on load and reveals the table when activated.
-- [ ] Run `make lint`, `make test` and `make test-e2e`, and fix every failure.
-- [ ] Flip ADR-012 from Proposed to Accepted as the last commit.
-- [ ] Mark completed
+- [x] Run `make lint`, `make test` and `make test-e2e`, and fix every failure.
+- [x] Flip ADR-012 from Proposed to Accepted as the last commit.
+- [x] Mark completed

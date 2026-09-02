@@ -1,7 +1,7 @@
 # ADR-012: Collapse Overlapping Step Intervals on Read, Not on Write
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
