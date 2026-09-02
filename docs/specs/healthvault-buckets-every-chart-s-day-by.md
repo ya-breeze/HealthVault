@@ -136,17 +136,17 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 8: Test the boundary, including both DST days
 
-- [ ] In `backend/pkg/database/aggregate_test.go`, keep the existing UTC-location cases passing unchanged, then add a case where records either side of local midnight in a zone ahead of UTC (for example `Asia/Tokyo`) land in different local day buckets than they do under UTC.
-- [ ] Add a case for a zone behind UTC (for example `America/Los_Angeles`) showing the boundary moves the other way.
-- [ ] Add a case for a 45-minute offset zone (for example `Asia/Kathmandu`), proving 15-minute slots resolve a non-hour boundary exactly.
-- [ ] Add spring-forward and fall-back cases in a DST zone: seed records through the 23-hour and the 25-hour local day, and assert every record lands in exactly one bucket and each bucket's total equals the total from grouping the same records by `LocalBucketKey` record by record. This is the exactness criterion; a fixed-offset regrouping must fail it.
-- [ ] Add a month-bucket case in a non-UTC zone where a record near the month boundary moves months.
-- [ ] Add point-family and blood-pressure cases proving `avg` is the value-weighted average across slots, not the average of slot averages, and that `min`/`max` survive the fold.
-- [ ] Add a case proving an unknown or empty timezone setting produces exactly today's UTC buckets.
-- [ ] Add or extend a test in `backend/pkg/server` covering `trailingStepsAverage` over a window that crosses a DST transition in the user's zone.
-- [ ] Add an e2e spec at `e2e/tests/chart-day-boundary.spec.ts`, following `e2e/tests/completeness.spec.ts`'s pattern: default `BASE_URL` to the WIP stack because it mutates the `timezone` setting, capture the account's original settings first, and restore them in a `finally`.
-- [ ] Have that spec POST one `weight` record at a fixed past instant late in the UTC day, read `GET /api/data/weight?bucket=day` under `UTC` and again under a zone ahead of UTC, assert the record's `bucket_start` differs by one day between the two, and delete the record in the `finally`.
-- [ ] Mark completed
+- [x] In `backend/pkg/database/aggregate_test.go`, keep the existing UTC-location cases passing unchanged, then add a case where records either side of local midnight in a zone ahead of UTC (for example `Asia/Tokyo`) land in different local day buckets than they do under UTC.
+- [x] Add a case for a zone behind UTC (for example `America/Los_Angeles`) showing the boundary moves the other way.
+- [x] Add a case for a 45-minute offset zone (for example `Asia/Kathmandu`), proving 15-minute slots resolve a non-hour boundary exactly.
+- [x] Add spring-forward and fall-back cases in a DST zone: seed records through the 23-hour and the 25-hour local day, and assert every record lands in exactly one bucket and each bucket's total equals the total from grouping the same records by `LocalBucketKey` record by record. This is the exactness criterion; a fixed-offset regrouping must fail it.
+- [x] Add a month-bucket case in a non-UTC zone where a record near the month boundary moves months.
+- [x] Add point-family and blood-pressure cases proving `avg` is the value-weighted average across slots, not the average of slot averages, and that `min`/`max` survive the fold.
+- [x] Add a case proving an unknown or empty timezone setting produces exactly today's UTC buckets.
+- [x] Add or extend a test in `backend/pkg/server` covering `trailingStepsAverage` over a window that crosses a DST transition in the user's zone.
+- [x] Add an e2e spec at `e2e/tests/chart-day-boundary.spec.ts`, following `e2e/tests/completeness.spec.ts`'s pattern: default `BASE_URL` to the WIP stack because it mutates the `timezone` setting, capture the account's original settings first, and restore them in a `finally`.
+- [x] Have that spec POST one `weight` record at a fixed past instant late in the UTC day, read `GET /api/data/weight?bucket=day` under `UTC` and again under a zone ahead of UTC, assert the record's `bucket_start` differs by one day between the two, and delete the record in the `finally`.
+- [x] Mark completed
 
 ### Task 9: Record the decision
 
