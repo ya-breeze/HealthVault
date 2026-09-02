@@ -1,8 +1,8 @@
 package net.ikoro.healthvault.api
 
 import java.io.IOException
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.ikoro.healthvault.store.SecureStore
@@ -98,34 +98,23 @@ class HealthVaultApi(
             )
 
     private fun <T> classify(response: Response, parse: (String) -> T): ApiResult<T> {
-        val contentType = response.header("Content-Type") ?: ""
-        val body = response.body?.string() ?: ""
-
-        if (looksLikeAccessChallenge(response, contentType, body)) {
-            return ApiResult.AccessChallenge
-        }
-        return when {
-            response.code == 401 -> ApiResult.Unauthenticated
-            response.code == 429 -> {
-                val retrySeconds = response.header("Retry-After")?.toLongOrNull() ?: 1L
-                ApiResult.RateLimited(retrySeconds.seconds)
-            }
-            response.isSuccessful -> runCatching { ApiResult.Success(parse(body)) }
+        val outcome = classifyRawResponse(
+            code = response.code,
+            contentType = response.header("Content-Type"),
+            body = response.body?.string() ?: "",
+            // response.request.url reflects the *final* URL after OkHttp's
+            // default redirect-following, so a Cloudflare Access challenge
+            // that redirected to its own login host is visible here.
+            finalUrlHost = response.request.url.host,
+            retryAfterHeader = response.header("Retry-After"),
+        )
+        return when (outcome) {
+            is RawOutcome.Unauthenticated -> ApiResult.Unauthenticated
+            is RawOutcome.RateLimited -> ApiResult.RateLimited(outcome.retryAfter)
+            is RawOutcome.AccessChallenge -> ApiResult.AccessChallenge
+            is RawOutcome.ServerError -> ApiResult.ServerError(outcome.code, outcome.body)
+            is RawOutcome.Success -> runCatching { ApiResult.Success(parse(outcome.body)) }
                 .getOrElse { ApiResult.ServerError(response.code, "unparseable response") }
-            else -> ApiResult.ServerError(response.code, body)
         }
-    }
-
-    /**
-     * A Cloudflare Access challenge can arrive as a redirect (whose final
-     * response, after OkHttp's default redirect-following, has
-     * response.request.url pointed at *.cloudflareaccess.com) or as an HTML
-     * login page returned in place of the JSON this client expects. Checked
-     * before every other status branch, since Access can return any status
-     * code, including 200, for its own login page.
-     */
-    private fun looksLikeAccessChallenge(response: Response, contentType: String, body: String): Boolean {
-        if (response.request.url.host.endsWith("cloudflareaccess.com")) return true
-        return contentType.contains("text/html", ignoreCase = true) && body.contains("<html", ignoreCase = true)
     }
 }

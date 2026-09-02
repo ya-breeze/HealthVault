@@ -106,14 +106,14 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 7: Android unit tests
 
-- [ ] Cover the cookie jar: path scoping keeps `kin_refresh` off `/api/summary/today`, expiry is honoured, and cookies survive a store round trip
-- [ ] Cover single-flight refresh with MockWebServer: concurrent 401s produce exactly one `/api/auth/refresh` call, and a 401 for a request dispatched before the last refresh retries without refreshing again
-- [ ] Cover that a rotated refresh token is committed to the store before the retried request is issued
-- [ ] Cover response parsing: an available target, each unavailability reason, a zero-valued target field, and a null `last_logged_at`
-- [ ] Cover 429 handling: `Retry-After` sets the next attempt time, and the failure is not reported as a sign-out
-- [ ] Cover `widgetState` for loaded, stale, signed-out and error inputs
-- [ ] Cover the Access-challenge classification: an HTML body or a redirect to `cloudflareaccess.com` maps to its own result rather than to invalid credentials
-- [ ] Mark completed
+- [x] Cover the cookie jar: path scoping keeps `kin_refresh` off `/api/summary/today`, expiry is honoured, and cookies survive a store round trip
+- [x] Cover single-flight refresh with MockWebServer: concurrent 401s produce exactly one `/api/auth/refresh` call, and a 401 for a request dispatched before the last refresh retries without refreshing again
+- [x] Cover that a rotated refresh token is committed to the store before the retried request is issued
+- [x] Cover response parsing: an available target, each unavailability reason, a zero-valued target field, and a null `last_logged_at`
+- [x] Cover 429 handling: `Retry-After` sets the next attempt time, and the failure is not reported as a sign-out
+- [x] Cover `widgetState` for loaded, stale, signed-out and error inputs
+- [x] Cover the Access-challenge classification: an HTML body or a redirect to `cloudflareaccess.com` maps to its own result rather than to invalid credentials
+- [x] Mark completed
 
 ### Task 8: Summary contract test in the existing e2e suite
 
