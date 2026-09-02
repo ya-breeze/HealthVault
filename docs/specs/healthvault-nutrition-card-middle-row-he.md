@@ -133,11 +133,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Expose Mean Logged Intake and the weight-only floor
-- [ ] Export `meanLoggedIntake(perDayWindowData, windowStartDayOffset, windowLastDayOffset): number | null` from `frontend/lib/loggingGap.ts`, returning `null` for an empty valid-day set, and have `computeLoggingGap` use it instead of its inline average
-- [ ] Split `checkWeightFloor(kept, rejected, bootstrapSiblingAmbiguous, mostRecentKeptDayOffset, windowLastDayOffset)` out of `checkHardFloor`, carrying the four weight-only conditions; leave `checkHardFloor`'s signature and result unchanged by composing it as `checkWeightFloor(...) || validDayCount < HARD_FLOOR_MIN_VALID_DAYS`
-- [ ] Document on `checkWeightFloor` why the two exist separately: the rate-of-loss check depends on weight alone and must not be silenced by a sparse food log
-- [ ] Add unit tests in `frontend/lib/loggingGap.test.ts` covering `meanLoggedIntake`'s `null` case and window scoping, and covering a fixture where `checkWeightFloor` is `false` while `checkHardFloor` is `true` (enough weigh-ins, fewer than three valid food days)
-- [ ] Mark completed
+- [x] Export `meanLoggedIntake(perDayWindowData, windowStartDayOffset, windowLastDayOffset): number | null` from `frontend/lib/loggingGap.ts`, returning `null` for an empty valid-day set, and have `computeLoggingGap` use it instead of its inline average
+- [x] Split `checkWeightFloor(kept, rejected, bootstrapSiblingAmbiguous, mostRecentKeptDayOffset, windowLastDayOffset)` out of `checkHardFloor`, carrying the four weight-only conditions; leave `checkHardFloor`'s signature and result unchanged by composing it as `checkWeightFloor(...) || validDayCount < HARD_FLOOR_MIN_VALID_DAYS`
+- [x] Document on `checkWeightFloor` why the two exist separately: the rate-of-loss check depends on weight alone and must not be silenced by a sparse food log
+- [x] Add unit tests in `frontend/lib/loggingGap.test.ts` covering `meanLoggedIntake`'s `null` case and window scoping, and covering a fixture where `checkWeightFloor` is `false` while `checkHardFloor` is `true` (enough weigh-ins, fewer than three valid food days)
+- [x] Mark completed
 
 ### Task 3: The sustainability computation
 - [ ] Create `frontend/lib/sustainability.ts` with `MAX_SUSTAINABLE_LOSS_PCT_PER_WEEK`, `BMR_SHORTFALL_MARGIN`, the `SustainabilityWarning` union, `SustainabilityInputs`, and `evaluateSustainability`, framework-free like `loggingGap.ts`
