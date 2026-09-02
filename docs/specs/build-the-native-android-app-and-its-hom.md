@@ -97,12 +97,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 6: Background refresh and update triggers
 
-- [ ] Add `work/RefreshWorker.kt` performing exactly one `GET /api/summary/today`, persisting the snapshot, and updating every placed widget
-- [ ] Add `work/RefreshScheduler.kt` enqueuing a 30-minute periodic worker on first widget placement and cancelling it when the last widget is removed
-- [ ] Honour a 429 by scheduling the next attempt from the `Retry-After` header rather than retrying immediately
-- [ ] Back off on network failure without clearing the cached snapshot, and never treat a failed refresh as a sign-out
-- [ ] Enqueue a one-off update on widget placement, on manual refresh, and when the app resumes
-- [ ] Mark completed
+- [x] Add `work/RefreshWorker.kt` performing exactly one `GET /api/summary/today`, persisting the snapshot, and updating every placed widget
+- [x] Add `work/RefreshScheduler.kt` enqueuing a 30-minute periodic worker on first widget placement and cancelling it when the last widget is removed
+- [x] Honour a 429 by scheduling the next attempt from the `Retry-After` header rather than retrying immediately
+- [x] Back off on network failure without clearing the cached snapshot, and never treat a failed refresh as a sign-out
+- [x] Enqueue a one-off update on widget placement, on manual refresh, and when the app resumes
+- [x] Mark completed
 
 ### Task 7: Android unit tests
 

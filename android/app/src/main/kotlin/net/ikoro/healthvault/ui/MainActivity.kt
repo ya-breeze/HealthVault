@@ -37,10 +37,15 @@ class MainActivity : ComponentActivity() {
                     onSignedOut = {
                         app.cookieJar.clear()
                         app.secureStore.clearSession()
+                        // Periodic refresh is tied to widget placement, not
+                        // to the session (RefreshScheduler.ensurePeriodic is
+                        // only ever cancelled by the last widget being
+                        // removed) — a signed-out widget keeps polling and
+                        // keeps rendering the sign-in prompt WidgetState.SignedOut
+                        // maps to, so nothing here needs to touch scheduling.
                         scope.launch(Dispatchers.IO) {
                             WidgetUpdater.updateAll(applicationContext)
                         }
-                        RefreshScheduler.cancelIfNoWidgets(applicationContext)
                         hasSession = false
                     },
                 )
