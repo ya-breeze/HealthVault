@@ -117,11 +117,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 8: Summary contract test in the existing e2e suite
 
-- [ ] Add `e2e/tests/summary-today.spec.ts` signing in through the UI the way `e2e/tests/auth.spec.ts` does, then reading `/api/summary/today` through the authenticated request context
-- [ ] Assert every field the Android client parses is present with the expected type, including `target.available`, the four target numbers, and a null `recommendation`
-- [ ] Assert `last_logged_at` is either null or a parseable timestamp
-- [ ] Assert the endpoint stays self-only by passing `?user=` and getting the caller's own data
-- [ ] Mark completed
+- [x] Add `e2e/tests/summary-today.spec.ts` signing in through the UI the way `e2e/tests/auth.spec.ts` does, then reading `/api/summary/today` through the authenticated request context
+- [x] Assert every field the Android client parses is present with the expected type, including `target.available`, the four target numbers, and a null `recommendation`
+- [x] Assert `last_logged_at` is either null or a parseable timestamp
+- [x] Assert the endpoint stays self-only by passing `?user=` and getting the caller's own data
+- [x] Mark completed
 
 ### Task 9: Documentation, ADRs, and verification
 
