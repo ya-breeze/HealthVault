@@ -23,7 +23,7 @@ func (Unconfigured) EstimateWeights(context.Context, []byte, string, []WeightEst
 	return nil, ErrNotConfigured
 }
 
-func (Unconfigured) Clarify(context.Context, []Item, []ClarifyTurn, string) (*RecognizeResult, error) {
+func (Unconfigured) Clarify(context.Context, string, []Item, []ClarifyTurn, string) (*RecognizeResult, error) {
 	return nil, ErrNotConfigured
 }
 
@@ -33,4 +33,8 @@ func (Unconfigured) Select(context.Context, []ItemCandidates) (*SelectResult, er
 
 func (Unconfigured) Translate(context.Context, string) (string, error) {
 	return "", ErrNotConfigured
+}
+
+func (Unconfigured) Describe(context.Context, string, string) (*RecognizeResult, error) {
+	return nil, ErrNotConfigured
 }

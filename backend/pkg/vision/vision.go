@@ -172,7 +172,15 @@ type Client interface {
 	// Rounds": re-sending the image every round would make image tokens the
 	// dominant cost for no additional information. displayLanguage has the
 	// same meaning as in Recognize.
-	Clarify(ctx context.Context, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error)
+	//
+	// description is the user's own written description of the meal on the
+	// describe path, and empty on the photo path. It has to be replayed every
+	// round because it is the only evidence a described meal has: Describe is
+	// told to ask clarification_questions "instead of guessing" when the text
+	// is vague, so the very meals that reach Clarify are the ones most likely
+	// to arrive with an empty priorItems — leaving the model nothing at all to
+	// clarify. Unlike a photo, replaying it costs a handful of text tokens.
+	Clarify(ctx context.Context, description string, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error)
 	Select(ctx context.Context, itemCandidates []ItemCandidates) (*SelectResult, error)
 	// Translate maps a free-text food-search query, in any language or
 	// regional spelling, to the term most likely to appear in USDA
@@ -180,4 +188,13 @@ type Client interface {
 	// "porridge" -> "oatmeal", "овсянка" -> "oatmeal"). Text-only, no
 	// image. See openspec/changes/multilingual-food-search/design.md.
 	Translate(ctx context.Context, query string) (string, error)
+	// Describe is text-only: it identifies foods from the user's own written
+	// description of a meal, with no image at all — the manual-entry
+	// counterpart to Recognize. It returns the same RecognizeResult shape and
+	// reuses recognizeJSONSchema, so every downstream stage (processRecognition,
+	// resolveItems, persistAnalysis, the clarify loop) works on its result
+	// exactly as it does on Recognize's. displayLanguage has the same meaning
+	// it has on Recognize: the Display Name comes back in that language, and
+	// each Item's CanonicalName is additionally produced in English.
+	Describe(ctx context.Context, description, displayLanguage string) (*RecognizeResult, error)
 }

@@ -144,7 +144,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
-	recognized, err := h.vision.Clarify(ctx, priorItems, history, displayLanguage)
+	recognized, err := h.vision.Clarify(ctx, meal.Description, priorItems, history, displayLanguage)
 	if err == nil {
 		carryForwardPriorFields(priorItems, recognized.Items, displayLanguage)
 	}

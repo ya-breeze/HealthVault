@@ -13,11 +13,12 @@ import (
 )
 
 // RetryMeal handles POST /api/food/meals/{id}/retry: re-runs analysis on the
-// stored photo. Accepted only when the meal is failed, or processing with an
-// updated_at older than HCW_VISION_TIMEOUT — a live call within that window
-// is normal, not a stranded one, and retrying it would start a second
-// concurrent analysis of the same meal. See design.md "Synchronous Vision
-// Call", "processing is ambiguous, and retry must not treat it as always-stale."
+// stored photo, or — for a photo-less meal — on its stored description.
+// Accepted only when the meal is failed, or processing with an updated_at
+// older than HCW_VISION_TIMEOUT — a live call within that window is normal,
+// not a stranded one, and retrying it would start a second concurrent
+// analysis of the same meal. See design.md "Synchronous Vision Call",
+// "processing is ambiguous, and retry must not treat it as always-stale."
 func (h *foodHandlers) RetryMeal(w http.ResponseWriter, r *http.Request) {
 	claims := ClaimsFromCtx(r)
 	if claims == nil {
@@ -47,12 +48,12 @@ func (h *foodHandlers) RetryMeal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "meal is not eligible for retry", http.StatusConflict)
 		return
 	}
-	if meal.PhotoPath == "" {
-		http.Error(w, "meal has no photo to retry", http.StatusConflict)
+	if meal.PhotoPath == "" && meal.Description == "" {
+		http.Error(w, "meal has no photo or description to retry", http.StatusConflict)
 		return
 	}
 
-	// A retry restarts analysis from the stored photo, so any clarification
+	// A retry restarts analysis from the stored photo or description, so any clarification
 	// rounds from a prior attempt no longer apply — see analyzeMeal's fresh
 	// Recognize call, which starts back at round 1.
 	//
@@ -86,7 +87,13 @@ func (h *foodHandlers) RetryMeal(w http.ResponseWriter, r *http.Request) {
 	meal.ClarifyLog = ""
 	meal.UpdatedAt = lease
 
-	applied, failErr := h.analyzeMeal(r.Context(), &meal, lease, "")
+	var applied bool
+	var failErr error
+	if meal.PhotoPath != "" {
+		applied, failErr = h.analyzeMeal(r.Context(), &meal, lease, "")
+	} else {
+		applied, failErr = h.analyzeDescribedMeal(r.Context(), &meal, lease)
+	}
 	if failErr != nil {
 		http.Error(w, "update error", http.StatusInternalServerError)
 		return
