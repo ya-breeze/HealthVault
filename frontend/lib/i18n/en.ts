@@ -12,14 +12,27 @@
 // custom-food catalog list, and the Expert Mode toggle.
 //
 // Still English regardless of Display Language: the per-type data detail
-// pages, the import and login screens, the two food-entry page shells the
-// dashboard's own log-food actions lead to — app/food/manual/page.tsx and
-// app/food/upload/page.tsx — and the food components not on the review
-// path: AddItemForm, CameraCapture, ClarifyModal, CustomFoodModal,
-// DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
-// ReanalyzeControl. (AddItemForm's own chrome is English, but the
-// ItemResolver panel it embeds is covered, so that form is partly translated
-// rather than wholly English.)
+// pages, the import and login screens, app/food/upload/page.tsx, and the
+// food components not on the review path: AddItemForm, CameraCapture,
+// ClarifyModal, CustomFoodModal, DeleteMealControl, MacroSummary,
+// ManualItemEditor, MealMetaEditor and ReanalyzeControl. (AddItemForm's own
+// chrome is English, but the ItemResolver panel it embeds is covered, so
+// that form is partly translated rather than wholly English.)
+//
+// app/food/manual/page.tsx is now partly translated, not wholly English: its
+// description-first entry path (the textarea, name/time inputs, character
+// counter, disclosure, and submit) uses the describe.* keys below, since a
+// Russian description is the central case this path exists for. The
+// structured item-by-item form it demotes behind a collapsed disclosure
+// stays English, unchanged, along with the components it's built from
+// (ManualItemEditor is already in the list above) — with two exceptions that
+// belong to the disclosure rather than to the form: the control that closes
+// it again (describe.backToDescribe) and the warning that a typed
+// description will not be used by the structured submit
+// (describe.descriptionUnusedHere). Both exist only because the two submit
+// paths are mutually exclusive, which is a property of the description path,
+// and a Russian user who typed a Russian description is precisely who needs
+// to be told it is about to be discarded.
 //
 // This list is not just a comment: the display-language spec's out-of-scope
 // paragraph defers to it by name ("the food entry/editing chrome enumerated
@@ -107,6 +120,27 @@ const en = {
   // English sentence mid-page. Found in code review.
   'review.offAttributionPrefix': 'Product data for some items from ',
   'review.offAttributionMiddle': ', available under the ',
+  // Shown on the review screen for a described meal — see Meal Description
+  // in CONTEXT.md — so the user can see what the model was given.
+  'review.descriptionLabel': 'Description',
+
+  // The description-first manual entry path (app/food/manual/page.tsx). See
+  // the file header comment above for what this page still leaves English.
+  'describe.title': 'Log a Meal',
+  'describe.nameLabel': 'Name (optional)',
+  'describe.whenLabel': 'When',
+  'describe.textareaLabel': 'Describe what you ate',
+  'describe.placeholder': 'e.g. "a bowl of borscht with sour cream and two slices of bread"',
+  'describe.disclosure':
+    'Your description is sent to an external AI model (OpenAI) to identify foods and estimate portions — review and confirm before it’s logged.',
+  'describe.submit': 'Log Meal',
+  'describe.submitting': 'Analyzing…',
+  'describe.emptyError': 'Describe what you ate before saving.',
+  'describe.tooLongError': 'Description must be at most {max} characters',
+  'describe.saveFailed': 'Failed to save meal',
+  'describe.structuredToggle': 'Enter items manually instead',
+  'describe.backToDescribe': 'Describe the meal instead',
+  'describe.descriptionUnusedHere': 'Saving here logs the items below. Your description is not used.',
 
   'item.resolve': 'Resolve this item',
   'item.verifyEstimate': 'Verify this estimate',

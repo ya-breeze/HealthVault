@@ -48,6 +48,10 @@ type FoodMeal struct {
 	RawResponse  string    `gorm:"type:text" json:"raw_response,omitempty"` // last structured response from the vision model
 	ClarifyRound int       `gorm:"not null;default:0" json:"clarify_round"`
 	ClarifyLog   string    `gorm:"type:text" json:"clarify_log,omitempty"` // JSON []ClarifyEntry, accumulated across rounds
+	// Description is the user's own free-text account of a described manual
+	// entry, persisted so the meal is recoverable if analysis fails or is
+	// retried. Empty for photo meals and for structured manual entries.
+	Description string `gorm:"type:text" json:"description,omitempty"`
 
 	// Aggregate over items whose MacroSource is reference or manual, written on confirm.
 	Calories          float64 `gorm:"not null;default:0" json:"calories"`

@@ -211,6 +211,15 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
           )}
         </div>
 
+        {meal.description && (
+          <div className="mb-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 px-4 py-3">
+            <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">
+              {t('review.descriptionLabel')}
+            </p>
+            <p className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{meal.description}</p>
+          </div>
+        )}
+
         {meal.status === 'processing' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 text-center">
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('review.stillAnalyzing')}</p>

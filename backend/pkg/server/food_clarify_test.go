@@ -587,7 +587,7 @@ func (c slowClarifyClient) Recognize(context.Context, []byte, string, string, st
 func (c slowClarifyClient) EstimateWeights(context.Context, []byte, string, []vision.WeightEstimateInput) (*vision.WeightEstimateResult, error) {
 	return &vision.WeightEstimateResult{}, nil
 }
-func (c slowClarifyClient) Clarify(_ context.Context, _ []vision.Item, _ []vision.ClarifyTurn, _ string) (*vision.RecognizeResult, error) {
+func (c slowClarifyClient) Clarify(_ context.Context, _ string, _ []vision.Item, _ []vision.ClarifyTurn, _ string) (*vision.RecognizeResult, error) {
 	time.Sleep(c.delay)
 	return &vision.RecognizeResult{Items: []vision.Item{{Name: "Sauce", WeightGrams: 30}}}, nil
 }
@@ -596,6 +596,9 @@ func (c slowClarifyClient) Select(context.Context, []vision.ItemCandidates) (*vi
 }
 func (c slowClarifyClient) Translate(context.Context, string) (string, error) {
 	return "", nil
+}
+func (c slowClarifyClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
+	return &vision.RecognizeResult{}, nil
 }
 
 // Two genuinely concurrent submissions of the same clarify round (a
