@@ -69,12 +69,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 3: First-run setup and sign-in
 
-- [ ] Add `ui/SetupScreen.kt`: server URL, username and password fields, with the URL normalized to an origin and a warning shown when the scheme is not `https`
-- [ ] Validate the entered server by attempting a login, and map each `ApiResult` case to its own message — wrong credentials, locked out with a retry time, Access challenge, unreachable server
-- [ ] Persist server URL and credentials in `SecureStore` only after a successful login
-- [ ] Add `MainActivity.kt` routing to setup when no session exists and to the today screen when one does
-- [ ] Add a sign-out action that clears the cookie jar, the stored credentials and the cached snapshot, and refreshes any placed widget into its signed-out state
-- [ ] Mark completed
+- [x] Add `ui/SetupScreen.kt`: server URL, username and password fields, with the URL normalized to an origin and a warning shown when the scheme is not `https`
+- [x] Validate the entered server by attempting a login, and map each `ApiResult` case to its own message — wrong credentials, locked out with a retry time, Access challenge, unreachable server
+- [x] Persist server URL and credentials in `SecureStore` only after a successful login
+- [x] Add `MainActivity.kt` routing to setup when no session exists and to the today screen when one does
+- [x] Add a sign-out action that clears the cookie jar, the stored credentials and the cached snapshot, and refreshes any placed widget into its signed-out state
+- [x] Mark completed
 
 ### Task 4: Native today screen
 
