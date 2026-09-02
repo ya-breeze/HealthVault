@@ -397,6 +397,73 @@ test.describe('API data endpoints', () => {
   });
 });
 
+test.describe('Step interval collapse (check-the-health-data)', () => {
+  // 2019-06-15 is far enough in the past that no other spec's window covers
+  // it — this file's own bucketed-query assertions above use
+  // from=2020-01-01, and dashboard.spec.ts's webhook steps test seeds
+  // "today" instead.
+  const day = '2019-06-15';
+  const startOfDay = `${day}T00:00:00Z`;
+  const endOfDay = `${day}T23:59:59Z`;
+
+  test.beforeEach(async ({ request }) => {
+    // Two overlapping step records for the same day in one webhook POST — a
+    // full-morning record plus a smaller one nested inside it, simulating
+    // two sync sources' overlapping copies of the same walk.
+    const resp = await request.post(`${BASE_URL}/webhook/${USER}`, {
+      data: {
+        timestamp: new Date().toISOString(),
+        app_version: 'e2e-test-1.0',
+        steps: [
+          { count: 4000, start_time: startOfDay, end_time: `${day}T12:00:00Z` },
+          { count: 1500, start_time: `${day}T01:00:00Z`, end_time: `${day}T06:00:00Z` },
+        ],
+      },
+    });
+    expect(resp.status()).toBe(204);
+  });
+
+  test('overlapping records posted to the webhook are counted once in the bucketed steps total', async ({ page }) => {
+    await login(page);
+    const result = await page.evaluate(async ({ from, to }) => {
+      const r = await fetch(`/api/data/steps?bucket=day&from=${from}&to=${to}`, { credentials: 'include' });
+      return { status: r.status, body: await r.json() };
+    }, { from: startOfDay, to: endOfDay });
+    expect(result.status).toBe(200);
+    const bucket = result.body.find((b: { bucket_start: string }) => b.bucket_start.startsWith(day));
+    expect(bucket).toBeTruthy();
+    // 4000, not 5500 — the nested, fully-overlapping record must be dropped,
+    // not summed.
+    expect(bucket.sum).toBe(4000);
+  });
+
+  test('GET /api/data/steps/diagnostics reports raw_sum above collapsed_sum with dropped_records', async ({ page }) => {
+    await login(page);
+    const result = await page.evaluate(async ({ from, to }) => {
+      const r = await fetch(`/api/data/steps/diagnostics?from=${from}&to=${to}`, { credentials: 'include' });
+      return { status: r.status, body: await r.json() };
+    }, { from: startOfDay, to: endOfDay });
+    expect(result.status).toBe(200);
+    const dayRow = result.body.find((d: { bucket_start: string }) => d.bucket_start.startsWith(day));
+    expect(dayRow).toBeTruthy();
+    expect(dayRow.raw_sum).toBeGreaterThan(dayRow.collapsed_sum);
+    expect(dayRow.dropped_records).toBeGreaterThan(0);
+  });
+
+  test('the steps page diagnostic disclosure is collapsed on load and reveals the table when activated', async ({ page }) => {
+    await login(page);
+    await page.goto('/data/steps/');
+
+    const toggle = page.getByTestId('steps-diagnostics-toggle');
+    await expect(toggle).toBeVisible();
+    const detail = page.getByTestId('steps-diagnostics-detail');
+    await expect(detail).toBeHidden();
+
+    await toggle.click();
+    await expect(detail).toBeVisible();
+  });
+});
+
 test.describe('Manual record writes: weight_goal, height, write allowlist', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);

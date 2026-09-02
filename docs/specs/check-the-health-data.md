@@ -88,11 +88,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 6: ADR, terminology, and end-to-end coverage
-- [ ] Add `docs/adr/ADR-012-steps-collapse-overlapping-intervals-on-read.md` with Status: Proposed. Record the decision to collapse on read rather than deduplicate on write, the watermark rule and its refusal to apportion counts, the choice of a dedicated `QueryAggregateSteps` over special-casing the generic aggregate, and that UTC day bucketing is left unchanged and measured rather than fixed here.
-- [ ] Add a **Step Interval Collapse** entry to `CONTEXT.md` under a Steps heading, naming the rule and the terms to avoid ("deduplication", which suggests exact-match rows; "step merging", which suggests counts are combined).
-- [ ] Add an e2e test to `e2e/tests/data-types.spec.ts` that posts two overlapping step records to `/webhook/alice` for a date far enough in the past that no other spec's window covers it, then asserts `GET /api/data/steps?bucket=day` with an explicit `from`/`to` counts them once.
-- [ ] Add an e2e test asserting `GET /api/data/steps/diagnostics` over that same range reports `raw_sum` above `collapsed_sum` and a nonzero `dropped_records`.
-- [ ] Add an e2e test asserting the steps page's diagnostic disclosure is collapsed on load and reveals the table when activated.
+- [x] Add `docs/adr/ADR-012-steps-collapse-overlapping-intervals-on-read.md` with Status: Proposed. Record the decision to collapse on read rather than deduplicate on write, the watermark rule and its refusal to apportion counts, the choice of a dedicated `QueryAggregateSteps` over special-casing the generic aggregate, and that UTC day bucketing is left unchanged and measured rather than fixed here.
+- [x] Add a **Step Interval Collapse** entry to `CONTEXT.md` under a Steps heading, naming the rule and the terms to avoid ("deduplication", which suggests exact-match rows; "step merging", which suggests counts are combined).
+- [x] Add an e2e test to `e2e/tests/data-types.spec.ts` that posts two overlapping step records to `/webhook/alice` for a date far enough in the past that no other spec's window covers it, then asserts `GET /api/data/steps?bucket=day` with an explicit `from`/`to` counts them once.
+- [x] Add an e2e test asserting `GET /api/data/steps/diagnostics` over that same range reports `raw_sum` above `collapsed_sum` and a nonzero `dropped_records`.
+- [x] Add an e2e test asserting the steps page's diagnostic disclosure is collapsed on load and reveals the table when activated.
 - [ ] Run `make lint`, `make test` and `make test-e2e`, and fix every failure.
 - [ ] Flip ADR-012 from Proposed to Accepted as the last commit.
 - [ ] Mark completed
