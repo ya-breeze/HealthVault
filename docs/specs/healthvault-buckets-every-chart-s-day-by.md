@@ -77,9 +77,9 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 1: Put a zone database in the deployed binary
 
-- [ ] Add a blank import of `time/tzdata` to `backend/cmd/main.go`, with a comment explaining that the runtime image (`debian:bookworm-slim`, `backend/Dockerfile`) installs no `tzdata` package, so without the embedded database every `time.LoadLocation` call fails and `database.ResolveTimezone` silently degrades every user to UTC.
-- [ ] Add a test in `backend/pkg/database/food_completeness_test.go` asserting that `ResolveTimezone` returns a non-UTC location for a real IANA name such as `Asia/Tokyo`, so a future build that drops the embedded database fails the suite instead of silently reverting the feature.
-- [ ] Mark completed
+- [x] Add a blank import of `time/tzdata` to `backend/cmd/main.go`, with a comment explaining that the runtime image (`debian:bookworm-slim`, `backend/Dockerfile`) installs no `tzdata` package, so without the embedded database every `time.LoadLocation` call fails and `database.ResolveTimezone` silently degrades every user to UTC.
+- [x] Add a test in `backend/pkg/database/food_completeness_test.go` asserting that `ResolveTimezone` returns a non-UTC location for a real IANA name such as `Asia/Tokyo`, so a future build that drops the embedded database fails the suite instead of silently reverting the feature.
+- [x] Mark completed
 
 ### Task 2: Pre-aggregate at 15-minute slots in SQL
 
