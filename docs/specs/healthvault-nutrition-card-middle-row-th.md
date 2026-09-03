@@ -284,11 +284,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 7: Validate against the deployed stack, then accept ADR-004
-- [ ] Run `make lint` and `make test` and fix everything they report
-- [ ] Deploy the branch to `hcw-wip` and run `make test-e2e` against it; fix every failure rather
+- [x] Run `make lint` and `make test` and fix everything they report
+- [x] Deploy the branch to `hcw-wip` and run `make test-e2e` against it; fix every failure rather
       than recording it as pre-existing
-- [ ] As the last commit, flip `docs/adr/ADR-004-heuristic-food-healthiness-label.md` from
+- [x] As the last commit, flip `docs/adr/ADR-004-heuristic-food-healthiness-label.md` from
       `Proposed` to `Accepted`, and add an `> **Update:**` note recording that the heuristic half
       shipped here, where the thresholds live, and that the LLM-downstream half it also decides is
       still unbuilt
-- [ ] Mark completed
+- [x] Mark completed
