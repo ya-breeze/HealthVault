@@ -222,24 +222,24 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: The heuristic library
-- [ ] Export `isValidDay` from `frontend/lib/loggingGap.ts` and note in its doc comment that the
+- [x] Export `isValidDay` from `frontend/lib/loggingGap.ts` and note in its doc comment that the
       Healthiness Label shares it so the two rows agree on what counts as logged
-- [ ] Add `frontend/lib/healthiness.ts`: the seven-day window resolved as the last seven days of
+- [x] Add `frontend/lib/healthiness.ts`: the seven-day window resolved as the last seven days of
       the gap window, the eligible-day filter, the three-day floor, pooled sums, the macro-energy
       denominator, the five signals with the threshold table from `## How` as exported constants,
       the combination rule, and the deterministic reason ordering
-- [ ] Return a discriminated result — a label of `good` / `fair` / `needs_attention` plus up to two
+- [x] Return a discriminated result — a label of `good` / `fair` / `needs_attention` plus up to two
       reason codes, or `null` when there is no label — and document each threshold's origin
       (AMDR and where it was widened, total-versus-free sugars, elemental sodium and its
       under-reporting) in the constants' doc comment
-- [ ] Add `frontend/lib/healthiness.test.ts` covering: fewer than three eligible days yields no
+- [x] Add `frontend/lib/healthiness.test.ts` covering: fewer than three eligible days yields no
       label; days failing `isValidDay` are excluded from the pool, not merely from the count; zero
       macro energy yields no label; each band boundary lands on the `ok` side; a pooled window
       built from this app's own Nutrition Target split (about 22/39/39) is `good`; one `off` signal
       is `fair`; three `off` signals are `needs_attention`; any `far` signal is `needs_attention`;
       the sugar and sodium boundaries; and that the reason list is capped at two and ordered
       deterministically
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: Render the middle row
 - [ ] Carry the label on `ContentState`'s `ready` variant in
