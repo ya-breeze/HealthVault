@@ -93,14 +93,25 @@ func computeUserNutritionTarget(
 	if err != nil {
 		return nutritionTargetValues{}, "", fmt.Errorf("read user profile: %w", err)
 	}
-	return computeNutritionTargetForProfile(storage, userID, now, profile)
+	// This is the one caller that hasn't already read the settings blob for
+	// another reason (SummaryTodayHandler passes the loc it already
+	// resolved), so it reads its own zone here rather than adding a second
+	// settings read to every other caller's path.
+	settingsJSON, err := readUserSettingsJSON(storage, userID)
+	if err != nil {
+		return nutritionTargetValues{}, "", fmt.Errorf("read user settings: %w", err)
+	}
+	loc := database.ResolveTimezone(settingsJSON)
+	return computeNutritionTargetForProfile(storage, userID, now, loc, profile)
 }
 
 // computeNutritionTargetForProfile is computeUserNutritionTarget for a caller
 // that has already read the settings blob, so the profile is not fetched a
-// second time. Same contract otherwise.
+// second time. Same contract otherwise. loc is the caller's already-resolved
+// timezone (see resolveActivityTier/fetchDailySteps), passed through rather
+// than re-read.
 func computeNutritionTargetForProfile(
-	storage database.Storage, userID uuid.UUID, now time.Time, profile userProfile,
+	storage database.Storage, userID uuid.UUID, now time.Time, loc *time.Location, profile userProfile,
 ) (values nutritionTargetValues, unavailableReason string, err error) {
 	if !profile.HasBirthdate || !profile.HasSex {
 		return nutritionTargetValues{}, "missing_profile", nil
@@ -126,7 +137,7 @@ func computeNutritionTargetForProfile(
 		return nutritionTargetValues{}, "missing_goal_weight", nil
 	}
 
-	tierName, multiplier, ok, err := resolveActivityTier(storage, userID, profile, now)
+	tierName, multiplier, ok, err := resolveActivityTier(storage, userID, loc, profile, now)
 	if err != nil {
 		return nutritionTargetValues{}, "", fmt.Errorf("resolve activity tier: %w", err)
 	}
@@ -199,37 +210,60 @@ func computeNutritionTarget(
 // fetching step history; ok=false/err=nil means "insufficient data", a
 // normal, expected outcome, never a storage failure.
 func resolveActivityTier(
-	storage database.Storage, userID uuid.UUID, profile userProfile, today time.Time,
+	storage database.Storage, userID uuid.UUID, loc *time.Location, profile userProfile, now time.Time,
 ) (string, float64, bool, error) {
 	if profile.HasActivityOverride {
 		t := activityOverrideTiers[profile.ActivityOverride]
 		return t.Name, t.Multiplier, true, nil
 	}
-	days, err := fetchDailySteps(storage, userID, today)
+	days, err := fetchDailySteps(storage, userID, loc, now)
 	if err != nil {
 		return "", 0, false, err
 	}
-	tier, ok := inferActivityTier(today, days)
+	// trailingStepsAverage's Date map keys (see dailySteps in
+	// activity_level.go) are local-calendar-day labels carried at UTC
+	// midnight, the same form bucket_start uses — so "today" must be that
+	// same label, not the raw instant, or its Truncate(24*time.Hour)/AddDate
+	// walk would compare a UTC calendar day against local-day labels.
+	_, todayLabel := localCalendarToday(now, loc)
+	tier, ok := inferActivityTier(todayLabel, days)
 	if !ok {
 		return "", 0, false, nil
 	}
 	return tier.Name, tier.Multiplier, true, nil
 }
 
+// localCalendarToday returns two views of now's calendar date in loc: the
+// real UTC instant of that date's local midnight (localMidnight, used to
+// build a query's time-range bounds), and that same date expressed as a
+// UTC-midnight label (label — the form bucket_start and dailySteps.Date
+// both use, see LocalBucketKey).
+func localCalendarToday(now time.Time, loc *time.Location) (localMidnight, label time.Time) {
+	local := now.In(loc)
+	localMidnight = time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	label = time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
+	return localMidnight, label
+}
+
 // fetchDailySteps loads the per-day step sums trailingStepsAverage needs,
 // reusing the existing GET /api/data/steps?bucket=day aggregation
 // (design.md: "without needing per-record timestamps finer than what
-// ...already returns"). The range's upper bound includes today itself; that
-// row is harmless here, since trailingStepsAverage never looks up "today" in
-// its day map — it only ever walks today-1 through today-28.
-func fetchDailySteps(storage database.Storage, userID uuid.UUID, today time.Time) ([]dailySteps, error) {
-	today = today.UTC().Truncate(24 * time.Hour)
+// ...already returns"). loc resolves the local calendar day boundary the
+// bucket and the window both use: QueryAggregate's bucket_start values are
+// local-calendar-date labels carried at UTC midnight, so the query's lower
+// bound must be the real UTC instant of the window's first *local*
+// midnight — a UTC-midnight instant would clip the earliest local day for a
+// user ahead of UTC. The upper bound is local midnight today, excluding
+// today's still-accumulating local day, so the 28 local calendar days end
+// the user's local yesterday (design.md "Trailing window").
+func fetchDailySteps(storage database.Storage, userID uuid.UUID, loc *time.Location, now time.Time) ([]dailySteps, error) {
+	localMidnightToday, _ := localCalendarToday(now, loc)
 	tr := database.TimeRange{
-		From: today.AddDate(0, 0, -trailingWindowDays),
-		To:   today,
+		From: localMidnightToday.AddDate(0, 0, -trailingWindowDays),
+		To:   localMidnightToday,
 	}
 	rows, err := storage.QueryAggregate(
-		"steps", "start_time", "count", database.AggFamilyCumulative, database.BucketDay, userID, tr,
+		"steps", "start_time", "count", database.AggFamilyCumulative, database.BucketDay, loc, userID, tr,
 	)
 	if err != nil {
 		return nil, err

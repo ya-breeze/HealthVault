@@ -34,6 +34,22 @@ func TestResolveTimezone(t *testing.T) {
 	}
 }
 
+// ResolveTimezone must resolve a real IANA name to that name's own location,
+// not silently fall back to UTC. The production container has no system
+// tzdata package (backend/Dockerfile) and relies entirely on
+// backend/cmd/main.go's blank `time/tzdata` import for zone data — a test
+// binary built the same way (`go test ./...` from the module root, with that
+// import reachable) exercises the same embedded database, so this fails the
+// suite if a future change drops the import or the zone data otherwise stops
+// resolving, instead of every user's chart buckets silently reverting to UTC
+// in production.
+func TestResolveTimezone_RealIANANameResolvesNonUTC(t *testing.T) {
+	got := database.ResolveTimezone(`{"timezone":"Asia/Tokyo"}`)
+	if got == time.UTC || got.String() != "Asia/Tokyo" {
+		t.Errorf("ResolveTimezone(Asia/Tokyo) = %v, want Asia/Tokyo", got)
+	}
+}
+
 // A UTC timestamp just after midnight UTC on 2026-08-21 falls on 2026-08-20
 // in America/Los_Angeles (UTC-7 in August, DST) — the day-boundary shift
 // this whole feature exists to resolve. See design.md §2 "Local Day boundary".

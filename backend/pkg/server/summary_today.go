@@ -94,7 +94,7 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 		}
 
 		values, unavailableReason, err := computeNutritionTargetForProfile(
-			storage, claims.UserID, now, parseUserProfile(settingsJSON))
+			storage, claims.UserID, now, loc, parseUserProfile(settingsJSON))
 		if err != nil {
 			writeQueryError(w, "summary today: compute nutrition target", err, claims.UserID)
 			return
