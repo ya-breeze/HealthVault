@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useId, useState } from 'react';
 import { api, NutritionTargetUnmetReason, DayCompletenessState, TodaySummary } from '@/lib/api';
+import { activityTierKey, sexKey, formatNutritionTargetValues, NutritionTargetDerivation } from '@/lib/nutritionTarget';
 import { emaSeries, linearRegression, toDayOffset } from '@/lib/dataTypeMeta';
 import { loggedDayKey } from '@/lib/loggedDay';
 import {
@@ -34,6 +35,12 @@ interface TodayRow {
   targetProteinGrams: number;
   targetCarbsGrams: number;
   targetFatGrams: number;
+  // Everything the top row's ⓘ disclosure needs to explain targetCalories/
+  // targetProteinGrams/targetCarbsGrams/targetFatGrams — carried alongside
+  // them rather than re-fetched, since GET /api/summary/today already
+  // returns it in the same response the four numbers above came from (see
+  // docs/specs/idea.md's "one response" rationale).
+  derivation: NutritionTargetDerivation & { sex: 'male' | 'female'; activityTier: string };
 }
 
 // What the bottom row can say: the three outcomes of the gap computation,
@@ -109,6 +116,13 @@ export default function LoggingGapCard({
   // unique element, and only the dashboard's own layout keeps this card to
   // one instance per page.
   const hintId = useId();
+  // A separate boolean and a separate useId from hintOpen/hintId above: this
+  // disclosure explains the top row (today's intake vs. the Nutrition
+  // Target), the other explains the Logging Gap line below it, and a reader
+  // opening one has not asked for the other — so the two panels open and
+  // close independently (docs/specs/idea.md's "not a shared one").
+  const [todayHintOpen, setTodayHintOpen] = useState(false);
+  const todayHintId = useId();
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +195,18 @@ export default function LoggingGapCard({
           targetProteinGrams: target.protein_grams,
           targetCarbsGrams: target.carbs_grams,
           targetFatGrams: target.fat_grams,
+          derivation: {
+            bmr: target.bmr,
+            measured_weight_kg: target.measured_weight_kg,
+            goal_weight_kg: target.goal_weight_kg,
+            height_m: target.height_m,
+            age_years: target.age_years,
+            activity_multiplier: target.activity_multiplier,
+            calories: target.calories,
+            protein_grams: target.protein_grams,
+            sex: target.sex,
+            activityTier: target.activity_tier,
+          },
         };
 
         // All three or none: the gap is a single computation over the three
@@ -327,17 +353,37 @@ export default function LoggingGapCard({
         consumed: String(Math.round(consumed)),
         target: String(Math.round(target)),
       });
+    const v = formatNutritionTargetValues(today.derivation);
+    const tierKey = activityTierKey(today.derivation.activityTier);
+    const tierLabel = tierKey ? t(tierKey) : today.derivation.activityTier;
+    const sexLabel = t(sexKey(today.derivation.sex));
     return (
       <div className={`py-1${dim}`} data-testid="nutrition-today">
-        <div
-          className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums"
-          data-testid="nutrition-today-calories"
+        {/* The whole row is the toggle, matching renderGap's own control
+            below: on touch, TapTarget's 48px minimum applies to a bare glyph
+            anyway, so a full-width row buys a target that's hard to miss for
+            height spent regardless. No aria-label — the accessible name is
+            the calorie line itself plus the visually-hidden label. */}
+        <TapTarget
+          compactOnMouse
+          onClick={() => setTodayHintOpen(open => !open)}
+          aria-expanded={todayHintOpen}
+          aria-controls={todayHintId}
+          data-testid="nutrition-today-hint-toggle"
+          className="flex w-full items-center justify-between gap-2 text-left"
         >
-          {interpolate(t('loggingGap.todayCalories'), {
-            consumed: String(Math.round(today.calories)),
-            target: String(Math.round(today.targetCalories)),
-          })}
-        </div>
+          <span
+            className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums"
+            data-testid="nutrition-today-calories"
+          >
+            {interpolate(t('loggingGap.todayCalories'), {
+              consumed: String(Math.round(today.calories)),
+              target: String(Math.round(today.targetCalories)),
+            })}
+          </span>
+          <span className="sr-only">{t('loggingGap.hintToggle')}</span>
+          <InfoIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        </TapTarget>
         {/* Presentational: the calorie line above is the accessible content,
             and a bar that repeated it would only add a second thing to read. */}
         <div className="mt-1.5 h-1.5 w-full rounded-full bg-border overflow-hidden" aria-hidden="true">
@@ -350,6 +396,34 @@ export default function LoggingGapCard({
           <span>{macro('protein', today.proteinGrams, today.targetProteinGrams)}</span>
           <span>{macro('carbs', today.carbsGrams, today.targetCarbsGrams)}</span>
           <span>{macro('fat', today.fatGrams, today.targetFatGrams)}</span>
+        </div>
+        {/* Rendered even while collapsed, and hidden with the `hidden`
+            attribute, matching renderGap's own panel below: `aria-controls`
+            above has to name an element that exists. Explains the whole top
+            row, macros included, so it sits after the macro row rather than
+            right under the calorie line. */}
+        <div
+          id={todayHintId}
+          hidden={!todayHintOpen}
+          data-testid="nutrition-today-hint"
+          className="text-xs text-text-muted mt-1.5 space-y-1"
+        >
+          <p>{t('loggingGap.targetCaveatConfirmedOnly')}</p>
+          <p>
+            {interpolate(t('loggingGap.targetCalorieDerivation'), {
+              bmr: v.bmr,
+              weight: v.weight,
+              height: v.height,
+              age: v.age,
+              sex: sexLabel,
+              multiplier: v.multiplier,
+              tier: tierLabel,
+              calories: v.calories,
+            })}
+          </p>
+          <p>{interpolate(t('loggingGap.targetProteinDerivation'), { goal: v.goal, protein: v.protein })}</p>
+          <p>{t('loggingGap.targetFatCarbDerivation')}</p>
+          <p>{t('loggingGap.targetRecomputed')}</p>
         </div>
       </div>
     );

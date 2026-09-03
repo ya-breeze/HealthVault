@@ -152,54 +152,54 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Type the derivation on the client
-- [ ] Add the seven fields to the `available: true` branch of `TodaySummaryTarget` in
+- [x] Add the seven fields to the `available: true` branch of `TodaySummaryTarget` in
       `frontend/lib/api.ts`, typed against the Go tags, with `sex` as `'male' | 'female'`
-- [ ] Rewrite `api.getNutritionTarget`'s doc comment: the claim that the summary payload
+- [x] Rewrite `api.getNutritionTarget`'s doc comment: the claim that the summary payload
       "deliberately does not carry" the derivation is no longer true, so the route's client is
       kept only because the backend still serves the route
-- [ ] Extend `TodayRow` in `frontend/components/LoggingGapCard.tsx` to carry the derivation
+- [x] Extend `TodayRow` in `frontend/components/LoggingGapCard.tsx` to carry the derivation
       alongside the consumed and target values, and populate it where `todayRow` is built
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: A pure module for the panel's labels and formatting
-- [ ] Add `frontend/lib/nutritionTarget.ts` exporting a tier-name-to-i18n-key map for the five
+- [x] Add `frontend/lib/nutritionTarget.ts` exporting a tier-name-to-i18n-key map for the five
       names in `backend/pkg/server/activity_level.go`, a sex-to-key map, and a function turning
       an available target into the interpolation values the panel needs
-- [ ] Have the tier lookup fall back to the raw backend string when the name is unrecognised, so
+- [x] Have the tier lookup fall back to the raw backend string when the name is unrecognised, so
       a tier added later renders as itself instead of a missing key
-- [ ] Format weight and goal weight to one decimal, height as whole centimetres from metres,
+- [x] Format weight and goal weight to one decimal, height as whole centimetres from metres,
       kcal/grams/age rounded, and the multiplier stringified directly
-- [ ] Add `frontend/lib/nutritionTarget.test.ts` covering all five tiers, both sexes, the unknown
+- [x] Add `frontend/lib/nutritionTarget.test.ts` covering all five tiers, both sexes, the unknown
       tier fallback, the metres-to-centimetres conversion, and that each of the five multiplier
       constants stringifies exactly (`1.2`, `1.375`, `1.55`, `1.725`, `1.9`)
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Render the top row's ⓘ disclosure
-- [ ] In `LoggingGapCard.tsx`, add a `todayHintOpen` `useState(false)` and a second `useId`, kept
+- [x] In `LoggingGapCard.tsx`, add a `todayHintOpen` `useState(false)` and a second `useId`, kept
       separate from `hintOpen`/`hintId` so the two panels open independently
-- [ ] Make the calorie line a `TapTarget compactOnMouse` with a trailing `InfoIcon`, an `sr-only`
+- [x] Make the calorie line a `TapTarget compactOnMouse` with a trailing `InfoIcon`, an `sr-only`
       `loggingGap.hintToggle` label, `aria-expanded`, `aria-controls` and
       `data-testid="nutrition-today-hint-toggle"`, leaving `data-testid="nutrition-today-calories"`
       on the figure itself so existing assertions keep working
-- [ ] Render the panel after the macro row as an always-mounted div with `id`, `hidden={!open}`,
+- [x] Render the panel after the macro row as an always-mounted div with `id`, `hidden={!open}`,
       `data-testid="nutrition-today-hint"` and the same `text-xs text-text-muted` voice the gap
       hint uses
-- [ ] Fill the panel with the five sentences from `## How`, interpolating the values from
+- [x] Fill the panel with the five sentences from `## How`, interpolating the values from
       `frontend/lib/nutritionTarget.ts`
-- [ ] Comment why the derivation is read from the summary rather than fetched, and why the two
+- [x] Comment why the derivation is read from the summary rather than fetched, and why the two
       disclosures do not share state
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 5: Copy in both languages
-- [ ] Add the panel's keys to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts` under the
+- [x] Add the panel's keys to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts` under the
       `loggingGap.` prefix: the confirmed-meals sentence, the calorie derivation sentence, the
       protein sentence, the fat/carb sentence, and the recomputed-on-every-load sentence
-- [ ] Add the two sex labels and the five activity-tier labels in both files
-- [ ] Keep the calorie sentence's placeholders and the Russian wording consistent with the card's
+- [x] Add the two sex labels and the five activity-tier labels in both files
+- [x] Keep the calorie sentence's placeholders and the Russian wording consistent with the card's
       existing voice ("ккал", "г", "кг"), and name the goal weight explicitly in the protein
       sentence
-- [ ] Confirm the two dictionaries still have identical key sets
-- [ ] Mark completed
+- [x] Confirm the two dictionaries still have identical key sets
+- [x] Mark completed
 
 ### Task 6: End-to-end coverage
 - [ ] Extend `mockLoggingGapApis`'s available-target fixture in `e2e/tests/logging-gap.spec.ts`
