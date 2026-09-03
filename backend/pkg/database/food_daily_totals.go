@@ -15,8 +15,20 @@ import (
 // consumer needs to tell "this day really was a 0 kcal day" apart from "this
 // day's total is missing meals I can't see."
 type DailyTotal struct {
-	Date             string  `json:"date"`
-	Calories         float64 `json:"calories"`
+	Date     string  `json:"date"`
+	Calories float64 `json:"calories"`
+	// ProteinGrams, CarbsGrams, FatGrams, SugarGrams and SodiumGrams are summed
+	// the same way, and over the same `confirmed`-status meals, as Calories.
+	// They carry no `omitempty`: a day with confirmed meals whose sum is
+	// exactly zero (or no confirmed meals at all) is a legitimate zero, not an
+	// absence, and `omitempty` would drop the key — a consumer that types the
+	// field as required would then read `undefined` and render `NaN`, the same
+	// trap `summaryTargetPayload` (summary_today.go) hit first.
+	ProteinGrams     float64 `json:"protein_grams"`
+	CarbsGrams       float64 `json:"carbs_grams"`
+	FatGrams         float64 `json:"fat_grams"`
+	SugarGrams       float64 `json:"sugar_grams"`
+	SodiumGrams      float64 `json:"sodium_grams"`
 	UnconfirmedMeals int     `json:"unconfirmed_meals"`
 }
 
@@ -59,18 +71,28 @@ func DailyTotalsRange(
 	windowStart, windowEnd := fromDate.UTC(), toDate.AddDate(0, 0, 1).UTC()
 
 	var meals []FoodMeal
-	if err := db.Select("logged_at", "calories", "status").
+	if err := db.Select(
+		"logged_at", "calories", "protein_grams", "carbs_grams", "fat_grams",
+		"sugar_grams", "sodium_grams", "status",
+	).
 		Where("user_id = ? AND logged_at >= ? AND logged_at < ?",
 			userID, windowStart, windowEnd).
 		Find(&meals).Error; err != nil {
 		return nil, fmt.Errorf("query meals: %w", err)
 	}
-	caloriesByDate := make(map[string]float64, len(meals))
+	sumsByDate := make(map[string]dailyMealSums, len(meals))
 	unconfirmedByDate := make(map[string]int, len(meals))
 	for _, m := range meals {
 		d := LocalDate(m.LoggedAt, loc)
 		if m.Status == MealStatusConfirmed {
-			caloriesByDate[d] += m.Calories
+			s := sumsByDate[d]
+			s.calories += m.Calories
+			s.proteinGrams += m.ProteinGrams
+			s.carbsGrams += m.CarbsGrams
+			s.fatGrams += m.FatGrams
+			s.sugarGrams += m.SugarGrams
+			s.sodiumGrams += m.SodiumGrams
+			sumsByDate[d] = s
 			continue
 		}
 		unconfirmedByDate[d]++
@@ -79,12 +101,30 @@ func DailyTotalsRange(
 	result := make([]DailyTotal, 0, int(toDate.Sub(fromDate).Hours()/24)+1)
 	for d := fromDate; !d.After(toDate); d = d.AddDate(0, 0, 1) {
 		dateStr := d.Format("2006-01-02")
+		s := sumsByDate[dateStr]
 		result = append(result, DailyTotal{
 			Date:             dateStr,
-			Calories:         caloriesByDate[dateStr],
+			Calories:         s.calories,
+			ProteinGrams:     s.proteinGrams,
+			CarbsGrams:       s.carbsGrams,
+			FatGrams:         s.fatGrams,
+			SugarGrams:       s.sugarGrams,
+			SodiumGrams:      s.sodiumGrams,
 			UnconfirmedMeals: unconfirmedByDate[dateStr],
 		})
 	}
 
 	return result, nil
+}
+
+// dailyMealSums accumulates one Logged Day's confirmed-meal sums — grouped
+// into one map value rather than five parallel maps, since every field is
+// written and read together.
+type dailyMealSums struct {
+	calories     float64
+	proteinGrams float64
+	carbsGrams   float64
+	fatGrams     float64
+	sugarGrams   float64
+	sodiumGrams  float64
 }

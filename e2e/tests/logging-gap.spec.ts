@@ -91,7 +91,20 @@ interface LoggingGapFixture {
   // numbers they don't care about.
   today?: { calories: number; protein: number; carbs: number; fat: number };
   completeness?: { date: string; state: string }[];
-  dailyTotals?: { date: string; calories: number; unconfirmed_meals: number }[];
+  // The five Healthiness Label fields are optional and default to zero
+  // (filled in by mockLoggingGapApis below) — every fixture that predates
+  // the label leaves them unset, which pools to zero macro energy and so,
+  // correctly, produces no label at all.
+  dailyTotals?: {
+    date: string;
+    calories: number;
+    unconfirmed_meals: number;
+    protein_grams?: number;
+    carbs_grams?: number;
+    fat_grams?: number;
+    sugar_grams?: number;
+    sodium_grams?: number;
+  }[];
 }
 
 // Mocks the four requests LoggingGapCard fetches (task 5.1) so its content
@@ -143,7 +156,20 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?:
   });
   await page.route('**/api/food/completeness**', route => route.fulfill({ json: fixture.completeness ?? [] }));
   if (!opts?.liveDailyTotals) {
-    await page.route('**/api/food/daily-totals**', route => route.fulfill({ json: fixture.dailyTotals ?? [] }));
+    await page.route('**/api/food/daily-totals**', route =>
+      route.fulfill({
+        json: (fixture.dailyTotals ?? []).map(d => ({
+          date: d.date,
+          calories: d.calories,
+          protein_grams: d.protein_grams ?? 0,
+          carbs_grams: d.carbs_grams ?? 0,
+          fat_grams: d.fat_grams ?? 0,
+          sugar_grams: d.sugar_grams ?? 0,
+          sodium_grams: d.sodium_grams ?? 0,
+          unconfirmed_meals: d.unconfirmed_meals,
+        })),
+      })
+    );
   }
 }
 
@@ -202,6 +228,61 @@ function onTrackFixture(): LoggingGapFixture {
     today: { calories: 1200, protein: 80, carbs: 130, fat: 35 },
     completeness: windowDates.map(date => ({ date, state: 'complete' })),
     dailyTotals: windowDates.map(date => ({ date, calories: 1700, unconfirmed_meals: 0 })),
+  };
+}
+
+// This app's own Nutrition Target split (~22% protein / 39% carbs / 39% fat,
+// see healthiness.test.ts), applied to a 2000 kcal day. Low sugar and sodium
+// keep every one of the five signals on the `ok` side.
+const HEALTHY_MACROS = { protein_grams: 110, carbs_grams: 195, fat_grams: 86.667, sugar_grams: 20, sodium_grams: 1.5 };
+
+// Only the last 7 days of the 28-day window feed the Healthiness Label
+// (spec's "Window"), so these fixtures reuse clearGapFixture's weight/target
+// shape — the label doesn't read either — and layer macros onto just the
+// most recent 7 of its daily-totals entries.
+function healthinessGoodFixture(): LoggingGapFixture {
+  const base = clearGapFixture();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d => (last7.has(d.date) ? { ...d, ...HEALTHY_MACROS } : d)),
+  };
+}
+
+// Sodium alone pushed past the far threshold (>3.5 g/day, healthiness.ts's
+// HEALTHINESS_THRESHOLDS.sodiumGramsPerDay.farLow) — any single `far` signal
+// is enough for `needs_attention` regardless of the other four.
+function healthinessNeedsAttentionFixture(): LoggingGapFixture {
+  const base = clearGapFixture();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d =>
+      last7.has(d.date) ? { ...d, ...HEALTHY_MACROS, sodium_grams: 4.0 } : d
+    ),
+  };
+}
+
+// Only 2 of the label's own last-7-day window are eligible (5 carry an
+// unconfirmed meal, which fails isValidDay) — below the 3-of-7 floor
+// (ADR-007) the label shares with the Logging Gap's own hard floor. The
+// other 21 days of the 28-day window are untouched, so the gap line itself
+// still resolves normally; only the middle row should be absent.
+function healthinessTooFewEligibleDaysFixture(): LoggingGapFixture {
+  const base = clearGapFixture();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = dateRange(windowStart, windowEnd).slice(-7);
+  const eligible = new Set(last7.slice(0, 2));
+  const ineligible = new Set(last7.slice(2));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d => {
+      if (eligible.has(d.date)) return { ...d, ...HEALTHY_MACROS };
+      if (ineligible.has(d.date)) return { ...d, unconfirmed_meals: 1 };
+      return d;
+    }),
   };
 }
 
@@ -352,11 +433,19 @@ test.describe('Logging Gap Card', () => {
       expect(body).toHaveLength(dateRange(windowStart, windowEnd).length);
       expect(body[0].date).toBe(windowStart);
       expect(body[body.length - 1].date).toBe(windowEnd);
-      // Field names exactly as LoggingGapCard destructures them — `calories`
-      // and the snake_case `unconfirmed_meals`, both numbers.
+      // Field names exactly as LoggingGapCard destructures them — `calories`,
+      // the five Healthiness Label fields the middle row now reads, and the
+      // snake_case `unconfirmed_meals`, all numbers. The five carry no
+      // `omitempty` server-side (food_daily_totals.go), so they must be
+      // present — not merely `undefined` — even on a day with no meals.
       for (const entry of body) {
         expect(typeof entry.date).toBe('string');
         expect(typeof entry.calories).toBe('number');
+        expect(typeof entry.protein_grams).toBe('number');
+        expect(typeof entry.carbs_grams).toBe('number');
+        expect(typeof entry.fat_grams).toBe('number');
+        expect(typeof entry.sugar_grams).toBe('number');
+        expect(typeof entry.sodium_grams).toBe('number');
         expect(typeof entry.unconfirmed_meals).toBe('number');
       }
 
@@ -511,6 +600,81 @@ test.describe('Logging Gap Card', () => {
       await expect(card.getByTestId('logging-gap-error')).toBeVisible({ timeout: 15_000 });
       await expect(card.getByTestId('nutrition-today-calories')).toHaveCount(0);
       await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+});
+
+test.describe('Healthiness Label (nutrition card middle row)', () => {
+  test('a well-balanced 7-day window renders as Good, with the label sentence behind the hint', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, healthinessGoodFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const label = card.getByTestId('nutrition-healthiness-label');
+      await expect(label).toBeVisible({ timeout: 15_000 });
+      await expect(label).toContainText('Last 7 days: Good');
+
+      const hint = card.getByTestId('logging-gap-hint');
+      await expect(hint).toBeHidden();
+      await card.getByTestId('logging-gap-hint-toggle').click();
+      await expect(hint).toBeVisible();
+      await expect(hint).toContainText('The label covers macro balance, total sugars and sodium');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a window with a far-off signal renders as Needs attention, naming the reason', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const label = card.getByTestId('nutrition-healthiness-label');
+      await expect(label).toBeVisible({ timeout: 15_000 });
+      await expect(label).toContainText('Last 7 days: Needs attention');
+      await expect(label).toContainText('sodium is high');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('fewer than three eligible days in the label\'s own window renders no middle row at all', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, healthinessTooFewEligibleDaysFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      // The gap line itself is unaffected — only 5 of the 28 days lost
+      // eligibility, far above its own 3-day floor — which is what proves
+      // this fixture's absent label is the label's own floor, not a side
+      // effect of the gap line failing to render at all.
+      await expect(card.getByTestId('logging-gap-value')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-healthiness')).toHaveCount(0);
     } finally {
       await putSettings(request, cookies, original);
     }

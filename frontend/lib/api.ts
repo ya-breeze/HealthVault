@@ -392,10 +392,20 @@ export interface DayCompleteness {
 export interface DailyTotal {
   date: string;
   calories: number;
+  // protein_grams, carbs_grams, fat_grams, sugar_grams and sodium_grams mirror
+  // database.DailyTotal (food_daily_totals.go) — required, not optional. The
+  // backend serializes all five with no `omitempty`, so a zero sum always
+  // arrives as the number 0, never an absent key.
+  protein_grams: number;
+  carbs_grams: number;
+  fat_grams: number;
+  sugar_grams: number;
+  sodium_grams: number;
   // How many of that day's meals are in a status other than `confirmed`, and
-  // so contributed nothing to `calories`. Non-zero means the day's total is
-  // under-counted by an unknown amount, which is not the same thing as a low
-  // total — see database.DailyTotal's own comment.
+  // so contributed nothing to `calories` or the five fields above. Non-zero
+  // means the day's total is under-counted by an unknown amount, which is
+  // not the same thing as a low total — see database.DailyTotal's own
+  // comment.
   unconfirmed_meals: number;
 }
 

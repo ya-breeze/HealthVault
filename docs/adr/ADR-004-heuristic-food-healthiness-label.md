@@ -1,8 +1,22 @@
 # ADR-004: Food Healthiness Label Computed by Heuristic, Not LLM
 
 ## Status
-Proposed
+Accepted
 
+> **Update (`docs/specs/healthvault-nutrition-card-middle-row-th.md`, 2026-09-03):** the heuristic
+> half of this decision has shipped — the nutrition card's middle row now renders a deterministic
+> Healthiness Label (Good / Fair / Needs attention) computed by `frontend/lib/healthiness.ts` over
+> a pooled 7-day window of the daily-totals endpoint's macro/sugar/sodium sums
+> (`backend/pkg/database/food_daily_totals.go`), with no LLM call in the path. The thresholds this
+> ADR deliberately left open (Consequences, below) now live as exported constants in
+> `healthiness.ts`, each with its own rationale documented alongside it. What this ADR also
+> decides — the LLM's role *downstream* of the label (cached daily recommendation generation, an
+> on-demand refresh, and the chat affordance) — is still unbuilt; `summaryTodayResponse.Recommendation`
+> stays `null` and reserved. Flipped to `Accepted` because the decision the ADR records — heuristic,
+> not LLM, for the label itself — has now shipped; the still-unbuilt LLM-downstream half doesn't
+> block that, since ADR status tracks whether the *decision* was acted on, not whether every
+> consequence of it has been built.
+>
 > **Update (`docs/specs/nutrition-card-today-and-on-track.md`, 2026-08-31):** the *packaging* of
 > this label has changed, though nothing about how it is computed has. Phase 4 originally placed it
 > on its own dashboard card ("Card B"), beside a separate Card A for today's intake versus target.
@@ -10,8 +24,7 @@ Proposed
 > dashboard; ya-breeze asked for one card instead. Today's-intake and the logging-gap line have now
 > shipped as the first and third rows of the existing card (registry id `logging_gap`, retitled
 > "Nutrition"), and the Healthiness Label plus its advice lines are its planned middle row rather
-> than a card of their own. This ADR stays `Proposed` because none of what it decides — heuristic
-> over LLM, and the LLM's role downstream of the label — has been implemented yet.
+> than a card of their own.
 
 ## Context and Problem Statement
 

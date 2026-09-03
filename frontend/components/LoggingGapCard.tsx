@@ -11,9 +11,14 @@ import {
   computeLoggingGap,
   slopeStandardError,
   excludedOutlierCount,
-  DayWindowData,
   LoggingGapResult,
 } from '@/lib/loggingGap';
+import {
+  resolveHealthinessWindow,
+  computeHealthinessLabel,
+  HealthinessDayData,
+  HealthinessResult,
+} from '@/lib/healthiness';
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
@@ -47,7 +52,7 @@ type GapLine = LoggingGapResult | { kind: 'retrieval_error' };
 // their first weeks.
 type ContentState =
   | { kind: 'loading' }
-  | { kind: 'ready'; today: TodayRow; gap: GapLine }
+  | { kind: 'ready'; today: TodayRow; gap: GapLine; healthiness: HealthinessResult | null }
   | { kind: 'nutrition_target_unmet'; reason: NutritionTargetUnmetReason }
   | { kind: 'retrieval_error' };
 
@@ -191,7 +196,11 @@ export default function LoggingGapCard({
           completenessR.status === 'rejected' ||
           dailyTotalsR.status === 'rejected'
         ) {
-          setState({ kind: 'ready', today: todayRow, gap: { kind: 'retrieval_error' } });
+          // The Healthiness Label shares this fetch group (spec's "Rendering,
+          // and when the row is silent"): it reads completeness and
+          // daily-totals, the same two of the three that feed the gap line,
+          // so a failure here silences both rows together.
+          setState({ kind: 'ready', today: todayRow, gap: { kind: 'retrieval_error' }, healthiness: null });
           return;
         }
         const weightRaw = weightR.value;
@@ -215,13 +224,22 @@ export default function LoggingGapCard({
 
         const { kept, rejected, bootstrapSiblingAmbiguous } = rejectOutliers(rawRecords);
 
-        const perDayWindowData: Record<number, DayWindowData> = {};
+        // HealthinessDayData extends the Logging Gap's own DayWindowData, so
+        // this one map serves both computations below — checkHardFloor and
+        // computeLoggingGap only read the fields DayWindowData declares, and
+        // computeHealthinessLabel additionally reads the five macro fields.
+        const perDayWindowData: Record<number, HealthinessDayData> = {};
         const completenessByDate = new Map(completeness.map(c => [c.date, c.state]));
         for (const total of dailyTotals) {
           perDayWindowData[toDayOffset(total.date)] = {
             state: completenessByDate.get(total.date) ?? 'incomplete',
             calories: total.calories,
             unconfirmedMeals: total.unconfirmed_meals,
+            proteinGrams: total.protein_grams,
+            carbsGrams: total.carbs_grams,
+            fatGrams: total.fat_grams,
+            sugarGrams: total.sugar_grams,
+            sodiumGrams: total.sodium_grams,
           };
         }
 
@@ -260,8 +278,14 @@ export default function LoggingGapCard({
           );
         }
 
+        // No fifth request: the label is computed from the same completeness
+        // and daily-totals responses the gap line already fetched, sliced to
+        // their last seven days by resolveHealthinessWindow.
+        const healthinessWindow = resolveHealthinessWindow(gapWindow.windowLastDayOffset);
+        const healthiness = computeHealthinessLabel(perDayWindowData, healthinessWindow);
+
         if (cancelled) return;
-        setState({ kind: 'ready', today: todayRow, gap: gapResult });
+        setState({ kind: 'ready', today: todayRow, gap: gapResult, healthiness });
         setOutlierExcluded(excludedOutlierCount(rejected, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset) > 0);
       } catch {
         if (cancelled) return;
@@ -370,7 +394,25 @@ export default function LoggingGapCard({
     }
   }
 
-  function renderGap(gap: GapLine) {
+  // The label line: "Last 7 days: Good", or "Last 7 days: Fair — protein is
+  // low, sugar is high" when there's something to name. Never renders at
+  // all when there's no label to show — see the card's own top-level
+  // silence rule in renderContent's `ready` case.
+  function renderHealthiness(healthiness: HealthinessResult) {
+    const label = t(`loggingGap.healthinessLabel.${healthiness.label}`);
+    const line = interpolate(t('loggingGap.healthinessLine'), { label });
+    const reasons = healthiness.reasons.map(reason => t(`loggingGap.healthinessReason.${reason}`));
+    return (
+      <div className={`mt-1.5 text-xs text-text-muted${dim}`} data-testid="nutrition-healthiness">
+        <span data-testid="nutrition-healthiness-label">
+          {line}
+          {reasons.length > 0 ? ` — ${reasons.join(', ')}` : ''}
+        </span>
+      </div>
+    );
+  }
+
+  function renderGap(gap: GapLine, healthiness: HealthinessResult | null) {
     return (
       <div>
         {/* The whole row is the toggle, not just the ⓘ. On touch TapTarget's
@@ -417,6 +459,9 @@ export default function LoggingGapCard({
               absent number doesn't account for activity error only invites the
               reader to look for a number that isn't there. */}
           {(gap.kind === 'gap' || gap.kind === 'on_track') && <p>{t('loggingGap.caveatActivity')}</p>}
+          {/* Shown only when the label is present — it qualifies what the
+              label row above actually measured. */}
+          {healthiness && <p>{t('loggingGap.healthinessHintNote')}</p>}
         </div>
       </div>
     );
@@ -441,7 +486,13 @@ export default function LoggingGapCard({
         return (
           <>
             {renderToday(state.today)}
-            <div className={`mt-2 pt-2 border-t border-border${dim}`}>{renderGap(state.gap)}</div>
+            {/* Precedence: this row is gated on the sustainability warning
+                producing no warning once that change lands (spec's
+                "Precedence"). That code doesn't exist in this file yet, so
+                for now the label is the whole middle row and the
+                sustainability change adds the gate when it arrives. */}
+            {state.healthiness && renderHealthiness(state.healthiness)}
+            <div className={`mt-2 pt-2 border-t border-border${dim}`}>{renderGap(state.gap, state.healthiness)}</div>
           </>
         );
     }

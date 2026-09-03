@@ -230,7 +230,13 @@ func TestSummaryToday_ReflectsCallersOwnMeals(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
 
-	loggedAt := time.Now().UTC().Add(-1 * time.Hour)
+	// Anchored at today's UTC noon rather than time.Now().Add(-1*time.Hour):
+	// the latter crosses midnight — landing the meal in *yesterday's* window
+	// instead — whenever the suite happens to run in the first hour of the
+	// UTC day, which made this test fail deterministically at that time of
+	// day regardless of anything under test.
+	today := time.Now().UTC()
+	loggedAt := time.Date(today.Year(), today.Month(), today.Day(), 12, 0, 0, 0, time.UTC)
 	confirmed := database.FoodMeal{
 		UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: loggedAt,
 		Name: "Lunch", Calories: 500, ProteinGrams: 30, CarbsGrams: 40, FatGrams: 15,

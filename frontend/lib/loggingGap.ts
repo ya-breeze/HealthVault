@@ -249,8 +249,12 @@ export interface DayWindowData {
  * noise, it drags Mean Logged Intake down and manufactures a confident
  * Logging Gap out of nothing, with a perfectly healthy weight trend so
  * neither the interval nor the hard floor can catch it.
+ *
+ * Exported because the Healthiness Label (`healthiness.ts`) shares this exact
+ * filter for its own eligible-day rule — imported rather than reimplemented,
+ * so the two rows can never disagree about what counts as "logged".
  */
-function isValidDay(day: DayWindowData): boolean {
+export function isValidDay(day: DayWindowData): boolean {
   if (day.state !== 'complete' && day.state !== 'confirmed_complete') return false;
   return day.unconfirmedMeals === 0;
 }
