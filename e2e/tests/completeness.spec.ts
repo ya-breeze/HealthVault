@@ -118,6 +118,31 @@ async function thresholdLeavingDayBelow(
   return (await occasionCount(request, cookies, date)) + 1;
 }
 
+// The most recent day at or before `startDaysAgo` that holds no occasions at
+// all, so a test seeding one meal there owns the whole day section.
+//
+// The same shared-account problem thresholdLeavingDayBelow solves for the
+// threshold, one step further: a test that deletes its meal and then asserts
+// the day *section* disappeared needs a day whose only meal was its own. On
+// 2026-09-03 the day two days back held 17 of the account's own meals, so the
+// section correctly survived and the assertion failed on data rather than on
+// behaviour. Walks back a bounded number of days and fails loudly rather than
+// silently testing nothing.
+async function findEmptyDaysAgo(
+  request: APIRequestContext,
+  cookies: string,
+  startDaysAgo: number,
+  maxLookback = 60
+): Promise<number> {
+  for (let d = startDaysAgo; d < startDaysAgo + maxLookback; d++) {
+    if ((await occasionCount(request, cookies, isoAtUTC(d, 12).slice(0, 10))) === 0) return d;
+  }
+  throw new Error(
+    `no empty day found between ${startDaysAgo} and ${startDaysAgo + maxLookback} days ago; ` +
+    `the shared account may need its leftover E2E meals cleaned up`
+  );
+}
+
 // Runs `action` and waits for the settings PUT it triggers to actually land,
 // not just for the click that starts it — mirrors dashboard.spec.ts's
 // withSettingsSave (the settings panel here does the same GET-then-PUT via
@@ -172,8 +197,12 @@ test.describe('Day completeness', () => {
     await putSettings(request, cookies, { ...original, timezone: 'UTC', usual_meals_per_day: 3 });
 
     const mealName = `E2E Completeness Unconfirmed Day ${RUN_TAG}`;
-    const meal = await createMealAt(request, cookies, mealName, isoAtUTC(2, 12));
-    const date = isoAtUTC(2, 12).slice(0, 10);
+    // Seeded on a day the account holds nothing else on, because the last
+    // assertion here is that deleting the meal drops the whole day section —
+    // which only follows if this test's meal was the section's only one.
+    const daysAgo = await findEmptyDaysAgo(request, cookies, 2);
+    const meal = await createMealAt(request, cookies, mealName, isoAtUTC(daysAgo, 12));
+    const date = isoAtUTC(daysAgo, 12).slice(0, 10);
 
     try {
       // This test asserts the day starts Unconfirmed, which requires both

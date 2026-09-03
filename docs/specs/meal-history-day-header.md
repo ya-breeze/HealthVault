@@ -73,9 +73,13 @@ Split the day header into two rows, and let each row hold units that fit.
 - *Rejected: shortening the Russian "Mark day complete" label.* It would make the one-row layout fit,
   but it treats a layout defect as a translation problem and leaves the header just as brittle for
   the next long string.
-- *Accepted: a day carrying the control is now taller than one without.* Row 1 becomes 48px on those
-  days because `TapTarget`'s minimum applies. That is the guarantee working, not a regression, and it
-  replaces a 48px row in which the content collided with a 48px row in which it does not.
+- *Accepted: a day carrying the control is now taller than one without.* `TapTarget`'s 48px minimum
+  applies to row 1 on those days, and when the control cannot share the line it takes one of its own.
+  Measured after: a day with no control is **42px** (from 20px), a day with the control **70px**, and
+  a Russian day whose label plus control exceed the width **98px** — against the 48px in which the
+  three units collided. The page pays vertical space for a header that reads; the alternative is the
+  collision. Days carrying the control are the minority, and the page's overall length is the
+  deferred density change's problem, not this one's.
 - *Excluded: the page's length and density.* At 390px this page is 4.31 screens and at 320px 7.94,
   with no visual grouping between days — the audit's third meal-history finding. Density is scoped to
   the deferred visual-language change and is not touched here.
@@ -148,17 +152,40 @@ offsets.
       `Отметить день заполненным` is the widest label the row must hold.
 - [x] Assert a meal row's identity line matches a time-only pattern: no four-digit year and no
       seconds field.
-- [ ] Confirm the existing `completeness.spec.ts` cases still pass — they address the same control
+- [x] Confirm the existing `completeness.spec.ts` cases still pass — they address the same control
       this change restyles.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Validate against the deployed stack
-- [ ] Re-read every modified file for leftover classes from the old single-row layout and for
+- [x] Re-read every modified file for leftover classes from the old single-row layout and for
       consistency with the surrounding code.
-- [ ] Run `make lint` and `make test`, and state in the summary that both cover the backend and the
+- [x] Run `make lint` and `make test`, and state in the summary that both cover the backend and the
       pure-function suite only — this change's real gate is the E2E run.
-- [ ] Deploy the branch to `hcw-wip` and run `make test-e2e` against it.
-- [ ] Re-measure the day header at 390px and 320px in both languages and record the after-numbers
+- [x] Deploy the branch to `hcw-wip` and run `make test-e2e` against it.
+- [x] Re-measure the day header at 390px and 320px in both languages and record the after-numbers
       against the before-numbers in this spec's `Why`.
-- [ ] Summarize which files changed and what each change does.
-- [ ] Mark completed
+- [x] Summarize which files changed and what each change does.
+- [x] Mark completed
+
+### Task 5: Repair the existing assertions this markup change invalidated
+Scope added during validation: the full E2E run surfaced five failures, four of them consequences of
+this change and one a pre-existing fragility it exposed. Recorded here rather than fixed silently,
+because two of the three are the kind of thing a reviewer should see reasoned about.
+- [x] `food.spec.ts` asserted each day's totals as one contiguous string
+      (`'450 kcal · P 30g · C 45g · F 15g'`). Row 2 renders them as two elements, so add a `dayTotal`
+      helper that filters the `day-total` testid on **both** halves — the assertion must stay exactly
+      as strong, requiring both to appear in the same day's row, not merely somewhere on the page.
+- [x] `food.spec.ts`'s `"Load older"` case broke on a substring collision the shorter timestamp
+      created: a row's name and time share a container, so `E2E LoadOlder 5` now reads
+      `E2E LoadOlder 507:05 PM · Confirmed`, which contains `E2E LoadOlder 50`. Make those name
+      assertions `exact`, and record the trap in a comment — it catches index 1 against 10 the same
+      way. This is a test-only collision: the two are on separate lines on screen.
+- [x] `completeness.spec.ts`'s "an emptied day drops its section" assertion is **pre-existing and
+      unrelated** — it seeds two days back and asserts the section vanishes once its meal is deleted,
+      which only holds if the account has nothing else that day. On 2026-09-03 that day held 17 of the
+      account's own meals. Add a `findEmptyDaysAgo` helper that walks back to a day with no occasions
+      and throws rather than silently testing nothing, in the spirit of the existing
+      `thresholdLeavingDayBelow`.
+- [x] Confirm the full suite is green on first attempt (`make test-e2e E2E_ARGS=--retries=0`), not
+      green on retry.
+- [x] Mark completed
