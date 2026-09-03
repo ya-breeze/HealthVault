@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loggedDayKey, loggedDayLabel } from './loggedDay';
+import { loggedDayKey, loggedDayLabel, loggedDayTime } from './loggedDay';
 
 describe('loggedDayKey', () => {
   it('defaults to UTC when no timezone is given', () => {
@@ -34,5 +34,32 @@ describe('loggedDayLabel', () => {
   it('falls back to UTC for an invalid/unsupported zone name', () => {
     const d = new Date('2026-08-21T02:00:00Z');
     expect(loggedDayLabel(d, undefined, 'Not/AZone')).toBe(loggedDayLabel(d, undefined, 'UTC'));
+  });
+});
+
+describe('loggedDayTime', () => {
+  // The defect this exists to prevent: rendered in a zone other than the
+  // stored one, a meal's time belongs to a different calendar day than the
+  // header it is listed under. 02:00 UTC is 19:00 the previous evening in
+  // Los Angeles, and 19:00 is what must show under a header naming the 20th.
+  it('renders the time in the given zone, not the runner\'s', () => {
+    const d = new Date('2026-08-21T02:00:00Z');
+    expect(loggedDayTime(d, 'en-GB', 'America/Los_Angeles')).toBe('19:00');
+    expect(loggedDayTime(d, 'en-GB', 'UTC')).toBe('02:00');
+  });
+
+  it('defaults to UTC when no timezone is given', () => {
+    expect(loggedDayTime(new Date('2026-08-21T02:00:00Z'), 'en-GB', undefined)).toBe('02:00');
+  });
+
+  it('falls back to UTC for an invalid/unsupported zone name', () => {
+    const d = new Date('2026-08-21T02:00:00Z');
+    expect(loggedDayTime(d, 'en-GB', 'Not/AZone')).toBe(loggedDayTime(d, 'en-GB', 'UTC'));
+  });
+
+  it('carries no date and no seconds', () => {
+    const out = loggedDayTime(new Date('2026-08-21T02:03:04Z'), 'en-GB', 'UTC');
+    expect(out).not.toMatch(/\d{4}/);   // no year
+    expect(out).not.toMatch(/04/);      // no seconds
   });
 });

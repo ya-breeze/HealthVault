@@ -43,11 +43,13 @@ stack only because that container also runs UTC.
 
 Split the day header into two rows, and let each row hold units that fit.
 
-- **Row 1 carries the date and the completeness control**, as `flex flex-wrap items-center
-  justify-between gap-2`. `flex-wrap` is what makes the degradation clean: when the two cannot share
-  a line the control drops whole onto its own line rather than being squeezed into the gap. Give the
-  control `whitespace-nowrap` so its own label is what forces that wrap — without it the pill
-  shrinks and re-wraps internally, which is exactly today's failure.
+- **Row 1 carries the date and the completeness control**, as `flex flex-wrap items-center gap-2`.
+  `flex-wrap` is what makes the degradation clean: when the two cannot share a line the control drops
+  whole onto its own line rather than being squeezed into the gap. Give the control
+  `whitespace-nowrap` so its own label is what forces that wrap — without it the pill shrinks and
+  re-wraps internally, which is exactly today's failure. No `justify-between` here: the control sits
+  directly beside the date it describes, rather than across a gap from it, and reintroducing that gap
+  is what the old layout filled with a squeezed pill.
 - **Row 2 carries the day's totals**, calories first and emphasized (`text-sm font-semibold`,
   `tabular-nums`), macros after in the existing muted `text-xs`. This is the same information as
   today's single run-on string, ordered so the number being scanned for reads first. Row 2's natural
@@ -56,9 +58,12 @@ Split the day header into two rows, and let each row hold units that fit.
   `hour`/`minute` and **the account's `timezone`**, the same zone the grouping uses — so the row says
   `23:00`, not `26.08.2026, 23:00:00`, and says it in the zone whose day header it sits under. Give
   the calories figure `tabular-nums` so the column aligns.
-- **Add `data-testid` hooks** (`day-header`, `day-total`) so the E2E cases can address the header
-  block without depending on Tailwind classes, matching how `e2e/tests/mobile-nav.spec.ts` addresses
-  the navigation bar.
+- **Add `data-testid` hooks** — `day-header`, `day-total` and its two halves `day-total-calories` and
+  `day-total-macros`, plus `meal-meta` on a row's identity line — so the E2E cases can address each
+  unit without depending on Tailwind classes, matching how `e2e/tests/mobile-nav.spec.ts` addresses
+  the navigation bar. The two halves are addressed separately because the assertion that matters is
+  per-unit: each must render on one line of its own, and a container's height alone cannot say which
+  of its children wrapped.
 
 **Trade-offs and exclusions.**
 
@@ -94,47 +99,54 @@ offsets.
 - `make test-e2e`
 
 ### Task 1: Split the day header into two rows
-- [ ] In `frontend/app/food/history/page.tsx`, replace the single
+- [x] In `frontend/app/food/history/page.tsx`, replace the single
       `flex items-baseline justify-between` day-header row with a container holding two rows, and
       give the container `data-testid="day-header"`.
-- [ ] Row 1: the `<h2>` date and `DayCompletenessControl`, as
-      `flex flex-wrap items-center justify-between gap-2`. Add a comment recording that `flex-wrap`
-      exists so the control drops whole onto its own line rather than compressing into the gap.
-- [ ] Row 2: the day's totals, with calories first in `text-sm font-semibold` and `tabular-nums`,
-      followed by the P/C/F values in the existing muted `text-xs`. Give it
-      `data-testid="day-total"`.
-- [ ] Add `whitespace-nowrap` to `DayCompletenessControl`'s button and badge in
+- [x] Row 1: the `<h2>` date and `DayCompletenessControl`, as `flex flex-wrap items-center gap-2`.
+      Add a comment recording that `flex-wrap` exists so the control drops whole onto its own line
+      rather than compressing into the gap.
+- [x] Row 2: the day's totals, with calories first in `text-sm font-semibold` and `tabular-nums`,
+      followed by the P/C/F values in the existing muted `text-xs`. Give the row
+      `data-testid="day-total"` and each half its own id (`day-total-calories`,
+      `day-total-macros`), so a test can say which of the two wrapped.
+- [x] Add `whitespace-nowrap` to `DayCompletenessControl`'s button and badge in
       `frontend/components/food/DayCompletenessControl.tsx`, so the control's full label is what
       forces the wrap instead of the pill re-wrapping inside itself.
-- [ ] Confirm no change to the control's `TapTarget` or its 48x48 minimum.
-- [ ] Mark completed
+- [x] Confirm no change to the control's `TapTarget` or its 48x48 minimum.
+- [x] Mark completed
 
 ### Task 2: Give meal rows a readable identity line
-- [ ] Replace the meal row's `new Date(meal.logged_at).toLocaleString(dateLocaleFor(language))` with
+- [x] Replace the meal row's `new Date(meal.logged_at).toLocaleString(dateLocaleFor(language))` with
       a time-only format — `toLocaleTimeString`, `hour` and `minute` only, no seconds and no date.
-- [ ] Pass the account's `timezone` to that format, the same value `groupByDay` uses, and add a
+- [x] Pass the account's `timezone` to that format, the same value `groupByDay` uses, and add a
       comment stating that a timestamp rendered in the browser's zone can name a different day than
       the header it sits under.
-- [ ] Give the calories figure `tabular-nums` so the right-hand column aligns down the list.
-- [ ] Mark completed
+- [x] Give the calories figure `tabular-nums` so the right-hand column aligns down the list, and
+      `data-testid="meal-meta"` to the identity line so a test can read it.
+- [x] Mark completed
 
 ### Task 3: Cover the header at narrow viewports in both languages
-- [ ] Add `e2e/tests/meal-history-layout.spec.ts`, seeding meals with the `createMealAt` helper
+- [x] Add `e2e/tests/meal-history-layout.spec.ts`, seeding meals with the `createMealAt` helper
       pattern from `completeness.spec.ts` so a day renders with the "Mark day complete" control, and
       cleaning them up afterwards with the same `deleteMeals` pattern.
-- [ ] Save the account's settings before the run and restore them afterwards, following
+- [x] Save the account's settings before the run and restore them afterwards, following
       `completeness.spec.ts` — these cases write `display_language`, and the account is shared with
       every other spec file.
-- [ ] Assert the date, the completeness control, and the totals **do not intersect**, using the
-      `intersects` bounding-box helper from `mobile-nav.spec.ts`. This is the assertion that fails
-      against today's layout.
-- [ ] Assert the date renders on a single line (its box height is within one line-height), which is
-      the specific symptom measured at 390px.
-- [ ] Assert the totals row renders on a single line at 320px.
-- [ ] Run every assertion above at **390x844 and 320x568, in both `en` and `ru`** — four
+- [x] Assert the date, the completeness control, and the totals **do not intersect**, using the
+      `intersects` bounding-box helper from `mobile-nav.spec.ts`. Treat this as a backstop, not the
+      primary assertion: today's wrapped fragments sit *beside* the pill rather than under it, so
+      their boxes stay disjoint while the header still reads as three interleaved pieces.
+- [x] Assert the date, the calories total and the macro totals each render on **one line of their
+      own**, measured as box height against the element's own line-height. This is the pair of
+      assertions that actually fails against today's layout, where the date rendered 2.0 lines and
+      the macro summary 2.0 at 390px.
+- [x] Assert the completeness control computes `white-space: nowrap` rather than counting its lines:
+      it is a TapTarget, so its box is 48px tall by guarantee and a height-based measure would read
+      three lines of 16px text however the label renders.
+- [x] Run every assertion above at **390x844 and 320x568, in both `en` and `ru`** — four
       combinations. Note in a comment that `ru` is the binding case because
       `Отметить день заполненным` is the widest label the row must hold.
-- [ ] Assert a meal row's identity line matches a time-only pattern: no four-digit year and no
+- [x] Assert a meal row's identity line matches a time-only pattern: no four-digit year and no
       seconds field.
 - [ ] Confirm the existing `completeness.spec.ts` cases still pass — they address the same control
       this change restyles.
