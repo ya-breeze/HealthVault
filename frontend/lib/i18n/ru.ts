@@ -227,6 +227,22 @@ const ru: Dictionary = {
   'loggingGap.intakeBelowBmr': 'В среднем {intake} ккал в день — ниже вашего базового обмена ({bmr} ккал).',
   'loggingGap.sustainabilityDetail': 'Слишком резкий дефицит калорий сложно выдержать, и обычным итогом становится срыв. Эти цифры — оценки по тому же тренду и тому же дневнику, что использует остальная часть карточки, и это не медицинская рекомендация.',
 
+  'loggingGap.targetCaveatConfirmedOnly': 'Сегодняшняя сумма учитывает только подтверждённые приёмы пищи — неподтверждённое фото в неё ещё не входит.',
+  'loggingGap.targetCalorieDerivation':
+    'Калории: базовый обмен {bmr} ккал (формула Миффлина — Сан-Жеора) при весе {weight} кг, росте {height} см, возрасте {age}, пол «{sex}», умноженный на коэффициент активности {multiplier} ({tier}), даёт {calories} ккал.',
+  'loggingGap.targetProteinDerivation': 'Белки: 1,6 г на кг целевого веса ({goal} кг), это {protein} г.',
+  'loggingGap.targetFatCarbDerivation':
+    'Жиры и углеводы делят пополам по калорийности то, что осталось от бюджета после белков — кроме случая, когда жиры опускаются ниже 0,8 г на кг целевого веса, тогда углеводы забирают остаток.',
+  'loggingGap.targetRecomputed':
+    'Эта цель пересчитывается при каждой загрузке страницы, так что новое взвешивание, целевой вес или среднее число шагов могут её изменить.',
+  'loggingGap.sexMale': 'мужской',
+  'loggingGap.sexFemale': 'женский',
+  'loggingGap.tierSedentary': 'малоподвижный',
+  'loggingGap.tierLight': 'лёгкая активность',
+  'loggingGap.tierModerate': 'умеренная активность',
+  'loggingGap.tierActive': 'высокая активность',
+  'loggingGap.tierExtra': 'очень высокая активность',
+
   'metric.steps': 'Шаги',
   'metric.heart_rate': 'Пульс',
   'metric.heart_rate_variability': 'ВСР',

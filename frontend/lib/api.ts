@@ -494,6 +494,13 @@ export type TodaySummaryTarget =
       carbs_grams: number;
       fat_grams: number;
       bmr: number;
+      measured_weight_kg: number;
+      goal_weight_kg: number;
+      height_m: number;
+      age_years: number;
+      sex: 'male' | 'female';
+      activity_multiplier: number;
+      activity_tier: string;
     };
 
 /**
@@ -574,12 +581,11 @@ export const api = {
   // 422 so callers can branch on the specific unmet reason.
   //
   // No caller in the app today: LoggingGapCard, the only one there was, moved
-  // to getTodaySummary above when it grew a row needing today's intake too.
-  // Kept as the client for a route the backend still serves
-  // (server.go's /users/me/nutrition-target), and because it returns the full
-  // derivation — measured weight, goal weight, height, age, activity tier —
-  // that the summary's target payload deliberately does not carry. Delete both
-  // this and NutritionTargetUnmetError if that route ever goes.
+  // to getTodaySummary above when it grew a row needing today's intake too,
+  // and TodaySummaryTarget's available branch now carries the same
+  // derivation fields this route returns. Kept as the client only because the
+  // backend still serves the route (server.go's /users/me/nutrition-target);
+  // delete both this and NutritionTargetUnmetError if that route ever goes.
   getNutritionTarget: async (): Promise<NutritionTarget> => {
     const res = await apiRawFetch('/users/me/nutrition-target');
     if (res.status === 422) {

@@ -89,6 +89,16 @@ interface LoggingGapFixture {
   // its existing assertions unchanged: their logged-intake numbers all clear
   // a BMR this low with room to spare.
   nutritionTargetBmr?: number;
+  // The derivation fields the top row's ⓘ disclosure reads (docs/specs/idea.md
+  // task 6), given fixed defaults here so most fixtures — which only care
+  // about the gap line — don't have to spell them out.
+  nutritionTargetMeasuredWeightKg?: number;
+  nutritionTargetGoalWeightKg?: number;
+  nutritionTargetHeightM?: number;
+  nutritionTargetAgeYears?: number;
+  nutritionTargetSex?: 'male' | 'female';
+  nutritionTargetActivityMultiplier?: number;
+  nutritionTargetActivityTier?: string;
   nutritionTargetUnmetReason?: string;
   // Today's consumed totals, for the card's top row. Defaults to an untouched
   // day (all zeros), which is what most of these fixtures want — they exist to
@@ -131,6 +141,13 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?:
           carbs_grams: 250,
           fat_grams: 70,
           bmr: fixture.nutritionTargetBmr ?? 1000,
+          measured_weight_kg: fixture.nutritionTargetMeasuredWeightKg ?? 80,
+          goal_weight_kg: fixture.nutritionTargetGoalWeightKg ?? 75,
+          height_m: fixture.nutritionTargetHeightM ?? 1.8,
+          age_years: fixture.nutritionTargetAgeYears ?? 35,
+          sex: fixture.nutritionTargetSex ?? 'male',
+          activity_multiplier: fixture.nutritionTargetActivityMultiplier ?? 1.55,
+          activity_tier: fixture.nutritionTargetActivityTier ?? 'Moderately active',
         };
     return route.fulfill({
       json: {
@@ -368,6 +385,58 @@ test.describe('Logging Gap Card', () => {
       await page.goto('/');
       await expect(card.getByTestId('logging-gap-not-enough-data')).toBeVisible({ timeout: 15_000 });
       await expect(card.getByTestId('nutrition-today-calories')).toContainText('1200 / 2500 kcal');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test("the top row's ⓘ explains the target and opens independently of the gap line's own hint", async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, onTrackFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const todayHint = card.getByTestId('nutrition-today-hint');
+      const todayToggle = card.getByTestId('nutrition-today-hint-toggle');
+      await expect(todayToggle).toBeVisible({ timeout: 15_000 });
+
+      // Hidden by default, matching the gap line's own hint.
+      await expect(todayHint).toBeHidden();
+      await expect(todayToggle).toHaveAttribute('aria-expanded', 'false');
+
+      await todayToggle.click();
+      await expect(todayHint).toBeVisible();
+      await expect(todayToggle).toHaveAttribute('aria-expanded', 'true');
+      // The confirmed-meals rule, explaining the *first* number in the row.
+      await expect(todayHint).toContainText('confirmed meals only');
+      // The fixture's BMR (1000, mockLoggingGapApis' default), activity
+      // multiplier (1.55) and tier label (Moderately active -> "moderately
+      // active"), and goal weight (75 -> "75.0").
+      await expect(todayHint).toContainText('1000 kcal');
+      await expect(todayHint).toContainText('1.55');
+      await expect(todayHint).toContainText('moderately active');
+      await expect(todayHint).toContainText('75.0 kg');
+
+      // Opening the top row's hint must not open the gap line's own hint.
+      const gapHint = card.getByTestId('logging-gap-hint');
+      await expect(gapHint).toBeHidden();
+
+      // Close the top row's hint, then check the reverse: opening the gap
+      // line's own hint must not open the top row's — the two panels are
+      // independent state, not one shared toggle.
+      await todayToggle.click();
+      await expect(todayHint).toBeHidden();
+      await card.getByTestId('logging-gap-hint-toggle').click();
+      await expect(gapHint).toBeVisible();
+      await expect(todayHint).toBeHidden();
     } finally {
       await putSettings(request, cookies, original);
     }

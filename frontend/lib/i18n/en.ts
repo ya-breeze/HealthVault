@@ -340,6 +340,25 @@ const en = {
   'loggingGap.intakeBelowBmr': 'You average {intake} kcal a day, below your BMR of {bmr} kcal.',
   'loggingGap.sustainabilityDetail': "Too steep a deficit is hard to hold, and a relapse is the usual outcome. These numbers are estimates from the same trend and the same log the rest of this card uses, and this isn't medical advice.",
 
+  // The top row's own ⓘ disclosure (docs/specs/idea.md), explaining today's
+  // calorie/macro figures and the Nutrition Target they're measured against —
+  // a separate panel from the gap line's caveats above.
+  'loggingGap.targetCaveatConfirmedOnly': "Today's total counts confirmed meals only — an unconfirmed photo isn't included yet.",
+  'loggingGap.targetCalorieDerivation':
+    'Calories: basal metabolism {bmr} kcal (Mifflin-St Jeor) from weight {weight} kg, height {height} cm, age {age}, sex {sex}, times activity {multiplier} ({tier}), giving {calories} kcal.',
+  'loggingGap.targetProteinDerivation': 'Protein: 1.6 g per kg of goal weight ({goal} kg), giving {protein} g.',
+  'loggingGap.targetFatCarbDerivation':
+    "Fat and carbs split what's left of the calorie budget after protein, half each by energy — except fat never drops below 0.8 g per kg of goal weight, in which case carbs take the rest.",
+  'loggingGap.targetRecomputed':
+    'This target is recomputed every time the page loads, so a new weigh-in, goal weight or step average can move it.',
+  'loggingGap.sexMale': 'male',
+  'loggingGap.sexFemale': 'female',
+  'loggingGap.tierSedentary': 'sedentary',
+  'loggingGap.tierLight': 'lightly active',
+  'loggingGap.tierModerate': 'moderately active',
+  'loggingGap.tierActive': 'very active',
+  'loggingGap.tierExtra': 'extra active',
+
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing
   // underscores in its identifier, which can only ever produce English.

@@ -18,26 +18,42 @@ import (
 // nutrition-target's existing four reason codes. Never a 422 on this
 // endpoint: an unavailable target is a normal, expected state here (a fresh
 // user with no profile yet), not an error.
-// The five numeric fields deliberately carry no `omitempty`, unlike `Reason`.
-// `omitempty` drops an int that is zero, and zero is a legitimate target
-// value: computeNutritionTarget clamps carbs to zero whenever protein and the
-// fat floor already exhaust the calorie budget, which a goal weight entered in
-// pounds against an ordinary TDEE is enough to reach. Omitting the key then
-// makes a *present* target look partial — a client that types the field as
-// required (as the frontend's TodaySummaryTarget does) reads `undefined` and
-// renders "Carbs 130/NaN g". Absence must mean "no target", which `available`
-// already says; it must not double as "the number happened to be zero". BMR
-// is included for the same reason: a BMR of zero is not realistic in
-// practice, but the rule is "no field is special-cased," not "zero happens
-// to be safe here."
+// None of the fields below `Reason` carry `omitempty`, including the seven
+// derivation fields added alongside the original five. `omitempty` drops an
+// int that is zero, and zero is a legitimate target value: computeNutritionTarget
+// clamps carbs to zero whenever protein and the fat floor already exhaust the
+// calorie budget, which a goal weight entered in pounds against an ordinary
+// TDEE is enough to reach. Omitting the key then makes a *present* target
+// look partial — a client that types the field as required (as the
+// frontend's TodaySummaryTarget does) reads `undefined` and renders "Carbs
+// 130/NaN g". Absence must mean "no target", which `available` already says;
+// it must not double as "the number happened to be zero". BMR is included
+// for the same reason: a BMR of zero is not realistic in practice, but the
+// rule is "no field is special-cased," not "zero happens to be safe here."
+//
+// The derivation fields (MeasuredWeightKg through ActivityTier) ride along
+// in this same response rather than being fetched from
+// GET /api/users/me/nutrition-target on demand: the target is computed fresh
+// on every read, so a second call could legitimately return a target
+// computed from a weigh-in or step sync that landed between the two calls —
+// an explanation that describes a different target than the one on screen.
+// Carrying them here means the numbers and their derivation always come from
+// the same computeNutritionTargetForProfile call and can never disagree.
 type summaryTargetPayload struct {
-	Available    bool   `json:"available"`
-	Reason       string `json:"reason,omitempty"`
-	Calories     int    `json:"calories"`
-	ProteinGrams int    `json:"protein_grams"`
-	CarbsGrams   int    `json:"carbs_grams"`
-	FatGrams     int    `json:"fat_grams"`
-	BMR          int    `json:"bmr"`
+	Available          bool    `json:"available"`
+	Reason             string  `json:"reason,omitempty"`
+	Calories           int     `json:"calories"`
+	ProteinGrams       int     `json:"protein_grams"`
+	CarbsGrams         int     `json:"carbs_grams"`
+	FatGrams           int     `json:"fat_grams"`
+	BMR                int     `json:"bmr"`
+	MeasuredWeightKg   float64 `json:"measured_weight_kg"`
+	GoalWeightKg       float64 `json:"goal_weight_kg"`
+	HeightM            float64 `json:"height_m"`
+	AgeYears           int     `json:"age_years"`
+	Sex                string  `json:"sex"`
+	ActivityMultiplier float64 `json:"activity_multiplier"`
+	ActivityTier       string  `json:"activity_tier"`
 }
 
 // summaryTodayResponse is the 200 response body for GET /api/summary/today
@@ -108,6 +124,13 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 			target.CarbsGrams = values.CarbsGrams
 			target.FatGrams = values.FatGrams
 			target.BMR = values.BMR
+			target.MeasuredWeightKg = values.MeasuredWeightKg
+			target.GoalWeightKg = values.GoalWeightKg
+			target.HeightM = values.HeightM
+			target.AgeYears = values.AgeYears
+			target.Sex = values.Sex
+			target.ActivityMultiplier = values.ActivityMultiplier
+			target.ActivityTier = values.ActivityTier
 		}
 
 		var lastLoggedAt *time.Time
