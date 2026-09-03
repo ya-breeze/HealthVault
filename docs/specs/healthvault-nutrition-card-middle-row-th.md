@@ -266,14 +266,14 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 5: End-to-end coverage
-- [ ] Extend `LoggingGapFixture.dailyTotals` in `e2e/tests/logging-gap.spec.ts` with the five new
+- [x] Extend `LoggingGapFixture.dailyTotals` in `e2e/tests/logging-gap.spec.ts` with the five new
       fields, defaulting to zero, and confirm the existing fixtures still assert what they did
       (zero macro energy means no label, so no existing expectation changes)
-- [ ] Add fixtures and tests for a `good` window, a `needs_attention` window, and a window with
+- [x] Add fixtures and tests for a `good` window, a `needs_attention` window, and a window with
       only two eligible days that renders no middle row at all
-- [ ] Extend the live-backend contract test so it proves the real `/api/food/daily-totals` answers
+- [x] Extend the live-backend contract test so it proves the real `/api/food/daily-totals` answers
       with the five new keys the card now reads
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 6: Documentation
 - [ ] Update `CONTEXT.md`'s **Healthiness Label** entry with the concrete seven-day window, the
