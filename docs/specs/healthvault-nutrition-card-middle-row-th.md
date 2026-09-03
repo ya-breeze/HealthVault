@@ -276,12 +276,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 6: Documentation
-- [ ] Update `CONTEXT.md`'s **Healthiness Label** entry with the concrete seven-day window, the
+- [x] Update `CONTEXT.md`'s **Healthiness Label** entry with the concrete seven-day window, the
       eligible-day rule it shares with the Logging Gap, and the five signals — without copying the
       threshold numbers, which live in code
-- [ ] Update `todo.md`'s Phase 4 section: the middle row's label half is shipped, the advice lines
+- [x] Update `todo.md`'s Phase 4 section: the middle row's label half is shipped, the advice lines
       and the chat are not
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 7: Validate against the deployed stack, then accept ADR-004
 - [ ] Run `make lint` and `make test` and fix everything they report

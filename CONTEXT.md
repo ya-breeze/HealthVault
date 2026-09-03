@@ -128,7 +128,7 @@ Nutrition Target uncomputable (`insufficient_activity_data`). See ADR-006.
 _Avoid_: Activity multiplier alone (that's the numeric output, not the tier), exercise level
 
 **Healthiness Label**:
-A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment.
+A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment (ADR-004). The window is the 7 Logged Days ending yesterday — the last 7 days of the 28-day Logging Gap window the nutrition card already resolves, so it costs no extra fetch. A day counts only if it passes the Logging Gap's own `isValidDay` test (Day Completeness Complete/Confirmed Complete, and every one of that day's meals `confirmed`) — imported from `loggingGap.ts` rather than reimplemented, so the two rows can never disagree about what "logged" means. Below the ADR-007 3-of-7 floor, or with zero pooled macro energy, there is no label at all. The five signals, computed from *pooled* (not per-day-averaged) totals — three macro-energy shares (protein, carbs, fat, of `4P + 4C + 9F`), total-sugars share, and mean elemental sodium — each land on `ok`/`off`/`far`; any `far`, or 3+ `off`, is Needs attention, 1-2 `off` is Fair, all `ok` is Good.
 _Avoid_: Health score, nutrition score
 
 ### Weight chart
