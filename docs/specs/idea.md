@@ -135,21 +135,21 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Carry the target's derivation in `GET /api/summary/today`
-- [ ] Add `MeasuredWeightKg`, `GoalWeightKg`, `HeightM`, `AgeYears`, `Sex`, `ActivityMultiplier`
+- [x] Add `MeasuredWeightKg`, `GoalWeightKg`, `HeightM`, `AgeYears`, `Sex`, `ActivityMultiplier`
       and `ActivityTier` to `summaryTargetPayload` in `backend/pkg/server/summary_today.go`, with
       the same JSON names `nutritionTargetValues` uses and no `omitempty` on any of them
-- [ ] Extend that struct's doc comment so the no-`omitempty` rule covers the new fields, and say
+- [x] Extend that struct's doc comment so the no-`omitempty` rule covers the new fields, and say
       why the derivation rides along here rather than being fetched separately (one response
       means the explanation cannot describe a target other than the one rendered)
-- [ ] Populate the new fields in `SummaryTodayHandler` from the `values` it already has, inside
+- [x] Populate the new fields in `SummaryTodayHandler` from the `values` it already has, inside
       the existing `unavailableReason == ""` branch only
-- [ ] In `backend/pkg/server/summary_today_test.go`, extend `summaryTodayTestResponse` and
+- [x] In `backend/pkg/server/summary_today_test.go`, extend `summaryTodayTestResponse` and
       `TestSummaryToday_TargetAvailable` to assert every derivation field is populated and
       matches what `NutritionTargetHandler` returns for the same seeded user
-- [ ] Extend the raw-JSON key-presence assertion (`TestSummaryToday_ZeroTargetFieldIsStillPresent`'s
+- [x] Extend the raw-JSON key-presence assertion (`TestSummaryToday_ZeroTargetFieldIsStillPresent`'s
       approach) to the new keys, so a later `omitempty` cannot silently drop one
-- [ ] Add a case asserting the derivation fields stay zero/empty when `available` is false
-- [ ] Mark completed
+- [x] Add a case asserting the derivation fields stay zero/empty when `available` is false
+- [x] Mark completed
 
 ### Task 2: Type the derivation on the client
 - [ ] Add the seven fields to the `available: true` branch of `TodaySummaryTarget` in
