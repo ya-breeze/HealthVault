@@ -242,28 +242,28 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: Render the middle row
-- [ ] Carry the label on `ContentState`'s `ready` variant in
+- [x] Carry the label on `ContentState`'s `ready` variant in
       `frontend/components/LoggingGapCard.tsx`, computed from the daily-totals and completeness
       responses the card already fetches — no fifth request
-- [ ] Render the label line between the today row and the gap line's divider, with its reasons when
+- [x] Render the label line between the today row and the gap line's divider, with its reasons when
       the label is not `good`, and render nothing at all — no line and no divider — when there is
       no label or when the daily-totals/completeness fetch group failed
-- [ ] Gate the label on the sustainability warning producing no warning if that code is already
+- [x] Gate the label on the sustainability warning producing no warning if that code is already
       present in this file; if it is not, render the label as the whole middle row and leave the
       gate to the sustainability change
-- [ ] Add the label's explanatory sentence to the existing hint disclosure, shown only when the
+- [x] Add the label's explanatory sentence to the existing hint disclosure, shown only when the
       label is present
-- [ ] Give the new elements `data-testid` attributes consistent with the existing names
+- [x] Give the new elements `data-testid` attributes consistent with the existing names
       (`nutrition-healthiness`, `nutrition-healthiness-label`)
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Copy in both languages
-- [ ] Add the label line, the three label words, the eight reason phrases and the hint sentence to
+- [x] Add the label line, the three label words, the eight reason phrases and the hint sentence to
       `frontend/lib/i18n/ru.ts` and `en.ts`, keeping the `loggingGap.` prefix
-- [ ] Keep the copy to what was measured: no "healthy", no "unhealthy", no claim about sodium the
+- [x] Keep the copy to what was measured: no "healthy", no "unhealthy", no claim about sodium the
       log cannot support
-- [ ] Confirm the two dictionaries have identical key sets
-- [ ] Mark completed
+- [x] Confirm the two dictionaries have identical key sets
+- [x] Mark completed
 
 ### Task 5: End-to-end coverage
 - [ ] Extend `LoggingGapFixture.dailyTotals` in `e2e/tests/logging-gap.spec.ts` with the five new
