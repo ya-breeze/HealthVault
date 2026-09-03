@@ -206,20 +206,20 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Per-day macro, sugar and sodium sums on the daily-totals endpoint
-- [ ] Add `ProteinGrams`, `CarbsGrams`, `FatGrams`, `SugarGrams` and `SodiumGrams` to
+- [x] Add `ProteinGrams`, `CarbsGrams`, `FatGrams`, `SugarGrams` and `SodiumGrams` to
       `database.DailyTotal` in `backend/pkg/database/food_daily_totals.go`, tagged
       `protein_grams`/`carbs_grams`/`fat_grams`/`sugar_grams`/`sodium_grams` with no `omitempty`,
       and document why zero must serialize
-- [ ] Sum them in `DailyTotalsRange` over the same `confirmed`-status meals `Calories` is summed
+- [x] Sum them in `DailyTotalsRange` over the same `confirmed`-status meals `Calories` is summed
       over, extending the `db.Select` column list, and keep the zero-filled entry for a day with no
       meals
-- [ ] Extend `backend/pkg/server/food_daily_totals_test.go`: per-day macro sums are correct; a
+- [x] Extend `backend/pkg/server/food_daily_totals_test.go`: per-day macro sums are correct; a
       non-`confirmed` meal contributes to `unconfirmed_meals` and to none of the five sums; a day
       with no meals returns zeros for all of them; and, asserting against the raw JSON rather than a
       decoded struct, all five keys are present on a day whose sums are zero
-- [ ] Add the same five fields to the `DailyTotal` interface in `frontend/lib/api.ts` as required
+- [x] Add the same five fields to the `DailyTotal` interface in `frontend/lib/api.ts` as required
       numbers, with a comment pointing at `database.DailyTotal`
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: The heuristic library
 - [ ] Export `isValidDay` from `frontend/lib/loggingGap.ts` and note in its doc comment that the
