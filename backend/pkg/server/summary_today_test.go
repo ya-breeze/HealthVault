@@ -37,6 +37,7 @@ type summaryTodayTestResponse struct {
 		ProteinGrams int    `json:"protein_grams"`
 		CarbsGrams   int    `json:"carbs_grams"`
 		FatGrams     int    `json:"fat_grams"`
+		BMR          int    `json:"bmr"`
 	} `json:"target"`
 	Recommendation any `json:"recommendation"`
 }
@@ -210,7 +211,7 @@ func TestSummaryToday_ZeroTargetFieldIsStillPresent(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("unmarshal raw: %v", err)
 	}
-	for _, key := range []string{"calories", "protein_grams", "carbs_grams", "fat_grams"} {
+	for _, key := range []string{"calories", "protein_grams", "carbs_grams", "fat_grams", "bmr"} {
 		if _, ok := raw.Target[key]; !ok {
 			t.Errorf("target.%s missing from the response body; every numeric field must be present "+
 				"whenever available=true, zero included", key)

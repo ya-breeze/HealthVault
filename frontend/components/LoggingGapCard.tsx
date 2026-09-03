@@ -8,12 +8,15 @@ import {
   rejectOutliers,
   bucketByDay,
   checkHardFloor,
+  checkWeightFloor,
   computeLoggingGap,
+  meanLoggedIntake,
   slopeStandardError,
   excludedOutlierCount,
   DayWindowData,
   LoggingGapResult,
 } from '@/lib/loggingGap';
+import { evaluateSustainability, SustainabilityWarning } from '@/lib/sustainability';
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
@@ -47,7 +50,7 @@ type GapLine = LoggingGapResult | { kind: 'retrieval_error' };
 // their first weeks.
 type ContentState =
   | { kind: 'loading' }
-  | { kind: 'ready'; today: TodayRow; gap: GapLine }
+  | { kind: 'ready'; today: TodayRow; gap: GapLine; warnings: SustainabilityWarning[] }
   | { kind: 'nutrition_target_unmet'; reason: NutritionTargetUnmetReason }
   | { kind: 'retrieval_error' };
 
@@ -191,7 +194,10 @@ export default function LoggingGapCard({
           completenessR.status === 'rejected' ||
           dailyTotalsR.status === 'rejected'
         ) {
-          setState({ kind: 'ready', today: todayRow, gap: { kind: 'retrieval_error' } });
+          // No trend and no mean survive a partial fetch, so evaluateSustainability
+          // would return [] anyway — spelled out here rather than called, since
+          // there is nothing to pass it.
+          setState({ kind: 'ready', today: todayRow, gap: { kind: 'retrieval_error' }, warnings: [] });
           return;
         }
         const weightRaw = weightR.value;
@@ -229,6 +235,19 @@ export default function LoggingGapCard({
         const rejectedInWindow = rejected.filter(r => r.day >= gapWindow.windowStartDayOffset);
         const mostRecentKeptDayOffset = kept.length > 0 ? Math.max(...kept.map(r => r.day)) : -Infinity;
 
+        // The weight-only floor gates the trend (and therefore the sustainability
+        // rate check) on its own, more permissive terms than the full hard floor
+        // gates the gap — see checkWeightFloor's own doc comment. Because
+        // checkHardFloor is `checkWeightFloor(...) || validDayCount < 3`, a false
+        // hard floor always implies a false weight floor, so the gap line's own
+        // behaviour is unchanged by this split.
+        const weightFloor = checkWeightFloor(
+          keptInWindow,
+          rejectedInWindow,
+          bootstrapSiblingAmbiguous,
+          mostRecentKeptDayOffset,
+          gapWindow.windowLastDayOffset,
+        );
         const hardFloor = checkHardFloor(
           keptInWindow,
           rejectedInWindow,
@@ -239,8 +258,9 @@ export default function LoggingGapCard({
           gapWindow.windowLastDayOffset,
         );
 
+        let trend: { slope: number; se: number | null; weightAtWindowEnd: number } | null = null;
         let gapResult: LoggingGapResult;
-        if (hardFloor) {
+        if (weightFloor) {
           gapResult = { kind: 'not_enough_data' };
         } else {
           const bucketed = bucketByDay(kept);
@@ -250,18 +270,29 @@ export default function LoggingGapCard({
             .filter(p => p.x >= gapWindow.windowStartDayOffset && p.x <= gapWindow.windowLastDayOffset);
           const { slope, intercept } = linearRegression(points);
           const se = slopeStandardError(points, slope, intercept);
-          gapResult = computeLoggingGap(
-            { slope, intercept },
-            se,
-            nutritionTargetCalories,
-            perDayWindowData,
-            gapWindow.windowStartDayOffset,
-            gapWindow.windowLastDayOffset,
-          );
+          trend = { slope, se, weightAtWindowEnd: intercept + slope * gapWindow.windowLastDayOffset };
+          gapResult = hardFloor
+            ? { kind: 'not_enough_data' }
+            : computeLoggingGap(
+                { slope, intercept },
+                se,
+                nutritionTargetCalories,
+                perDayWindowData,
+                gapWindow.windowStartDayOffset,
+                gapWindow.windowLastDayOffset,
+              );
         }
 
+        const meanIntake = meanLoggedIntake(perDayWindowData, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset);
+        const warnings = evaluateSustainability({
+          gap: gapResult,
+          meanLoggedIntake: meanIntake,
+          bmr: target.bmr,
+          trend,
+        });
+
         if (cancelled) return;
-        setState({ kind: 'ready', today: todayRow, gap: gapResult });
+        setState({ kind: 'ready', today: todayRow, gap: gapResult, warnings });
         setOutlierExcluded(excludedOutlierCount(rejected, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset) > 0);
       } catch {
         if (cancelled) return;
@@ -370,7 +401,32 @@ export default function LoggingGapCard({
     }
   }
 
-  function renderGap(gap: GapLine) {
+  // The middle row (docs/specs/healthvault-nutrition-card-middle-row-he.md):
+  // one or both of the two sustainability checks, each stating a measurement
+  // and nothing more — no calorie prescription, matching the on_track line's
+  // own "say only what was measured" standard.
+  function renderSustainability(warnings: SustainabilityWarning[]) {
+    return (
+      <div data-testid="nutrition-sustainability" className="space-y-1 text-sm font-medium text-text">
+        {warnings.map(warning =>
+          warning.kind === 'loss_too_fast' ? (
+            <p key={warning.kind} data-testid="nutrition-sustainability-loss-rate">
+              {interpolate(t('loggingGap.lossTooFast'), { percent: warning.percentPerWeek.toFixed(1) })}
+            </p>
+          ) : (
+            <p key={warning.kind} data-testid="nutrition-sustainability-below-bmr">
+              {interpolate(t('loggingGap.intakeBelowBmr'), {
+                intake: String(Math.round(warning.meanLoggedIntake)),
+                bmr: String(Math.round(warning.bmr)),
+              })}
+            </p>
+          )
+        )}
+      </div>
+    );
+  }
+
+  function renderGap(gap: GapLine, warnings: SustainabilityWarning[]) {
     return (
       <div>
         {/* The whole row is the toggle, not just the ⓘ. On touch TapTarget's
@@ -417,6 +473,10 @@ export default function LoggingGapCard({
               absent number doesn't account for activity error only invites the
               reader to look for a number that isn't there. */}
           {(gap.kind === 'gap' || gap.kind === 'on_track') && <p>{t('loggingGap.caveatActivity')}</p>}
+          {/* Shown whenever either sustainability warning fired — it explains
+              the framing behind both lines regardless of which one is on
+              screen. */}
+          {warnings.length > 0 && <p>{t('loggingGap.sustainabilityDetail')}</p>}
         </div>
       </div>
     );
@@ -441,7 +501,19 @@ export default function LoggingGapCard({
         return (
           <>
             {renderToday(state.today)}
-            <div className={`mt-2 pt-2 border-t border-border${dim}`}>{renderGap(state.gap)}</div>
+            {/* Precedence in this row (see the spec's "Precedence in the
+                middle row"): the sustainability warning outranks the
+                not-yet-built Healthiness Label and LLM advice lines, so it
+                renders unconditionally here. Whatever renders the label next
+                must render it only when this array is empty. An empty middle
+                row is never shown — it would cost the card vertical space to
+                say nothing. */}
+            {state.warnings.length > 0 && (
+              <div className={`mt-2 pt-2 border-t border-border${dim}`}>
+                {renderSustainability(state.warnings)}
+              </div>
+            )}
+            <div className={`mt-2 pt-2 border-t border-border${dim}`}>{renderGap(state.gap, state.warnings)}</div>
           </>
         );
     }
