@@ -503,6 +503,18 @@ test.describe('In-app camera capture', () => {
   });
 });
 
+// A day header's totals row carrying both halves of a day's totals.
+//
+// The day header renders calories and macros as two elements rather than one
+// run-on string (docs/specs/meal-history-day-header.md), so a single
+// getByText('450 kcal · P 30g · C 45g · F 15g') no longer resolves. Filtering
+// one testid on both substrings keeps the assertion exactly as strong: both
+// halves must appear, and in the same day's totals row rather than anywhere on
+// the page.
+function dayTotal(page: Page, calories: string, macros: string): Locator {
+  return page.getByTestId('day-total').filter({ hasText: calories }).filter({ hasText: macros });
+}
+
 // Seeds a confirmed meal directly via the manual-entry API (no vision call,
 // deterministic) so these tests can exercise the review-page UI against a
 // known starting state without depending on photo recognition.
@@ -616,8 +628,16 @@ test.describe('Meal history', () => {
       await page.goto('/food/history/');
       // Newest (index 50) is on page 1; oldest (index 0) is exactly the
       // 51st meal, so it's the one meal page 1 (limit 50) can't include yet.
-      await expect(page.getByText('E2E LoadOlder 50')).toBeVisible();
-      await expect(page.getByText('E2E LoadOlder 0')).not.toBeVisible();
+      //
+      // `exact` is load-bearing, not tidiness. A row's name and its time sit
+      // in one container, and since the time became `07:05 PM` rather than a
+      // full timestamp (docs/specs/meal-history-day-header.md) the container
+      // for "E2E LoadOlder 5" reads "E2E LoadOlder 507:05 PM · Confirmed" —
+      // which contains "E2E LoadOlder 50" as a substring. A substring match
+      // therefore resolves to two elements and fails on strict mode. The same
+      // trap catches "E2E LoadOlder 1" against index 10, and so on.
+      await expect(page.getByText('E2E LoadOlder 50', { exact: true })).toBeVisible();
+      await expect(page.getByText('E2E LoadOlder 0', { exact: true })).not.toBeVisible();
 
       const loadOlder = page.getByRole('button', { name: 'Load older' });
       await expect(loadOlder).toBeVisible();
@@ -625,8 +645,8 @@ test.describe('Meal history', () => {
 
       // The real second page (containing at least the 51st meal) arrives
       // and is appended, not swapped in.
-      await expect(page.getByText('E2E LoadOlder 0')).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByText('E2E LoadOlder 50')).toBeVisible();
+      await expect(page.getByText('E2E LoadOlder 0', { exact: true })).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText('E2E LoadOlder 50', { exact: true })).toBeVisible();
     } finally {
       await deleteMeals(request, cookies, createdIds);
     }
@@ -689,9 +709,9 @@ test.describe('Meal history', () => {
     await expect(page.getByText('Yesterday Meal 1')).toBeVisible();
 
     // Today's total: 300+150=450 kcal, 20+10=30g protein.
-    await expect(page.getByText('450 kcal · P 30g · C 45g · F 15g')).toBeVisible();
+    await expect(dayTotal(page, '450 kcal', 'P 30g · C 45g · F 15g')).toBeVisible();
     // Yesterday's total: just the one meal.
-    await expect(page.getByText('80 kcal · P 5g · C 8g · F 2g')).toBeVisible();
+    await expect(dayTotal(page, '80 kcal', 'P 5g · C 8g · F 2g')).toBeVisible();
   });
 
   test('a day with only a non-confirmed meal shows a zero total', async ({ page }) => {
@@ -710,7 +730,7 @@ test.describe('Meal history', () => {
     // The day total must exclude the pending meal's numbers entirely (it
     // has no final nutrition yet), showing zero rather than omitting the
     // total line or leaking the pending meal's provisional values into it.
-    await expect(page.getByText('0 kcal · P 0g · C 0g · F 0g')).toBeVisible();
+    await expect(dayTotal(page, '0 kcal', 'P 0g · C 0g · F 0g')).toBeVisible();
   });
 
   test('"Load older" merges into an existing day section and adds a new one', async ({ page }) => {
@@ -751,16 +771,16 @@ test.describe('Meal history', () => {
     await page.goto('/food/history/');
     await expect(page.getByText('Merge Today 0')).toBeVisible();
     // 50 meals * 10 kcal = 500 kcal for today's section before loading more.
-    await expect(page.getByText('500 kcal · P 50g · C 50g · F 50g')).toBeVisible();
+    await expect(dayTotal(page, '500 kcal', 'P 50g · C 50g · F 50g')).toBeVisible();
 
     await page.getByRole('button', { name: 'Load older' }).click();
 
     await expect(page.getByText('Merge Today Extra')).toBeVisible();
     await expect(page.getByText('Merge Yesterday')).toBeVisible();
     // Today's total grows by the extra meal: 500+10=510 kcal.
-    await expect(page.getByText('510 kcal · P 51g · C 51g · F 51g')).toBeVisible();
+    await expect(dayTotal(page, '510 kcal', 'P 51g · C 51g · F 51g')).toBeVisible();
     // A new, separate section for yesterday.
-    await expect(page.getByText('20 kcal · P 2g · C 2g · F 2g')).toBeVisible();
+    await expect(dayTotal(page, '20 kcal', 'P 2g · C 2g · F 2g')).toBeVisible();
   });
 });
 
