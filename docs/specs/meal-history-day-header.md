@@ -141,9 +141,10 @@ offsets.
       primary assertion: today's wrapped fragments sit *beside* the pill rather than under it, so
       their boxes stay disjoint while the header still reads as three interleaved pieces.
 - [x] Assert the date, the calories total and the macro totals each render on **one line of their
-      own**, measured as box height against the element's own line-height. This is the pair of
-      assertions that actually fails against today's layout, where the date rendered 2.0 lines and
-      the macro summary 2.0 at 390px.
+      own**, counting the element's distinct rendered line boxes. This is the pair of assertions that
+      actually fails against today's layout, where the date rendered 2 lines and the macro summary 2
+      at 390px. (Originally measured as box height over line-height; see Task 6 for why that had to
+      change.)
 - [x] Assert the completeness control computes `white-space: nowrap` rather than counting its lines:
       it is a TapTarget, so its box is 48px tall by guarantee and a height-based measure would read
       three lines of 16px text however the label renders.
@@ -188,4 +189,72 @@ because two of the three are the kind of thing a reviewer should see reasoned ab
       `thresholdLeavingDayBelow`.
 - [x] Confirm the full suite is green on first attempt (`make test-e2e E2E_ARGS=--retries=0`), not
       green on retry.
+- [x] Mark completed
+
+### Task 6: Close the review findings
+Scope added after `/code-review`. It found the production change clean and every finding in the
+test scaffolding — but three of them mean a test could pass without testing what it claims, which
+is worse than a failing one.
+
+- [x] **The Russian half of the layout test may never render in Russian.** `LanguageProvider`
+      initializes to `'en'` and swaps only once its settings GET resolves
+      (`frontend/components/LanguageContext.tsx:37,107`), while every locator the test awaits before
+      measuring is language-agnostic — `daySection` filters on an ASCII meal name and the control is
+      addressed by role, deliberately without a name. So `lineCount`, the `white-space` assertion and
+      the overflow check can all run against the English render, turning the binding case into a
+      duplicate English run: exactly the false pass `Why` says an English-only test would give. Wait
+      on `html[lang]` — the provider sets it (`LanguageContext.tsx:162`) — before the first
+      measurement, in both tests.
+- [x] **The occasion count is read before the timezone is forced to UTC.**
+      `usual_meals_per_day: await thresholdLeavingDayBelow(...)` is evaluated while building the
+      `putSettings` argument, so it runs *before* that PUT lands. The backend resolves
+      `/api/food/completeness` in the caller's stored zone
+      (`backend/pkg/server/food_completeness.go` → `database.ResolveTimezone`), so a non-UTC zone left
+      by another spec makes the count describe a different local day, the threshold wrong, and the
+      "Mark day complete" control legitimately absent. `completeness.spec.ts:197` writes the UTC
+      baseline first for this exact reason. Establish the baseline before reading anything derived
+      from it, and unconfirm after it — changing `timezone` hard-deletes `FoodDayCompletion` rows, so
+      unconfirming before the switch is a no-op anyway.
+- [x] **Seeded days can fall off the history page's first page.** `PAGE_SIZE` is 50
+      (`frontend/app/food/history/page.tsx:14`) and this shared account holds ~17 meals on some days,
+      so a meal seeded three days back can sit at index >50 and never render — failing as an opaque
+      visibility timeout rather than saying why. `findEmptyDaysAgo`'s `maxLookback = 60` makes this
+      reachable by construction, since every day it skips holds at least one occasion. Count the
+      meals newer than the candidate day and throw an actionable error when the day is past page 1,
+      and seed the layout tests one day back rather than three.
+- [x] **Share the helpers these two files both copy.** `createMealAt`, `unconfirmDate`,
+      `occasionCount`, `thresholdLeavingDayBelow`, `findEmptyDaysAgo`, `daySection` and `isoAtUTC`
+      exist twice, in `completeness.spec.ts` and `meal-history-layout.spec.ts` and nowhere else — and
+      the duplication is what produced the finding above: the new copy did not inherit the
+      UTC-baseline ordering the old one had already been hardened with. Extract them to
+      `e2e/tests/helpers/food-day.ts` and import from both. Deliberately **not** extending this to
+      `getSettings`/`putSettings`/`cookieHeader`, which five files copy: that is a larger refactor
+      touching specs this change has no reason to disturb, and it is recorded here rather than done.
+- [x] **Cover the confirmed branch of the completeness control.** `whitespace-nowrap` was added to
+      both branches but only the unconfirmed one is measured, since the test unconfirms before every
+      assertion. The confirmed branch — a `День заполнен` badge beside an `Отменить` TapTarget — is
+      what a user sees for every day they have marked complete. Assert it at the narrowest viewport
+      in Russian.
+- [x] **`lineCount` measures padding as if it were text.** Adding the confirmed-branch coverage
+      above is what exposed it: the `День заполнен` badge carries `px-2 py-0.5`, so its 16px line box
+      inside a 20px border box read as **1.3 lines** on a badge that plainly renders on one. Dividing
+      box height by line-height only works on an element with no vertical padding, which the three
+      units measured so far happen to be — so this is a latent wrong answer, not merely a false
+      failure here: on a padded element it could equally hide a real second line inside the rounding.
+      Count distinct line boxes instead, via a `Range` over the element's contents, which ignores
+      padding by construction. Update Task 3's wording, which names the height-based method.
+- [x] Assert the control's *text* per language, rather than only waiting for the language to
+      switch. The wait is what makes the Russian pass Russian, but nothing would notice if it
+      stopped working; a text assertion turns that from a silent degradation into a failure, and it
+      is a stronger guard than a one-off run with the wait removed.
+- [x] **Guard the split-stack run.** Debugging the above with a bare `npx playwright test` showed the
+      browser and the API calls going to *different stacks*: `playwright.config.ts` falls back to
+      8888 (prod) and these spec files fall back to 8892 (wip), so a no-env run logs the browser into
+      prod and sends every API call to wip. It surfaces as `unauthorized` from whichever read comes
+      first and says nothing about why. Throw an explanatory error from `login` instead.
+      **Not fixed here, and worth raising separately:** the same disagreement means a bare
+      `npx playwright test` runs *the rest of the suite* — which drives the app through the browser
+      alone and so never notices — entirely against **prod**. Changing the config's default is a
+      one-line change touching every spec's target, which does not belong in a day-header PR.
+- [x] Re-run `make lint`, `make test` and `make test-e2e E2E_ARGS=--retries=0`.
 - [x] Mark completed

@@ -1,12 +1,18 @@
-import { test, expect, type Page, type APIRequestContext, type Locator } from '@playwright/test';
-
-const USER = process.env.HCW_USER || 'alice';
-const PASS = process.env.HCW_PASS || 'pass1';
-// Like completeness.spec.ts, these tests PUT settings — `timezone`, which
-// cascades to hard-deleting FoodDayCompletion rows, and `display_language`,
-// which every other spec file reads as English. A no-env run must never land
-// on the prod stack (8888) by accident, so it defaults to WIP.
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8892';
+import { test, expect, type Locator } from '@playwright/test';
+import {
+  cookieHeader,
+  createMealAt,
+  daySection,
+  deleteMeal,
+  expectOnFirstHistoryPage,
+  getSettings,
+  isoAtUTC,
+  login,
+  putSettings,
+  thresholdLeavingDayBelow,
+  unconfirmDate,
+  waitForLanguage,
+} from './helpers/food-day';
 
 // The two widths the mobile audit measured this page at. 390x844 is a current
 // phone; 320x568 is the narrowest viewport the project supports, and it is
@@ -22,89 +28,15 @@ const VIEWPORTS = [
 // that is broken today.
 const LANGUAGES = ['en', 'ru'] as const;
 
-async function login(page: Page) {
-  await page.goto('/login/');
-  await page.getByPlaceholder(/username/i).fill(USER);
-  await page.getByPlaceholder(/password/i).fill(PASS);
-  await page.getByRole('button', { name: /sign in|login/i }).click();
-  await page.waitForURL('/');
-}
-
-async function cookieHeader(page: Page): Promise<string> {
-  const cookies = await page.context().cookies();
-  return cookies.map(c => `${c.name}=${c.value}`).join('; ');
-}
-
-async function createMealAt(
-  request: APIRequestContext,
-  cookies: string,
-  name: string,
-  loggedAtISO: string,
-  calories = 100
-) {
-  const res = await request.post(`${BASE_URL}/api/food/meals/manual`, {
-    headers: { Cookie: cookies },
-    data: { name, logged_at: loggedAtISO, items: [{ name: 'Item', source: 'manual', weight_grams: 100, calories }] },
-  });
-  expect(res.status()).toBe(201);
-  return res.json();
-}
-
-async function deleteMeal(request: APIRequestContext, cookies: string, id: string): Promise<void> {
-  const res = await request.delete(`${BASE_URL}/api/data/food_meal/${id}`, { headers: { Cookie: cookies } });
-  if (!res.ok() && res.status() !== 404) {
-    throw new Error(`failed to delete meal ${id}: ${res.status()} ${await res.text()}`);
-  }
-}
-
-async function unconfirmDate(request: APIRequestContext, cookies: string, date: string) {
-  await request.delete(`${BASE_URL}/api/food/completeness/${date}/confirm`, { headers: { Cookie: cookies } }).catch(() => {});
-}
-
-async function getSettings(request: APIRequestContext, cookies: string): Promise<Record<string, unknown>> {
-  const res = await request.get(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies } });
-  return res.json();
-}
-
-async function putSettings(request: APIRequestContext, cookies: string, settings: Record<string, unknown>) {
-  const res = await request.put(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies }, data: settings });
-  if (!res.ok()) throw new Error(`failed to write settings: ${res.status()} ${await res.text()}`);
-}
-
-// The account is shared with every other spec file, so a date this test picks
-// may already hold occasions it did not create. Derive the threshold from what
-// the day actually holds rather than hardcoding one — see completeness.spec.ts,
-// where hardcoding it made failures a matter of which dates happened to be
-// clean.
-async function occasionCount(request: APIRequestContext, cookies: string, date: string): Promise<number> {
-  const res = await request.get(`${BASE_URL}/api/food/completeness?from=${date}&to=${date}`, {
-    headers: { Cookie: cookies },
-  });
-  if (!res.ok()) throw new Error(`failed to read completeness for ${date}: ${res.status()} ${await res.text()}`);
-  const days = (await res.json()) as Array<{ date: string; occasion_count: number }>;
-  return days.find(d => d.date === date)?.occasion_count ?? 0;
-}
-
-async function thresholdLeavingDayBelow(
-  request: APIRequestContext,
-  cookies: string,
-  date: string
-): Promise<number> {
-  return (await occasionCount(request, cookies, date)) + 1;
-}
-
-function daySection(page: Page, mealName: string): Locator {
-  return page.locator('div.mb-5').filter({ hasText: mealName });
-}
-
+// Distinguishes this run's seeded meals from an earlier run's leftovers.
 const RUN_TAG = Math.random().toString(36).slice(2, 8);
 
-function isoAtUTC(daysAgo: number, hour: number, minute = 0): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - daysAgo);
-  d.setUTCHours(hour, minute, 0, 0);
-  return d.toISOString();
-}
+// Seeded one day back, not three. The account is shared and holds ~17 meals on
+// some days, so three days back can already sit past the history page's first
+// page of 50 — which surfaces as an opaque visibility timeout rather than as
+// anything about layout. expectOnFirstHistoryPage checks this rather than
+// trusting it.
+const DAYS_AGO = 1;
 
 /** True when the two boxes share any area at all — as mobile-nav.spec.ts. */
 function intersects(a: NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>,
@@ -120,28 +52,40 @@ async function boxOf(locator: Locator, label: string) {
 }
 
 /**
- * How many lines of its own text an element renders, to one decimal.
+ * How many lines an element's own text renders on.
  *
  * This is the measurement that separates a header that fits from the one on
- * `main`: at 390px the date rendered as `среда,` / `26 авг.` — 2.0 — and the
+ * `main`: at 390px the date rendered as `среда,` / `26 авг.` — 2 — and the
  * macro summary wrapped around the completeness pill, splitting `У` from `0г`.
  * Bounding-box intersection alone does not catch that: the wrapped fragments
  * sit beside the pill rather than under it, so their boxes stay disjoint while
  * the header still reads as three interleaved pieces.
+ *
+ * Counts distinct rendered line boxes via a Range rather than dividing box
+ * height by line-height. The height-based version could not tell padding from a
+ * second line: the `День заполнен` badge carries `py-0.5`, so its 16px line box
+ * inside a 20px border box measured 1.3 on a badge that renders on one line.
+ * The same rounding could equally have swallowed a real second line on a padded
+ * element, so this is about a wrong answer, not just a noisy one.
  */
 async function lineCount(locator: Locator): Promise<number> {
   return locator.evaluate(el => {
-    const cs = getComputedStyle(el);
-    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
-    return Math.round((el.getBoundingClientRect().height / lh) * 10) / 10;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0);
+    // Distinct top edges, not raw rect count: one line holding runs of
+    // different sizes (a bold number beside muted units) yields several rects
+    // that all share a line box. Rounded, because those runs can sit at
+    // sub-pixel offsets from each other.
+    return new Set(rects.map(r => Math.round(r.top))).size;
   });
 }
 
 test.describe('Meal history layout', () => {
-  // The header case walks four viewport x language combinations, each a
-  // settings write plus a full page load, and the row case walks two. Both
-  // exceed the config's 30s default without being slow in any way worth
-  // fixing.
+  // The header case walks four viewport x language combinations plus a
+  // confirmed-branch pass, each a settings write and a full page load, and the
+  // row case walks two. Both exceed the config's 30s default without being slow
+  // in any way worth fixing.
   test.describe.configure({ timeout: 120_000 });
 
   test('the day header holds date, completeness control and totals without collision', async ({
@@ -152,28 +96,47 @@ test.describe('Meal history layout', () => {
     const cookies = await cookieHeader(page);
     const original = await getSettings(request, cookies);
 
+    // The UTC baseline goes first, before anything derived from it. The
+    // completeness endpoint resolves its from/to in the caller's *stored* zone,
+    // so an occasion count read under whatever zone another spec happened to
+    // leave behind describes a different local day — the threshold then lands
+    // wrong and the "Mark day complete" control this test needs is legitimately
+    // absent. completeness.spec.ts orders it this way for the same reason.
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    const date = isoAtUTC(DAYS_AGO, 12).slice(0, 10);
+    await expectOnFirstHistoryPage(request, cookies, date);
+
     const mealName = `E2E History Header ${RUN_TAG}`;
-    const meal = await createMealAt(request, cookies, mealName, isoAtUTC(3, 12));
-    const date = isoAtUTC(3, 12).slice(0, 10);
+    const meal = await createMealAt(request, cookies, mealName, isoAtUTC(DAYS_AGO, 12));
 
     try {
       // The day must render its "Mark day complete" control: that control is
       // the widest unit in the row and the one that cannot shrink, since it is
-      // a TapTarget bound by the 48x48 minimum PR #36 established.
+      // a TapTarget bound by the 48x48 minimum PR #36 established. Unconfirmed
+      // after the timezone write, not before — changing the zone hard-deletes
+      // FoodDayCompletion rows, so the earlier ordering was a no-op.
       await unconfirmDate(request, cookies, date);
+      const threshold = await thresholdLeavingDayBelow(request, cookies, date);
 
       for (const lang of LANGUAGES) {
         await putSettings(request, cookies, {
           ...original,
           timezone: 'UTC',
           display_language: lang,
-          usual_meals_per_day: await thresholdLeavingDayBelow(request, cookies, date),
+          usual_meals_per_day: threshold,
         });
 
         for (const vp of VIEWPORTS) {
           await test.step(`${vp.name} / ${lang}`, async () => {
             await page.setViewportSize({ width: vp.width, height: vp.height });
             await page.goto('/food/history/');
+            // Before any measurement. LanguageProvider renders English first and
+            // swaps only once its settings GET resolves, and every locator below
+            // is language-agnostic — the meal name is ASCII and the control is
+            // addressed by role — so without this the Russian pass would measure
+            // the English render and report a false pass on the binding case.
+            await waitForLanguage(page, lang);
 
             const section = daySection(page, mealName);
             await expect(section).toBeVisible({ timeout: 15_000 });
@@ -184,6 +147,13 @@ test.describe('Meal history layout', () => {
             // in Russian, and the unconfirmed day renders exactly one button.
             const control = header.getByRole('button');
             await expect(control).toBeVisible({ timeout: 10_000 });
+            // The binding case must actually render in Russian. waitForLanguage
+            // makes that true; this asserts it, so if that wait ever stops
+            // working the run fails here instead of quietly degrading the ru
+            // pass into a second English one that measures a shorter label.
+            await expect(control).toHaveText(
+              lang === 'ru' ? 'Отметить день заполненным' : 'Mark day complete'
+            );
 
             const label = section.locator('h2');
             const calories = section.getByTestId('day-total-calories');
@@ -221,6 +191,45 @@ test.describe('Meal history layout', () => {
           });
         }
       }
+
+      // The control has a second branch the loop above can never reach, because
+      // it unconfirms before every pass: a day already marked complete renders a
+      // `День заполнен` badge beside an `Отменить` TapTarget. That is what a user
+      // sees for every day they have confirmed, and `whitespace-nowrap` was added
+      // to it too. Asserted where it is tightest — 320px, Russian.
+      await test.step('320x568 / ru, a day already marked complete', async () => {
+        await page.setViewportSize({ width: 320, height: 568 });
+        await page.goto('/food/history/');
+        await waitForLanguage(page, 'ru');
+
+        const section = daySection(page, mealName);
+        await expect(section).toBeVisible({ timeout: 15_000 });
+        const header = section.getByTestId('day-header');
+        await header.getByRole('button').click();
+
+        const badge = header.getByText('День заполнен', { exact: true });
+        await expect(badge).toBeVisible({ timeout: 10_000 });
+        const undo = header.getByRole('button');
+        await expect(undo).toHaveText('Отменить');
+
+        const label = section.locator('h2');
+        const [lb, bb, ub] = [
+          await boxOf(label, 'day label'),
+          await boxOf(badge, 'complete badge'),
+          await boxOf(undo, 'unconfirm control'),
+        ];
+        expect(intersects(lb, bb), 'date must not overlap the complete badge').toBe(false);
+        expect(intersects(lb, ub), 'date must not overlap the unconfirm control').toBe(false);
+        expect(intersects(bb, ub), 'the badge must not overlap the unconfirm control').toBe(false);
+
+        expect(await lineCount(label), 'the date must not break across lines').toBe(1);
+        expect(await lineCount(badge), 'the complete badge must not wrap').toBe(1);
+        await expect(badge).toHaveCSS('white-space', 'nowrap');
+        await expect(undo).toHaveCSS('white-space', 'nowrap');
+
+        const overflow = await header.evaluate(el => el.scrollWidth - el.clientWidth);
+        expect(overflow, 'the header must not overflow its own width').toBeLessThanOrEqual(1);
+      });
     } finally {
       await deleteMeal(request, cookies, meal.id);
       await unconfirmDate(request, cookies, date);
@@ -233,11 +242,16 @@ test.describe('Meal history layout', () => {
     const cookies = await cookieHeader(page);
     const original = await getSettings(request, cookies);
 
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    const date = isoAtUTC(DAYS_AGO, 23).slice(0, 10);
+    await expectOnFirstHistoryPage(request, cookies, date);
+
     const mealName = `E2E History Row ${RUN_TAG}`;
     // 23:00 UTC: the hour most likely to expose a timestamp rendered in the
     // browser's zone instead of the account's, since any positive offset moves
     // it into the following calendar day and away from the header above it.
-    const meal = await createMealAt(request, cookies, mealName, isoAtUTC(3, 23));
+    const meal = await createMealAt(request, cookies, mealName, isoAtUTC(DAYS_AGO, 23));
 
     try {
       await page.setViewportSize({ width: 390, height: 844 });
@@ -245,6 +259,7 @@ test.describe('Meal history layout', () => {
       for (const lang of LANGUAGES) {
         await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: lang });
         await page.goto('/food/history/');
+        await waitForLanguage(page, lang);
 
         await test.step(lang, async () => {
           const section = daySection(page, mealName);
