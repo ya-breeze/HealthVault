@@ -202,16 +202,16 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 6: End-to-end coverage
-- [ ] Extend `mockLoggingGapApis`'s available-target fixture in `e2e/tests/logging-gap.spec.ts`
+- [x] Extend `mockLoggingGapApis`'s available-target fixture in `e2e/tests/logging-gap.spec.ts`
       with the seven derivation fields
-- [ ] Add a test asserting `nutrition-today-hint` is hidden on load, becomes visible after
+- [x] Add a test asserting `nutrition-today-hint` is hidden on load, becomes visible after
       clicking `nutrition-today-hint-toggle`, and then contains the fixture's BMR, activity
       multiplier, tier label and goal weight
-- [ ] Assert in the same test that opening the top row's hint leaves `logging-gap-hint` hidden,
+- [x] Assert in the same test that opening the top row's hint leaves `logging-gap-hint` hidden,
       and that opening the gap hint leaves `nutrition-today-hint` hidden
-- [ ] Assert the panel names the confirmed-meals rule, since that is the sentence explaining the
+- [x] Assert the panel names the confirmed-meals rule, since that is the sentence explaining the
       *first* number
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 7: Validate against the deployed stack
 - [ ] Run `make lint` and `make test`, and fix everything they report
