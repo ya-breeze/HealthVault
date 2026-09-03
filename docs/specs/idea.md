@@ -214,9 +214,9 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 7: Validate against the deployed stack
-- [ ] Run `make lint` and `make test`, and fix everything they report
-- [ ] Deploy the branch to the WIP stack and run `make test-e2e` against it, fixing every failure
+- [x] Run `make lint` and `make test`, and fix everything they report
+- [x] Deploy the branch to the WIP stack and run `make test-e2e` against it, fixing every failure
       rather than recording it as pre-existing
-- [ ] Re-read the card in both languages on the deployed stack and confirm the panel's numbers
+- [x] Re-read the card in both languages on the deployed stack and confirm the panel's numbers
       match the row's target numbers exactly
-- [ ] Mark completed
+- [x] Mark completed
