@@ -214,6 +214,57 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
     const header = await boxOf(page.locator('header'), 'header');
     expect(header.height, 'header height with a long username').toBeLessThan(HEADER_HEIGHT_CEILING);
   });
+
+  // idea-268: the dashboard's own Log food row duplicated the bar's Photo,
+  // Manual and History destinations on a phone, so it is hidden below `sm`
+  // and only the bar offers those three routes at this width.
+  test('the log-food block is hidden and the bar carries its three destinations', async ({ page }) => {
+    await login(page);
+    // The block is CSS-hidden, not unmounted, for the same reason the bar is
+    // at the desktop viewport: the app is statically exported, so the served
+    // HTML must already be right before hydration. `toBeHidden` alone passes
+    // for an element that is absent too, so the count assertion is what
+    // actually separates `hidden sm:block` from a JS width check that stops
+    // rendering the block below `sm`.
+    await expect(page.getByTestId('log-food-links')).toHaveCount(1);
+    await expect(page.getByTestId('log-food-links')).toBeHidden();
+    await expect(bar(page)).toBeVisible();
+    for (const id of ['photo', 'manual', 'history'] as const) {
+      await expect(destination(page, id), `${id} destination`).toBeVisible();
+    }
+  });
+
+  // idea-268: with the row gone, the section that follows it (More Data)
+  // moves up by the full height of the heading, row and gap. Measured as the
+  // gap between the vitals grid and more-data rather than more-data's
+  // absolute position: the grid is itself `grid-cols-2 sm:grid-cols-4`, so
+  // its own height (and therefore more-data's absolute Y) changes across the
+  // same breakpoint for a reason unrelated to this change. The local gap
+  // cancels that out, comparing bounding boxes against each other rather
+  // than against a pixel constant, in the style of the occlusion tests below.
+  test('with the block hidden, the gap to more-data shrinks to just the section margin', async ({ page }) => {
+    // Presence responses omit no type in production, but an empty map is
+    // enough here: hasPresence treats an absent key as present, which is all
+    // this test needs to guarantee the section renders regardless of seed data.
+    await page.route('**/api/data-types/presence', route => route.fulfill({ json: {} }));
+    await login(page);
+    const grid = page.getByTestId('vitals-grid');
+    const moreData = page.getByTestId('more-data');
+    await expect(moreData).toBeVisible();
+
+    const mobileGridBox = await boxOf(grid, 'vitals grid (mobile)');
+    const mobileTop = (await boxOf(moreData, 'more-data (mobile, log-food-links hidden)')).y;
+    const mobileGap = mobileTop - (mobileGridBox.y + mobileGridBox.height);
+
+    await page.setViewportSize(DESKTOP_VIEWPORT);
+    await expect(page.getByTestId('log-food-links')).toBeVisible();
+    const desktopGridBox = await boxOf(grid, 'vitals grid (desktop)');
+    const desktopTop = (await boxOf(moreData, 'more-data (desktop, log-food-links visible)')).y;
+    const desktopGap = desktopTop - (desktopGridBox.y + desktopGridBox.height);
+
+    expect(mobileGap, 'gap between the vitals grid and more-data should shrink once the block collapses')
+      .toBeLessThan(desktopGap);
+  });
 });
 
 test.describe('Mobile bottom navigation — desktop viewport', () => {
@@ -242,6 +293,19 @@ test.describe('Mobile bottom navigation — desktop viewport', () => {
     await login(page);
     for (const id of ['webhook', 'custom-foods', 'import', 'settings', 'logout']) {
       await expect(page.locator(`header [data-nav-control="${id}"]`), `header ${id}`).toBeVisible();
+    }
+  });
+
+  // idea-268: the mirror of the mobile-viewport assertion above — at desktop
+  // widths the bar is gone and the header carries no food route, so the
+  // in-body block is the only way to reach any of the three, and must stay.
+  test('the log-food block is visible and offers all three food routes while the bar is hidden', async ({ page }) => {
+    await login(page);
+    const logFoodLinks = page.getByTestId('log-food-links');
+    await expect(logFoodLinks).toBeVisible();
+    await expect(bar(page)).toBeHidden();
+    for (const href of ['/food/upload/', '/food/manual/', '/food/history/']) {
+      await expect(logFoodLinks.locator(`a[href="${href}"]`), href).toBeVisible();
     }
   });
 });
