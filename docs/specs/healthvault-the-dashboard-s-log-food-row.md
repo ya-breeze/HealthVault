@@ -56,8 +56,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 3: Validate and record the fold measurement
 
-- [ ] Run `make lint` and `make test` and fix anything they report.
-- [ ] Deploy the branch to the HealthVault WIP stack and run `make test-e2e` against it; fix failures before reporting the change done.
-- [ ] Measure at the 390x844 viewport what the freed space buys — record the `more-data` section's top edge on `main` and on this branch — and state both numbers in the pull request description.
-- [ ] Check the Russian dashboard at a desktop width so the retained `Записать еду` heading and its three labels still render, since the keys are kept rather than removed.
-- [ ] Mark completed
+- [x] Run `make lint` and `make test` and fix anything they report.
+- [x] Deploy the branch to the HealthVault WIP stack and run `make test-e2e` against it; fix failures before reporting the change done.
+- [x] Measure at the 390x844 viewport what the freed space buys — record the `more-data` section's top edge on `main` and on this branch — and state both numbers in the pull request description.
+  - Measured on the WIP stack: `more-data` top edge is 1038px on `main`, 923.5px on this branch — 114.5px reclaimed.
+- [x] Check the Russian dashboard at a desktop width so the retained `Записать еду` heading and its three labels still render, since the keys are kept rather than removed.
+  - Confirmed on the deployed WIP stack: heading renders "ЗАПИСАТЬ ЕДУ" with labels "Фото", "Вручную", "История".
+- [x] Mark completed
