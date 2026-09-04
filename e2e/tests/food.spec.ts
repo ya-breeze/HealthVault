@@ -1,9 +1,9 @@
 import { test, expect, type Page, type APIRequestContext, type Locator } from '@playwright/test';
 import path from 'path';
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8888';
 
 async function login(page: Page) {
   await page.goto('/login/');

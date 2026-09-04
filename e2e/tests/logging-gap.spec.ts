@@ -1,13 +1,11 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+// These tests PUT settings that change `timezone`, needed so the fixture dates
+// below line up exactly with what resolveLoggingGapWindow computes — one of the
+// reasons `target.ts` refuses to resolve a prod URL at all.
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-// Like completeness.spec.ts, these tests PUT settings that change `timezone`
-// (needed so the fixture dates below line up exactly with what
-// resolveLoggingGapWindow computes) — default to the WIP stack rather than
-// risking a no-env run landing on prod; override with BASE_URL to target
-// something else deliberately.
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8892';
 
 async function login(page: Page) {
   await page.goto('/login/');

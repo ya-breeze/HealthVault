@@ -23,10 +23,10 @@ export const PASS = process.env.HCW_PASS || 'pass1';
 
 // Tests using this module PUT settings that change `timezone` — which cascades
 // to hard-deleting the caller's FoodDayCompletion rows (design.md §4 "Storage")
-// — and `display_language`, which every other spec file reads as English. A
-// no-env run must never land on the prod stack (8888) by accident, so this
-// defaults to WIP; override with BASE_URL to target something else deliberately.
-export const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8892';
+// — and `display_language`, which every other spec file reads as English. Which
+// deployment that lands on is decided in one place for the whole suite, and prod
+// is refused there outright.
+import { BASE_URL } from './target';
 
 /** Meals per page on /food/history/ — `frontend/app/food/history/page.tsx`. */
 export const HISTORY_PAGE_SIZE = 50;
@@ -34,25 +34,20 @@ export const HISTORY_PAGE_SIZE = 50;
 /**
  * Fails unless the browser and this module's API calls target the same stack.
  *
- * They are configured separately — the browser from playwright.config.ts's
- * `baseURL`, the API calls from BASE_URL above — and their *defaults disagree*:
- * the config falls back to 8888, the prod stack, while this module falls back to
- * 8892. A bare `npx playwright test` therefore logs the browser into one stack
- * and sends every API call to the other, which surfaces as `unauthorized` from
- * whichever read happens first and says nothing about the cause. Worse, it is a
- * split only these two files notice: every other spec file drives the app
- * through the browser alone, so a no-env run silently exercises **prod**.
- *
- * `make test-e2e` passes BASE_URL and is unaffected. This guard exists for the
- * direct invocation, which is what anyone debugging a single spec reaches for.
+ * Both now come from `target.ts` — the config's `baseURL` included — so the
+ * defaults can no longer disagree, which is what used to log the browser into
+ * one stack while every API call went to the other. What remains is a spec
+ * overriding `baseURL` through `test.use({ baseURL })`: that moves the browser
+ * without moving these calls, and the symptom is still `unauthorized` from
+ * whichever read happens first, saying nothing about the cause. Cheap to keep.
  */
 function assertSameStack(page: Page): void {
   const browserHost = new URL(page.url()).host;
   if (browserHost !== new URL(BASE_URL).host) {
     throw new Error(
       `the browser is on ${browserHost} but this module's API calls target ${BASE_URL}. ` +
-      `Their defaults differ (playwright.config.ts: 8888/prod, this module: 8892/wip), so set ` +
-      `BASE_URL explicitly — or run \`make test-e2e\`, which does.`
+      `Both derive from tests/helpers/target.ts, so something moved the browser on its own — ` +
+      `look for a \`test.use({ baseURL })\` in the running spec.`
     );
   }
 }

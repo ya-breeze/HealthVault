@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { BASE_URL } from './helpers/target';
 
 // The e2e target is plain HTTP on the LAN and never passes through
 // Cloudflare, so no test in this file can present a real Access Assertion —
@@ -18,7 +19,6 @@ import type { Page } from '@playwright/test';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8888';
 
 async function login(page: Page) {
   await page.goto('/login/');
