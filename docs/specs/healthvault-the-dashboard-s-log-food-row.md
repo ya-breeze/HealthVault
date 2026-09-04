@@ -48,11 +48,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 2: Cover both widths in the e2e suite
 
-- [ ] In `e2e/tests/mobile-nav.spec.ts`, add a test to the `Mobile bottom navigation — mobile viewport` describe block asserting that on `/` the `log-food-links` block is hidden while `bottom-nav` and its `photo`, `manual` and `history` destinations are visible.
-- [ ] Add a test to the `Mobile bottom navigation — desktop viewport` describe block asserting the reverse on `/`: `log-food-links` is visible, `bottom-nav` is hidden, and the block contains anchors to `/food/upload/`, `/food/manual/` and `/food/history/` — so the desktop dashboard is never stranded without a food route.
-- [ ] Assert the block is CSS-hidden rather than unmounted at the mobile viewport (`toBeHidden`, not `toHaveCount(0)`), matching how the existing desktop test treats the bar and why — the app is statically exported.
-- [ ] Add a mobile-viewport assertion that the first element after the vitals grid moves up: with the block hidden, the `more-data` section's top edge sits above where the heading used to start. Compare bounding boxes against each other rather than against a pixel constant, in the style of the existing occlusion tests.
-- [ ] Mark completed
+- [x] In `e2e/tests/mobile-nav.spec.ts`, add a test to the `Mobile bottom navigation — mobile viewport` describe block asserting that on `/` the `log-food-links` block is hidden while `bottom-nav` and its `photo`, `manual` and `history` destinations are visible.
+- [x] Add a test to the `Mobile bottom navigation — desktop viewport` describe block asserting the reverse on `/`: `log-food-links` is visible, `bottom-nav` is hidden, and the block contains anchors to `/food/upload/`, `/food/manual/` and `/food/history/` — so the desktop dashboard is never stranded without a food route.
+- [x] Assert the block is CSS-hidden rather than unmounted at the mobile viewport (`toBeHidden`, not `toHaveCount(0)`), matching how the existing desktop test treats the bar and why — the app is statically exported.
+- [x] Add a mobile-viewport assertion that the first element after the vitals grid moves up: with the block hidden, the `more-data` section's top edge sits above where the heading used to start. Compare bounding boxes against each other rather than against a pixel constant, in the style of the existing occlusion tests.
+- [x] Mark completed
 
 ### Task 3: Validate and record the fold measurement
 

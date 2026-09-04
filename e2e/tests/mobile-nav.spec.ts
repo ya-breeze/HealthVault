@@ -194,6 +194,40 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
   // variable-length half of the row, so it is substituted here rather than
   // waiting for a user whose name happens to be long enough. Found in code
   // review.
+  // idea-268: the dashboard's own Log food row duplicated the bar's Photo,
+  // Manual and History destinations on a phone, so it is hidden below `sm`
+  // and only the bar offers those three routes at this width.
+  test('the log-food block is hidden and the bar carries its three destinations', async ({ page }) => {
+    await login(page);
+    await expect(page.getByTestId('log-food-links')).toBeHidden();
+    await expect(bar(page)).toBeVisible();
+    for (const id of ['photo', 'manual', 'history'] as const) {
+      await expect(destination(page, id), `${id} destination`).toBeVisible();
+    }
+  });
+
+  // idea-268: with the row gone, the section that follows it (More Data)
+  // moves up by the full height of the heading, row and gap. Compared
+  // against the same element's desktop position (where the row is still on
+  // screen ahead of it) rather than a pixel constant, in the style of the
+  // occlusion tests below.
+  test('with the block hidden, the more-data section sits above where it renders at desktop widths', async ({ page }) => {
+    // Presence responses omit no type in production, but an empty map is
+    // enough here: hasPresence treats an absent key as present, which is all
+    // this test needs to guarantee the section renders regardless of seed data.
+    await page.route('**/api/data-types/presence', route => route.fulfill({ json: {} }));
+    await login(page);
+    const moreData = page.getByTestId('more-data');
+    await expect(moreData).toBeVisible();
+    const mobileTop = (await boxOf(moreData, 'more-data (mobile, log-food-links hidden)')).y;
+
+    await page.setViewportSize(DESKTOP_VIEWPORT);
+    await expect(page.getByTestId('log-food-links')).toBeVisible();
+    const desktopTop = (await boxOf(moreData, 'more-data (desktop, log-food-links visible)')).y;
+
+    expect(mobileTop, 'more-data top edge should sit above its desktop position').toBeLessThan(desktopTop);
+  });
+
   test('a long username crowds the badge, never the app title', async ({ page }) => {
     await page.route('**/users/me', async route => {
       const response = await route.fetch();
@@ -242,6 +276,19 @@ test.describe('Mobile bottom navigation — desktop viewport', () => {
     await login(page);
     for (const id of ['webhook', 'custom-foods', 'import', 'settings', 'logout']) {
       await expect(page.locator(`header [data-nav-control="${id}"]`), `header ${id}`).toBeVisible();
+    }
+  });
+
+  // idea-268: the mirror of the mobile-viewport assertion above — at desktop
+  // widths the bar is gone and the header carries no food route, so the
+  // in-body block is the only way to reach any of the three, and must stay.
+  test('the log-food block is visible and offers all three food routes while the bar is hidden', async ({ page }) => {
+    await login(page);
+    const logFoodLinks = page.getByTestId('log-food-links');
+    await expect(logFoodLinks).toBeVisible();
+    await expect(bar(page)).toBeHidden();
+    for (const href of ['/food/upload/', '/food/manual/', '/food/history/']) {
+      await expect(logFoodLinks.locator(`a[href="${href}"]`), href).toBeVisible();
     }
   });
 });
