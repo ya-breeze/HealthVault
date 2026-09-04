@@ -120,5 +120,6 @@ make test-e2e E2E_ARGS=--retries=0
       Installing it would fix them and is a separate change; the bar here is introducing
       no new ones — which ruled out typing the guard's parameter as `NodeJS.ProcessEnv`
 - [x] `make lint` and `make test` pass (go vet clean, all Go packages ok, 176 Vitest cases)
-- [ ] `make test-e2e E2E_ARGS=--retries=0` passes against `hcw-wip` on this branch
-- [ ] Mark completed
+- [x] `make test-e2e E2E_ARGS=--retries=0` passes against `hcw-wip` on this branch —
+      213 passed, 1 skipped, 0 failed, first attempt; the stack stayed on `main` across the run
+- [x] Mark completed
