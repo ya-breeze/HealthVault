@@ -414,7 +414,18 @@ test.describe('Chart touch readout — mobile', () => {
     const { x: touchX } = await plotPoint(page, 0.5);
     await page.touchscreen.tap(touchX, touchY);
 
-    const tooltipBox = await tooltip(page).boundingBox();
+    // Recharts renders the tooltip wrapper from mount and only toggles its
+    // `visibility`, laying it out at the chart's top-left corner until a
+    // readout opens. Its bounding box is therefore non-null and already above
+    // `touchY - 40` when nothing was read at all, so measuring it straight
+    // after the tap would assert nothing. Waiting for it to be visible and to
+    // carry the mocked value is what makes the check below a check on
+    // `position={{ y: 0 }}` rather than on an unopened tooltip.
+    const readout = tooltip(page);
+    await expect(readout).toBeVisible();
+    await expect(readout.getByText('82.4', { exact: true })).toBeVisible();
+
+    const tooltipBox = await readout.boundingBox();
     expect(tooltipBox, 'tooltip should have a bounding box').not.toBeNull();
     expect(
       tooltipBox!.y,
