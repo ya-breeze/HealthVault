@@ -42,6 +42,13 @@ The change is four small pieces:
 - `make test`
 - `make test-e2e`
 
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
+
 ### Task 1: Seed the tooltip on first contact
 - [ ] Add `frontend/lib/chartTouch.ts` exporting `replayTouchAsMove(event: React.TouchEvent): boolean`: return `false` when `event.target` is not an `Element`, when `event.touches.length === 0`, or when `typeof TouchEvent !== 'function'`; otherwise dispatch `new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches, targetTouches, changedTouches })` built from the event's own `Touch` objects on `event.target`, and return `true`.
 - [ ] Wrap the construction and dispatch in `try`/`catch`, returning `false` on failure — the `TouchEvent` constructor is not available in every browser, and the fallback is Recharts' own `touchmove` handling.
