@@ -207,25 +207,35 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
   });
 
   // idea-268: with the row gone, the section that follows it (More Data)
-  // moves up by the full height of the heading, row and gap. Compared
-  // against the same element's desktop position (where the row is still on
-  // screen ahead of it) rather than a pixel constant, in the style of the
-  // occlusion tests below.
-  test('with the block hidden, the more-data section sits above where it renders at desktop widths', async ({ page }) => {
+  // moves up by the full height of the heading, row and gap. Measured as the
+  // gap between the vitals grid and more-data rather than more-data's
+  // absolute position: the grid is itself `grid-cols-2 sm:grid-cols-4`, so
+  // its own height (and therefore more-data's absolute Y) changes across the
+  // same breakpoint for a reason unrelated to this change. The local gap
+  // cancels that out, comparing bounding boxes against each other rather
+  // than against a pixel constant, in the style of the occlusion tests below.
+  test('with the block hidden, the gap to more-data shrinks to just the section margin', async ({ page }) => {
     // Presence responses omit no type in production, but an empty map is
     // enough here: hasPresence treats an absent key as present, which is all
     // this test needs to guarantee the section renders regardless of seed data.
     await page.route('**/api/data-types/presence', route => route.fulfill({ json: {} }));
     await login(page);
+    const grid = page.getByTestId('vitals-grid');
     const moreData = page.getByTestId('more-data');
     await expect(moreData).toBeVisible();
+
+    const mobileGridBox = await boxOf(grid, 'vitals grid (mobile)');
     const mobileTop = (await boxOf(moreData, 'more-data (mobile, log-food-links hidden)')).y;
+    const mobileGap = mobileTop - (mobileGridBox.y + mobileGridBox.height);
 
     await page.setViewportSize(DESKTOP_VIEWPORT);
     await expect(page.getByTestId('log-food-links')).toBeVisible();
+    const desktopGridBox = await boxOf(grid, 'vitals grid (desktop)');
     const desktopTop = (await boxOf(moreData, 'more-data (desktop, log-food-links visible)')).y;
+    const desktopGap = desktopTop - (desktopGridBox.y + desktopGridBox.height);
 
-    expect(mobileTop, 'more-data top edge should sit above its desktop position').toBeLessThan(desktopTop);
+    expect(mobileGap, 'gap between the vitals grid and more-data should shrink once the block collapses')
+      .toBeLessThan(desktopGap);
   });
 
   test('a long username crowds the badge, never the app title', async ({ page }) => {
