@@ -194,11 +194,39 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
   // variable-length half of the row, so it is substituted here rather than
   // waiting for a user whose name happens to be long enough. Found in code
   // review.
+  test('a long username crowds the badge, never the app title', async ({ page }) => {
+    await page.route('**/users/me', async route => {
+      const response = await route.fetch();
+      const body = await response.json();
+      await route.fulfill({ response, json: { ...body, username: 'a-rather-long-username-indeed' } });
+    });
+    await login(page);
+    await page.setViewportSize({ width: 320, height: 844 });
+
+    const title = page.locator('header a[href="/"]').first();
+    const badge = page.getByTestId('user-badge');
+    await expect(title).toBeVisible();
+    const titleBox = await boxOf(title, 'app title');
+    const badgeBox = await boxOf(badge, 'user badge');
+
+    expect(intersects(titleBox, badgeBox), 'title and badge should not overlap').toBe(false);
+    expect(titleBox.x + titleBox.width, 'title right edge').toBeLessThanOrEqual(320);
+    const header = await boxOf(page.locator('header'), 'header');
+    expect(header.height, 'header height with a long username').toBeLessThan(HEADER_HEIGHT_CEILING);
+  });
+
   // idea-268: the dashboard's own Log food row duplicated the bar's Photo,
   // Manual and History destinations on a phone, so it is hidden below `sm`
   // and only the bar offers those three routes at this width.
   test('the log-food block is hidden and the bar carries its three destinations', async ({ page }) => {
     await login(page);
+    // The block is CSS-hidden, not unmounted, for the same reason the bar is
+    // at the desktop viewport: the app is statically exported, so the served
+    // HTML must already be right before hydration. `toBeHidden` alone passes
+    // for an element that is absent too, so the count assertion is what
+    // actually separates `hidden sm:block` from a JS width check that stops
+    // rendering the block below `sm`.
+    await expect(page.getByTestId('log-food-links')).toHaveCount(1);
     await expect(page.getByTestId('log-food-links')).toBeHidden();
     await expect(bar(page)).toBeVisible();
     for (const id of ['photo', 'manual', 'history'] as const) {
@@ -236,27 +264,6 @@ test.describe('Mobile bottom navigation — mobile viewport', () => {
 
     expect(mobileGap, 'gap between the vitals grid and more-data should shrink once the block collapses')
       .toBeLessThan(desktopGap);
-  });
-
-  test('a long username crowds the badge, never the app title', async ({ page }) => {
-    await page.route('**/users/me', async route => {
-      const response = await route.fetch();
-      const body = await response.json();
-      await route.fulfill({ response, json: { ...body, username: 'a-rather-long-username-indeed' } });
-    });
-    await login(page);
-    await page.setViewportSize({ width: 320, height: 844 });
-
-    const title = page.locator('header a[href="/"]').first();
-    const badge = page.getByTestId('user-badge');
-    await expect(title).toBeVisible();
-    const titleBox = await boxOf(title, 'app title');
-    const badgeBox = await boxOf(badge, 'user badge');
-
-    expect(intersects(titleBox, badgeBox), 'title and badge should not overlap').toBe(false);
-    expect(titleBox.x + titleBox.width, 'title right edge').toBeLessThanOrEqual(320);
-    const header = await boxOf(page.locator('header'), 'header');
-    expect(header.height, 'header height with a long username').toBeLessThan(HEADER_HEIGHT_CEILING);
   });
 });
 
