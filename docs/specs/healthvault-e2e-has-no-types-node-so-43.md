@@ -68,10 +68,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 5: Gate on the check and validate
-- [ ] Confirm the type-check reports zero diagnostics.
-- [ ] Add a `lint-e2e` target to the `Makefile` that depends on `$(ROOT_DIR)e2e/node_modules/.install-stamp` and runs the `typecheck` script in `e2e/`.
-- [ ] Make `lint` depend on both the existing `go vet` step and `lint-e2e`, add `lint-e2e` to `.PHONY`, and comment why the e2e check is gated rather than advisory.
-- [ ] If, and only if, a diagnostic could not be removed, leave `lint` unchanged, keep `lint-e2e` as a standalone target, and state the blocking diagnostic in the pull request description.
-- [ ] Verify the gate bites: introduce a deliberate type error in a spec, confirm `make lint` fails, then revert it.
-- [ ] Run `make lint`, `make test`, and `make test-e2e` against hcw-wip, and confirm all three pass.
-- [ ] Mark completed
+- [x] Confirm the type-check reports zero diagnostics.
+- [x] Add a `lint-e2e` target to the `Makefile` that depends on `$(ROOT_DIR)e2e/node_modules/.install-stamp` and runs the `typecheck` script in `e2e/`.
+- [x] Make `lint` depend on both the existing `go vet` step and `lint-e2e`, add `lint-e2e` to `.PHONY`, and comment why the e2e check is gated rather than advisory.
+- [x] If, and only if, a diagnostic could not be removed, leave `lint` unchanged, keep `lint-e2e` as a standalone target, and state the blocking diagnostic in the pull request description. Not applicable: every diagnostic was removed, so `lint` was wired to depend on `lint-e2e` as the primary path describes.
+- [x] Verify the gate bites: introduce a deliberate type error in a spec, confirm `make lint` fails, then revert it.
+- [x] Run `make lint`, `make test`, and `make test-e2e` against hcw-wip, and confirm all three pass.
+- [x] Mark completed
