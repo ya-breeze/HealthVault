@@ -40,12 +40,12 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Add the typing dependencies
-- [ ] Run `node -v` in the environment that runs `make test-e2e` and record the major version.
-- [ ] Add `@types/node` to `devDependencies` in `e2e/package.json`, pinned to that major version.
-- [ ] Add `typescript` to `devDependencies` in `e2e/package.json`, so the type-check never resolves a compiler over the network.
-- [ ] Run `npm install` in `e2e/` to refresh `e2e/package-lock.json`, and commit both files.
-- [ ] Confirm `npm ci` in `e2e/` still succeeds from the refreshed lockfile.
-- [ ] Mark completed
+- [x] Run `node -v` in the environment that runs `make test-e2e` and record the major version.
+- [x] Add `@types/node` to `devDependencies` in `e2e/package.json`, pinned to that major version.
+- [x] Add `typescript` to `devDependencies` in `e2e/package.json`, so the type-check never resolves a compiler over the network.
+- [x] Run `npm install` in `e2e/` to refresh `e2e/package-lock.json`, and commit both files.
+- [x] Confirm `npm ci` in `e2e/` still succeeds from the refreshed lockfile.
+- [x] Mark completed
 
 ### Task 2: Add a tsconfig and a type-check script
 - [ ] Create `e2e/tsconfig.json` with `strict`, `noEmit`, `esModuleInterop`, `skipLibCheck`, `target: ES2022`, `lib: ["ES2022", "DOM", "DOM.Iterable"]`, `types: ["node"]`, `module: "commonjs"`, and `moduleResolution: "node10"`.
