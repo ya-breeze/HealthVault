@@ -16,6 +16,8 @@ import {
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import AddRecordForm from '@/components/AddRecordForm';
 import TapTarget from '@/components/ui/TapTarget';
+import { replayTouchAsMove } from '@/lib/chartTouch';
+import useCoarsePointer from '@/lib/useCoarsePointer';
 
 interface Props {
   type: string;
@@ -120,6 +122,16 @@ export default function DataTypeClient({ type }: Props) {
     return [formatMetricValue(dataType, Number(value)), name ?? ''];
   };
   const yAxisTickFormatter = (v: number) => formatMetricValue(dataType, v);
+
+  // Pins the tooltip to the top of the plot area on a coarse pointer, so the
+  // readout isn't hidden under the thumb that's producing it. Extracted into
+  // one object so a sixth `<Tooltip>` can't be added without it. Keyed off
+  // `useCoarsePointer` (pointer media query), not viewport width — see that
+  // hook's own comment. No `trigger` prop is added anywhere: `trigger="click"`
+  // switches `combineTooltipInteractionState` from `axisInteraction.hover` to
+  // `axisInteraction.click`, which would turn off the tooltip on mouse hover.
+  const isCoarsePointer = useCoarsePointer();
+  const coarsePointerTooltipProps = isCoarsePointer ? { position: { y: 0 } } : {};
 
   const [zoom, setZoom] = useState<Zoom>('week');
   const [macro, setMacro] = useState<string>('calories');
@@ -685,6 +697,13 @@ export default function DataTypeClient({ type }: Props) {
 
         {hasChart && (
         <div className="bg-bg-elevated rounded-[12px] border border-border p-4 mb-4">
+          {/* touch-pan-y is the deliberate split: a vertical drag still scrolls
+              the page (browser-native panning is preserved on that axis), while
+              a horizontal drag belongs to the chart and its touch events are no
+              longer cancelled by the page's own scroll gesture. onTouchStart
+              re-dispatches first contact as a touchmove so the tooltip shows a
+              value immediately instead of only once the finger has moved. */}
+          <div data-testid="chart-surface" className="touch-pan-y" onTouchStart={replayTouchAsMove}>
           <ResponsiveContainer width="100%" height={280}>
             {isDay ? (
               isBloodPressure ? (
@@ -699,7 +718,7 @@ export default function DataTypeClient({ type }: Props) {
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line type="monotone" dataKey="systolic" stroke={color} dot strokeWidth={2} name="Systolic" />
                   <Line type="monotone" dataKey="diastolic" stroke={color} strokeDasharray="4 3" dot strokeWidth={2} name="Diastolic" />
@@ -716,7 +735,7 @@ export default function DataTypeClient({ type }: Props) {
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                   {bmiBandAreas}
                   {goalLine}
                   <Line
@@ -733,7 +752,7 @@ export default function DataTypeClient({ type }: Props) {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                <Tooltip formatter={formatTooltipValue} />
+                <Tooltip formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" name="Systolic range" />
                 <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" name="Diastolic range" />
@@ -745,7 +764,7 @@ export default function DataTypeClient({ type }: Props) {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                <Tooltip formatter={formatTooltipValue} />
+                <Tooltip formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                 <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} />
               </BarChart>
             ) : (
@@ -753,7 +772,7 @@ export default function DataTypeClient({ type }: Props) {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                <Tooltip formatter={formatTooltipValue} />
+                <Tooltip formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                 {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
                 {bmiBandAreas}
                 {goalLine}
@@ -784,6 +803,7 @@ export default function DataTypeClient({ type }: Props) {
               </ComposedChart>
             )}
           </ResponsiveContainer>
+          </div>
 
           {dataType === 'weight' && (projectionMessage || noDataMessage || projectionErrorMessage) && (
             <p className="mt-3 text-xs text-text-muted" data-testid="projection-message">

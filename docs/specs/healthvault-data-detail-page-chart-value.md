@@ -50,27 +50,27 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Seed the tooltip on first contact
-- [ ] Add `frontend/lib/chartTouch.ts` exporting `replayTouchAsMove(event: React.TouchEvent): boolean`: return `false` when `event.target` is not an `Element`, when `event.touches.length === 0`, or when `typeof TouchEvent !== 'function'`; otherwise dispatch `new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches, targetTouches, changedTouches })` built from the event's own `Touch` objects on `event.target`, and return `true`.
-- [ ] Wrap the construction and dispatch in `try`/`catch`, returning `false` on failure — the `TouchEvent` constructor is not available in every browser, and the fallback is Recharts' own `touchmove` handling.
-- [ ] Comment why the helper exists: `RechartsWrapper.js` dispatches `touchstart` only to an external handler, so first contact never reaches tooltip state, while `touchmove` does via `touchEventsMiddleware`.
-- [ ] Never call `preventDefault` — the page must keep scrolling.
-- [ ] Mark completed
+- [x] Add `frontend/lib/chartTouch.ts` exporting `replayTouchAsMove(event: React.TouchEvent): boolean`: return `false` when `event.target` is not an `Element`, when `event.touches.length === 0`, or when `typeof TouchEvent !== 'function'`; otherwise dispatch `new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches, targetTouches, changedTouches })` built from the event's own `Touch` objects on `event.target`, and return `true`.
+- [x] Wrap the construction and dispatch in `try`/`catch`, returning `false` on failure — the `TouchEvent` constructor is not available in every browser, and the fallback is Recharts' own `touchmove` handling.
+- [x] Comment why the helper exists: `RechartsWrapper.js` dispatches `touchstart` only to an external handler, so first contact never reaches tooltip state, while `touchmove` does via `touchEventsMiddleware`.
+- [x] Never call `preventDefault` — the page must keep scrolling.
+- [x] Mark completed
 
 ### Task 2: Give the data detail chart a touch surface
-- [ ] In `frontend/app/data/[type]/DataTypeClient.tsx`, wrap the `<ResponsiveContainer>` at `:688` in a `<div data-testid="chart-surface" className="touch-pan-y" onTouchStart={replayTouchAsMove}>`.
-- [ ] Comment that `touch-pan-y` is what stops a slightly diagonal scrub from being taken by the page's vertical scroll, and that vertical scrolling over the chart is deliberately preserved.
-- [ ] Add `frontend/lib/useCoarsePointer.ts`: a hook returning `false` on the first render, then the value of `matchMedia('(pointer: coarse)')`, subscribing to its `change` event and unsubscribing on unmount. Guard `matchMedia` for the server render.
-- [ ] Pass `position={{ y: 0 }}` to all five `<Tooltip>` elements (`:702`, `:719`, `:736`, `:748`, `:756`) when the hook reports a coarse pointer, and leave the tooltip at its default position otherwise. Extract the shared props into one object so a sixth tooltip cannot be added without them.
-- [ ] Add no `trigger` prop anywhere, and record in a comment that `trigger="click"` would switch the tooltip off hover and regress the mouse.
-- [ ] Confirm `formatTooltipValue` and `labelFormatter` are unchanged.
-- [ ] Mark completed
+- [x] In `frontend/app/data/[type]/DataTypeClient.tsx`, wrap the `<ResponsiveContainer>` at `:688` in a `<div data-testid="chart-surface" className="touch-pan-y" onTouchStart={replayTouchAsMove}>`.
+- [x] Comment that `touch-pan-y` is what stops a slightly diagonal scrub from being taken by the page's vertical scroll, and that vertical scrolling over the chart is deliberately preserved.
+- [x] Add `frontend/lib/useCoarsePointer.ts`: a hook returning `false` on the first render, then the value of `matchMedia('(pointer: coarse)')`, subscribing to its `change` event and unsubscribing on unmount. Guard `matchMedia` for the server render.
+- [x] Pass `position={{ y: 0 }}` to all five `<Tooltip>` elements (`:702`, `:719`, `:736`, `:748`, `:756`) when the hook reports a coarse pointer, and leave the tooltip at its default position otherwise. Extract the shared props into one object so a sixth tooltip cannot be added without them.
+- [x] Add no `trigger` prop anywhere, and record in a comment that `trigger="click"` would switch the tooltip off hover and regress the mouse.
+- [x] Confirm `formatTooltipValue` and `labelFormatter` are unchanged.
+- [x] Mark completed
 
 ### Task 3: Unit-test the seed helper
-- [ ] Add `frontend/lib/chartTouch.test.ts` alongside the existing Vitest suites in `frontend/lib/`.
-- [ ] Assert the helper dispatches exactly one bubbling `touchmove` on the touch target, carrying the same touch points as the source event.
-- [ ] Assert it returns `false` and dispatches nothing when the `TouchEvent` constructor is missing, when there are no touches, and when the target is not an `Element`.
-- [ ] Assert it never calls `preventDefault` on the source event.
-- [ ] Mark completed
+- [x] Add `frontend/lib/chartTouch.test.ts` alongside the existing Vitest suites in `frontend/lib/`.
+- [x] Assert the helper dispatches exactly one bubbling `touchmove` on the touch target, carrying the same touch points as the source event.
+- [x] Assert it returns `false` and dispatches nothing when the `TouchEvent` constructor is missing, when there are no touches, and when the target is not an `Element`.
+- [x] Assert it never calls `preventDefault` on the source event.
+- [x] Mark completed
 
 ### Task 4: Prove a value is readable without a mouse
 - [ ] Add `e2e/tests/chart-touch-readout.spec.ts` using `test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })`, following `e2e/tests/mobile-tap-targets.spec.ts:286-293`.
