@@ -11,6 +11,7 @@ import (
 	"github.com/ya-breeze/kin-core/auth"
 	"github.com/ya-breeze/kin-core/authdb"
 	"github.com/ya-breeze/kin-core/cookies"
+	"github.com/ya-breeze/healthvault/pkg/cfaccess"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"gorm.io/gorm"
 )
@@ -34,6 +35,13 @@ type authHandlers struct {
 	db        *gorm.DB
 	jwtSecret []byte
 	cookieCfg cookies.Config
+
+	// cfVerifier is nil unless HCW_CF_ACCESS_TEAM_DOMAIN and HCW_CF_ACCESS_AUD
+	// are both set — CFAccess (auth_cf_access.go) 404s while it is nil.
+	cfVerifier *cfaccess.Verifier
+	// cfEmailMap maps a verified Access identity's lower-cased email to a
+	// HealthVault username. Empty unless HCW_CF_ACCESS_EMAIL_MAP is set.
+	cfEmailMap map[string]string
 }
 
 // writeTooManyAttempts writes the 429 response shape shared by every

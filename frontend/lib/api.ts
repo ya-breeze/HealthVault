@@ -1,3 +1,5 @@
+import { accessSignInSuppressed } from './session';
+
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
 // Coordination keys for transparent-refresh-on-401 (see openspec authentication
@@ -10,7 +12,7 @@ const AUTH_REFRESH_LOCK = 'hcw-auth-refresh';
 const LAST_REFRESH_KEY = 'hcw:lastAuthRefreshAt';
 
 function isAuthExemptPath(path: string): boolean {
-  return path === '/auth/login' || path === '/auth/refresh';
+  return path === '/auth/login' || path === '/auth/refresh' || path === '/auth/cf-access';
 }
 
 // Completion time of the last successful refresh in *this* tab. The
@@ -34,13 +36,15 @@ function lastRefreshAt(): number {
   return Math.max(stored, lastRefreshAtInTab);
 }
 
-// POSTs /auth/refresh directly (no retry wrapping — this IS the refresh call).
-// Records the completion time so a later caller — in this tab, or in another
-// one waiting on the Web Lock — can see a refresh already happened at/after
-// its request was dispatched.
-async function refreshAccessToken(): Promise<boolean> {
-  const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
-  if (!res.ok) return false;
+// Records the completion time of a session renewal in both channels
+// lastRefreshAt reads, so a later caller — in this tab, or in another one
+// waiting on the Web Lock — can see the token its 401 complained about has
+// already been replaced. Both ways a session gets renewed call this: the
+// ordinary refresh below and the Cf-Access exchange further down. The
+// exchange mints the same pair of cookies Login does, so a concurrent 401
+// that predates it should retry rather than spend the brand-new refresh
+// token on a redundant rotation.
+function recordSessionRenewed(): void {
   lastRefreshAtInTab = Date.now();
   try {
     localStorage.setItem(LAST_REFRESH_KEY, String(lastRefreshAtInTab));
@@ -48,6 +52,13 @@ async function refreshAccessToken(): Promise<boolean> {
     // localStorage may be unavailable (e.g. private browsing); same-tab dedup
     // still applies through lastRefreshAtInTab, cross-tab dedup just degrades.
   }
+}
+
+// POSTs /auth/refresh directly (no retry wrapping — this IS the refresh call).
+async function refreshAccessToken(): Promise<boolean> {
+  const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
+  if (!res.ok) return false;
+  recordSessionRenewed();
   return true;
 }
 
@@ -93,16 +104,76 @@ function coordinatedRefresh(dispatchedAt: number): Promise<boolean> {
   return refreshPromise;
 }
 
+// The outcome of one exchange attempt, read out of the Response rather than
+// handed back as one. Concurrent callers share a single in-flight attempt (see
+// accessExchange) and a Response body can only be read once, so the status and
+// the body both have to be captured before the result can be shared. Callers
+// distinguish 404 (feature off) from 401/403 (feature on, this attempt didn't
+// get in) from 200/204 (exchanged).
+interface AccessExchangeResult {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  body: string;
+}
+
+// Same-tab dedup for the exchange, mirroring refreshPromise above. Without it
+// every concurrent 401 that refresh could not fix runs its own exchange, and
+// each one mints its own year-long refresh token row server-side — the
+// dashboard's several-calls-at-once shape makes that the normal case, not a
+// rare race.
+let accessExchangePromise: Promise<AccessExchangeResult> | null = null;
+
+// The single entry point for the Cf-Access exchange. Both callers come through
+// here — fetchWithAuthRetry's 401 fallback below and the login page through
+// api.cfAccessLogin — so neither the suppression flag nor the dedup can be
+// bypassed by a future caller that forgets they exist. No retry wrapping:
+// this IS the recovery step, and /auth/cf-access is auth-exempt anyway.
+//
+// Returns null when the exchange is suppressed, which is a different answer
+// from "the server refused": no request was sent at all. The flag is set by
+// useLogout and cleared only by the login page's explicit sign-in button — see
+// lib/session.ts's doc comment. Honouring it here rather than only on the
+// login page is what makes logout stick: any 401 anywhere else in the app —
+// the settings poll in LanguageContext, say — would otherwise re-run the
+// exchange in the background and silently restore the session the user had
+// just ended.
+async function accessExchange(): Promise<AccessExchangeResult | null> {
+  if (accessSignInSuppressed()) return null;
+  if (accessExchangePromise) return accessExchangePromise;
+
+  const run = async (): Promise<AccessExchangeResult> => {
+    const res = await fetch(`${BASE}/auth/cf-access`, { method: 'POST', credentials: 'include' });
+    if (res.ok) recordSessionRenewed();
+    return { ok: res.ok, status: res.status, statusText: res.statusText, body: await res.text() };
+  };
+
+  accessExchangePromise = run().finally(() => {
+    accessExchangePromise = null;
+  });
+  return accessExchangePromise;
+}
+
 // The one place that calls fetch() and reacts to a 401 by transparently
 // refreshing and retrying — apiRawFetch, apiFetchNoBody, and apiFetchForm all
 // delegate here so the retry logic exists exactly once.
+//
+// A 401 that refresh could not fix (no refresh token, or a dead one) gets a
+// second recovery step: the Cf-Access exchange, once. It costs nothing on a
+// deployment with no Cloudflare in front — accessExchange there just 404s and
+// this falls through to returning the original 401, same as today. A null
+// result means the exchange was suppressed by a logout, and falls through the
+// same way: after logging out, a background 401 must not sign the user back in.
 async function fetchWithAuthRetry(path: string, options: RequestInit): Promise<Response> {
   const dispatchedAt = Date.now();
   const res = await fetch(`${BASE}${path}`, options);
   if (res.status !== 401 || isAuthExemptPath(path)) return res;
 
   const refreshed = await coordinatedRefresh(dispatchedAt);
-  if (!refreshed) return res;
+  if (refreshed) return fetch(`${BASE}${path}`, options);
+
+  const exchanged = await accessExchange();
+  if (!exchanged?.ok) return res;
 
   return fetch(`${BASE}${path}`, options);
 }
@@ -556,6 +627,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+
+  // Exchanges a Cloudflare Access Assertion (carried by the browser, not by
+  // this call) for a session, the same way login() exchanges a password.
+  // Goes through accessExchange rather than apiFetchNoBody so the login page's
+  // attempt obeys the same suppression flag and shares the same in-flight
+  // attempt as the 401 fallback — one exchange per moment, not one per caller.
+  // Callers still branch on ApiError.status (404 feature-off, 401/403 this
+  // attempt didn't get in) rather than reading a response body.
+  cfAccessLogin: async (): Promise<void> => {
+    const exchanged = await accessExchange();
+    // null means the suppression flag is still set. The login page's sign-in
+    // button clears it before calling, so getting here means a caller did not
+    // — and reporting that as a failed sign-in is the honest answer. Resolving
+    // as if the exchange had succeeded would route the caller to a page its
+    // session cannot load.
+    if (!exchanged) throw new ApiError(401, 'Access sign-in is suppressed after logout');
+    if (!exchanged.ok) {
+      throw new ApiError(exchanged.status, exchanged.body || `${exchanged.status} ${exchanged.statusText}`);
+    }
+  },
 
   // `apiFetchNoBody`, not `apiFetch`: the endpoint answers 204 with an empty
   // body, so parsing it as JSON throws — and every caller awaits this before

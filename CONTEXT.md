@@ -147,3 +147,13 @@ _Avoid_: BMI zone, weight range
 **Trend Projection**:
 A dashed line extrapolating the weight chart's existing EMA trend line forward, via least-squares regression over the last 30 calendar days of EMA values, to the calendar date it's projected to cross Goal Weight. Rendered only at Month/Year zoom; the plain-language ETA text it produces ("on track", "not on track", "already reached", "not enough data") renders at every zoom level and only appears at all when a Goal Weight is set.
 _Avoid_: Forecast, prediction line
+
+### Authentication
+
+**Access Assertion**:
+The signed JWT Cloudflare Access attaches as the `Cf-Access-Jwt-Assertion` header once its policy has approved a Google sign-in. Verified by `backend/pkg/cfaccess` against Cloudflare's own published JWKS (RS256, issuer/audience pinned, `exp`/`nbf` checked) — never trusted on the strength of the header's mere presence, since the backend is also reachable directly on the LAN, bypassing Cloudflare, where any header is attacker-set. See ADR-012.
+_Avoid_: Access token (ambiguous with HealthVault's own `kin_access` JWT), Cf-Access header
+
+**Access Identity Map**:
+The `HCW_CF_ACCESS_EMAIL_MAP` setting (`email:username`, comma-separated, shaped like `HCW_SEED_USERS`) that authorizes a verified Access Assertion's email to sign in as a specific HealthVault user. An email that verifies but is absent from the map is refused (403), rather than auto-provisioning an account — widening the Cloudflare Access policy, a different system, never silently creates a HealthVault user. See ADR-012.
+_Avoid_: Email map alone (ambiguous outside this context), user mapping
