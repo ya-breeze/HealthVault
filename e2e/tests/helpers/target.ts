@@ -51,13 +51,9 @@ const PROD_HOSTNAMES = new Set(['healthvault.ikoro.in']);
  * spawning a child process or mutating the ambient environment — see
  * `tests/e2e-target.spec.ts`.
  *
- * The parameter is a plain `Record`, not `NodeJS.ProcessEnv`: this package has
- * no `@types/node`, so that namespace does not resolve here. `process.env`
- * satisfies this shape regardless.
- *
  * @throws if `env.BASE_URL` names hcw-prod, or is not an http(s) URL.
  */
-export function resolveTarget(env: Record<string, string | undefined>): string {
+export function resolveTarget(env: NodeJS.ProcessEnv): string {
   const raw = env.BASE_URL || WIP;
 
   let url: URL;

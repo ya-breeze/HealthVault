@@ -62,10 +62,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Restore `NodeJS.ProcessEnv` on `resolveTarget`
-- [ ] Change the `env` parameter of `resolveTarget` in `e2e/tests/helpers/target.ts:60` from `Record<string, string | undefined>` to `NodeJS.ProcessEnv`.
-- [ ] Delete the doc-comment paragraph at `e2e/tests/helpers/target.ts:54-56` that explains the missing `@types/node`, and keep the paragraph above it explaining why the function takes `env` at all.
-- [ ] Confirm `e2e/tests/e2e-target.spec.ts` still type-checks, since every case there passes an object literal.
-- [ ] Mark completed
+- [x] Change the `env` parameter of `resolveTarget` in `e2e/tests/helpers/target.ts:60` from `Record<string, string | undefined>` to `NodeJS.ProcessEnv`.
+- [x] Delete the doc-comment paragraph at `e2e/tests/helpers/target.ts:54-56` that explains the missing `@types/node`, and keep the paragraph above it explaining why the function takes `env` at all.
+- [x] Confirm `e2e/tests/e2e-target.spec.ts` still type-checks, since every case there passes an object literal.
+- [x] Mark completed
 
 ### Task 5: Gate on the check and validate
 - [ ] Confirm the type-check reports zero diagnostics.
