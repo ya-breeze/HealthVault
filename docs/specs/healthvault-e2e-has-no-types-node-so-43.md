@@ -28,9 +28,16 @@ Wire the check into `make lint` only if the count reaches zero. A gate expected 
 Deliberately excluded: type-checking `frontend/`. It has a `tsconfig.json` and its own `typescript` dependency, but `make lint` never invokes `tsc` there either. That is a second gap with its own trade-offs, and folding it in would hide this change's result behind an unrelated wall of diagnostics. Also excluded: any change to what the specs test, how they are structured, or the `retries`/`workers` settings in `playwright.config.ts`.
 
 ## Validation Commands
-- make lint
-- make test
-- make test-e2e
+- `make lint`
+- `make test`
+- `make test-e2e`
+
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Add the typing dependencies
 - [ ] Run `node -v` in the environment that runs `make test-e2e` and record the major version.
