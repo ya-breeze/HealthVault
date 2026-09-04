@@ -121,6 +121,64 @@ class HealthVaultApiRefreshTest {
         assertTrue("rotated cookie must be persisted before the retried request is sent", committedBeforeRetry.get())
     }
 
+    /**
+     * The re-login fallback's own failure must not be laundered into
+     * "signed out". Here the session really is dead (refresh 401s, so the
+     * summary's 401 stands) but the login the client falls back to is held off
+     * by the rate limiter — nothing about that says the credentials are wrong,
+     * and reporting it as Unauthenticated would make the today screen announce
+     * a sign-out and the widget drop a session that is still fine.
+     */
+    @Test
+    fun `a rate-limited re-login is reported as RateLimited, not as a sign-out`() {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                "/api/summary/today" -> MockResponse().setResponseCode(401)
+                "/api/auth/refresh" -> MockResponse().setResponseCode(401)
+                "/api/auth/login" -> MockResponse()
+                    .setResponseCode(429)
+                    .addHeader("Retry-After", "31")
+                    .setBody("""{"error":"too_many_attempts","retry_after_seconds":31}""")
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        server.start()
+
+        val secureStore = SecureStore(FakeSharedPreferences()).apply {
+            serverUrl = server.url("/").toString().trimEnd('/')
+            username = "alice"
+            password = "secret"
+        }
+        val api = HealthVaultApi(secureStore, SessionCookieJar(secureStore))
+
+        val result = api.summaryToday()
+
+        assertTrue("expected RateLimited, got $result", result is ApiResult.RateLimited)
+        assertEquals(31L, (result as ApiResult.RateLimited).retryAfter.inWholeSeconds)
+    }
+
+    /** The same path, but with the credentials genuinely rejected: this one *is* a sign-out. */
+    @Test
+    fun `a re-login rejected with 401 is reported as Unauthenticated`() {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                "/api/summary/today", "/api/auth/refresh", "/api/auth/login" ->
+                    MockResponse().setResponseCode(401)
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        server.start()
+
+        val secureStore = SecureStore(FakeSharedPreferences()).apply {
+            serverUrl = server.url("/").toString().trimEnd('/')
+            username = "alice"
+            password = "wrong"
+        }
+        val api = HealthVaultApi(secureStore, SessionCookieJar(secureStore))
+
+        assertTrue(api.summaryToday() is ApiResult.Unauthenticated)
+    }
+
     @Test
     fun `429 is reported as RateLimited, never as a sign-out`() {
         server.dispatcher = object : Dispatcher() {

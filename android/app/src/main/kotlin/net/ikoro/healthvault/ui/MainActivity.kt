@@ -35,8 +35,13 @@ class MainActivity : ComponentActivity() {
                     api = app.api,
                     secureStore = app.secureStore,
                     onSignedOut = {
-                        app.cookieJar.clear()
-                        app.secureStore.clearSession()
+                        // All on IO, and in this order: SecureStore.clearSession
+                        // commits synchronously (a sign-out a process kill could
+                        // undo is not a sign-out), so it must not run on the UI
+                        // thread, and the widget must be redrawn only after the
+                        // session is actually gone or it would re-render the
+                        // signed-in state.
+                        //
                         // Periodic refresh is tied to widget placement, not
                         // to the session (RefreshScheduler.ensurePeriodic is
                         // only ever cancelled by the last widget being
@@ -44,6 +49,8 @@ class MainActivity : ComponentActivity() {
                         // keeps rendering the sign-in prompt WidgetState.SignedOut
                         // maps to, so nothing here needs to touch scheduling.
                         scope.launch(Dispatchers.IO) {
+                            app.cookieJar.clear()
+                            app.secureStore.clearSession()
                             WidgetUpdater.updateAll(applicationContext)
                         }
                         hasSession = false

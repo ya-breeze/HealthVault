@@ -9,12 +9,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,6 +38,30 @@ import net.ikoro.healthvault.api.TodaySummary
 import net.ikoro.healthvault.store.SecureStore
 import net.ikoro.healthvault.store.SummarySnapshot
 import net.ikoro.healthvault.widget.WIDGET_STALE_AFTER_MILLIS
+
+/**
+ * Why the last refresh failed. Mirrors SetupScreen's SetupError: every
+ * recoverable outcome names its own cause, because "we couldn't reach the
+ * server", "the rate limiter is holding us off" and "Access is challenging
+ * /api/*" call for three different reactions from the owner. A dead session is
+ * deliberately absent — [ApiResult.Unauthenticated] routes to `onSignedOut()`
+ * instead, and after HealthVaultApi.summaryToday's re-login fallback that is
+ * the only outcome that really means the session ended.
+ */
+private sealed class RefreshProblem {
+    data class LockedOut(val retrySeconds: Long) : RefreshProblem()
+    data object AccessChallenge : RefreshProblem()
+    data object Unreachable : RefreshProblem()
+    data class Server(val code: Int) : RefreshProblem()
+}
+
+@Composable
+private fun RefreshProblem.message(): String = when (this) {
+    is RefreshProblem.LockedOut -> stringResource(R.string.today_refresh_locked_out, retrySeconds)
+    is RefreshProblem.AccessChallenge -> stringResource(R.string.today_refresh_access_challenge)
+    is RefreshProblem.Unreachable -> stringResource(R.string.today_refresh_unreachable)
+    is RefreshProblem.Server -> stringResource(R.string.today_refresh_server, code)
+}
 
 /** Matches the four reason codes computeUserNutritionTarget can send (see TodaySummaryTarget). */
 @Composable
@@ -63,6 +88,7 @@ private fun relativeTimeText(iso8601: String?, nowMillis: Long): String {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayScreen(
     api: HealthVaultApi,
@@ -71,7 +97,7 @@ fun TodayScreen(
 ) {
     var snapshot by remember { mutableStateOf(secureStore.loadSnapshot()) }
     var refreshing by remember { mutableStateOf(false) }
-    var refreshFailed by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<RefreshProblem?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -81,14 +107,19 @@ fun TodayScreen(
         refreshing = false
         when (result) {
             is ApiResult.Success -> {
-                refreshFailed = false
+                problem = null
                 val fresh = SummarySnapshot(result.value, System.currentTimeMillis())
                 secureStore.saveSnapshot(fresh)
                 snapshot = fresh
                 applyDisplayLanguage(result.value.displayLanguage)
             }
+            // Only a 401 that survived both the refresh and the re-login
+            // fallback means the session is really gone.
             is ApiResult.Unauthenticated -> onSignedOut()
-            else -> refreshFailed = true
+            is ApiResult.RateLimited -> problem = RefreshProblem.LockedOut(result.retryAfter.inWholeSeconds)
+            is ApiResult.AccessChallenge -> problem = RefreshProblem.AccessChallenge
+            is ApiResult.NetworkFailure -> problem = RefreshProblem.Unreachable
+            is ApiResult.ServerError -> problem = RefreshProblem.Server(result.code)
         }
     }
 
@@ -118,17 +149,22 @@ fun TodayScreen(
                     TextButton(onClick = onSignedOut) { Text(stringResource(R.string.today_sign_out)) }
                 }
 
-                if (current == null) {
-                    Text(text = stringResource(R.string.today_loading))
-                } else {
-                    val summary = current.summary
-                    if (isStale || refreshFailed) {
-                        Text(
-                            text = stringResource(R.string.today_stale_snapshot),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
+                // A failed refresh names its cause; a snapshot that is merely
+                // old says only that. The cause is shown even with nothing
+                // cached, so a first run against an unreachable server reports
+                // why rather than sitting on "Loading…" forever.
+                val currentProblem = problem
+                if (currentProblem != null) {
+                    Text(text = currentProblem.message(), color = MaterialTheme.colorScheme.error)
+                } else if (isStale) {
+                    Text(
+                        text = stringResource(R.string.today_stale_snapshot),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
 
+                if (current != null) {
+                    val summary = current.summary
                     TodayContent(summary)
                     Text(
                         text = stringResource(R.string.today_meal_count, summary.mealCount) + " · " +
@@ -138,6 +174,11 @@ fun TodayScreen(
                     Button(onClick = { openLogFood(context, secureStore.serverUrl) }) {
                         Text(stringResource(R.string.today_log_food))
                     }
+                } else if (currentProblem == null) {
+                    // Nothing cached and nothing wrong: the first fetch is
+                    // still in flight. With a problem, the banner above has
+                    // already said what happened, so don't claim to be loading.
+                    Text(text = stringResource(R.string.today_loading))
                 }
             }
         }

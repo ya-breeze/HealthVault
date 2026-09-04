@@ -11,9 +11,17 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import okhttp3.internal.EMPTY_REQUEST
 
 private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+
+/**
+ * POST /api/auth/refresh carries no body — the refresh token travels as a
+ * cookie. Built from the public `toRequestBody` extension rather than
+ * `okhttp3.internal.EMPTY_REQUEST`: that symbol lives in OkHttp's `internal`
+ * package, is not part of its published API, and stops being reachable from
+ * outside the library in OkHttp 5.
+ */
+private val EMPTY_BODY = ByteArray(0).toRequestBody()
 
 @Serializable
 private data class LoginRequest(val username: String, val password: String)
@@ -55,7 +63,7 @@ class HealthVaultApi(
         val serverUrl = secureStore.serverUrl ?: return false
         val request = Request.Builder()
             .url(serverUrl.trimEnd('/') + "/api/auth/refresh")
-            .post(EMPTY_REQUEST)
+            .post(EMPTY_BODY)
             .build()
         return try {
             plainClient.newCall(request).execute().use { it.isSuccessful }
@@ -72,6 +80,13 @@ class HealthVaultApi(
      * password is stored at all" note: an unattended widget update should
      * recover a dead session rather than go dark until the owner opens the
      * app.
+     *
+     * The re-login's own outcome is reported as itself. Only a 401 from
+     * /api/auth/login says the stored credentials are genuinely rejected;
+     * a 429, an unreachable server or a Cloudflare Access challenge say
+     * nothing about the session, and reporting them as "signed out" would
+     * make a network blip look like an account problem — and, worse, invite
+     * the caller to discard a session that is still perfectly valid.
      */
     fun summaryToday(): ApiResult<TodaySummary> {
         val serverUrl = secureStore.serverUrl ?: return ApiResult.Unauthenticated
@@ -85,7 +100,7 @@ class HealthVaultApi(
         if (username == null || password == null) return result
 
         val reLogin = login(serverUrl, username, password)
-        if (reLogin !is ApiResult.Success) return result
+        reLogin.failureOrNull()?.let { return it }
 
         return execute(request)
     }

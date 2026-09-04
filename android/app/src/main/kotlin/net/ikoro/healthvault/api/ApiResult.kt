@@ -31,3 +31,25 @@ sealed class ApiResult<out T> {
     /** Any other non-2xx response. */
     data class ServerError(val code: Int, val message: String) : ApiResult<Nothing>()
 }
+
+/**
+ * The failure this result carries, or null when it succeeded — so a failure
+ * from a call of one payload type can be passed straight through as the
+ * failure of a call of another (HealthVaultApi.summaryToday returns its
+ * re-login's failure verbatim rather than flattening every one of them to
+ * [ApiResult.Unauthenticated]).
+ *
+ * Every failure case is an `ApiResult<Nothing>`, which `out T` makes a subtype
+ * of every `ApiResult<T>`; the compiler cannot infer that from `!is Success`
+ * alone, so the cases are named explicitly. Being exhaustive over the sealed
+ * hierarchy also means a new failure case will not compile until it is
+ * considered here.
+ */
+fun ApiResult<*>.failureOrNull(): ApiResult<Nothing>? = when (this) {
+    is ApiResult.Success<*> -> null
+    is ApiResult.Unauthenticated -> this
+    is ApiResult.RateLimited -> this
+    is ApiResult.AccessChallenge -> this
+    is ApiResult.NetworkFailure -> this
+    is ApiResult.ServerError -> this
+}

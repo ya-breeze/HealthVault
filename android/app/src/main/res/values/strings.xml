@@ -19,7 +19,16 @@
     <!-- Today screen -->
     <string name="today_sign_out">Sign out</string>
     <string name="today_loading">Loading…</string>
-    <string name="today_stale_snapshot">Showing the last update — couldn\'t refresh just now.</string>
+    <string name="today_stale_snapshot">Showing the last saved update.</string>
+
+    <!-- Why the last refresh failed. Each ApiResult failure gets its own
+         message: a rate limit, an unreachable server and an Access challenge
+         need three different reactions, and none of them means "signed out" —
+         that case signs the app out instead of showing a message here. -->
+    <string name="today_refresh_locked_out">Too many requests. Try again in %1$ds.</string>
+    <string name="today_refresh_access_challenge">This server needs an Access bypass on /api/*.</string>
+    <string name="today_refresh_unreachable">Couldn\'t reach the server. Check your connection.</string>
+    <string name="today_refresh_server">Server error (%1$d). Couldn\'t refresh.</string>
     <string name="today_meal_count">%1$d meals logged</string>
     <string name="today_log_food">Log food</string>
     <string name="today_calories_of_target">%1$d / %2$d kcal</string>

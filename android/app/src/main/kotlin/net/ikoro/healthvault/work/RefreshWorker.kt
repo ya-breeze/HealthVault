@@ -10,13 +10,15 @@ import net.ikoro.healthvault.widget.WidgetUpdater
 
 /**
  * Performs exactly one GET /api/summary/today per run, persists the result,
- * and updates every placed widget. Every outcome except
- * [ApiResult.Success] leaves the cached snapshot untouched — a failed
- * refresh is never treated as a sign-out (HealthVaultApi.summaryToday
- * already tried its own re-login fallback before returning
- * [ApiResult.Unauthenticated]), so the widget keeps rendering the last
- * snapshot, with a staleness marker once it's 6+ hours old
- * (widget/WidgetState.kt).
+ * and updates every placed widget.
+ *
+ * A *recoverable* failure — unreachable server, 429, Access challenge, 5xx —
+ * is never treated as a sign-out: the cached snapshot is left untouched and
+ * the widget keeps rendering it, with a staleness marker once it's 6+ hours
+ * old (widget/WidgetState.kt). [ApiResult.Unauthenticated] is the one outcome
+ * that is not recoverable, because HealthVaultApi.summaryToday only returns it
+ * after its refresh *and* its re-login from stored credentials were both
+ * rejected — see the handler below.
  */
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -35,12 +37,21 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                     // that delay instead, and let this run end normally.
                     RefreshScheduler.enqueueOneOff(applicationContext, result.retryAfter)
                 }
-                is ApiResult.Unauthenticated,
+                is ApiResult.Unauthenticated -> {
+                    // The stored credentials themselves were rejected, so no
+                    // unattended retry can recover this session — every later
+                    // run would 401 the same way and the widget would sit on a
+                    // snapshot that never updates again. Clear the session so
+                    // widgetState() reports SignedOut and the widget shows the
+                    // sign-in prompt, exactly as MainActivity's sign-out does.
+                    app.cookieJar.clear()
+                    app.secureStore.clearSession()
+                }
                 is ApiResult.NetworkFailure,
                 is ApiResult.AccessChallenge,
                 is ApiResult.ServerError,
                 -> {
-                    // Cached snapshot stays as-is; see the class doc above.
+                    // Recoverable: cached snapshot and session stay as-is.
                 }
             }
         }

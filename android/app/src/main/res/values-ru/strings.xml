@@ -19,7 +19,13 @@
     <!-- Today screen -->
     <string name="today_sign_out">Выйти</string>
     <string name="today_loading">Загрузка…</string>
-    <string name="today_stale_snapshot">Показаны последние данные — не удалось обновить.</string>
+    <string name="today_stale_snapshot">Показаны последние сохранённые данные.</string>
+
+    <!-- Причины неудачного обновления — см. комментарий в values/strings.xml. -->
+    <string name="today_refresh_locked_out">Слишком много запросов. Повторите через %1$d с.</string>
+    <string name="today_refresh_access_challenge">Серверу нужен обход Access для /api/*.</string>
+    <string name="today_refresh_unreachable">Не удалось подключиться к серверу. Проверьте соединение.</string>
+    <string name="today_refresh_server">Ошибка сервера (%1$d). Не удалось обновить.</string>
     <string name="today_meal_count">Приёмов пищи: %1$d</string>
     <string name="today_log_food">Добавить еду</string>
     <string name="today_calories_of_target">%1$d / %2$d ккал</string>

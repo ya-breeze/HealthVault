@@ -127,13 +127,22 @@ fun SetupScreen(
                         loading = true
                         error = null
                         scope.launch {
-                            val result = withContext(Dispatchers.IO) { api.login(target, username, password) }
-                            loading = false
-                            error = when (result) {
-                                is ApiResult.Success -> {
+                            val result = withContext(Dispatchers.IO) {
+                                val outcome = api.login(target, username, password)
+                                // Persisted here, inside the IO block and only
+                                // on success: SecureStore commits credentials
+                                // synchronously (see its class doc), so these
+                                // three writes must not run on the UI thread.
+                                if (outcome is ApiResult.Success) {
                                     secureStore.serverUrl = target
                                     secureStore.username = username
                                     secureStore.password = password
+                                }
+                                outcome
+                            }
+                            loading = false
+                            error = when (result) {
+                                is ApiResult.Success -> {
                                     onSignedIn()
                                     null
                                 }
