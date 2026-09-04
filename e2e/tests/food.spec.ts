@@ -310,7 +310,7 @@ test.describe('Photo upload', () => {
         get: () => null,
         set: () => {},
       });
-      HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: () => {} })) as typeof HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: () => {} })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.toBlob = function (callback) {
         callback(new Blob(['camera'], { type: 'image/jpeg' }));
       };

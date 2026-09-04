@@ -48,18 +48,18 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Add a tsconfig and a type-check script
-- [ ] Create `e2e/tsconfig.json` with `strict`, `noEmit`, `esModuleInterop`, `skipLibCheck`, `target: ES2022`, `lib: ["ES2022", "DOM", "DOM.Iterable"]`, `types: ["node"]`, `module: "commonjs"`, and `moduleResolution: "node10"`.
-- [ ] Set `include` to `tests/**/*.ts` and `playwright.config.ts`, and `exclude` to `node_modules`.
-- [ ] Replace the placeholder `scripts.test` in `e2e/package.json` with a `typecheck` script that runs `tsc --noEmit`, so the check has one canonical spelling.
-- [ ] Run the type-check and record the new diagnostic count and the full list.
-- [ ] Mark completed
+- [x] Create `e2e/tsconfig.json` with `strict`, `noEmit`, `esModuleInterop`, `skipLibCheck`, `target: ES2022`, `lib: ["ES2022", "DOM", "DOM.Iterable"]`, `types: ["node"]`, `module: "commonjs"`, and `moduleResolution: "node10"`.
+- [x] Set `include` to `tests/**/*.ts` and `playwright.config.ts`, and `exclude` to `node_modules`.
+- [x] Replace the placeholder `scripts.test` in `e2e/package.json` with a `typecheck` script that runs `tsc --noEmit`, so the check has one canonical spelling.
+- [x] Run the type-check and record the new diagnostic count and the full list. Result: 1 diagnostic, `TS2352` at `tests/food.spec.ts:313:48` (a `getContext` stub cast that doesn't sufficiently overlap the real overload set) — fixed in Task 3.
+- [x] Mark completed
 
 ### Task 3: Fix the diagnostics the typing reveals
-- [ ] Re-run the type-check and confirm the `TS2307`, `TS2580` and `TS2304` diagnostics for `node:http`, `node:net`, `path`, `fs`, `process`, `__dirname` and `Buffer` are all gone.
-- [ ] Check whether `req`, `res` (`e2e/tests/auth.spec.ts:45`) and `proxyRes` (`e2e/tests/auth.spec.ts:54`) still report `TS7006`; annotate them with `http.IncomingMessage`, `http.ServerResponse` and `http.IncomingMessage` only if they do.
-- [ ] Fix every remaining diagnostic in `e2e/tests/` and `e2e/playwright.config.ts`, treating each as a real defect rather than something to suppress.
-- [ ] Use no `@ts-ignore`, no `@ts-expect-error`, and no `any` to reach zero; if a diagnostic resists, change the code or the tsconfig setting and explain the change in a comment.
-- [ ] Mark completed
+- [x] Re-run the type-check and confirm the `TS2307`, `TS2580` and `TS2304` diagnostics for `node:http`, `node:net`, `path`, `fs`, `process`, `__dirname` and `Buffer` are all gone. Confirmed: none appeared once `@types/node` was installed.
+- [x] Check whether `req`, `res` (`e2e/tests/auth.spec.ts:45`) and `proxyRes` (`e2e/tests/auth.spec.ts:54`) still report `TS7006`; annotate them with `http.IncomingMessage`, `http.ServerResponse` and `http.IncomingMessage` only if they do. They did not — `http.createServer`/`http.request` inferred all three once `node:http` resolved, so no annotation was added.
+- [x] Fix every remaining diagnostic in `e2e/tests/` and `e2e/playwright.config.ts`, treating each as a real defect rather than something to suppress. Fixed `tests/food.spec.ts:313` (`TS2352`): the `getContext` stub cast went through `unknown` first, per the compiler's own suggestion, since the stub object never implements the full `CanvasRenderingContext2D` interface a browser context would.
+- [x] Use no `@ts-ignore`, no `@ts-expect-error`, and no `any` to reach zero; if a diagnostic resists, change the code or the tsconfig setting and explain the change in a comment. None were needed; `tsc --noEmit` reports zero diagnostics.
+- [x] Mark completed
 
 ### Task 4: Restore `NodeJS.ProcessEnv` on `resolveTarget`
 - [ ] Change the `env` parameter of `resolveTarget` in `e2e/tests/helpers/target.ts:60` from `Record<string, string | undefined>` to `NodeJS.ProcessEnv`.
