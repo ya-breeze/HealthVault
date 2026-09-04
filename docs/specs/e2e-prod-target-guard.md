@@ -43,14 +43,19 @@ construction. The default becomes the wip stack.
 The module refuses to resolve a prod target at all:
 
 ```ts
-export function resolveTarget(env: NodeJS.ProcessEnv): string
+export function resolveTarget(env: Record<string, string | undefined>): string
 ```
 
-throws when the resolved host is `192.168.1.54:8888` or `healthvault.ikoro.in` (the
+throws when the resolved target is `192.168.1.54:8888` or `healthvault.ikoro.in` (the
 Cloudflare hostname that tunnels to the same container — a deny-list of one port would
-miss it). Importing the module is the first thing Playwright does, so a poisoned
-`BASE_URL` fails before a browser starts, not midway through a run that has already
-written three meals.
+miss it). The two are matched differently on purpose: the LAN address needs its port,
+because hcw-wip is `:8892` on the same IP, while the hostname is matched without one,
+because that domain serves nothing but prod. Importing the module is the first thing
+Playwright does, so a poisoned `BASE_URL` fails before a browser starts, not midway
+through a run that has already written three meals.
+
+It also strips a trailing slash, since callers build request URLs by concatenating
+`${BASE_URL}/api/...`.
 
 Taking `env` as a parameter rather than reading `process.env` inside is what makes the
 guard testable without spawning a child process or mutating the ambient environment; the
@@ -81,32 +86,39 @@ make test-e2e E2E_ARGS=--retries=0
 
 ### Task 1: Resolve the target in one place
 
-- [ ] Add `e2e/tests/helpers/target.ts` exporting `resolveTarget(env)` and `BASE_URL`
-- [ ] Default to `http://192.168.1.54:8892` when `BASE_URL` is unset
-- [ ] Throw for `192.168.1.54:8888` and for `healthvault.ikoro.in`, on any scheme or path
-- [ ] Error message names the stack, says what `make test-e2e` does, and does not suggest a bypass
-- [ ] Mark completed
+- [x] Add `e2e/tests/helpers/target.ts` exporting `resolveTarget(env)` and `BASE_URL`
+- [x] Default to `http://192.168.1.54:8892` when `BASE_URL` is unset
+- [x] Throw for `192.168.1.54:8888` on any scheme or path, and for `healthvault.ikoro.in`
+      on any port — while leaving `192.168.1.54:8892` alone
+- [x] Strip a trailing slash, so `${BASE_URL}/api/...` never becomes `//api/...`
+- [x] Error message names the stack, says what `make test-e2e` does, and does not suggest a bypass
+- [x] Mark completed
 
 ### Task 2: Point every caller at it
 
-- [ ] `playwright.config.ts` takes `baseURL` from the module
-- [ ] Replace the `process.env.BASE_URL || …` line in all ten spec/helper files with the import
-- [ ] `helpers/food-day.ts` re-exports `BASE_URL` so `completeness` and `meal-history-layout` need no edit
-- [ ] `assertSameStack`'s comment no longer describes disagreeing defaults, because there is now one
-- [ ] No `process.env.BASE_URL` remains outside `target.ts`
-- [ ] Mark completed
+- [x] `playwright.config.ts` takes `baseURL` from the module
+- [x] Replace the `process.env.BASE_URL || …` line in all ten spec/helper files with the import
+- [x] `helpers/food-day.ts` re-exports `BASE_URL` so `completeness` and `meal-history-layout` need no edit
+- [x] `assertSameStack`'s comment no longer describes disagreeing defaults, because there is now one
+- [x] No `process.env.BASE_URL` remains outside `target.ts`
+- [x] Mark completed
 
 ### Task 3: Cover the guard
 
-- [ ] `e2e/tests/e2e-target.spec.ts` asserts the unset default, an explicit wip URL, both prod
-      spellings rejected, and an unrelated host allowed
-- [ ] Confirm `BASE_URL=http://192.168.1.54:8888 npx playwright test --list` fails before
+- [x] `e2e/tests/e2e-target.spec.ts` asserts the unset default, an explicit wip URL, the
+      trailing-slash strip, both prod spellings rejected, the neighbouring wip port still
+      allowed, and a non-URL rejected
+- [x] Confirm `BASE_URL=http://192.168.1.54:8888 npx playwright test --list` fails before
       collecting tests, and record the output in the PR
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Validate
 
-- [ ] `npx tsc --noEmit` on `e2e/` is clean
-- [ ] `make lint` and `make test` pass
+- [x] `tsc --noEmit` on `e2e/` reports no diagnostic this change did not already have.
+      It is not clean and was not before: `e2e/package.json` has no `@types/node`, so
+      `process`, `path` and `__dirname` are untyped across 40-odd pre-existing errors.
+      Installing it would fix them and is a separate change; the bar here is introducing
+      no new ones — which ruled out typing the guard's parameter as `NodeJS.ProcessEnv`
+- [x] `make lint` and `make test` pass (go vet clean, all Go packages ok, 176 Vitest cases)
 - [ ] `make test-e2e E2E_ARGS=--retries=0` passes against `hcw-wip` on this branch
 - [ ] Mark completed

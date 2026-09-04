@@ -1,13 +1,11 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+// This spec PUTs settings that change `timezone`, which cascades to
+// hard-deleting the caller's FoodDayCompletion rows (design.md §4 "Storage") —
+// one of the reasons `target.ts` refuses to resolve a prod URL at all.
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-// This spec PUTs settings that change `timezone` — which cascades to
-// hard-deleting the caller's FoodDayCompletion rows (design.md §4
-// "Storage") — so a no-env run must never land on the prod stack (8888) by
-// accident. Defaults to the WIP stack instead; override with BASE_URL to
-// target something else deliberately. Mirrors completeness.spec.ts.
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8892';
 
 async function login(page: Page) {
   await page.goto('/login/');
