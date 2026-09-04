@@ -99,15 +99,18 @@ async function isolateTouchFromCompatibilityMouseEvents(page: Page) {
   });
 }
 
-// A point at `fractionX` across the plot area, vertically centred. Taken from
-// the cartesian grid rather than the chart surface for two reasons: the
-// surface's leftmost ~65px are the Y axis, which Recharts' isInCartesianRange
-// excludes, and a fraction of the plot area maps directly onto the series, so
-// a case can say which data point it means to touch.
-async function plotPoint(page: Page, fractionX: number): Promise<{ x: number; y: number }> {
+// A point at `fractionX` across the plot area and `fractionY` down it
+// (vertically centred by default). Taken from the cartesian grid rather than
+// the chart surface for two reasons: the surface's leftmost ~65px are the Y
+// axis, which Recharts' isInCartesianRange excludes, and a fraction of the
+// plot area maps directly onto the series, so a case can say which data point
+// it means to touch.
+async function plotPoint(
+  page: Page, fractionX: number, fractionY = 0.5
+): Promise<{ x: number; y: number }> {
   const grid = await page.locator('.recharts-cartesian-grid').first().boundingBox();
   expect(grid, 'the plot area should have a bounding box').not.toBeNull();
-  return { x: grid!.x + grid!.width * fractionX, y: grid!.y + grid!.height / 2 };
+  return { x: grid!.x + grid!.width * fractionX, y: grid!.y + grid!.height * fractionY };
 }
 
 // Dispatches one real touch event using the browser's own Touch/TouchEvent
@@ -391,8 +394,20 @@ test.describe('Chart touch readout — mobile', () => {
 
   test('the chart surface computes touch-action: pan-y, and the tooltip sits above the touch point on a coarse pointer', async ({ page }) => {
     await login(page);
+    // Two records, not one. A tap also focuses the chart's <svg>, and Recharts'
+    // accessibility layer opens the tooltip at index 0 on that focus alone
+    // (keyboardEventsMiddleware's focusAction), positioned at the data point
+    // rather than at the finger. With a single record index 0 *is* the touched
+    // point and sits mid-plot, so both assertions below would hold with the
+    // touch seed and `position={{ y: 0 }}` reverted. Touching the second record
+    // and requiring the first's value to be absent keeps this case about touch.
     await mockData(page, {
-      weight: { raw: [{ id: 'w1', kilograms: 82.4, time: isoHoursAgo(2) }] },
+      weight: {
+        raw: [
+          { id: 'w1', kilograms: 80.1, time: isoHoursAgo(DAY_ZOOM_EARLY_HOURS) },
+          { id: 'w2', kilograms: 82.4, time: isoHoursAgo(DAY_ZOOM_LATE_HOURS) },
+        ],
+      },
       weight_goal: { raw: [] },
       height: { raw: [] },
     });
@@ -405,13 +420,14 @@ test.describe('Chart touch readout — mobile', () => {
     const touchAction = await surface.evaluate(el => getComputedStyle(el).touchAction);
     expect(touchAction).toBe('pan-y');
 
-    const box = await surface.boundingBox();
-    expect(box, 'chart surface should have a bounding box').not.toBeNull();
     await parkMouseAwayFromChart(page);
     await isolateTouchFromCompatibilityMouseEvents(page);
 
-    const touchY = box!.y + box!.height * 0.7;
-    const { x: touchX } = await plotPoint(page, 0.5);
+    // Low in the plot area, and on the second record. A touch-driven readout
+    // takes its coordinate's y from the finger (getActiveCartesianCoordinate
+    // returns `pointer.relativeY` in a horizontal layout), so an unpinned
+    // tooltip would sit at `touchY + offset` — well below the threshold below.
+    const { x: touchX, y: touchY } = await plotPoint(page, 0.9, 0.7);
     await page.touchscreen.tap(touchX, touchY);
 
     // Recharts renders the tooltip wrapper from mount and only toggles its
@@ -419,11 +435,12 @@ test.describe('Chart touch readout — mobile', () => {
     // readout opens. Its bounding box is therefore non-null and already above
     // `touchY - 40` when nothing was read at all, so measuring it straight
     // after the tap would assert nothing. Waiting for it to be visible and to
-    // carry the mocked value is what makes the check below a check on
+    // carry the touched record's value is what makes the check below a check on
     // `position={{ y: 0 }}` rather than on an unopened tooltip.
     const readout = tooltip(page);
     await expect(readout).toBeVisible();
     await expect(readout.getByText('82.4', { exact: true })).toBeVisible();
+    await expect(readout.getByText('80.1', { exact: true })).toHaveCount(0);
 
     const tooltipBox = await readout.boundingBox();
     expect(tooltipBox, 'tooltip should have a bounding box').not.toBeNull();
