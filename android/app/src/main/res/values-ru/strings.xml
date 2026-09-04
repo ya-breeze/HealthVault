@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HealthVault</string>
+    <string name="widget_label">Сводка HealthVault</string>
+
+    <!-- Setup / sign-in -->
+    <string name="setup_title">Подключение к HealthVault</string>
+    <string name="setup_server_url">Адрес сервера</string>
+    <string name="setup_http_warning">Этот адрес не использует HTTPS. Используйте только в доверенной сети.</string>
+    <string name="setup_username">Имя пользователя</string>
+    <string name="setup_password">Пароль</string>
+    <string name="setup_sign_in">Войти</string>
+    <string name="setup_error_invalid_credentials">Неверное имя пользователя или пароль.</string>
+    <string name="setup_error_locked_out">Слишком много попыток. Повторите через %1$d с.</string>
+    <string name="setup_error_access_challenge">Серверу нужен обход Access для /api/*.</string>
+    <string name="setup_error_unreachable">Не удалось подключиться к серверу. Проверьте адрес и соединение.</string>
+    <string name="setup_error_server">Ошибка сервера (%1$d). Попробуйте снова.</string>
+
+    <!-- Today screen -->
+    <string name="today_sign_out">Выйти</string>
+    <string name="today_loading">Загрузка…</string>
+    <string name="today_stale_snapshot">Показаны последние сохранённые данные.</string>
+
+    <!-- Причины неудачного обновления — см. комментарий в values/strings.xml. -->
+    <string name="today_refresh_locked_out">Слишком много запросов. Повторите через %1$d с.</string>
+    <string name="today_refresh_access_challenge">Серверу нужен обход Access для /api/*.</string>
+    <string name="today_refresh_unreachable">Не удалось подключиться к серверу. Проверьте соединение.</string>
+    <string name="today_refresh_server">Ошибка сервера (%1$d). Не удалось обновить.</string>
+    <string name="today_meal_count">Приёмов пищи: %1$d</string>
+    <string name="today_log_food">Добавить еду</string>
+    <string name="today_calories_of_target">%1$d / %2$d ккал</string>
+    <string name="today_calories_no_target">Потреблено %1$d ккал</string>
+    <string name="today_macro_protein">Белки</string>
+    <string name="today_macro_carbs">Углеводы</string>
+    <string name="today_macro_fat">Жиры</string>
+    <string name="today_no_meals_logged">Пока нет записей о еде</string>
+    <string name="today_last_logged_just_now">Только что</string>
+    <string name="today_last_logged_minutes_ago">%1$d мин назад</string>
+    <string name="today_last_logged_hours_ago">%1$d ч назад</string>
+    <string name="today_last_logged_days_ago">%1$d дн назад</string>
+
+    <!-- Nutrition target unavailability reasons -->
+    <string name="target_reason_missing_profile">Заполните профиль, чтобы увидеть дневную норму.</string>
+    <string name="target_reason_missing_measurements">Укажите рост и вес, чтобы увидеть дневную норму.</string>
+    <string name="target_reason_missing_goal_weight">Укажите целевой вес, чтобы увидеть дневную норму.</string>
+    <string name="target_reason_insufficient_activity_data">Недостаточно данных об активности для нормы.</string>
+    <string name="target_reason_unknown">Дневная норма сейчас недоступна.</string>
+</resources>
