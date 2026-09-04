@@ -46,16 +46,27 @@ The module refuses to resolve a prod target at all:
 export function resolveTarget(env: Record<string, string | undefined>): string
 ```
 
-throws when the resolved target is `192.168.1.54:8888` or `healthvault.ikoro.in` (the
-Cloudflare hostname that tunnels to the same container — a deny-list of one port would
-miss it). The two are matched differently on purpose: the LAN address needs its port,
-because hcw-wip is `:8892` on the same IP, while the hostname is matched without one,
-because that domain serves nothing but prod. Importing the module is the first thing
-Playwright does, so a poisoned `BASE_URL` fails before a browser starts, not midway
-through a run that has already written three meals.
+throws when the resolved target names hcw-prod. Two rules, because there are two kinds of
+name for the same container:
 
-It also strips a trailing slash, since callers build request URLs by concatenating
-`${BASE_URL}/api/...`.
+- **Addresses × ports.** `192.168.1.54`, plus the loopback spellings that reach it from
+  the TrueNAS host or an `ssh -L` forward, refused when combined with `8888` or `9888` —
+  nginx publishes `:80` and `:443`, so both are doors into the same database. The port is
+  required in the match because hcw-wip is `8892`/`9892` on that same IP and `make
+  run-backend` serves from loopback.
+- **Hostnames, port-agnostic.** `healthvault.ikoro.in` tunnels to prod and serves nothing
+  else, so no port on it is worth allowing.
+
+Importing the module is the first thing Playwright does, so a poisoned `BASE_URL` fails
+before a browser starts, not midway through a run that has already written three meals.
+
+Matching happens on a parsed `URL`, which folds away the exotic spellings for free
+(`:08888`, integer IPs, `user@`, uppercase); only the trailing-dot FQDN survives parsing
+and is stripped by hand. The function then returns **what it checked** — `origin +
+pathname`, trailing slash trimmed — rather than the raw string, so a value the deny-list
+never saw (`new URL()` tolerates surrounding whitespace) cannot reach callers, who build
+request URLs by concatenating `${BASE_URL}/api/...`. Non-http(s) schemes are refused
+outright: `url.origin` is the string `"null"` for those, which would sail past both rules.
 
 Taking `env` as a parameter rather than reading `process.env` inside is what makes the
 guard testable without spawning a child process or mutating the ambient environment; the
@@ -74,7 +85,7 @@ URL from the environment, so nothing about its behaviour changes.
 
 Excluded: the per-file `USER`/`PASS` constants, duplicated the same way. They carry no
 data-loss risk and folding them in would touch the same eleven files for an unrelated
-reason. `helpers/food-day.ts` keeps re-exporting `BASE_URL` so its consumers are untouched.
+reason.
 
 ## Validation Commands
 
@@ -98,7 +109,6 @@ make test-e2e E2E_ARGS=--retries=0
 
 - [x] `playwright.config.ts` takes `baseURL` from the module
 - [x] Replace the `process.env.BASE_URL || …` line in all ten spec/helper files with the import
-- [x] `helpers/food-day.ts` re-exports `BASE_URL` so `completeness` and `meal-history-layout` need no edit
 - [x] `assertSameStack`'s comment no longer describes disagreeing defaults, because there is now one
 - [x] No `process.env.BASE_URL` remains outside `target.ts`
 - [x] Mark completed
@@ -122,4 +132,23 @@ make test-e2e E2E_ARGS=--retries=0
 - [x] `make lint` and `make test` pass (go vet clean, all Go packages ok, 176 Vitest cases)
 - [x] `make test-e2e E2E_ARGS=--retries=0` passes against `hcw-wip` on this branch —
       213 passed, 1 skipped, 0 failed, first attempt; the stack stayed on `main` across the run
+- [x] Mark completed
+
+### Task 5: Close the review findings
+
+- [x] Refuse `9888` as well as `8888`: hcw-prod's nginx publishes `:80` and `:443`, so
+      `https://192.168.1.54:9888` was prod and the guard listed all 213 tests against it
+- [x] Refuse `localhost`, `127.0.0.1`, `[::1]` and `0.0.0.0` on those ports — how prod is
+      reached from the TrueNAS host, or through an `ssh -L 8888:localhost:8888` forward
+- [x] Strip the trailing dot from the hostname before matching, so `healthvault.ikoro.in.`
+      cannot walk past the Set lookup
+- [x] Return `origin + pathname` rather than the raw string, so a value `new URL()`
+      accepted but the deny-list never saw — `"http://…:8892 "` with a trailing space —
+      cannot reach callers
+- [x] Refuse non-http(s) schemes, whose `url.origin` is the string `"null"`
+- [x] Drop the `export { BASE_URL }` from `helpers/food-day.ts`: nothing imports it, and
+      the comment justifying it named two files that do not
+- [x] Cover each of the above in `e2e-target.spec.ts`, and re-confirm at config load that
+      `:9888`, `localhost:8888` and the trailing-dot FQDN are all refused
+- [x] Re-run the full gate after the change — 214 passed, 1 skipped, 0 failed, first attempt
 - [x] Mark completed

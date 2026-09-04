@@ -24,10 +24,8 @@ export const PASS = process.env.HCW_PASS || 'pass1';
 // Tests using this module PUT settings that change `timezone` — which cascades
 // to hard-deleting the caller's FoodDayCompletion rows (design.md §4 "Storage")
 // — and `display_language`, which every other spec file reads as English. Which
-// deployment that lands on is decided in one place for the whole suite, and
-// prod is refused there outright; re-exported so this module's consumers need
-// no second import.
-export { BASE_URL } from './target';
+// deployment that lands on is decided in one place for the whole suite, and prod
+// is refused there outright.
 import { BASE_URL } from './target';
 
 /** Meals per page on /food/history/ — `frontend/app/food/history/page.tsx`. */

@@ -18,8 +18,23 @@
 /** hcw-wip. Throwaway data, safe to seed and delete. */
 const WIP = 'http://192.168.1.54:8892';
 
-/** hcw-prod on the LAN. Matched with the port, since :8892 is next door. */
-const PROD_HOST_PORT = '192.168.1.54:8888';
+/**
+ * Every published port of hcw-prod. Its nginx container maps `:80` and `:443`
+ * (docker-compose.yml), so `http_port` and `https_port` from data.json are two
+ * doors into the same database — 8888 alone would leave 9888 open.
+ */
+const PROD_PORTS = new Set(['8888', '9888']);
+
+/**
+ * Names that reach that container on the LAN. The IP is how it is addressed from
+ * elsewhere on the network; the loopback spellings are how it is addressed from
+ * the TrueNAS host itself, or through an `ssh -L 8888:localhost:8888` forward,
+ * which is a normal way in from off-network.
+ *
+ * These are only refused *in combination with* a prod port: hcw-wip is
+ * 8892/9892 on the same IP, and `make run-backend` serves from loopback too.
+ */
+const PROD_ADDRESSES = new Set(['192.168.1.54', 'localhost', '127.0.0.1', '[::1]', '0.0.0.0']);
 
 /**
  * The Cloudflare tunnel hostname for the same container. Matched on hostname
@@ -40,7 +55,7 @@ const PROD_HOSTNAMES = new Set(['healthvault.ikoro.in']);
  * no `@types/node`, so that namespace does not resolve here. `process.env`
  * satisfies this shape regardless.
  *
- * @throws if `env.BASE_URL` names hcw-prod, or is not a URL at all.
+ * @throws if `env.BASE_URL` names hcw-prod, or is not an http(s) URL.
  */
 export function resolveTarget(env: Record<string, string | undefined>): string {
   const raw = env.BASE_URL || WIP;
@@ -52,7 +67,20 @@ export function resolveTarget(env: Record<string, string | undefined>): string {
     throw new Error(`BASE_URL is not a valid URL: ${JSON.stringify(raw)}`);
   }
 
-  if (url.host === PROD_HOST_PORT || PROD_HOSTNAMES.has(url.hostname)) {
+  // Both the suite and the check below assume an http(s) origin: `url.origin` is
+  // the string "null" for anything else, which would sail past the deny-list and
+  // then be concatenated into every request URL.
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`BASE_URL must be http or https, not ${url.protocol} — got ${JSON.stringify(raw)}`);
+  }
+
+  // `new URL()` has already lowercased the host and collapsed the exotic
+  // spellings (`:08888`, integer IPs, `user@…`) onto their canonical form. The
+  // trailing-dot FQDN is the one it keeps, so drop that here.
+  const hostname = url.hostname.replace(/\.$/, '');
+  const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+
+  if (PROD_HOSTNAMES.has(hostname) || (PROD_ADDRESSES.has(hostname) && PROD_PORTS.has(port))) {
     throw new Error(
       `refusing to run the e2e suite against ${url.host} — that is hcw-prod, which holds ` +
       `the only copy of real health data. This suite creates and deletes meals, ` +
@@ -62,10 +90,11 @@ export function resolveTarget(env: Record<string, string | undefined>): string {
     );
   }
 
-  // Callers build request URLs by concatenation — `${BASE_URL}/api/...` — so a
-  // trailing slash here would produce `//api/...`, which the router answers with
-  // a redirect the API clients do not follow.
-  return raw.replace(/\/+$/, '');
+  // Return what was *checked*, not what was typed: `new URL()` tolerates
+  // surrounding whitespace and odd spellings, so returning `raw` could hand
+  // callers a string the deny-list never saw. Trailing slashes go too — callers
+  // concatenate `${BASE_URL}/api/...`, which would otherwise be `//api/...`.
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
 }
 
 /** The deployment under test. Defaults to hcw-wip; never prod. */
