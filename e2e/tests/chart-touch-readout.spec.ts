@@ -72,13 +72,26 @@ async function centerOf(locator: Locator): Promise<{ x: number; y: number }> {
 // Dispatches one real touch event using the browser's own Touch/TouchEvent
 // constructors, per task 4's requirement — Playwright's page.touchscreen
 // only offers a single tap, not a multi-step drag with readings in between.
+//
+// The event target is resolved via elementFromPoint at (x, y), not the
+// chart-surface div itself: React only invokes a handler for a real native
+// event if the node it's attached to lies on the path from the event's
+// actual target up to the document root. RechartsWrapper's own touchmove
+// handler sits on a descendant of chart-surface (recharts-wrapper, inside
+// ResponsiveContainer), so an event whose target IS chart-surface bubbles
+// *up* past it and never reaches that inner listener — exactly like a real
+// touch, whose target is whatever's under the finger, not the outer div.
 async function touchDispatch(
   page: Page, testId: string, type: 'touchstart' | 'touchmove' | 'touchend', x: number, y: number
 ) {
   await page.evaluate(
     ({ testId, type, x, y }) => {
-      const el = document.querySelector(`[data-testid="${testId}"]`);
-      if (!el) throw new Error(`no element with data-testid="${testId}"`);
+      const surface = document.querySelector(`[data-testid="${testId}"]`);
+      if (!surface) throw new Error(`no element with data-testid="${testId}"`);
+      const el = document.elementFromPoint(x, y);
+      if (!el || !surface.contains(el)) {
+        throw new Error(`(${x}, ${y}) is not inside the chart surface`);
+      }
       const touch = new Touch({ identifier: 1, target: el, clientX: x, clientY: y, pageX: x, pageY: y });
       const touches = type === 'touchend' ? [] : [touch];
       el.dispatchEvent(new TouchEvent(type, {
@@ -199,7 +212,10 @@ test.describe('Chart touch readout — mobile', () => {
     const box = tooltip(page);
     await expect(box).toBeVisible();
     await expect(box.getByText('Avg', { exact: true })).toBeVisible();
-    await expect(box.getByText('79.4', { exact: true })).toBeVisible();
+    // A single bucket seeds the EMA from its own avg (emaSeries), so Trend
+    // reads identically to Avg here — matched with .first() since both are
+    // genuinely present as separate tooltip entries.
+    await expect(box.getByText('79.4', { exact: true }).first()).toBeVisible();
     await expect(box.getByText(EN_DASH_RANGE('78.0', '81.0'), { exact: true })).toBeVisible();
     await expect(box.getByText('Trend', { exact: true })).toBeVisible();
   });
@@ -268,8 +284,12 @@ test.describe('Chart touch readout — mobile', () => {
 
     await touchDispatch(page, 'chart-surface', 'touchmove', midX, y);
     await touchDispatch(page, 'chart-surface', 'touchmove', rightX, y);
+    // touchEventsMiddleware batches touchmove handling behind
+    // requestAnimationFrame, so the label update lands a tick after the
+    // dispatch call returns — an assertion that retries (not a one-shot
+    // textContent() read) is what actually waits for it.
+    await expect(label, 'label should change as the finger moves across the plot').not.toHaveText(startLabel ?? '');
     const movedLabel = await label.textContent();
-    expect(movedLabel, 'label should change as the finger moves across the plot').not.toBe(startLabel);
 
     // Sticky after lift: the label from the last touchmove stays on screen
     // once the finger is lifted — touch has no mouseleave to clear it.

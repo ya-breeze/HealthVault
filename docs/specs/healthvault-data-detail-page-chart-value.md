@@ -81,13 +81,13 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Add a scrub case: dispatch `touchstart`, several `touchmove`s across the plot and `touchend` from `page.evaluate` using the `Touch` and `TouchEvent` constructors, and assert the tooltip's label changes between two x positions and that the readout survives `touchend`.
 - [x] Assert the chart surface computes `touch-action: pan-y`, and that on a coarse pointer the tooltip box sits in the upper part of the plot area rather than at the touch point.
 - [x] Add one case at `{ width: 1280, height: 900 }` with `hasTouch: false` asserting `page.mouse.move` over the chart still shows the tooltip — the no-mouse-regression criterion.
-- [ ] Run the new file against the deployed stack **before** the production change is deployed (or with it reverted) and record that it fails; a tap that passes through Chromium's compatibility mouse events would otherwise make the whole file vacuous.
-- [ ] Mark completed
+- [x] Run the new file against the deployed stack **before** the production change is deployed (or with it reverted) and record that it fails; a tap that passes through Chromium's compatibility mouse events would otherwise make the whole file vacuous.
+- [x] Mark completed
 
 ### Task 5: Review and validate against the deployed stack
-- [ ] Re-read every modified file for leftover props, hydration-unsafe hook initialization, and consistency with the surrounding code.
-- [ ] Run `make lint` and `make test`, and state in the summary that they cover the backend and the pure-function suite only.
-- [ ] Deploy the branch to `hcw-wip` and run `make test-e2e E2E_ARGS=--retries=0` against it; the suite must be green on the first attempt, not on retry.
-- [ ] Confirm the existing `e2e/tests/mobile-tap-targets.spec.ts` data-detail cases and `e2e/tests/chart-day-boundary.spec.ts` still pass — both drive the page this change touches.
-- [ ] Summarize which files changed and what each change does.
-- [ ] Mark completed
+- [x] Re-read every modified file for leftover props, hydration-unsafe hook initialization, and consistency with the surrounding code.
+- [x] Run `make lint` and `make test`, and state in the summary that they cover the backend and the pure-function suite only.
+- [x] Deploy the branch to `hcw-wip` and run `make test-e2e E2E_ARGS=--retries=0` against it; the suite must be green on the first attempt, not on retry.
+- [x] Confirm the existing `e2e/tests/mobile-tap-targets.spec.ts` data-detail cases and `e2e/tests/chart-day-boundary.spec.ts` still pass — both drive the page this change touches.
+- [x] Summarize which files changed and what each change does.
+- [x] Mark completed
