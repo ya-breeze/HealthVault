@@ -27,10 +27,16 @@ Deliberately excluded:
 - **Touching the needs-attention link** (`frontend/app/page.tsx:319-335`), which also points at `/food/history/`. It is a conditional alert about specific meals, not a navigation duplicate, and it renders only when there is something to act on.
 
 ## Validation Commands
+- `make lint`
+- `make test`
+- `make test-e2e`
 
-- make lint
-- make test
-- make test-e2e
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
 
 ### Task 1: Hide the Log food block below the `sm` breakpoint
 
