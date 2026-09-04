@@ -40,11 +40,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 1: Hide the Log food block below the `sm` breakpoint
 
-- [ ] In `frontend/app/page.tsx`, wrap the `dashboard.logFood` heading (line 337) and the three-card `div` (line 340) in one container element with `className="hidden sm:block"` and `data-testid="log-food-links"`.
-- [ ] Leave the heading's `mb-3` and the row's `mb-8` as they are, so desktop spacing does not shift.
-- [ ] Add a short comment above the wrapper explaining that it is the mirror of `BottomNav`'s `sm:hidden`: the bar carries these three destinations below the breakpoint and is hidden above it, so exactly one surface offers them at any width, and the desktop header carries no food route (`frontend/components/nav.ts:38`).
-- [ ] Confirm no other dashboard element depends on the removed vertical space (the More Data section at `frontend/app/page.tsx:369` follows it directly and needs no change).
-- [ ] Mark completed
+- [x] In `frontend/app/page.tsx`, wrap the `dashboard.logFood` heading (line 337) and the three-card `div` (line 340) in one container element with `className="hidden sm:block"` and `data-testid="log-food-links"`.
+- [x] Leave the heading's `mb-3` and the row's `mb-8` as they are, so desktop spacing does not shift.
+- [x] Add a short comment above the wrapper explaining that it is the mirror of `BottomNav`'s `sm:hidden`: the bar carries these three destinations below the breakpoint and is hidden above it, so exactly one surface offers them at any width, and the desktop header carries no food route (`frontend/components/nav.ts:38`).
+- [x] Confirm no other dashboard element depends on the removed vertical space (the More Data section at `frontend/app/page.tsx:369` follows it directly and needs no change).
+- [x] Mark completed
 
 ### Task 2: Cover both widths in the e2e suite
 

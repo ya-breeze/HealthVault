@@ -334,31 +334,38 @@ export default function Dashboard() {
           </a>
         )}
 
-        <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-          {t('dashboard.logFood')}
-        </p>
-        <div className="flex gap-2.5 mb-8">
-          <a
-            href="/food/upload/"
-            className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
-          >
-            <CameraIcon className="w-4 h-4 text-accent" />
-            {t('dashboard.photo')}
-          </a>
-          <a
-            href="/food/manual/"
-            className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
-          >
-            <PencilIcon className="w-4 h-4 text-accent" />
-            {t('dashboard.manual')}
-          </a>
-          <a
-            href="/food/history/"
-            className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
-          >
-            <HistoryIcon className="w-4 h-4 text-accent" />
-            {t('dashboard.history')}
-          </a>
+        {/* Mirror of BottomNav's `sm:hidden`: the bar carries these same
+            three destinations (photo, manual, history) below the `sm`
+            breakpoint and is hidden at and above it, while the desktop
+            header sheds no food route (frontend/components/nav.ts:38). So
+            exactly one of the two surfaces offers them at any width. */}
+        <div className="hidden sm:block" data-testid="log-food-links">
+          <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
+            {t('dashboard.logFood')}
+          </p>
+          <div className="flex gap-2.5 mb-8">
+            <a
+              href="/food/upload/"
+              className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
+            >
+              <CameraIcon className="w-4 h-4 text-accent" />
+              {t('dashboard.photo')}
+            </a>
+            <a
+              href="/food/manual/"
+              className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
+            >
+              <PencilIcon className="w-4 h-4 text-accent" />
+              {t('dashboard.manual')}
+            </a>
+            <a
+              href="/food/history/"
+              className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
+            >
+              <HistoryIcon className="w-4 h-4 text-accent" />
+              {t('dashboard.history')}
+            </a>
+          </div>
         </div>
 
         {/* Read-only: hidden when the user chose to hide it. Edit mode: always
