@@ -5,7 +5,7 @@ ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 # which the USDA food index depends on. Keep it on build, test and vet alike.
 GO_TAGS := sqlite_fts5
 
-.PHONY: all build test test-backend test-frontend test-e2e lint run-backend
+.PHONY: all build test test-backend test-frontend test-e2e lint lint-e2e run-backend
 
 all: build
 
@@ -35,8 +35,15 @@ $(ROOT_DIR)e2e/node_modules/.install-stamp: $(ROOT_DIR)e2e/package-lock.json
 	@cd $(ROOT_DIR)e2e && npm ci
 	@touch $(ROOT_DIR)e2e/node_modules/.install-stamp
 
-lint:
+# This suite mutates a live stack (creates/deletes meals, rewrites settings,
+# writes records against hcw-wip), so a typo here is a real edit, not a test
+# failure someone shrugs off. Gated into `lint` rather than left advisory,
+# because an advisory check that nobody has to pass is a check nobody reads.
+lint: lint-e2e
 	@cd $(ROOT_DIR)/backend && go vet -tags $(GO_TAGS) ./...
+
+lint-e2e: $(ROOT_DIR)e2e/node_modules/.install-stamp
+	@cd $(ROOT_DIR)e2e && npm run typecheck --silent
 
 run-backend: build
 	@HCW_DBPATH=$(ROOT_DIR)hcw.db \
