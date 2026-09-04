@@ -34,14 +34,16 @@ export function clearSession(): void {
   cached = null;
 }
 
-// Suppresses the login page's automatic Cf-Access exchange attempt — see
-// useLogout, which sets this right after ending a session, and the login
-// page, which reads it on mount and clears it only when the user clicks the
-// explicit Access sign-in button.
+// Suppresses the automatic Cf-Access exchange — see useLogout, which sets
+// this right after ending a session, and the login page's sign-in button,
+// which is the only thing that clears it.
 //
-// Without this, loading any page after logging out would silently
-// re-authenticate through Access on the very next mount-time attempt, and
-// logout would look broken: the user would never actually land on /login.
+// Without this, logging out would be undone by the next 401 anywhere in the
+// app: lib/api.ts's accessExchange would silently re-authenticate through
+// Access and the user would never actually land on /login. That api-layer
+// check is the one that enforces this flag; the login page reads it too, but
+// only to skip a mount-time attempt whose sole possible outcome would be an
+// error message nobody asked for.
 //
 // sessionStorage, not localStorage: the suppression is per-tab and
 // per-session on purpose, so it should not outlive the browser tab that

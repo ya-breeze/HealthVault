@@ -24,6 +24,20 @@ function installFetch(handler: Handler) {
   return calls;
 }
 
+// The `node` environment has no sessionStorage, and lib/session.ts reads its
+// absence as "not suppressed" — the right default for a browser that denies
+// storage, but also the one that would make a suppression case pass without
+// testing anything. Cases that care about the flag install a store.
+function installSessionStorage(initial: Record<string, string> = {}) {
+  const store = new Map(Object.entries(initial));
+  vi.stubGlobal('sessionStorage', {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  });
+  return store;
+}
+
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
 const unauthorized = () => new Response('unauthorized', { status: 401 });
@@ -187,5 +201,139 @@ describe('Cf-Access exchange as a second recovery step', () => {
     await expect(api.getTodaySummary()).rejects.toMatchObject({ status: 401 });
     expect(refreshes).toBe(1);
     expect(exchanges, 'the exchange is tried exactly once, never looped').toBe(1);
+  });
+
+  it('runs one exchange for concurrent 401s rather than one per caller', async () => {
+    // Every exchange mints its own year-long refresh token row server-side, so
+    // the dashboard's ordinary shape — several calls dispatched together, all
+    // 401 — used to leave a pile of them behind on one page load.
+    let exchanges = 0;
+    let exchanged = false;
+    let releaseExchange = () => {};
+    const exchangeGate = new Promise<void>(r => { releaseExchange = r; });
+
+    installFetch(async path => {
+      if (path.endsWith('/auth/refresh')) return unauthorized();
+      if (path.endsWith('/auth/cf-access')) {
+        exchanges++;
+        // Held open so both callers are inside the exchange at the same time.
+        // That overlap is the whole case: a shared in-flight promise can only
+        // dedup callers that actually overlap, and releasing early would let
+        // the second one arrive after the first had already finished.
+        await exchangeGate;
+        exchanged = true;
+        return noContent();
+      }
+      if (path.includes('/summary/today')) return exchanged ? json({ date: '2026-08-31' }) : unauthorized();
+      if (path.includes('/data/weight')) return exchanged ? json([]) : unauthorized();
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    const first = api.getTodaySummary();
+    const second = api.data('weight');
+    // Let both calls get their 401, fail their refresh, and reach the
+    // exchange before the one in flight is allowed to complete.
+    await new Promise(r => setTimeout(r, 5));
+    releaseExchange();
+
+    await expect(first).resolves.toBeTruthy();
+    await expect(second).resolves.toBeTruthy();
+    expect(exchanges, 'each exchange mints its own year-long refresh token').toBe(1);
+  });
+});
+
+describe('logout suppression of the Cf-Access exchange', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('does not exchange after a logout, for a 401 raised anywhere in the app', async () => {
+    // The login page checks the flag too, but that check protects only the
+    // login page. This is the path that made logout look undone: a background
+    // fetch — LanguageContext's settings poll is the real one — 401s, refresh
+    // cannot fix it, and the exchange silently restores the session the user
+    // had just ended, without any page ever navigating to /login.
+    let exchanges = 0;
+    installSessionStorage({ 'hcw:accessSignInSuppressed': '1' });
+    installFetch(async path => {
+      if (path.endsWith('/auth/refresh')) return unauthorized();
+      if (path.endsWith('/auth/cf-access')) {
+        exchanges++;
+        return noContent();
+      }
+      if (path.includes('/summary/today')) return unauthorized();
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await expect(api.getTodaySummary()).rejects.toMatchObject({ status: 401 });
+    expect(exchanges, 'logging out must not be undone by the next background 401').toBe(0);
+  });
+
+  it('still exchanges once the flag has been cleared', async () => {
+    // The guard has to be a suppression, not a removal: after the login page's
+    // sign-in button clears the flag, the ordinary recovery must work again.
+    let exchanges = 0;
+    let exchanged = false;
+    const store = installSessionStorage({ 'hcw:accessSignInSuppressed': '1' });
+    store.delete('hcw:accessSignInSuppressed');
+
+    installFetch(async path => {
+      if (path.endsWith('/auth/refresh')) return unauthorized();
+      if (path.endsWith('/auth/cf-access')) {
+        exchanges++;
+        exchanged = true;
+        return noContent();
+      }
+      if (path.includes('/summary/today')) return exchanged ? json({ date: '2026-08-31' }) : unauthorized();
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await expect(api.getTodaySummary()).resolves.toBeTruthy();
+    expect(exchanges).toBe(1);
+  });
+
+  it('reports a suppressed api.cfAccessLogin as a failure rather than as a sign-in', async () => {
+    // The login page routes to `/` when this resolves, so resolving without
+    // having exchanged anything would send the user to a page their absent
+    // session cannot load.
+    installSessionStorage({ 'hcw:accessSignInSuppressed': '1' });
+    installFetch(async path => {
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await expect(api.cfAccessLogin()).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe('api.cfAccessLogin', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // The login page branches on the status alone — 404 hides the Access
+  // control, 403 says the Google account is not authorized — so routing this
+  // call through the shared exchange must not blur the two together.
+  it.each([404, 403, 401])('surfaces status %i as an ApiError the login page can branch on', async status => {
+    installFetch(async path => {
+      if (path.endsWith('/auth/cf-access')) return new Response('nope', { status });
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await expect(api.cfAccessLogin()).rejects.toMatchObject({ status });
+  });
+
+  it('resolves on a successful exchange', async () => {
+    installFetch(async path => {
+      if (path.endsWith('/auth/cf-access')) return noContent();
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await expect(api.cfAccessLogin()).resolves.toBeUndefined();
   });
 });

@@ -68,6 +68,12 @@ export default function LoginPage() {
   // Skipped entirely right after a logout — see lib/session.ts's doc comment
   // on the suppression flag — otherwise ending a session would silently
   // re-authenticate on the very next page load.
+  //
+  // lib/api.ts's accessExchange checks the same flag, and that check is the
+  // one that actually enforces logout across the app. This one is not
+  // redundant with it: it keeps a suppressed mount from rendering a sign-in
+  // failure the user never asked for, since the api layer can only answer by
+  // failing.
   useEffect(() => {
     if (accessSignInSuppressed()) return;
     attemptAccessSignIn();

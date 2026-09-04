@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -164,6 +166,85 @@ func TestVerifyUnknownKid(t *testing.T) {
 	token := signToken(t, key, "some-other-kid", baseClaims(v.issuer, "test-aud"))
 	if _, err := v.Verify(context.Background(), token); err == nil {
 		t.Fatal("Verify: want error for unknown kid, got nil")
+	}
+}
+
+// TestUnknownKidRefetchCapUnderConcurrency pins the guarantee the package
+// documents — an unrecognized kid triggers at most one JWKS refetch per
+// minute — for the case that actually threatens it: several unrecognized kids
+// arriving at once rather than one at a time. Before the check-and-claim in
+// key(), every goroutine that slipped into the gap between the check and the
+// post-fetch stamp issued its own outbound request, so the cap held only when
+// nothing was concurrent.
+//
+// The cache is warmed first on purpose. A cold Verifier's key set is stale,
+// and a stale key set is refetched whatever the kid, so the cap does not
+// govern it; the window the cap governs opens only once the cache is fresh.
+func TestUnknownKidRefetchCapUnderConcurrency(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	var fetches atomic.Int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cdn-cgi/access/certs", func(w http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
+		// Hold the response long enough that every goroutine below runs its
+		// own check while this fetch is still in flight. Without the delay a
+		// winner can finish before the others even start, and the case would
+		// pass against the unfixed code for the wrong reason.
+		time.Sleep(100 * time.Millisecond)
+		set := jwks{Keys: []jwk{{
+			Kid: testKid,
+			Kty: "RSA",
+			N:   base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
+			E:   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes()),
+		}}}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(set) //nolint:errcheck
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	teamDomain := strings.TrimPrefix(srv.URL, "http://")
+	v := New(teamDomain, "test-aud")
+	v.certsURL = srv.URL + "/cdn-cgi/access/certs"
+	v.issuer = "https://" + teamDomain
+
+	if _, err := v.Verify(context.Background(), signToken(t, key, testKid, baseClaims(v.issuer, "test-aud"))); err != nil {
+		t.Fatalf("warm-up Verify: %v", err)
+	}
+	if got := fetches.Load(); got != 1 {
+		t.Fatalf("warm-up JWKS fetches = %d, want 1", got)
+	}
+
+	// Signed on this goroutine: signToken reports failure through t.Fatalf,
+	// which may only be called from the goroutine running the test.
+	token := signToken(t, key, "unrecognized-kid", baseClaims(v.issuer, "test-aud"))
+
+	const goroutines = 8
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make([]error, goroutines)
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, errs[i] = v.Verify(context.Background(), token)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err == nil {
+			t.Errorf("goroutine %d: Verify accepted a token signed under an unrecognized kid", i)
+		}
+	}
+	if got := fetches.Load(); got != 2 {
+		t.Errorf("JWKS fetches = %d, want 2 (the warm-up plus the single claimed refetch)", got)
 	}
 }
 

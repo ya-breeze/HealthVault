@@ -132,16 +132,40 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Identity, error) {
 // set as needed. A stale cache always triggers a refetch; a cache that is
 // still fresh but simply lacks kid refetches at most once a minute, per
 // unknownKidRefetchInterval.
+//
+// That once-a-minute cap is enforced by check-and-claim: the goroutine that
+// passes the check stamps lastUnknownKid before it releases the mutex, so a
+// concurrent goroutine holding the same unrecognized kid loses the check and
+// is turned away without fetching. Claiming afterwards — once the fetch had
+// already returned — left the window between the check and the stamp wide
+// open, and every goroutine that arrived inside it fetched, which is exactly
+// the unbounded outbound traffic the cap exists to prevent.
+//
+// Check-and-claim rather than single-flight because the cap is a rate limit,
+// not a deduplication: the second caller must be refused, not made to wait
+// for a fetch whose result is already known not to contain its kid. The
+// mutex is still never held across fetchKeys, so verification of an
+// already-cached kid never queues behind a network call.
+//
+// The claim is taken whether or not the refetch turns up kid, because it
+// counts outbound requests rather than failures. A genuine key rotation is
+// unaffected: Cloudflare publishes the old and new keys together, so the one
+// refetch that a rotation costs caches both. The stamp is renewed after a
+// refetch that still did not find kid, which is what bounds the stale-cache
+// path — it takes no claim, since a stale cache had to be refetched anyway.
 func (v *Verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	v.mu.Lock()
-	if key, ok := v.keys[kid]; ok && time.Since(v.fetchedAt) < keySetTTL {
+	fresh := time.Since(v.fetchedAt) < keySetTTL
+	if key, ok := v.keys[kid]; ok && fresh {
 		v.mu.Unlock()
 		return key, nil
 	}
-	fresh := time.Since(v.fetchedAt) < keySetTTL
-	if fresh && time.Since(v.lastUnknownKid) < unknownKidRefetchInterval {
-		v.mu.Unlock()
-		return nil, fmt.Errorf("unknown key id %q", kid)
+	if fresh {
+		if time.Since(v.lastUnknownKid) < unknownKidRefetchInterval {
+			v.mu.Unlock()
+			return nil, fmt.Errorf("unknown key id %q", kid)
+		}
+		v.lastUnknownKid = time.Now()
 	}
 	v.mu.Unlock()
 
