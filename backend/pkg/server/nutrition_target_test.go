@@ -355,6 +355,60 @@ func TestNutritionTarget_SuccessWithInferredActivityFromSteps(t *testing.T) {
 	}
 }
 
+// Two overlapping step records per trailing day (as two sync sources writing
+// the same walk would produce) must not push the inferred Activity Level
+// tier up: fetchDailySteps collapses the overlap before
+// trailingStepsAverage ever sees the numbers. Each day's real, uncollapsed
+// total is 6000 (-> "Lightly active", 5000-7499/day); if the duplicate
+// record were summed instead of collapsed, the same days would read as
+// 12000/day and cross into "Very active" (10000-12499/day).
+func TestNutritionTarget_DuplicatedStepsDoNotInflateActivityTier(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male"}`)
+	createRecord(t, st, userID, "weight", 80)
+	createRecord(t, st, userID, "height", 1.80)
+	createRecord(t, st, userID, "weight_goal", 75)
+
+	now := time.Now().UTC()
+	for i := 1; i <= 7; i++ {
+		ts := now.AddDate(0, 0, -i)
+		// Two overlapping intervals for the same walk: idx_steps_user_time is
+		// unique on (user_id, start_time), so they can't share a start_time —
+		// offset the second by a minute and nest it fully inside the first, so
+		// the collapse drops it whole rather than trimming it.
+		for _, rec := range []database.Steps{
+			{UserID: userID, SourcePayloadID: uuid.New(), StartTime: ts, EndTime: ts.Add(2 * time.Hour), Count: 6000},
+			{UserID: userID, SourcePayloadID: uuid.New(), StartTime: ts.Add(time.Minute), EndTime: ts.Add(time.Hour), Count: 6000},
+		} {
+			rec.ID = uuid.New()
+			rec.FamilyID = familyID
+			if err := st.DB().Create(&rec).Error; err != nil {
+				t.Fatalf("create steps day -%d: %v", i, err)
+			}
+		}
+	}
+
+	h := server.NutritionTargetHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newNutritionTargetRequest(userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		ActivityTier       string  `json:"activity_tier"`
+		ActivityMultiplier float64 `json:"activity_multiplier"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.ActivityTier != "Lightly active" || resp.ActivityMultiplier != 1.375 {
+		t.Errorf("activity tier/multiplier = %q/%v, want %q/%v (duplicate steps must not inflate the tier)",
+			resp.ActivityTier, resp.ActivityMultiplier, "Lightly active", 1.375)
+	}
+}
+
 // A genuine storage failure while resolving inputs must surface as a 500,
 // never be folded into one of the endpoint's 422 "unmet precondition"
 // reasons, which are reserved for "the user hasn't set this up yet".

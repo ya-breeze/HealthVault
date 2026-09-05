@@ -130,6 +130,101 @@ func TestQueryAggregate_MonthBucketGroupsAcrossDays(t *testing.T) {
 	}
 }
 
+func TestQueryAggregateSteps_OverlappingRecordsSumOnce(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	day1 := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
+	for _, rec := range []database.Steps{
+		{UserID: userID, SourcePayloadID: uuid.New(), StartTime: day1, EndTime: day1.Add(2 * time.Hour), Count: 3000},
+		// Nested inside the first record's interval: a duplicate copy of the
+		// same walk from a second sync source.
+		{UserID: userID, SourcePayloadID: uuid.New(), StartTime: day1.Add(time.Minute), EndTime: day1.Add(time.Hour), Count: 2900},
+	} {
+		rec.ID = uuid.New()
+		rec.FamilyID = familyID
+		if err := s.DB().Create(&rec).Error; err != nil {
+			t.Fatalf("create steps: %v", err)
+		}
+	}
+
+	tr := database.TimeRange{From: day1.Add(-time.Hour), To: day1.Add(3 * time.Hour)}
+	results, err := s.QueryAggregateSteps(database.BucketDay, userID, tr)
+	if err != nil {
+		t.Fatalf("QueryAggregateSteps: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 day bucket, got %d: %+v", len(results), results)
+	}
+	if got := toInt64(results[0]["sum"]); got != 3000 {
+		t.Errorf("sum = %v, want 3000 (the overlapping duplicate must be dropped, not summed)", got)
+	}
+	if got := toInt64(results[0]["count"]); got != 1 {
+		t.Errorf("count = %v, want 1 kept record", got)
+	}
+}
+
+func TestQueryAggregateSteps_NonOverlappingRecordsSumToTotal(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	day1 := time.Date(2026, time.March, 15, 8, 0, 0, 0, time.UTC)
+	for _, rec := range []database.Steps{
+		{UserID: userID, SourcePayloadID: uuid.New(), StartTime: day1, EndTime: day1.Add(time.Hour), Count: 3000},
+		{UserID: userID, SourcePayloadID: uuid.New(), StartTime: day1.Add(2 * time.Hour), EndTime: day1.Add(3 * time.Hour), Count: 2000},
+	} {
+		rec.ID = uuid.New()
+		rec.FamilyID = familyID
+		if err := s.DB().Create(&rec).Error; err != nil {
+			t.Fatalf("create steps: %v", err)
+		}
+	}
+
+	tr := database.TimeRange{From: day1.Add(-time.Hour), To: day1.Add(4 * time.Hour)}
+	results, err := s.QueryAggregateSteps(database.BucketDay, userID, tr)
+	if err != nil {
+		t.Fatalf("QueryAggregateSteps: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 day bucket, got %d: %+v", len(results), results)
+	}
+	if got := toInt64(results[0]["sum"]); got != 5000 {
+		t.Errorf("sum = %v, want 5000", got)
+	}
+	if got := toInt64(results[0]["count"]); got != 2 {
+		t.Errorf("count = %v, want 2 kept records", got)
+	}
+}
+
+func TestQueryAggregateSteps_RecordStraddlingMidnightLandsInStartDayBucket(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	start := time.Date(2026, time.March, 15, 23, 0, 0, 0, time.UTC)
+	end := time.Date(2026, time.March, 16, 1, 0, 0, 0, time.UTC)
+	rec := database.Steps{UserID: userID, SourcePayloadID: uuid.New(), StartTime: start, EndTime: end, Count: 1500}
+	rec.ID = uuid.New()
+	rec.FamilyID = familyID
+	if err := s.DB().Create(&rec).Error; err != nil {
+		t.Fatalf("create steps: %v", err)
+	}
+
+	tr := database.TimeRange{From: start.Add(-time.Hour), To: end.Add(time.Hour)}
+	results, err := s.QueryAggregateSteps(database.BucketDay, userID, tr)
+	if err != nil {
+		t.Fatalf("QueryAggregateSteps: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 day bucket (the record's start day), got %d: %+v", len(results), results)
+	}
+	if got := toStr(results[0]["bucket_start"]); got != "2026-03-15T00:00:00Z" {
+		t.Errorf("bucket_start = %v, want 2026-03-15T00:00:00Z (the record's own start day)", got)
+	}
+	if got := toInt64(results[0]["sum"]); got != 1500 {
+		t.Errorf("sum = %v, want 1500", got)
+	}
+}
+
 func TestQueryAggregateBloodPressure_DualColumns(t *testing.T) {
 	s := newTestStorage(t)
 	userID, familyID := seedUserAndFamily(t, s)

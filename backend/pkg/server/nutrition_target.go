@@ -246,25 +246,26 @@ func localCalendarToday(now time.Time, loc *time.Location) (localMidnight, label
 }
 
 // fetchDailySteps loads the per-day step sums trailingStepsAverage needs,
-// reusing the existing GET /api/data/steps?bucket=day aggregation
-// (design.md: "without needing per-record timestamps finer than what
-// ...already returns"). loc resolves the local calendar day boundary the
-// bucket and the window both use: QueryAggregate's bucket_start values are
-// local-calendar-date labels carried at UTC midnight, so the query's lower
-// bound must be the real UTC instant of the window's first *local*
-// midnight — a UTC-midnight instant would clip the earliest local day for a
-// user ahead of UTC. The upper bound is local midnight today, excluding
-// today's still-accumulating local day, so the 28 local calendar days end
-// the user's local yesterday (design.md "Trailing window").
+// via QueryAggregateSteps rather than the generic ?bucket=day aggregation:
+// the generic path is a plain SUM(count) with no overlap handling, and an
+// over-counted step history (see check-the-health-data spec) would push the
+// inferred Activity Level tier up and inflate the Nutrition Target's
+// calorie budget through the multiplier. loc resolves the local calendar day
+// boundary the window uses: the query's lower bound must be the real UTC
+// instant of the window's first *local* midnight — a UTC-midnight instant
+// would clip the earliest local day for a user ahead of UTC. The upper bound
+// is local midnight today, excluding today's still-accumulating local day,
+// so the 28 local calendar days end the user's local yesterday (design.md
+// "Trailing window"). QueryAggregateSteps itself still buckets by UTC
+// calendar day (see ADR-012-steps-collapse-overlapping-intervals-on-read);
+// only the window's from/to bounds are local-day-aware here.
 func fetchDailySteps(storage database.Storage, userID uuid.UUID, loc *time.Location, now time.Time) ([]dailySteps, error) {
 	localMidnightToday, _ := localCalendarToday(now, loc)
 	tr := database.TimeRange{
 		From: localMidnightToday.AddDate(0, 0, -trailingWindowDays),
 		To:   localMidnightToday,
 	}
-	rows, err := storage.QueryAggregate(
-		"steps", "start_time", "count", database.AggFamilyCumulative, database.BucketDay, loc, userID, tr,
-	)
+	rows, err := storage.QueryAggregateSteps(database.BucketDay, userID, tr)
 	if err != nil {
 		return nil, err
 	}

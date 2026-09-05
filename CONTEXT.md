@@ -77,6 +77,12 @@ _Avoid_: Nutrition widget, food widget
 Whether the resolved user has ever recorded at least one row of a given data type, computed over all time — the `GET /api/data-types/presence` signal used to hide a type everywhere on the dashboard (vitals grid and More Data) when the user has no data for it at all. Distinct from a Dashboard Card's `hidden` flag (a user preference, only meaningful for types that do have presence) and from the vitals grid's 7-day recency window (a metric with presence but no data in the last 7 days still renders its card, just with the "no data" sparkline placeholder).
 _Avoid_: "Has data" (ambiguous with the recency window), "visible" (conflates with the `hidden` preference)
 
+### Steps
+
+**Step Interval Collapse**:
+The read-time rule that removes double-counted steps: records sorted by `(start_time, end_time)` are walked with a watermark of the latest `end_time` counted so far, and any record whose `end_time` doesn't extend past it is dropped as fully covered by already-counted time, while every other record is kept whole. Runs on every steps read path (`SummarySteps`, `QueryAggregateSteps`, and `fetchDailySteps` via the latter) so Health Connect's per-origin duplicate copies of the same walk (phone sensor, watch, a fitness app, ...) aren't summed twice. Never apportions a count to a partial interval — a record either survives whole or is dropped whole. See ADR-012 and `GET /api/data/steps/diagnostics`, which reports the raw vs. collapsed totals this rule produces.
+_Avoid_: Deduplication (suggests matching exact-duplicate rows, which this isn't — two records with different `start_time`/`end_time` values collapse too, as long as their intervals overlap), step merging (suggests two records' counts get combined into one; a kept record's count is never modified, only kept or dropped whole)
+
 ### Nutrition targets
 
 **Goal Weight**:

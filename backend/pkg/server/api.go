@@ -182,9 +182,11 @@ func CreateRecordHandler(storage database.Storage) http.HandlerFunc {
 }
 
 // queryBucketed dispatches a bucketed aggregation query to the right storage
-// method: the two multi-value-column special cases, or the generic
-// single-valueCol path for every other type. loc resolves the chart's local
-// day/month boundary — see resolveViewerTimezone.
+// method: the multi-value-column special cases, steps (whose own overlap
+// collapse the generic SUM(count) path can't express — see
+// QueryAggregateSteps), or the generic single-valueCol path for every other
+// type. loc resolves the chart's local day/month boundary — see
+// resolveViewerTimezone.
 func queryBucketed(
 	storage database.Storage, typeName string, info typeInfo, bucket database.Bucket, loc *time.Location,
 	userID uuid.UUID, tr database.TimeRange,
@@ -200,6 +202,8 @@ func queryBucketed(
 		return storage.QueryAggregateBloodPressure(bucket, loc, userID, tr)
 	case "nutrition":
 		return storage.QueryAggregateNutrition(bucket, loc, userID, tr)
+	case "steps":
+		return storage.QueryAggregateSteps(bucket, userID, tr)
 	default:
 		return storage.QueryAggregate(info.table, info.timeCol, info.valueCol, info.family, bucket, loc, userID, tr)
 	}

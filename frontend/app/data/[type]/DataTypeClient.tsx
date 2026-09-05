@@ -1,11 +1,11 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   LineChart, Line, BarChart, Bar, ComposedChart, Area, ReferenceArea, ReferenceLine, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer, TooltipValueType,
 } from 'recharts';
-import { api, DataType, WRITABLE_TYPES } from '@/lib/api';
+import { api, DataType, WRITABLE_TYPES, StepsDiagnosticDay } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import {
   TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue,
@@ -16,6 +16,8 @@ import {
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import AddRecordForm from '@/components/AddRecordForm';
 import TapTarget from '@/components/ui/TapTarget';
+import { useLanguage } from '@/components/LanguageContext';
+import { InfoIcon } from '@/components/icons';
 
 interface Props {
   type: string;
@@ -172,6 +174,18 @@ export default function DataTypeClient({ type }: Props) {
   const [weightContextStatus, setWeightContextStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showHeightForm, setShowHeightForm] = useState(false);
+  // steps-only diagnostic (check-the-health-data spec). null covers both
+  // "not this type" and "the fetch failed" — either way the disclosure below
+  // stays hidden; an empty array (fetch succeeded, no records in range) still
+  // renders it, just with no rows. Never reset by a failure alone: the fetch
+  // effect below only writes null before a steps fetch starts or when one
+  // rejects, so a stale successful result never lingers past a type change.
+  const [stepsDiagnostics, setStepsDiagnostics] = useState<StepsDiagnosticDay[] | null>(null);
+  // Collapsed by default — same rationale as LoggingGapCard's hintOpen: a
+  // diagnostic table is worth reading once, not on every visit.
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const diagnosticsId = useId();
+  const { t } = useLanguage();
 
   // refreshKey is in the dep list too: rangeForZoom's `to` is `now()` at the
   // time this memo runs, so a record just created via AddRecordForm (timed
@@ -225,6 +239,20 @@ export default function DataTypeClient({ type }: Props) {
         .catch(() => setChartRows([]));
     } else {
       setChartRows([]);
+    }
+
+    // Steps-only, and only for the caller's own data — the backend endpoint
+    // is self-only, and a family member's ?user= view has no delete/write
+    // controls either, so a diagnostic aimed at "which layer of *your* data
+    // is wrong" doesn't belong there. Isolated from the raw/chart fetches
+    // above: a failure here must not touch either, matching how this effect
+    // already treats the weight-context fetches as their own failure domain.
+    if (dataType === 'steps' && !userParam) {
+      api.stepsDiagnostics(from, to)
+        .then(setStepsDiagnostics)
+        .catch(() => setStepsDiagnostics(null));
+    } else {
+      setStepsDiagnostics(null);
     }
 
     if (dataType === 'weight') {
@@ -566,6 +594,17 @@ export default function DataTypeClient({ type }: Props) {
     return [...joined, ...syntheticRows];
   }, [showProjectionLine, projection, bucketBandData, projectionGranularity, zoom]);
 
+  // Evaluated across every returned day, not per-row: the spec's "plain-
+  // language reading" sits once beneath the whole table, and more than one
+  // of these can be true at once (they're independent layers, not mutually
+  // exclusive causes), so each true condition gets its own line rather than
+  // picking a single "most likely" one.
+  const diagnosticsHasDuplicates = !!stepsDiagnostics?.some(d => d.raw_sum > d.collapsed_sum);
+  const diagnosticsHasMultipleSyncs = !!stepsDiagnostics?.some(d => d.payload_count > 1);
+  const diagnosticsHasDayBoundaryDiff = !!stepsDiagnostics?.some(d => d.local_day_sum !== d.collapsed_sum);
+  const diagnosticsNothingToReport = !!stepsDiagnostics
+    && !diagnosticsHasDuplicates && !diagnosticsHasMultipleSyncs && !diagnosticsHasDayBoundaryDiff;
+
   const handleConfirmDelete = async (id: string) => {
     setDeleting(true);
     setDeleteError(null);
@@ -814,6 +853,61 @@ export default function DataTypeClient({ type }: Props) {
             )}
           </div>
         </div>
+        )}
+
+        {stepsDiagnostics !== null && (
+          <div className="bg-bg-elevated rounded-[12px] border border-border p-4 mb-4">
+            {/* Same hint-then-detail shape as LoggingGapCard's footnote
+                disclosure: the whole row toggles, aria-expanded carries the
+                open state, and the content region is rendered (hidden, not
+                unmounted) so aria-controls always names a real element. */}
+            <TapTarget
+              compactOnMouse
+              onClick={() => setDiagnosticsOpen(open => !open)}
+              aria-expanded={diagnosticsOpen}
+              aria-controls={diagnosticsId}
+              data-testid="steps-diagnostics-toggle"
+              className="flex w-full items-center justify-between gap-2 text-left text-xs text-text-muted"
+            >
+              <span>{t('stepsDiagnostics.title')}</span>
+              <span className="sr-only">{t('stepsDiagnostics.hintToggle')}</span>
+              <InfoIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            </TapTarget>
+            <div id={diagnosticsId} hidden={!diagnosticsOpen} data-testid="steps-diagnostics-detail" className="mt-3">
+              <div className="overflow-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnDay')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnRaw')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnCollapsed')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnDropped')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnPayloads')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnLocalDay')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {stepsDiagnostics.map(d => (
+                      <tr key={d.bucket_start}>
+                        <td className="px-2 py-2 text-text">{new Date(d.bucket_start).toLocaleDateString()}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.raw_sum}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.collapsed_sum}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.dropped_records}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.payload_count}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.local_day_sum}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-xs text-text-muted mt-2 space-y-1" data-testid="steps-diagnostics-reading">
+                {diagnosticsHasDuplicates && <p>{t('stepsDiagnostics.readingDuplicates')}</p>}
+                {diagnosticsHasMultipleSyncs && <p>{t('stepsDiagnostics.readingMultipleSyncs')}</p>}
+                {diagnosticsHasDayBoundaryDiff && <p>{t('stepsDiagnostics.readingDayBoundary')}</p>}
+                {diagnosticsNothingToReport && <p>{t('stepsDiagnostics.readingNothing')}</p>}
+              </div>
+            </div>
+          </div>
         )}
 
         <div className="bg-bg-elevated rounded-[12px] border border-border overflow-auto">
