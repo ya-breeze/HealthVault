@@ -854,7 +854,7 @@ func (c *gatedRecognizeClient) EstimateWeights(context.Context, []byte, string, 
 	return &vision.WeightEstimateResult{}, nil
 }
 
-func (c *gatedRecognizeClient) Clarify(context.Context, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
+func (c *gatedRecognizeClient) Clarify(context.Context, string, []vision.Item, []vision.ClarifyTurn, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
 
@@ -864,6 +864,10 @@ func (c *gatedRecognizeClient) Select(context.Context, []vision.ItemCandidates) 
 
 func (c *gatedRecognizeClient) Translate(context.Context, string) (string, error) {
 	return "", nil
+}
+
+func (c *gatedRecognizeClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
+	return &vision.RecognizeResult{}, nil
 }
 
 // Regression: the claim used to be `WHERE status IN (eligible...)`, which

@@ -1,7 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { clearSession } from '@/lib/session';
+import { clearSession, suppressAccessSignIn } from '@/lib/session';
 import { useLanguage } from '@/components/LanguageContext';
 import { useToast } from '@/components/Toast';
 
@@ -33,6 +33,10 @@ export function useLogout(): () => Promise<void> {
     // populated on a failed logout keeps the chrome rendering from the
     // session the user still has.
     clearSession();
+    // Without this, the login page's mount-time Cf-Access exchange would
+    // silently re-authenticate this tab before the user ever saw /login —
+    // see lib/session.ts's doc comment on the suppression flag.
+    suppressAccessSignIn();
     router.push('/login');
   };
 }

@@ -1,13 +1,11 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+// These tests PUT settings that change `timezone`, needed so the fixture dates
+// below line up exactly with what resolveLoggingGapWindow computes — one of the
+// reasons `target.ts` refuses to resolve a prod URL at all.
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-// Like completeness.spec.ts, these tests PUT settings that change `timezone`
-// (needed so the fixture dates below line up exactly with what
-// resolveLoggingGapWindow computes) — default to the WIP stack rather than
-// risking a no-env run landing on prod; override with BASE_URL to target
-// something else deliberately.
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8892';
 
 async function login(page: Page) {
   await page.goto('/login/');
@@ -84,6 +82,21 @@ interface LoggingGapFixture {
   weightStatus?: number;
   summaryStatus?: number;
   nutritionTargetCalories?: number;
+  // Defaults low enough (see mockLoggingGapApis) that every fixture predating
+  // the sustainability warning — none of which think about BMR at all — keeps
+  // its existing assertions unchanged: their logged-intake numbers all clear
+  // a BMR this low with room to spare.
+  nutritionTargetBmr?: number;
+  // The derivation fields the top row's ⓘ disclosure reads (docs/specs/idea.md
+  // task 6), given fixed defaults here so most fixtures — which only care
+  // about the gap line — don't have to spell them out.
+  nutritionTargetMeasuredWeightKg?: number;
+  nutritionTargetGoalWeightKg?: number;
+  nutritionTargetHeightM?: number;
+  nutritionTargetAgeYears?: number;
+  nutritionTargetSex?: 'male' | 'female';
+  nutritionTargetActivityMultiplier?: number;
+  nutritionTargetActivityTier?: string;
   nutritionTargetUnmetReason?: string;
   // Today's consumed totals, for the card's top row. Defaults to an untouched
   // day (all zeros), which is what most of these fixtures want — they exist to
@@ -125,6 +138,14 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?:
           protein_grams: 150,
           carbs_grams: 250,
           fat_grams: 70,
+          bmr: fixture.nutritionTargetBmr ?? 1000,
+          measured_weight_kg: fixture.nutritionTargetMeasuredWeightKg ?? 80,
+          goal_weight_kg: fixture.nutritionTargetGoalWeightKg ?? 75,
+          height_m: fixture.nutritionTargetHeightM ?? 1.8,
+          age_years: fixture.nutritionTargetAgeYears ?? 35,
+          sex: fixture.nutritionTargetSex ?? 'male',
+          activity_multiplier: fixture.nutritionTargetActivityMultiplier ?? 1.55,
+          activity_tier: fixture.nutritionTargetActivityTier ?? 'Moderately active',
         };
     return route.fulfill({
       json: {
@@ -202,6 +223,66 @@ function onTrackFixture(): LoggingGapFixture {
     today: { calories: 1200, protein: 80, carbs: 130, fat: 35 },
     completeness: windowDates.map(date => ({ date, state: 'complete' })),
     dailyTotals: windowDates.map(date => ({ date, calories: 1700, unconfirmed_meals: 0 })),
+  };
+}
+
+// A weight series losing about 1.4%/week (sustainability.ts's
+// MAX_SUSTAINABLE_LOSS_PCT_PER_WEEK is 1.0), well clear of the band even on
+// the conservative slope+se bound: the series is built linear end-to-end, so
+// the EMA has converged and the regression's own residuals — and therefore
+// its standard error — are close to zero. `startKg` is chosen so weight is
+// close to 100kg right at the window's end, keeping the percentage close to
+// the 1.4% the -0.2 kg/day rate implies there. The logged-calorie history
+// (500 kcal/day against a 2500 target) is the same as clearGapFixture's, so
+// the logging gap itself reports `gap`, not `on_track` — this fixture is
+// about the rate check firing alone, not about the two warnings interacting.
+function tooFastLossFixture(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  const dailyDeltaKg = -0.2;
+  const totalDays = dateRange(leadInStart, windowEnd).length - 1;
+  const startKg = 100 - dailyDeltaKg * totalDays;
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, startKg, dailyDeltaKg),
+    nutritionTargetCalories: 2500,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 500, unconfirmed_meals: 0 })),
+  };
+}
+
+// on_track numbers (same weight trend and logged intake as onTrackFixture,
+// so the gap line reads on_track just as it does there) whose mean logged
+// intake, 1700 kcal, sits clearly under a mocked BMR of 2000 — a shortfall
+// past the 5% margin (threshold 1900). The loss rate stays inside the band
+// (0.7%/week), so only the below-BMR line should appear.
+function belowBmrFixture(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.1),
+    nutritionTargetCalories: 2500,
+    nutritionTargetBmr: 2000,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 1700, unconfirmed_meals: 0 })),
+  };
+}
+
+// The gating regression (design.md's "The interaction that makes this worth
+// a spec rather than an afternoon"): the same BMR (2000) and a mean logged
+// intake (1200) that would clear the below-BMR margin on its own — but the
+// weight trend implies 1730, a difference of 530 outside the interval, so the
+// logging gap itself reports `gap`, not `on_track`. The intake check must
+// stay silent because it cannot vouch for self-reported food the weight
+// trend disagrees with this much.
+function belowBmrGatedOffFixture(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.1),
+    nutritionTargetCalories: 2500,
+    nutritionTargetBmr: 2000,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 1200, unconfirmed_meals: 0 })),
   };
 }
 
@@ -302,6 +383,58 @@ test.describe('Logging Gap Card', () => {
       await page.goto('/');
       await expect(card.getByTestId('logging-gap-not-enough-data')).toBeVisible({ timeout: 15_000 });
       await expect(card.getByTestId('nutrition-today-calories')).toContainText('1200 / 2500 kcal');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test("the top row's ⓘ explains the target and opens independently of the gap line's own hint", async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, onTrackFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const todayHint = card.getByTestId('nutrition-today-hint');
+      const todayToggle = card.getByTestId('nutrition-today-hint-toggle');
+      await expect(todayToggle).toBeVisible({ timeout: 15_000 });
+
+      // Hidden by default, matching the gap line's own hint.
+      await expect(todayHint).toBeHidden();
+      await expect(todayToggle).toHaveAttribute('aria-expanded', 'false');
+
+      await todayToggle.click();
+      await expect(todayHint).toBeVisible();
+      await expect(todayToggle).toHaveAttribute('aria-expanded', 'true');
+      // The confirmed-meals rule, explaining the *first* number in the row.
+      await expect(todayHint).toContainText('confirmed meals only');
+      // The fixture's BMR (1000, mockLoggingGapApis' default), activity
+      // multiplier (1.55) and tier label (Moderately active -> "moderately
+      // active"), and goal weight (75 -> "75.0").
+      await expect(todayHint).toContainText('1000 kcal');
+      await expect(todayHint).toContainText('1.55');
+      await expect(todayHint).toContainText('moderately active');
+      await expect(todayHint).toContainText('75.0 kg');
+
+      // Opening the top row's hint must not open the gap line's own hint.
+      const gapHint = card.getByTestId('logging-gap-hint');
+      await expect(gapHint).toBeHidden();
+
+      // Close the top row's hint, then check the reverse: opening the gap
+      // line's own hint must not open the top row's — the two panels are
+      // independent state, not one shared toggle.
+      await todayToggle.click();
+      await expect(todayHint).toBeHidden();
+      await card.getByTestId('logging-gap-hint-toggle').click();
+      await expect(gapHint).toBeVisible();
+      await expect(todayHint).toBeHidden();
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -511,6 +644,106 @@ test.describe('Logging Gap Card', () => {
       await expect(card.getByTestId('logging-gap-error')).toBeVisible({ timeout: 15_000 });
       await expect(card.getByTestId('nutrition-today-calories')).toHaveCount(0);
       await expect(card.getByTestId('logging-gap-value')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a weight trend losing faster than the sustainable 1%/week shows the loss-rate warning', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, tooFastLossFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const lossRate = card.getByTestId('nutrition-sustainability-loss-rate');
+      await expect(lossRate).toBeVisible({ timeout: 15_000 });
+      await expect(lossRate).toContainText(/\d+\.\d%/);
+      await expect(lossRate).toContainText('faster than the sustainable 1%');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('logged intake clearly below a mocked BMR under on_track shows the below-BMR warning, not the loss-rate one', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, belowBmrFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-on-track')).toBeVisible({ timeout: 15_000 });
+      const belowBmr = card.getByTestId('nutrition-sustainability-below-bmr');
+      await expect(belowBmr).toBeVisible();
+      await expect(belowBmr).toContainText('1700');
+      await expect(belowBmr).toContainText('2000');
+      await expect(card.getByTestId('nutrition-sustainability-loss-rate')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('the same intake and BMR numbers stay silent once the logging gap is a real gap, not on_track', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, belowBmrGatedOffFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-value')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-sustainability-below-bmr')).toHaveCount(0);
+      await expect(card.getByTestId('nutrition-sustainability')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('the middle row is absent for on_track, not_enough_data and the gap-only retrieval error', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, onTrackFixture());
+      await page.goto('/');
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-on-track')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-sustainability')).toHaveCount(0);
+
+      await mockLoggingGapApis(page, noDataFixture());
+      await page.goto('/');
+      await expect(card.getByTestId('logging-gap-not-enough-data')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-sustainability')).toHaveCount(0);
+
+      await mockLoggingGapApis(page, { ...clearGapFixture(), weightStatus: 500 });
+      await page.goto('/');
+      await expect(card.getByTestId('logging-gap-error')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-sustainability')).toHaveCount(0);
     } finally {
       await putSettings(request, cookies, original);
     }

@@ -38,14 +38,18 @@ func (m *mockStorage) QueryRecords(_ string, _ string, _ uuid.UUID, _ database.T
 	return nil, nil
 }
 func (m *mockStorage) QueryAggregate(
-	_, _, _ string, _ database.AggFamily, _ database.Bucket, _ uuid.UUID, _ database.TimeRange,
+	_, _, _ string, _ database.AggFamily, _ database.Bucket, _ *time.Location, _ uuid.UUID, _ database.TimeRange,
 ) ([]map[string]any, error) {
 	return nil, nil
 }
-func (m *mockStorage) QueryAggregateBloodPressure(_ database.Bucket, _ uuid.UUID, _ database.TimeRange) ([]map[string]any, error) {
+func (m *mockStorage) QueryAggregateBloodPressure(
+	_ database.Bucket, _ *time.Location, _ uuid.UUID, _ database.TimeRange,
+) ([]map[string]any, error) {
 	return nil, nil
 }
-func (m *mockStorage) QueryAggregateNutrition(_ database.Bucket, _ uuid.UUID, _ database.TimeRange) ([]map[string]any, error) {
+func (m *mockStorage) QueryAggregateNutrition(
+	_ database.Bucket, _ *time.Location, _ uuid.UUID, _ database.TimeRange,
+) ([]map[string]any, error) {
 	return nil, nil
 }
 func (m *mockStorage) QueryAggregateSteps(_ database.Bucket, _ uuid.UUID, _ database.TimeRange) ([]map[string]any, error) {

@@ -275,6 +275,30 @@ function validDaysInWindow(
 }
 
 /**
+ * The weight-only half of the hard floor (design.md decision 5): fewer than two raw survivors,
+ * more than three rejections, bootstrap sibling ambiguity, or a last weigh-in older than the
+ * freshness window. Split out from `checkHardFloor` because the sustainability rate-of-loss check
+ * (`sustainability.ts`'s `loss_too_fast`) depends on weight alone and must not be silenced by a
+ * sparse food log — `checkHardFloor`'s remaining condition, the valid-food-day count, has nothing
+ * to do with whether the weight trend itself is trustworthy, and gating the rate check behind it
+ * would silence the user most likely to be losing too fast unnoticed: one who weighs in daily but
+ * logs food only a few days out of twenty-eight.
+ */
+export function checkWeightFloor(
+  kept: DayValueRecord[],
+  rejected: DayValueRecord[],
+  bootstrapSiblingAmbiguous: boolean,
+  mostRecentKeptDayOffset: number,
+  windowLastDayOffset: number
+): boolean {
+  if (kept.length < HARD_FLOOR_MIN_RAW_SURVIVORS) return true;
+  if (rejected.length > HARD_FLOOR_MAX_REJECTIONS) return true;
+  if (bootstrapSiblingAmbiguous) return true;
+  if (windowLastDayOffset - mostRecentKeptDayOffset > HARD_FLOOR_FRESHNESS_DAYS) return true;
+  return false;
+}
+
+/**
  * Hard floor (design.md decision 5) — evaluated before any EMA/regression/SE is ever computed, so
  * the too-few-points cases below can never reach a regression attempt. `kept`/`rejected` must
  * already be filtered by the caller to the visible window (via `windowStartDayOffset`);
@@ -291,16 +315,12 @@ export function checkHardFloor(
   mostRecentKeptDayOffset: number,
   windowLastDayOffset: number
 ): boolean {
-  if (kept.length < HARD_FLOOR_MIN_RAW_SURVIVORS) return true;
-  if (rejected.length > HARD_FLOOR_MAX_REJECTIONS) return true;
-  if (bootstrapSiblingAmbiguous) return true;
+  if (checkWeightFloor(kept, rejected, bootstrapSiblingAmbiguous, mostRecentKeptDayOffset, windowLastDayOffset)) {
+    return true;
+  }
 
   const validDayCount = validDaysInWindow(perDayWindowData, windowStartDayOffset, windowLastDayOffset).length;
-  if (validDayCount < HARD_FLOOR_MIN_VALID_DAYS) return true;
-
-  if (windowLastDayOffset - mostRecentKeptDayOffset > HARD_FLOOR_FRESHNESS_DAYS) return true;
-
-  return false;
+  return validDayCount < HARD_FLOOR_MIN_VALID_DAYS;
 }
 
 /**
@@ -320,6 +340,23 @@ export type LoggingGapResult =
   | { kind: 'gap'; value: number; interval: number }
   | { kind: 'on_track' }
   | { kind: 'not_enough_data' };
+
+/**
+ * Mean Logged Intake over the valid days inside `[windowStartDayOffset, windowLastDayOffset]`
+ * (`validDaysInWindow`, per `isValidDay`) — exported so the sustainability check
+ * (`sustainability.ts`'s `intake_below_bmr`) reads the exact same mean `computeLoggingGap` computed
+ * its own comparison from, rather than a second average that could drift from it. `null` when no
+ * valid day survives, the same case `computeLoggingGap` turns into `not_enough_data`.
+ */
+export function meanLoggedIntake(
+  perDayWindowData: Record<number, DayWindowData>,
+  windowStartDayOffset: number,
+  windowLastDayOffset: number
+): number | null {
+  const validDays = validDaysInWindow(perDayWindowData, windowStartDayOffset, windowLastDayOffset);
+  if (validDays.length === 0) return null;
+  return validDays.reduce((acc, d) => acc + d.calories, 0) / validDays.length;
+}
 
 /**
  * Implied Intake, Mean Logged Intake, the Logging Gap value and its interval (design.md decisions
@@ -360,10 +397,9 @@ export function computeLoggingGap(
   windowLastDayOffset: number
 ): LoggingGapResult {
   const impliedIntake = nutritionTargetCalories + regression.slope * KCAL_PER_KG;
-  const validDays = validDaysInWindow(perDayWindowData, windowStartDayOffset, windowLastDayOffset);
-  if (validDays.length === 0) return { kind: 'not_enough_data' };
-  const meanLoggedIntake = validDays.reduce((acc, d) => acc + d.calories, 0) / validDays.length;
-  const value = impliedIntake - meanLoggedIntake;
+  const meanIntake = meanLoggedIntake(perDayWindowData, windowStartDayOffset, windowLastDayOffset);
+  if (meanIntake === null) return { kind: 'not_enough_data' };
+  const value = impliedIntake - meanIntake;
 
   const formulaError = FORMULA_ERROR_RATE * nutritionTargetCalories;
   const trendErrorKcal = se === null ? Infinity : KCAL_PER_KG * se;

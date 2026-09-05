@@ -1,9 +1,9 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext, type Locator } from '@playwright/test';
 import path from 'path';
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8888';
 
 async function login(page: Page) {
   await page.goto('/login/');
@@ -52,12 +52,30 @@ async function cookieHeader(page: Page): Promise<string> {
   return cookies.map(c => `${c.name}=${c.value}`).join('; ');
 }
 
+// Full read/write of the account's settings blob — used to force a known
+// display_language before the non-English description test below and
+// restore whatever the account had beforehand, regardless of what the test
+// itself changed. Mirrors completeness.spec.ts's identical pair.
+async function getSettings(request: APIRequestContext, cookies: string): Promise<Record<string, unknown>> {
+  const res = await request.get(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies } });
+  return res.json();
+}
+
+async function putSettings(request: APIRequestContext, cookies: string, settings: Record<string, unknown>) {
+  const res = await request.put(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies }, data: settings });
+  if (!res.ok()) throw new Error(`failed to write settings: ${res.status()} ${await res.text()}`);
+}
+
 test.describe('Manual meal entry', () => {
   test('creates a confirmed meal with direct macros and shows it on review', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
 
     await page.goto('/food/manual/');
+    // The item-by-item form (ManualItemEditor and its own submit) now lives
+    // behind a collapsed disclosure — see the description-first rework of
+    // this page — so it has to be opened before its controls exist.
+    await page.getByTestId('describe-structured-toggle').click();
     await page.getByPlaceholder('Food name').fill('E2E Test Snack');
     await page.getByRole('tab', { name: 'Enter macros' }).click();
     await page.locator('label:has-text("Calories") input').fill('250');
@@ -67,14 +85,18 @@ test.describe('Manual meal entry', () => {
     await page.waitForURL(/\/food\/review\/\?meal=/);
 
     const url = new URL(page.url());
-    const mealId = url.searchParams.get('meal')!;
+    const mealId = url.searchParams.get('meal');
     expect(mealId).toBeTruthy();
 
-    await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
-    await expect(page.getByText('E2E Test Snack')).toBeVisible();
-    await expect(page.getByText('250', { exact: true })).toBeVisible();
-
-    await deleteMeal(request, cookies, mealId);
+    // The meal exists in the real account from here on, so the assertions
+    // below run inside a try: a failing one must still clean up after itself.
+    try {
+      await expect(page.getByText('Confirmed', { exact: true })).toBeVisible();
+      await expect(page.getByText('E2E Test Snack')).toBeVisible();
+      await expect(page.getByText('250', { exact: true })).toBeVisible();
+    } finally {
+      if (mealId) await deleteMeal(request, cookies, mealId);
+    }
   });
 
   // fix-ambiguous-search-button: the reference-search path on this page had
@@ -99,6 +121,8 @@ test.describe('Manual meal entry', () => {
     );
 
     await page.goto('/food/manual/');
+    // See the previous test: the structured form is now behind a disclosure.
+    await page.getByTestId('describe-structured-toggle').click();
     await page.getByPlaceholder('Food name').fill('Перепелиное яйцо');
 
     // Mirrors the reported repro: clicking the already-active "Search food"
@@ -111,6 +135,98 @@ test.describe('Manual meal entry', () => {
     await expect(page.getByText('Searched as:')).toBeVisible();
     await expect(page.locator('strong', { hasText: 'quail egg' })).toBeVisible();
     await expect(page.getByText(/Egg, quail, whole, raw/)).toBeVisible();
+  });
+
+  // The new description-first entry path (idea #23): a real, synchronous
+  // call to the vision model, mirroring the photo-upload test's "reaches a
+  // terminal or actionable review state" pattern — recognition from a short
+  // free-text description is inherently non-deterministic, so this asserts
+  // only that analysis reached a real outcome, not a specific one.
+  test('describes a meal in free text and reaches a terminal or actionable review state', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+
+    await page.goto('/food/manual/');
+    await page.getByTestId('describe-textarea').fill('a bowl of chicken soup with a slice of bread');
+    await page.getByTestId('describe-submit').click();
+
+    // The describe request blocks on the synchronous vision call, same as
+    // photo upload — the page navigates to the review route once it returns.
+    await page.waitForURL(/\/food\/review\/\?meal=/, { timeout: 90_000 });
+
+    const url = new URL(page.url());
+    const mealId = url.searchParams.get('meal');
+    expect(mealId).toBeTruthy();
+
+    // See the first test in this file: the meal is real from here on, so the
+    // assertion below cleans up whether it passes or fails.
+    try {
+      await expect(
+        page.getByText(/Review needed|Needs clarification|Analysis failed/)
+      ).toBeVisible({ timeout: 15_000 });
+    } finally {
+      if (mealId) await deleteMeal(request, cookies, mealId);
+    }
+  });
+
+  // The central case idea #23 reports as broken: a non-English description
+  // must reach the model as-is (via Describe, passed the account's real
+  // Display Language) and come back with at least one item name in that
+  // language, rather than forced into English the way the old search-first
+  // form was. Restores the account's prior settings afterward regardless of
+  // outcome, since display_language is shared real-account state other
+  // specs (and the account owner) depend on.
+  test('a non-English description is accepted and produces an item not forced into English', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const priorSettings = await getSettings(request, cookies);
+    // Declared out here so the finally below can delete the meal however the
+    // try exits. The language assertion at the end of this test is the exact
+    // regression it exists to catch, so the failing path is the one that most
+    // needs to clean up — and with `retries: 1` a leak there costs two meals
+    // in the real account per run.
+    let mealId: string | null = null;
+
+    try {
+      await putSettings(request, cookies, { ...priorSettings, display_language: 'ru' });
+
+      await page.goto('/food/manual/');
+      await page.getByTestId('describe-textarea').fill('тарелка борща со сметаной и кусок хлеба');
+      await page.getByTestId('describe-submit').click();
+      await page.waitForURL(/\/food\/review\/\?meal=/, { timeout: 90_000 });
+
+      const url = new URL(page.url());
+      mealId = url.searchParams.get('meal');
+      expect(mealId).toBeTruthy();
+
+      // The review screen's status text renders in the account's own Display
+      // Language (Russian here), so it can't be matched by the English
+      // status strings the other test above checks — poll the API for a
+      // terminal status instead, which is language-independent.
+      let meal: { status: string; items?: { name: string }[] } = { status: 'processing' };
+      await expect(async () => {
+        const mealRes = await request.get(`${BASE_URL}/api/food/meals/${mealId}`, { headers: { Cookie: cookies } });
+        meal = await mealRes.json();
+        expect(meal.status).not.toBe('processing');
+      }).toPass({ timeout: 15_000 });
+      expect(['pending_review', 'pending_clarification', 'failed']).toContain(meal.status);
+
+      // A real model failure (status 'failed') leaves no items at all —
+      // failMeal only flips status, and a freshly created described meal
+      // starts with none — so the language check below only applies to the
+      // two statuses that actually carry recognized items.
+      if (meal.status !== 'failed') {
+        const items: { name: string }[] = meal.items ?? [];
+        const hasNonEnglishName = items.some(item => /[^\x00-\x7F]/.test(item.name));
+        expect(hasNonEnglishName, `expected a non-ASCII item name, got ${JSON.stringify(items.map(i => i.name))}`).toBe(true);
+      }
+
+    } finally {
+      if (mealId) {
+        await deleteMeal(request, cookies, mealId);
+      }
+      await putSettings(request, cookies, priorSettings);
+    }
   });
 });
 
@@ -290,7 +406,114 @@ test.describe('In-app camera capture', () => {
     // The page itself must still be alive and showing the app, not a crash screen.
     await expect(page.getByRole('heading', { name: /log a meal/i })).toBeVisible();
   });
+
+  // Same navigator.mediaDevices mock 'camera capture uses the same hinted
+  // upload path' (above) establishes, so these tests exercise the real
+  // component layout without needing an actual camera in CI.
+  async function mockCamera(page: Page) {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => {} }] }) },
+      });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, get: () => 1920 });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, get: () => 1080 });
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get: () => null,
+        set: () => {},
+      });
+    });
+  }
+
+  async function boxOf(locator: Locator, label: string) {
+    const box = await locator.boundingBox();
+    expect(box, `${label} should have a bounding box`).not.toBeNull();
+    return box!;
+  }
+
+  // Regression for a real bug: the capture card had no height bound, so at a
+  // short viewport its natural column height (~350-450px) exceeded what was
+  // visible and overflow-hidden clipped the Capture button — the last
+  // element in the column — while leaving it in the DOM, enabled, and
+  // completely invisible. 740x320 is a phone held horizontally with browser
+  // chrome showing, the case that was actually broken. 390x844 (portrait
+  // mobile) and 1280x800 (desktop) are the orientations that already
+  // worked, included so this change is proven not to regress them.
+  const VIEWPORTS: Record<string, { width: number; height: number }> = {
+    'landscape, short viewport (740x320)': { width: 740, height: 320 },
+    'portrait mobile (390x844)': { width: 390, height: 844 },
+    'desktop (1280x800)': { width: 1280, height: 800 },
+  };
+
+  for (const [label, viewport] of Object.entries(VIEWPORTS)) {
+    test(`Capture button and card fit the viewport — ${label}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await mockCamera(page);
+      await login(page);
+      await page.goto('/food/upload/');
+      await page.getByRole('button', { name: 'Take Photo' }).click();
+
+      const captureButton = page.getByRole('button', { name: 'Capture' });
+      await expect(captureButton).toBeVisible();
+      await expect(captureButton).toBeEnabled();
+      // trial: true runs Playwright's actionability checks (hit-testable at
+      // its own position, not covered by another element) without actually
+      // clicking — the assertion a stacking-order-only fix would not
+      // satisfy, unlike toBeVisible() alone.
+      await captureButton.click({ trial: true });
+
+      const buttonBox = await boxOf(captureButton, 'Capture button');
+      expect(buttonBox.y).toBeGreaterThanOrEqual(0);
+      expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(viewport.height);
+
+      // A non-trivial floor, not just a non-zero box — a "fix" that
+      // collapses the preview to make room for the button would still pass
+      // a bare toBeVisible() check but fails here.
+      const videoBox = await boxOf(page.locator('video'), 'camera preview');
+      expect(videoBox.height).toBeGreaterThan(60);
+
+      // The invariant the clipping actually violated: the card itself fits
+      // within the viewport height.
+      const cardBox = await boxOf(page.getByTestId('camera-capture-card'), 'capture card');
+      expect(cardBox.y).toBeGreaterThanOrEqual(0);
+      expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(viewport.height);
+    });
+  }
+
+  test('overlay declares the bottom safe-area inset with an env() term', async ({ page }) => {
+    // Headless Chromium reports env(safe-area-inset-bottom) as 0 and offers
+    // no way to set it, so this only confirms the padding is declared with
+    // an env() term, not that a non-zero inset behaves correctly on a
+    // notched device — that half needs a manual check, the same residue
+    // ADR-008 records for safe-area handling.
+    await mockCamera(page);
+    await login(page);
+    await page.goto('/food/upload/');
+    await page.getByRole('button', { name: 'Take Photo' }).click();
+
+    const overlay = page.getByTestId('camera-capture-overlay');
+    await expect(overlay).toHaveClass(/env\(safe-area-inset-bottom\)/);
+    // The class assertion above reads the attribute, which is a verbatim copy
+    // of the JSX literal — it passes even if Tailwind stops emitting the
+    // utility and the padding silently drops to 0. This checks the rule
+    // actually reaches the element: with the inset reported as 0,
+    // max(1rem, 0px) resolves to 16px, and a missing rule to 0px.
+    await expect(overlay).toHaveCSS('padding-bottom', '16px');
+  });
 });
+
+// A day header's totals row carrying both halves of a day's totals.
+//
+// The day header renders calories and macros as two elements rather than one
+// run-on string (docs/specs/meal-history-day-header.md), so a single
+// getByText('450 kcal · P 30g · C 45g · F 15g') no longer resolves. Filtering
+// one testid on both substrings keeps the assertion exactly as strong: both
+// halves must appear, and in the same day's totals row rather than anywhere on
+// the page.
+function dayTotal(page: Page, calories: string, macros: string): Locator {
+  return page.getByTestId('day-total').filter({ hasText: calories }).filter({ hasText: macros });
+}
 
 // Seeds a confirmed meal directly via the manual-entry API (no vision call,
 // deterministic) so these tests can exercise the review-page UI against a
@@ -405,8 +628,16 @@ test.describe('Meal history', () => {
       await page.goto('/food/history/');
       // Newest (index 50) is on page 1; oldest (index 0) is exactly the
       // 51st meal, so it's the one meal page 1 (limit 50) can't include yet.
-      await expect(page.getByText('E2E LoadOlder 50')).toBeVisible();
-      await expect(page.getByText('E2E LoadOlder 0')).not.toBeVisible();
+      //
+      // `exact` is load-bearing, not tidiness. A row's name and its time sit
+      // in one container, and since the time became `07:05 PM` rather than a
+      // full timestamp (docs/specs/meal-history-day-header.md) the container
+      // for "E2E LoadOlder 5" reads "E2E LoadOlder 507:05 PM · Confirmed" —
+      // which contains "E2E LoadOlder 50" as a substring. A substring match
+      // therefore resolves to two elements and fails on strict mode. The same
+      // trap catches "E2E LoadOlder 1" against index 10, and so on.
+      await expect(page.getByText('E2E LoadOlder 50', { exact: true })).toBeVisible();
+      await expect(page.getByText('E2E LoadOlder 0', { exact: true })).not.toBeVisible();
 
       const loadOlder = page.getByRole('button', { name: 'Load older' });
       await expect(loadOlder).toBeVisible();
@@ -414,8 +645,8 @@ test.describe('Meal history', () => {
 
       // The real second page (containing at least the 51st meal) arrives
       // and is appended, not swapped in.
-      await expect(page.getByText('E2E LoadOlder 0')).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByText('E2E LoadOlder 50')).toBeVisible();
+      await expect(page.getByText('E2E LoadOlder 0', { exact: true })).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText('E2E LoadOlder 50', { exact: true })).toBeVisible();
     } finally {
       await deleteMeals(request, cookies, createdIds);
     }
@@ -478,9 +709,9 @@ test.describe('Meal history', () => {
     await expect(page.getByText('Yesterday Meal 1')).toBeVisible();
 
     // Today's total: 300+150=450 kcal, 20+10=30g protein.
-    await expect(page.getByText('450 kcal · P 30g · C 45g · F 15g')).toBeVisible();
+    await expect(dayTotal(page, '450 kcal', 'P 30g · C 45g · F 15g')).toBeVisible();
     // Yesterday's total: just the one meal.
-    await expect(page.getByText('80 kcal · P 5g · C 8g · F 2g')).toBeVisible();
+    await expect(dayTotal(page, '80 kcal', 'P 5g · C 8g · F 2g')).toBeVisible();
   });
 
   test('a day with only a non-confirmed meal shows a zero total', async ({ page }) => {
@@ -499,7 +730,7 @@ test.describe('Meal history', () => {
     // The day total must exclude the pending meal's numbers entirely (it
     // has no final nutrition yet), showing zero rather than omitting the
     // total line or leaking the pending meal's provisional values into it.
-    await expect(page.getByText('0 kcal · P 0g · C 0g · F 0g')).toBeVisible();
+    await expect(dayTotal(page, '0 kcal', 'P 0g · C 0g · F 0g')).toBeVisible();
   });
 
   test('"Load older" merges into an existing day section and adds a new one', async ({ page }) => {
@@ -540,16 +771,16 @@ test.describe('Meal history', () => {
     await page.goto('/food/history/');
     await expect(page.getByText('Merge Today 0')).toBeVisible();
     // 50 meals * 10 kcal = 500 kcal for today's section before loading more.
-    await expect(page.getByText('500 kcal · P 50g · C 50g · F 50g')).toBeVisible();
+    await expect(dayTotal(page, '500 kcal', 'P 50g · C 50g · F 50g')).toBeVisible();
 
     await page.getByRole('button', { name: 'Load older' }).click();
 
     await expect(page.getByText('Merge Today Extra')).toBeVisible();
     await expect(page.getByText('Merge Yesterday')).toBeVisible();
     // Today's total grows by the extra meal: 500+10=510 kcal.
-    await expect(page.getByText('510 kcal · P 51g · C 51g · F 51g')).toBeVisible();
+    await expect(dayTotal(page, '510 kcal', 'P 51g · C 51g · F 51g')).toBeVisible();
     // A new, separate section for yesterday.
-    await expect(page.getByText('20 kcal · P 2g · C 2g · F 2g')).toBeVisible();
+    await expect(dayTotal(page, '20 kcal', 'P 2g · C 2g · F 2g')).toBeVisible();
   });
 });
 

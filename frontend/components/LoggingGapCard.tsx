@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useId, useState } from 'react';
 import { api, NutritionTargetUnmetReason, DayCompletenessState, TodaySummary } from '@/lib/api';
+import { activityTierKey, sexKey, formatNutritionTargetValues, NutritionTargetDerivation } from '@/lib/nutritionTarget';
 import { emaSeries, linearRegression, toDayOffset } from '@/lib/dataTypeMeta';
 import { loggedDayKey } from '@/lib/loggedDay';
 import {
@@ -8,12 +9,15 @@ import {
   rejectOutliers,
   bucketByDay,
   checkHardFloor,
+  checkWeightFloor,
   computeLoggingGap,
+  meanLoggedIntake,
   slopeStandardError,
   excludedOutlierCount,
   DayWindowData,
   LoggingGapResult,
 } from '@/lib/loggingGap';
+import { evaluateSustainability, SustainabilityWarning } from '@/lib/sustainability';
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
@@ -31,6 +35,12 @@ interface TodayRow {
   targetProteinGrams: number;
   targetCarbsGrams: number;
   targetFatGrams: number;
+  // Everything the top row's ⓘ disclosure needs to explain targetCalories/
+  // targetProteinGrams/targetCarbsGrams/targetFatGrams — carried alongside
+  // them rather than re-fetched, since GET /api/summary/today already
+  // returns it in the same response the four numbers above came from (see
+  // docs/specs/idea.md's "one response" rationale).
+  derivation: NutritionTargetDerivation & { sex: 'male' | 'female'; activityTier: string };
 }
 
 // What the bottom row can say: the three outcomes of the gap computation,
@@ -47,7 +57,7 @@ type GapLine = LoggingGapResult | { kind: 'retrieval_error' };
 // their first weeks.
 type ContentState =
   | { kind: 'loading' }
-  | { kind: 'ready'; today: TodayRow; gap: GapLine }
+  | { kind: 'ready'; today: TodayRow; gap: GapLine; warnings: SustainabilityWarning[] }
   | { kind: 'nutrition_target_unmet'; reason: NutritionTargetUnmetReason }
   | { kind: 'retrieval_error' };
 
@@ -106,6 +116,13 @@ export default function LoggingGapCard({
   // unique element, and only the dashboard's own layout keeps this card to
   // one instance per page.
   const hintId = useId();
+  // A separate boolean and a separate useId from hintOpen/hintId above: this
+  // disclosure explains the top row (today's intake vs. the Nutrition
+  // Target), the other explains the Logging Gap line below it, and a reader
+  // opening one has not asked for the other — so the two panels open and
+  // close independently (docs/specs/idea.md's "not a shared one").
+  const [todayHintOpen, setTodayHintOpen] = useState(false);
+  const todayHintId = useId();
 
   useEffect(() => {
     let cancelled = false;
@@ -178,6 +195,18 @@ export default function LoggingGapCard({
           targetProteinGrams: target.protein_grams,
           targetCarbsGrams: target.carbs_grams,
           targetFatGrams: target.fat_grams,
+          derivation: {
+            bmr: target.bmr,
+            measured_weight_kg: target.measured_weight_kg,
+            goal_weight_kg: target.goal_weight_kg,
+            height_m: target.height_m,
+            age_years: target.age_years,
+            activity_multiplier: target.activity_multiplier,
+            calories: target.calories,
+            protein_grams: target.protein_grams,
+            sex: target.sex,
+            activityTier: target.activity_tier,
+          },
         };
 
         // All three or none: the gap is a single computation over the three
@@ -191,7 +220,10 @@ export default function LoggingGapCard({
           completenessR.status === 'rejected' ||
           dailyTotalsR.status === 'rejected'
         ) {
-          setState({ kind: 'ready', today: todayRow, gap: { kind: 'retrieval_error' } });
+          // No trend and no mean survive a partial fetch, so evaluateSustainability
+          // would return [] anyway — spelled out here rather than called, since
+          // there is nothing to pass it.
+          setState({ kind: 'ready', today: todayRow, gap: { kind: 'retrieval_error' }, warnings: [] });
           return;
         }
         const weightRaw = weightR.value;
@@ -229,6 +261,19 @@ export default function LoggingGapCard({
         const rejectedInWindow = rejected.filter(r => r.day >= gapWindow.windowStartDayOffset);
         const mostRecentKeptDayOffset = kept.length > 0 ? Math.max(...kept.map(r => r.day)) : -Infinity;
 
+        // The weight-only floor gates the trend (and therefore the sustainability
+        // rate check) on its own, more permissive terms than the full hard floor
+        // gates the gap — see checkWeightFloor's own doc comment. Because
+        // checkHardFloor is `checkWeightFloor(...) || validDayCount < 3`, a false
+        // hard floor always implies a false weight floor, so the gap line's own
+        // behaviour is unchanged by this split.
+        const weightFloor = checkWeightFloor(
+          keptInWindow,
+          rejectedInWindow,
+          bootstrapSiblingAmbiguous,
+          mostRecentKeptDayOffset,
+          gapWindow.windowLastDayOffset,
+        );
         const hardFloor = checkHardFloor(
           keptInWindow,
           rejectedInWindow,
@@ -239,8 +284,9 @@ export default function LoggingGapCard({
           gapWindow.windowLastDayOffset,
         );
 
+        let trend: { slope: number; se: number | null; weightAtWindowEnd: number } | null = null;
         let gapResult: LoggingGapResult;
-        if (hardFloor) {
+        if (weightFloor) {
           gapResult = { kind: 'not_enough_data' };
         } else {
           const bucketed = bucketByDay(kept);
@@ -250,18 +296,29 @@ export default function LoggingGapCard({
             .filter(p => p.x >= gapWindow.windowStartDayOffset && p.x <= gapWindow.windowLastDayOffset);
           const { slope, intercept } = linearRegression(points);
           const se = slopeStandardError(points, slope, intercept);
-          gapResult = computeLoggingGap(
-            { slope, intercept },
-            se,
-            nutritionTargetCalories,
-            perDayWindowData,
-            gapWindow.windowStartDayOffset,
-            gapWindow.windowLastDayOffset,
-          );
+          trend = { slope, se, weightAtWindowEnd: intercept + slope * gapWindow.windowLastDayOffset };
+          gapResult = hardFloor
+            ? { kind: 'not_enough_data' }
+            : computeLoggingGap(
+                { slope, intercept },
+                se,
+                nutritionTargetCalories,
+                perDayWindowData,
+                gapWindow.windowStartDayOffset,
+                gapWindow.windowLastDayOffset,
+              );
         }
 
+        const meanIntake = meanLoggedIntake(perDayWindowData, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset);
+        const warnings = evaluateSustainability({
+          gap: gapResult,
+          meanLoggedIntake: meanIntake,
+          bmr: target.bmr,
+          trend,
+        });
+
         if (cancelled) return;
-        setState({ kind: 'ready', today: todayRow, gap: gapResult });
+        setState({ kind: 'ready', today: todayRow, gap: gapResult, warnings });
         setOutlierExcluded(excludedOutlierCount(rejected, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset) > 0);
       } catch {
         if (cancelled) return;
@@ -296,17 +353,37 @@ export default function LoggingGapCard({
         consumed: String(Math.round(consumed)),
         target: String(Math.round(target)),
       });
+    const v = formatNutritionTargetValues(today.derivation);
+    const tierKey = activityTierKey(today.derivation.activityTier);
+    const tierLabel = tierKey ? t(tierKey) : today.derivation.activityTier;
+    const sexLabel = t(sexKey(today.derivation.sex));
     return (
       <div className={`py-1${dim}`} data-testid="nutrition-today">
-        <div
-          className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums"
-          data-testid="nutrition-today-calories"
+        {/* The whole row is the toggle, matching renderGap's own control
+            below: on touch, TapTarget's 48px minimum applies to a bare glyph
+            anyway, so a full-width row buys a target that's hard to miss for
+            height spent regardless. No aria-label — the accessible name is
+            the calorie line itself plus the visually-hidden label. */}
+        <TapTarget
+          compactOnMouse
+          onClick={() => setTodayHintOpen(open => !open)}
+          aria-expanded={todayHintOpen}
+          aria-controls={todayHintId}
+          data-testid="nutrition-today-hint-toggle"
+          className="flex w-full items-center justify-between gap-2 text-left"
         >
-          {interpolate(t('loggingGap.todayCalories'), {
-            consumed: String(Math.round(today.calories)),
-            target: String(Math.round(today.targetCalories)),
-          })}
-        </div>
+          <span
+            className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums"
+            data-testid="nutrition-today-calories"
+          >
+            {interpolate(t('loggingGap.todayCalories'), {
+              consumed: String(Math.round(today.calories)),
+              target: String(Math.round(today.targetCalories)),
+            })}
+          </span>
+          <span className="sr-only">{t('loggingGap.hintToggle')}</span>
+          <InfoIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        </TapTarget>
         {/* Presentational: the calorie line above is the accessible content,
             and a bar that repeated it would only add a second thing to read. */}
         <div className="mt-1.5 h-1.5 w-full rounded-full bg-border overflow-hidden" aria-hidden="true">
@@ -319,6 +396,34 @@ export default function LoggingGapCard({
           <span>{macro('protein', today.proteinGrams, today.targetProteinGrams)}</span>
           <span>{macro('carbs', today.carbsGrams, today.targetCarbsGrams)}</span>
           <span>{macro('fat', today.fatGrams, today.targetFatGrams)}</span>
+        </div>
+        {/* Rendered even while collapsed, and hidden with the `hidden`
+            attribute, matching renderGap's own panel below: `aria-controls`
+            above has to name an element that exists. Explains the whole top
+            row, macros included, so it sits after the macro row rather than
+            right under the calorie line. */}
+        <div
+          id={todayHintId}
+          hidden={!todayHintOpen}
+          data-testid="nutrition-today-hint"
+          className="text-xs text-text-muted mt-1.5 space-y-1"
+        >
+          <p>{t('loggingGap.targetCaveatConfirmedOnly')}</p>
+          <p>
+            {interpolate(t('loggingGap.targetCalorieDerivation'), {
+              bmr: v.bmr,
+              weight: v.weight,
+              height: v.height,
+              age: v.age,
+              sex: sexLabel,
+              multiplier: v.multiplier,
+              tier: tierLabel,
+              calories: v.calories,
+            })}
+          </p>
+          <p>{interpolate(t('loggingGap.targetProteinDerivation'), { goal: v.goal, protein: v.protein })}</p>
+          <p>{t('loggingGap.targetFatCarbDerivation')}</p>
+          <p>{t('loggingGap.targetRecomputed')}</p>
         </div>
       </div>
     );
@@ -370,7 +475,32 @@ export default function LoggingGapCard({
     }
   }
 
-  function renderGap(gap: GapLine) {
+  // The middle row (docs/specs/healthvault-nutrition-card-middle-row-he.md):
+  // one or both of the two sustainability checks, each stating a measurement
+  // and nothing more — no calorie prescription, matching the on_track line's
+  // own "say only what was measured" standard.
+  function renderSustainability(warnings: SustainabilityWarning[]) {
+    return (
+      <div data-testid="nutrition-sustainability" className="space-y-1 text-sm font-medium text-text">
+        {warnings.map(warning =>
+          warning.kind === 'loss_too_fast' ? (
+            <p key={warning.kind} data-testid="nutrition-sustainability-loss-rate">
+              {interpolate(t('loggingGap.lossTooFast'), { percent: warning.percentPerWeek.toFixed(1) })}
+            </p>
+          ) : (
+            <p key={warning.kind} data-testid="nutrition-sustainability-below-bmr">
+              {interpolate(t('loggingGap.intakeBelowBmr'), {
+                intake: String(Math.round(warning.meanLoggedIntake)),
+                bmr: String(Math.round(warning.bmr)),
+              })}
+            </p>
+          )
+        )}
+      </div>
+    );
+  }
+
+  function renderGap(gap: GapLine, warnings: SustainabilityWarning[]) {
     return (
       <div>
         {/* The whole row is the toggle, not just the ⓘ. On touch TapTarget's
@@ -417,6 +547,10 @@ export default function LoggingGapCard({
               absent number doesn't account for activity error only invites the
               reader to look for a number that isn't there. */}
           {(gap.kind === 'gap' || gap.kind === 'on_track') && <p>{t('loggingGap.caveatActivity')}</p>}
+          {/* Shown whenever either sustainability warning fired — it explains
+              the framing behind both lines regardless of which one is on
+              screen. */}
+          {warnings.length > 0 && <p>{t('loggingGap.sustainabilityDetail')}</p>}
         </div>
       </div>
     );
@@ -441,7 +575,19 @@ export default function LoggingGapCard({
         return (
           <>
             {renderToday(state.today)}
-            <div className={`mt-2 pt-2 border-t border-border${dim}`}>{renderGap(state.gap)}</div>
+            {/* Precedence in this row (see the spec's "Precedence in the
+                middle row"): the sustainability warning outranks the
+                not-yet-built Healthiness Label and LLM advice lines, so it
+                renders unconditionally here. Whatever renders the label next
+                must render it only when this array is empty. An empty middle
+                row is never shown — it would cost the card vertical space to
+                say nothing. */}
+            {state.warnings.length > 0 && (
+              <div className={`mt-2 pt-2 border-t border-border${dim}`}>
+                {renderSustainability(state.warnings)}
+              </div>
+            )}
+            <div className={`mt-2 pt-2 border-t border-border${dim}`}>{renderGap(state.gap, state.warnings)}</div>
           </>
         );
     }

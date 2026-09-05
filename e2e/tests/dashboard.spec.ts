@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8888';
 
 // Mirrors DATA_TYPES (frontend/lib/api.ts) / typeRegistry (backend/pkg/server/api.go):
 // every key a real `/api/data-types/presence` response has exactly one entry

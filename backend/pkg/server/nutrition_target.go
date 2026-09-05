@@ -36,6 +36,7 @@ type nutritionTargetValues struct {
 	ProteinGrams       int     `json:"protein_grams"`
 	CarbsGrams         int     `json:"carbs_grams"`
 	FatGrams           int     `json:"fat_grams"`
+	BMR                int     `json:"bmr"`
 	MeasuredWeightKg   float64 `json:"measured_weight_kg"`
 	GoalWeightKg       float64 `json:"goal_weight_kg"`
 	HeightM            float64 `json:"height_m"`
@@ -92,14 +93,25 @@ func computeUserNutritionTarget(
 	if err != nil {
 		return nutritionTargetValues{}, "", fmt.Errorf("read user profile: %w", err)
 	}
-	return computeNutritionTargetForProfile(storage, userID, now, profile)
+	// This is the one caller that hasn't already read the settings blob for
+	// another reason (SummaryTodayHandler passes the loc it already
+	// resolved), so it reads its own zone here rather than adding a second
+	// settings read to every other caller's path.
+	settingsJSON, err := readUserSettingsJSON(storage, userID)
+	if err != nil {
+		return nutritionTargetValues{}, "", fmt.Errorf("read user settings: %w", err)
+	}
+	loc := database.ResolveTimezone(settingsJSON)
+	return computeNutritionTargetForProfile(storage, userID, now, loc, profile)
 }
 
 // computeNutritionTargetForProfile is computeUserNutritionTarget for a caller
 // that has already read the settings blob, so the profile is not fetched a
-// second time. Same contract otherwise.
+// second time. Same contract otherwise. loc is the caller's already-resolved
+// timezone (see resolveActivityTier/fetchDailySteps), passed through rather
+// than re-read.
 func computeNutritionTargetForProfile(
-	storage database.Storage, userID uuid.UUID, now time.Time, profile userProfile,
+	storage database.Storage, userID uuid.UUID, now time.Time, loc *time.Location, profile userProfile,
 ) (values nutritionTargetValues, unavailableReason string, err error) {
 	if !profile.HasBirthdate || !profile.HasSex {
 		return nutritionTargetValues{}, "missing_profile", nil
@@ -125,7 +137,7 @@ func computeNutritionTargetForProfile(
 		return nutritionTargetValues{}, "missing_goal_weight", nil
 	}
 
-	tierName, multiplier, ok, err := resolveActivityTier(storage, userID, profile, now)
+	tierName, multiplier, ok, err := resolveActivityTier(storage, userID, loc, profile, now)
 	if err != nil {
 		return nutritionTargetValues{}, "", fmt.Errorf("resolve activity tier: %w", err)
 	}
@@ -134,7 +146,7 @@ func computeNutritionTargetForProfile(
 	}
 
 	ageYears := calendarAge(profile.Birthdate, now)
-	calories, proteinGrams, carbsGrams, fatGrams := computeNutritionTarget(
+	calories, proteinGrams, carbsGrams, fatGrams, bmr := computeNutritionTarget(
 		weightKg, heightM, ageYears, profile.Sex, multiplier, goalWeightKg,
 	)
 
@@ -143,6 +155,7 @@ func computeNutritionTargetForProfile(
 		ProteinGrams:       roundToInt(proteinGrams),
 		CarbsGrams:         roundToInt(carbsGrams),
 		FatGrams:           roundToInt(fatGrams),
+		BMR:                roundToInt(bmr),
 		MeasuredWeightKg:   weightKg,
 		GoalWeightKg:       goalWeightKg,
 		HeightM:            heightM,
@@ -158,15 +171,17 @@ func computeNutritionTargetForProfile(
 // formula's native units (height in metres, converted to cm here); outputs
 // are unrounded — the caller rounds once, at the response boundary, since
 // the fat-floor recomputation of carbs needs the unrounded remaining kcal.
+// bmr is the Mifflin-St Jeor value before the activity multiplier is
+// applied; calories is bmr * activityMultiplier.
 func computeNutritionTarget(
 	weightKg, heightM float64, ageYears int, sex string, activityMultiplier, goalWeightKg float64,
-) (calories, proteinGrams, carbsGrams, fatGrams float64) {
+) (calories, proteinGrams, carbsGrams, fatGrams, bmr float64) {
 	sexTerm := sexTermFemale
 	if sex == "male" {
 		sexTerm = sexTermMale
 	}
 	heightCm := heightM * 100
-	bmr := 10*weightKg + 6.25*heightCm - 5*float64(ageYears) + sexTerm
+	bmr = 10*weightKg + 6.25*heightCm - 5*float64(ageYears) + sexTerm
 	calories = bmr * activityMultiplier
 
 	proteinGrams = proteinGramsPerKgGoal * goalWeightKg
@@ -183,7 +198,7 @@ func computeNutritionTarget(
 	if carbsGrams < 0 {
 		carbsGrams = 0
 	}
-	return calories, proteinGrams, carbsGrams, fatGrams
+	return calories, proteinGrams, carbsGrams, fatGrams, bmr
 }
 
 // resolveActivityTier resolves the caller's activity tier: their
@@ -195,21 +210,39 @@ func computeNutritionTarget(
 // fetching step history; ok=false/err=nil means "insufficient data", a
 // normal, expected outcome, never a storage failure.
 func resolveActivityTier(
-	storage database.Storage, userID uuid.UUID, profile userProfile, today time.Time,
+	storage database.Storage, userID uuid.UUID, loc *time.Location, profile userProfile, now time.Time,
 ) (string, float64, bool, error) {
 	if profile.HasActivityOverride {
 		t := activityOverrideTiers[profile.ActivityOverride]
 		return t.Name, t.Multiplier, true, nil
 	}
-	days, err := fetchDailySteps(storage, userID, today)
+	days, err := fetchDailySteps(storage, userID, loc, now)
 	if err != nil {
 		return "", 0, false, err
 	}
-	tier, ok := inferActivityTier(today, days)
+	// trailingStepsAverage's Date map keys (see dailySteps in
+	// activity_level.go) are local-calendar-day labels carried at UTC
+	// midnight, the same form bucket_start uses — so "today" must be that
+	// same label, not the raw instant, or its Truncate(24*time.Hour)/AddDate
+	// walk would compare a UTC calendar day against local-day labels.
+	_, todayLabel := localCalendarToday(now, loc)
+	tier, ok := inferActivityTier(todayLabel, days)
 	if !ok {
 		return "", 0, false, nil
 	}
 	return tier.Name, tier.Multiplier, true, nil
+}
+
+// localCalendarToday returns two views of now's calendar date in loc: the
+// real UTC instant of that date's local midnight (localMidnight, used to
+// build a query's time-range bounds), and that same date expressed as a
+// UTC-midnight label (label — the form bucket_start and dailySteps.Date
+// both use, see LocalBucketKey).
+func localCalendarToday(now time.Time, loc *time.Location) (localMidnight, label time.Time) {
+	local := now.In(loc)
+	localMidnight = time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	label = time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
+	return localMidnight, label
 }
 
 // fetchDailySteps loads the per-day step sums trailingStepsAverage needs,
@@ -217,15 +250,20 @@ func resolveActivityTier(
 // the generic path is a plain SUM(count) with no overlap handling, and an
 // over-counted step history (see check-the-health-data spec) would push the
 // inferred Activity Level tier up and inflate the Nutrition Target's
-// calorie budget through the multiplier. The range's upper bound includes
-// today itself; that row is harmless here, since trailingStepsAverage never
-// looks up "today" in its day map — it only ever walks today-1 through
-// today-28.
-func fetchDailySteps(storage database.Storage, userID uuid.UUID, today time.Time) ([]dailySteps, error) {
-	today = today.UTC().Truncate(24 * time.Hour)
+// calorie budget through the multiplier. loc resolves the local calendar day
+// boundary the window uses: the query's lower bound must be the real UTC
+// instant of the window's first *local* midnight — a UTC-midnight instant
+// would clip the earliest local day for a user ahead of UTC. The upper bound
+// is local midnight today, excluding today's still-accumulating local day,
+// so the 28 local calendar days end the user's local yesterday (design.md
+// "Trailing window"). QueryAggregateSteps itself still buckets by UTC
+// calendar day (see ADR-012-steps-collapse-overlapping-intervals-on-read);
+// only the window's from/to bounds are local-day-aware here.
+func fetchDailySteps(storage database.Storage, userID uuid.UUID, loc *time.Location, now time.Time) ([]dailySteps, error) {
+	localMidnightToday, _ := localCalendarToday(now, loc)
 	tr := database.TimeRange{
-		From: today.AddDate(0, 0, -trailingWindowDays),
-		To:   today,
+		From: localMidnightToday.AddDate(0, 0, -trailingWindowDays),
+		To:   localMidnightToday,
 	}
 	rows, err := storage.QueryAggregateSteps(database.BucketDay, userID, tr)
 	if err != nil {

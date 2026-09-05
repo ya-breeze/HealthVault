@@ -66,9 +66,24 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md w-full overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+    // max-h-dvh clamps to the *dynamic* viewport, not the large one a fixed
+    // inset-0 element resolves to by default — on a mobile browser showing
+    // its URL bar, "large" includes space the user can't actually see, so a
+    // card sized to it would overflow the visible screen. The bottom padding
+    // uses a literal env() term rather than --edge-inset-b: ADR-008 leaves
+    // full-screen overlays like this one outside the --nav-block rule
+    // (covering the nav bar is the point), so nothing underneath absorbs the
+    // inset for this overlay, and --edge-inset-b is 0px below the sm
+    // breakpoint exactly because the nav bar normally does that job instead.
+    <div
+      data-testid="camera-capture-overlay"
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center max-h-dvh px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+    >
+      <div
+        data-testid="camera-capture-card"
+        className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md w-full max-h-full overflow-hidden flex flex-col"
+      >
+        <div className="shrink-0 px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
           <p className="text-sm font-semibold text-gray-900 dark:text-white">Take a photo</p>
           <TapTarget
             onClick={onClose}
@@ -77,23 +92,52 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
             Cancel
           </TapTarget>
         </div>
-        <div className="p-4">
+        {/* flex-1 lets this region give up height when the viewport is short;
+            min-h-0 is what actually allows that shrink — a flex item's
+            automatic minimum size is its content size, so without min-h-0
+            the video would refuse to shrink below its natural height and the
+            column would overflow exactly as it did before this region
+            existed.
+
+            Shrinking, not scrolling, is what keeps the Capture button on
+            screen: the video below is h-full, so this region's content is
+            always exactly its own height and overflow-y-auto cannot produce
+            a scrollbar for it. The scrollbar exists only for the error
+            branch, whose text can genuinely exceed the space. Below roughly
+            a 170px viewport the shrink runs out — the header and footer are
+            shrink-0 and together exceed the card's max-h-full — and the
+            button is clipped again. No phone is that short in landscape
+            (iPhone SE gives ~287px), so the shrink is the whole mechanism
+            and there is deliberately no fallback beneath it. */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
           {error ? (
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           ) : (
+            // object-contain letterboxes a shrunk preview against the black
+            // background instead of squashing it; capture() below still
+            // draws from the video's own videoWidth/videoHeight, so the
+            // captured image is unaffected by how small the preview renders.
             // eslint-disable-next-line jsx-a11y/media-has-caption
-            <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-lg bg-black" />
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-contain rounded-lg bg-black"
+            />
           )}
           <canvas ref={canvasRef} className="hidden" />
-          {!error && (
+        </div>
+        {!error && (
+          <div className="shrink-0 px-4 pb-4">
             <TapTarget
               onClick={capture}
-              className="mt-4 w-full rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+              className="w-full rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
             >
               Capture
             </TapTarget>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
