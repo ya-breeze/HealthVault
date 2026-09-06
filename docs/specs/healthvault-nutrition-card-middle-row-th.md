@@ -319,5 +319,5 @@ wrong reason, and so proved nothing about the floor it is named for.
       so the next reader does not repeat it.
 - [x] Say in the too-few-eligible-days fixture why it needed the same change even though its test
       was passing.
-- [ ] Re-run the gate against the deployed stack. Task 7's box stays ticked for lint and unit
+- [x] Re-run the gate against the deployed stack. Task 7's box stays ticked for lint and unit
       tests, which did pass; this box is the e2e half it claimed and did not have.
