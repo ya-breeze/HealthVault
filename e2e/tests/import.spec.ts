@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 import * as path from 'path';
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 async function login(page: import('@playwright/test').Page) {
   await page.goto('/login/');

@@ -183,9 +183,11 @@ func CreateRecordHandler(storage database.Storage) http.HandlerFunc {
 
 // queryBucketed dispatches a bucketed aggregation query to the right storage
 // method: the two multi-value-column special cases, or the generic
-// single-valueCol path for every other type.
+// single-valueCol path for every other type. loc resolves the chart's local
+// day/month boundary — see resolveViewerTimezone.
 func queryBucketed(
-	storage database.Storage, typeName string, info typeInfo, bucket database.Bucket, userID uuid.UUID, tr database.TimeRange,
+	storage database.Storage, typeName string, info typeInfo, bucket database.Bucket, loc *time.Location,
+	userID uuid.UUID, tr database.TimeRange,
 ) ([]map[string]any, error) {
 	if typeName == "food_meal" {
 		return nil, errInvalidBucket
@@ -195,12 +197,31 @@ func queryBucketed(
 	}
 	switch typeName {
 	case "blood_pressure":
-		return storage.QueryAggregateBloodPressure(bucket, userID, tr)
+		return storage.QueryAggregateBloodPressure(bucket, loc, userID, tr)
 	case "nutrition":
-		return storage.QueryAggregateNutrition(bucket, userID, tr)
+		return storage.QueryAggregateNutrition(bucket, loc, userID, tr)
 	default:
-		return storage.QueryAggregate(info.table, info.timeCol, info.valueCol, info.family, bucket, userID, tr)
+		return storage.QueryAggregate(info.table, info.timeCol, info.valueCol, info.family, bucket, loc, userID, tr)
 	}
+}
+
+// resolveViewerTimezone resolves userID's stored timezone setting into a
+// *time.Location for chart bucketing, via readUserSettingsJSON +
+// database.ResolveTimezone — the same two-step "missing row is UTC, any
+// other read error propagates" resolution SummaryTodayHandler already uses.
+//
+// userID must be the *target* user DataHandler resolved (resolveUser's
+// result), never the caller: a family member's chart is their own data, so
+// it buckets in their own zone, matching how per-user settings already work
+// for food-day-completeness (foodHandlers.callerTimezone) — those are
+// caller-scoped because their endpoints are self-only, not because the zone
+// itself is caller-scoped.
+func resolveViewerTimezone(storage database.Storage, userID uuid.UUID) (*time.Location, error) {
+	settingsJSON, err := readUserSettingsJSON(storage, userID)
+	if err != nil {
+		return nil, err
+	}
+	return database.ResolveTimezone(settingsJSON), nil
 }
 
 // meHandler returns the authenticated user's profile.
@@ -343,7 +364,12 @@ func DataHandler(storage database.Storage) http.HandlerFunc {
 
 		var records []map[string]any
 		if bucketParam := r.URL.Query().Get("bucket"); bucketParam != "" {
-			records, err = queryBucketed(storage, typeName, info, database.Bucket(bucketParam), targetUser.ID, tr)
+			loc, err := resolveViewerTimezone(storage, targetUser.ID)
+			if err != nil {
+				http.Error(w, "query error", http.StatusInternalServerError)
+				return
+			}
+			records, err = queryBucketed(storage, typeName, info, database.Bucket(bucketParam), loc, targetUser.ID, tr)
 			if err != nil {
 				if errors.Is(err, errInvalidBucket) {
 					http.Error(w, err.Error(), http.StatusBadRequest)

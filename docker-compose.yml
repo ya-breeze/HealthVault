@@ -11,6 +11,17 @@ services:
       HCW_JWT_SECRET: ${HCW_JWT_SECRET:?HCW_JWT_SECRET must be set}
       HCW_COOKIE_SECURE: ${HCW_COOKIE_SECURE:-true}
       HCW_MCP_TOKEN: ${HCW_MCP_TOKEN:-}
+      # Cloudflare Access sign-in exchange (POST /api/auth/cf-access). All
+      # three default to empty; the endpoint 404s unless all three are set.
+      # HCW_CF_ACCESS_TEAM_DOMAIN: the Access team domain, e.g.
+      #   myteam.cloudflareaccess.com.
+      # HCW_CF_ACCESS_AUD: the Access application's AUD tag.
+      # HCW_CF_ACCESS_EMAIL_MAP: "email:username,..." mapping a verified
+      #   Google identity to a HealthVault username, shaped like
+      #   HCW_SEED_USERS.
+      HCW_CF_ACCESS_TEAM_DOMAIN: ${HCW_CF_ACCESS_TEAM_DOMAIN:-}
+      HCW_CF_ACCESS_AUD: ${HCW_CF_ACCESS_AUD:-}
+      HCW_CF_ACCESS_EMAIL_MAP: ${HCW_CF_ACCESS_EMAIL_MAP:-}
       HCW_UPLOADS_DIR: ${HCW_UPLOADS_DIR:-/data/uploads}
       HCW_USDA_DB_PATH: ${HCW_USDA_DB_PATH:-/data/usda.db}
       HCW_OFF_DB_PATH: ${HCW_OFF_DB_PATH:-/data/off.db}

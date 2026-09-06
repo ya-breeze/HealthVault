@@ -338,6 +338,28 @@ const en = {
   'loggingGap.outlierNote': 'One or more weigh-ins were excluded as outliers.',
   'loggingGap.caveatPhoto': 'Logged intake is estimated from photo recognition and may carry its own bias.',
   'loggingGap.caveatActivity': "This doesn't separately account for error in your activity multiplier — a misestimate of activity can look like unlogged (or over-logged) intake.",
+  'loggingGap.lossTooFast': 'You are losing {percent}% of body weight a week, faster than the sustainable 1%.',
+  'loggingGap.intakeBelowBmr': 'You average {intake} kcal a day, below your BMR of {bmr} kcal.',
+  'loggingGap.sustainabilityDetail': "Too steep a deficit is hard to hold, and a relapse is the usual outcome. These numbers are estimates from the same trend and the same log the rest of this card uses, and this isn't medical advice.",
+
+  // The top row's own ⓘ disclosure (docs/specs/idea.md), explaining today's
+  // calorie/macro figures and the Nutrition Target they're measured against —
+  // a separate panel from the gap line's caveats above.
+  'loggingGap.targetCaveatConfirmedOnly': "Today's total counts confirmed meals only — an unconfirmed photo isn't included yet.",
+  'loggingGap.targetCalorieDerivation':
+    'Calories: basal metabolism {bmr} kcal (Mifflin-St Jeor) from weight {weight} kg, height {height} cm, age {age}, sex {sex}, times activity {multiplier} ({tier}), giving {calories} kcal.',
+  'loggingGap.targetProteinDerivation': 'Protein: 1.6 g per kg of goal weight ({goal} kg), giving {protein} g.',
+  'loggingGap.targetFatCarbDerivation':
+    "Fat and carbs split what's left of the calorie budget after protein, half each by energy — except fat never drops below 0.8 g per kg of goal weight, in which case carbs take the rest.",
+  'loggingGap.targetRecomputed':
+    'This target is recomputed every time the page loads, so a new weigh-in, goal weight or step average can move it.',
+  'loggingGap.sexMale': 'male',
+  'loggingGap.sexFemale': 'female',
+  'loggingGap.tierSedentary': 'sedentary',
+  'loggingGap.tierLight': 'lightly active',
+  'loggingGap.tierModerate': 'moderately active',
+  'loggingGap.tierActive': 'very active',
+  'loggingGap.tierExtra': 'extra active',
 
   // The Healthiness Label (middle row): a deterministic heuristic, not an
   // LLM judgment (ADR-004) — see frontend/lib/healthiness.ts for the

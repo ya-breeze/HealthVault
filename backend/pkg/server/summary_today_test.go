@@ -31,12 +31,20 @@ type summaryTodayTestResponse struct {
 	LastLoggedAt         *time.Time `json:"last_logged_at"`
 	DisplayLanguage      string     `json:"display_language"`
 	Target               struct {
-		Available    bool   `json:"available"`
-		Reason       string `json:"reason"`
-		Calories     int    `json:"calories"`
-		ProteinGrams int    `json:"protein_grams"`
-		CarbsGrams   int    `json:"carbs_grams"`
-		FatGrams     int    `json:"fat_grams"`
+		Available          bool    `json:"available"`
+		Reason             string  `json:"reason"`
+		Calories           int     `json:"calories"`
+		ProteinGrams       int     `json:"protein_grams"`
+		CarbsGrams         int     `json:"carbs_grams"`
+		FatGrams           int     `json:"fat_grams"`
+		BMR                int     `json:"bmr"`
+		MeasuredWeightKg   float64 `json:"measured_weight_kg"`
+		GoalWeightKg       float64 `json:"goal_weight_kg"`
+		HeightM            float64 `json:"height_m"`
+		AgeYears           int     `json:"age_years"`
+		Sex                string  `json:"sex"`
+		ActivityMultiplier float64 `json:"activity_multiplier"`
+		ActivityTier       string  `json:"activity_tier"`
 	} `json:"target"`
 	Recommendation any `json:"recommendation"`
 }
@@ -129,7 +137,9 @@ func TestSummaryToday_TargetUnavailableReasons(t *testing.T) {
 
 // TestSummaryToday_TargetAvailable covers 4.3's success case: with every
 // nutrition-target precondition met, the endpoint embeds the computed target
-// with available=true and no reason.
+// with available=true and no reason, and every derivation field matches what
+// GET /api/users/me/nutrition-target reports for the same seeded user — the
+// two endpoints must never disagree about what produced the numbers.
 func TestSummaryToday_TargetAvailable(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)
@@ -159,6 +169,39 @@ func TestSummaryToday_TargetAvailable(t *testing.T) {
 		t.Errorf("recommendation = %v, want null", resp.Recommendation)
 	}
 
+	nh := server.NutritionTargetHandler(st)
+	nw := httptest.NewRecorder()
+	nh.ServeHTTP(nw, newNutritionTargetRequest(userID))
+	if nw.Code != http.StatusOK {
+		t.Fatalf("nutrition-target: expected 200, got %d: %s", nw.Code, nw.Body.String())
+	}
+	var direct struct {
+		Calories           int     `json:"calories"`
+		ProteinGrams       int     `json:"protein_grams"`
+		CarbsGrams         int     `json:"carbs_grams"`
+		FatGrams           int     `json:"fat_grams"`
+		BMR                int     `json:"bmr"`
+		MeasuredWeightKg   float64 `json:"measured_weight_kg"`
+		GoalWeightKg       float64 `json:"goal_weight_kg"`
+		HeightM            float64 `json:"height_m"`
+		AgeYears           int     `json:"age_years"`
+		Sex                string  `json:"sex"`
+		ActivityMultiplier float64 `json:"activity_multiplier"`
+		ActivityTier       string  `json:"activity_tier"`
+	}
+	if err := json.Unmarshal(nw.Body.Bytes(), &direct); err != nil {
+		t.Fatalf("unmarshal nutrition-target: %v", err)
+	}
+	if resp.Target.Calories != direct.Calories || resp.Target.ProteinGrams != direct.ProteinGrams ||
+		resp.Target.CarbsGrams != direct.CarbsGrams || resp.Target.FatGrams != direct.FatGrams ||
+		resp.Target.BMR != direct.BMR || resp.Target.MeasuredWeightKg != direct.MeasuredWeightKg ||
+		resp.Target.GoalWeightKg != direct.GoalWeightKg || resp.Target.HeightM != direct.HeightM ||
+		resp.Target.AgeYears != direct.AgeYears || resp.Target.Sex != direct.Sex ||
+		resp.Target.ActivityMultiplier != direct.ActivityMultiplier ||
+		resp.Target.ActivityTier != direct.ActivityTier {
+		t.Errorf("summary target = %+v, want it to match nutrition-target's direct response %+v",
+			resp.Target, direct)
+	}
 }
 
 // TestSummaryToday_ZeroTargetFieldIsStillPresent pins the absence of
@@ -210,11 +253,41 @@ func TestSummaryToday_ZeroTargetFieldIsStillPresent(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("unmarshal raw: %v", err)
 	}
-	for _, key := range []string{"calories", "protein_grams", "carbs_grams", "fat_grams"} {
+	for _, key := range []string{
+		"calories", "protein_grams", "carbs_grams", "fat_grams", "bmr",
+		"measured_weight_kg", "goal_weight_kg", "height_m", "age_years", "sex",
+		"activity_multiplier", "activity_tier",
+	} {
 		if _, ok := raw.Target[key]; !ok {
 			t.Errorf("target.%s missing from the response body; every numeric field must be present "+
 				"whenever available=true, zero included", key)
 		}
+	}
+}
+
+// TestSummaryToday_UnavailableTargetHasZeroDerivationFields covers the other
+// half of the no-omitempty rule: when the target itself is unavailable, the
+// derivation fields must come back as their zero values, not be silently
+// dropped or carry stale data from a previous computation.
+func TestSummaryToday_UnavailableTargetHasZeroDerivationFields(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	h := server.SummaryTodayHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSummaryTodayRequest(userID, ""))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := decodeSummaryToday(t, w)
+	if resp.Target.Available {
+		t.Fatalf("target.available = true, want false")
+	}
+	if resp.Target.MeasuredWeightKg != 0 || resp.Target.GoalWeightKg != 0 || resp.Target.HeightM != 0 ||
+		resp.Target.AgeYears != 0 || resp.Target.Sex != "" || resp.Target.ActivityMultiplier != 0 ||
+		resp.Target.ActivityTier != "" {
+		t.Errorf("derivation fields = %+v, want all zero/empty when available=false", resp.Target)
 	}
 }
 

@@ -45,10 +45,18 @@ const minValidActivityDays = 7
 // a real low-activity day (design.md "The 500-step floor").
 const lowStepFloor = 500.0
 
-// dailySteps is one day's aggregated step total, keyed to a UTC calendar
-// day — the shape trailingStepsAverage needs as input. A day with no step
-// records at all simply has no entry, rather than an entry with Sum 0: the
-// two are not the same thing (see design.md's zero-record-day rule).
+// dailySteps is one day's aggregated step total, keyed to a local calendar
+// day carried as a UTC-midnight label (the same form QueryAggregate's
+// bucket_start uses — see database.LocalBucketKey) — the shape
+// trailingStepsAverage needs as input. Carrying a local day as a
+// UTC-midnight label, rather than the real local-midnight instant, is
+// exactly why trailingStepsAverage's Truncate(24*time.Hour)/AddDate
+// arithmetic below keeps working unchanged across a DST transition: both
+// "today" (fetchDailySteps' localCalendarToday label) and every Date here
+// live in the same label space, so ordinary UTC day arithmetic on the
+// labels is comparing calendar dates, not real elapsed time. A day with no
+// step records at all simply has no entry, rather than an entry with Sum 0:
+// the two are not the same thing (see design.md's zero-record-day rule).
 type dailySteps struct {
 	Date time.Time
 	Sum  float64

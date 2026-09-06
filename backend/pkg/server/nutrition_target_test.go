@@ -3,6 +3,7 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -164,6 +165,7 @@ func TestNutritionTarget_SuccessWithActivityOverride(t *testing.T) {
 		ProteinGrams       int     `json:"protein_grams"`
 		CarbsGrams         int     `json:"carbs_grams"`
 		FatGrams           int     `json:"fat_grams"`
+		BMR                int     `json:"bmr"`
 		MeasuredWeightKg   float64 `json:"measured_weight_kg"`
 		GoalWeightKg       float64 `json:"goal_weight_kg"`
 		HeightM            float64 `json:"height_m"`
@@ -201,6 +203,14 @@ func TestNutritionTarget_SuccessWithActivityOverride(t *testing.T) {
 	}
 	if resp.CarbsGrams <= 0 || resp.FatGrams <= 0 {
 		t.Errorf("expected positive carbs/fat, got carbs=%d fat=%d", resp.CarbsGrams, resp.FatGrams)
+	}
+	// Mifflin-St Jeor for this profile: 10*80 + 6.25*180 - 5*age + 5.
+	wantBMR := 10*80 + 6.25*180 - 5*float64(wantAge) + 5
+	if resp.BMR != int(math.Round(wantBMR)) {
+		t.Errorf("bmr = %v, want %v (Mifflin-St Jeor)", resp.BMR, wantBMR)
+	}
+	if wantCalories := int(math.Round(wantBMR * 1.55)); resp.Calories != wantCalories {
+		t.Errorf("calories = %v, want %v (bmr * activity_multiplier)", resp.Calories, wantCalories)
 	}
 }
 

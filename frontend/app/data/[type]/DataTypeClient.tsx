@@ -32,12 +32,20 @@ function num(v: unknown): number {
   return typeof v === 'number' ? v : Number(v ?? 0);
 }
 
+// bucket_start (and any date derived from a day offset, e.g. the trend
+// projection's crossingDate) is a local calendar date carried at UTC
+// midnight (backend/pkg/database/bucket_regroup.go's LocalBucketKey), not
+// the instant local midnight occurred. Formatting it in the browser's own
+// zone — the default toLocaleDateString behavior — re-interprets that
+// UTC-midnight instant as if it were local, which shifts the label by a
+// day for any viewer behind UTC. timeZone: 'UTC' reads the label back the
+// same way it was written.
 function bucketLabel(bucketStart: unknown, zoom: Zoom): string {
   const d = new Date(String(bucketStart));
   if (isNaN(d.getTime())) return String(bucketStart ?? '');
   return zoom === 'year'
-    ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' })
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function mean(values: number[]): number {
@@ -503,7 +511,10 @@ export default function DataTypeClient({ type }: Props) {
   const projectionMessage = !projection ? null : (
     projection.status === 'reached' ? "You've reached your goal weight" :
     projection.status === 'not-on-track' ? 'Not on track at your current trend' :
-    `On track to reach your goal around ${projection.crossingDate!.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+    // timeZone: 'UTC' — see bucketLabel's comment: crossingDate is built from
+    // a day offset (toDayOffset), the same UTC-midnight-label convention as
+    // bucket_start, so it needs the same read-back-in-UTC formatting.
+    `On track to reach your goal around ${projection.crossingDate!.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`
   );
   // Only claim "not enough data" once we actually know. While loading, say
   // nothing; on failure, say the history could not be loaded rather than

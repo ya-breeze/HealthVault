@@ -27,8 +27,7 @@ A group of a Logged Day's Food Meals collapsed by proximity — a new occasion s
 _Avoid_: Meal count, session (too generic)
 
 **Logged Day**:
-The calendar date (`YYYY-MM-DD`) a Food Meal's `LoggedAt` falls on, computed in the user's stored `timezone` setting (absent/invalid → UTC) — not the browser's local zone, and not the same UTC bucketing the general `/api/data/{type}` charts use. "Today" in the user's zone is always excluded from Day Completeness.
-_Avoid_: Day (ambiguous with the unrelated UTC day-bucketing used elsewhere)
+The calendar date (`YYYY-MM-DD`) a Food Meal's `LoggedAt` falls on, computed in the user's stored `timezone` setting (absent/invalid → UTC) — not the browser's local zone. "Today" in the user's zone is always excluded from Day Completeness.
 
 **Usual Meals Per Day**:
 The per-user `usual_meals_per_day` setting (positive integer, default 3): the Eating Occasion count a Logged Day must reach to be classified automatically Complete. Read fresh on every Day Completeness computation, not snapshotted, so changing it re-evaluates past days too.
@@ -133,6 +132,10 @@ _Avoid_: Health score, nutrition score
 
 ### Weight chart
 
+**Bucket Start**:
+The local calendar date (or, for a month bucket, the first of the local calendar month) a bucketed `GET /api/data/{type}?bucket=day|month` row covers, resolved in the user's stored `timezone` setting (absent/invalid → UTC — the same fallback Logged Day uses) and serialized as the `bucket_start` field, a `YYYY-MM-DDT00:00:00Z` string naming that calendar date at UTC midnight, not the instant local midnight occurred.
+_Avoid_: bucket date, bucket timestamp
+
 **Manual Record**:
 A metric-type record (`weight`, `height`, or `weight_goal` only — the write allowlist) created directly by the user through the Add-record form, via `POST /api/data/{type}`, rather than by ingestion (CSV import, MCP tool call, food-photo recognition). The distinction matters only at write time; a Manual Record reads back identically to an ingested one.
 _Avoid_: Manual entry (ambiguous with food logging's manual entry mode)
@@ -144,3 +147,13 @@ _Avoid_: BMI zone, weight range
 **Trend Projection**:
 A dashed line extrapolating the weight chart's existing EMA trend line forward, via least-squares regression over the last 30 calendar days of EMA values, to the calendar date it's projected to cross Goal Weight. Rendered only at Month/Year zoom; the plain-language ETA text it produces ("on track", "not on track", "already reached", "not enough data") renders at every zoom level and only appears at all when a Goal Weight is set.
 _Avoid_: Forecast, prediction line
+
+### Authentication
+
+**Access Assertion**:
+The signed JWT Cloudflare Access attaches as the `Cf-Access-Jwt-Assertion` header once its policy has approved a Google sign-in. Verified by `backend/pkg/cfaccess` against Cloudflare's own published JWKS (RS256, issuer/audience pinned, `exp`/`nbf` checked) — never trusted on the strength of the header's mere presence, since the backend is also reachable directly on the LAN, bypassing Cloudflare, where any header is attacker-set. See ADR-012.
+_Avoid_: Access token (ambiguous with HealthVault's own `kin_access` JWT), Cf-Access header
+
+**Access Identity Map**:
+The `HCW_CF_ACCESS_EMAIL_MAP` setting (`email:username`, comma-separated, shaped like `HCW_SEED_USERS`) that authorizes a verified Access Assertion's email to sign in as a specific HealthVault user. An email that verifies but is absent from the map is refused (403), rather than auto-provisioning an account — widening the Cloudflare Access policy, a different system, never silently creates a HealthVault user. See ADR-012.
+_Avoid_: Email map alone (ambiguous outside this context), user mapping

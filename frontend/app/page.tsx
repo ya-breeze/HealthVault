@@ -7,6 +7,7 @@ import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, hasCa
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
+import { loggedDayKey } from '@/lib/loggedDay';
 import { useLatest } from '@/lib/useLatest';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import VitalCard from '@/components/VitalCard';
@@ -100,13 +101,26 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!ready) return;
+    // Over-fetch by one extra day (8, not 7) and drop below. A UTC-midnight
+    // `from` clips the earliest local day for a viewer ahead of UTC — that
+    // day's local midnight falls before the UTC instant `from` names, so a
+    // plain 7-day-back cutoff would show an artificially low first point.
+    // Fetching one extra day and then dropping anything whose bucket_start
+    // sorts before the local date 6 days ago (via loggedDayKey, the same
+    // account-timezone-aware helper LoggingGapCard uses) keeps exactly the
+    // 7 local calendar days the sparkline is meant to cover.
     const from = (() => {
       const d = new Date();
-      d.setDate(d.getDate() - 7);
+      d.setDate(d.getDate() - 8);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     })();
     const to = new Date().toISOString();
+    const cutoff = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      return loggedDayKey(d, timezone);
+    })();
 
     // 'logging_gap' has no /api/data/{type} backing (design.md decision 8) —
     // it fetches and computes its own state (task 5's LoggingGapCard), so it's
@@ -118,11 +132,12 @@ export default function Dashboard() {
     ).then(results => {
       const next: Record<string, VitalResult | null> = {};
       dataMetrics.forEach((m, i) => {
-        next[m.type] = extractVital(m.type, results[i]);
+        const rows = results[i].filter(r => String(r.bucket_start).slice(0, 10) >= cutoff);
+        next[m.type] = extractVital(m.type, rows);
       });
       setVitals(next);
     });
-  }, [ready]);
+  }, [ready, timezone]);
 
   useEffect(() => {
     if (!ready) return;

@@ -8,7 +8,7 @@ import HistorySettingsPanel from '@/components/food/HistorySettingsPanel';
 import { useLanguage } from '@/components/LanguageContext';
 import { dateLocaleFor, mealStatusLabel } from '@/lib/i18n';
 import { useLatest } from '@/lib/useLatest';
-import { loggedDayKey, loggedDayLabel } from '@/lib/loggedDay';
+import { loggedDayKey, loggedDayLabel, loggedDayTime } from '@/lib/loggedDay';
 import { splitRangeIntoWindows } from '@/lib/completeness';
 
 const PAGE_SIZE = 50;
@@ -221,8 +221,16 @@ export default function FoodHistoryPage() {
 
         {dayGroups.map(day => (
           <div key={day.dateKey} className="mb-5">
-            <div className="flex items-baseline justify-between mb-2 px-1">
-              <div className="flex items-center gap-2">
+            <div data-testid="day-header" className="mb-2 px-1">
+              {/* Two rows, because the date, the completeness control and the day's
+                  totals cannot share one at a phone width — their combined natural
+                  width is roughly 457px against 342px of content at 390px, and the
+                  control is a TapTarget that cannot shrink below its 48px minimum.
+                  `flex-wrap` is what makes the narrow case degrade cleanly: when the
+                  date and the control cannot share a line, the control drops whole
+                  onto its own line instead of compressing into the gap and
+                  re-wrapping inside its own pill. */}
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
                 <DayCompletenessControl
                   date={day.dateKey}
@@ -230,12 +238,17 @@ export default function FoodHistoryPage() {
                   onChange={handleCompletenessChange}
                 />
               </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                {Math.round(day.totals.calories)} {t('unit.kcal')} · {t('unit.proteinShort')}{' '}
-                {Math.round(day.totals.protein)}{t('unit.grams')} · {t('unit.carbsShort')}{' '}
-                {Math.round(day.totals.carbs)}{t('unit.grams')} · {t('unit.fatShort')}{' '}
-                {Math.round(day.totals.fat)}{t('unit.grams')}
-              </span>
+              <div data-testid="day-total" className="flex items-baseline gap-2 mt-0.5">
+                <span data-testid="day-total-calories" className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                  {Math.round(day.totals.calories)} {t('unit.kcal')}
+                </span>
+                <span data-testid="day-total-macros" className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                  {t('unit.proteinShort')}{' '}
+                  {Math.round(day.totals.protein)}{t('unit.grams')} · {t('unit.carbsShort')}{' '}
+                  {Math.round(day.totals.carbs)}{t('unit.grams')} · {t('unit.fatShort')}{' '}
+                  {Math.round(day.totals.fat)}{t('unit.grams')}
+                </span>
+              </div>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
               {day.meals.map(meal => (
@@ -249,12 +262,17 @@ export default function FoodHistoryPage() {
                     <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                       {meal.name || t('review.mealFallbackName')}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {new Date(meal.logged_at).toLocaleString(dateLocaleFor(language))} · {mealStatusLabel(t, meal.status)}
+                    {/* Time only: the day header directly above already names the
+                        day, so a full date here is noise — and it has to be the
+                        stored zone, not the browser's, or a row can show a time
+                        belonging to a different day than the header it sits under.
+                        See loggedDayTime. */}
+                    <p data-testid="meal-meta" className="text-xs text-gray-500 dark:text-gray-400">
+                      {loggedDayTime(new Date(meal.logged_at), dateLocaleFor(language), timezone)} · {mealStatusLabel(t, meal.status)}
                     </p>
                   </div>
                   {meal.status === 'confirmed' && (
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white flex-shrink-0">
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums flex-shrink-0">
                       {Math.round(meal.calories)} {t('unit.kcal')}
                     </span>
                   )}
