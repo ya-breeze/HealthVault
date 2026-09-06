@@ -17,7 +17,10 @@
 // ClarifyModal, CustomFoodModal, DeleteMealControl, MacroSummary,
 // ManualItemEditor, MealMetaEditor and ReanalyzeControl. (AddItemForm's own
 // chrome is English, but the ItemResolver panel it embeds is covered, so
-// that form is partly translated rather than wholly English.)
+// that form is partly translated rather than wholly English. The steps
+// detail page is the same shape: its chrome is English, but the diagnostic
+// disclosure the check-the-health-data spec added — DataTypeClient.tsx's
+// `stepsDiagnostics.*` keys — is covered.)
 //
 // app/food/manual/page.tsx is now partly translated, not wholly English: its
 // description-first entry path (the textarea, name/time inputs, character
@@ -313,6 +316,10 @@ const en = {
   'vitals.trend7d': '7d trend',
   'vitals.moveUp': 'Move {metric} up',
   'vitals.moveDown': 'Move {metric} down',
+  // Shown on a Vital Card only when its value's source bucket isn't today's
+  // (check-the-health-data spec) — e.g. today has no records yet, so the
+  // card is showing yesterday's full-day total.
+  'vitals.asOf': 'As of {date}',
 
   // The `loggingGap.` prefix is kept for the whole card, including the keys
   // below that have nothing to do with the gap — including the Healthiness
@@ -379,6 +386,23 @@ const en = {
   'loggingGap.healthinessReason.sodium_high': 'sodium is high',
   'loggingGap.healthinessHintNote':
     "The label covers macro balance, total sugars and sodium on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
+
+  // The steps detail page's diagnostic disclosure (check-the-health-data
+  // spec) — collapsed by default, same hint-then-detail pattern as the
+  // loggingGap keys above. The only translated strings on the per-type data
+  // detail pages; see the scope comment at the top of this file.
+  'stepsDiagnostics.hintToggle': 'Show diagnostic',
+  'stepsDiagnostics.title': 'Step diagnostics',
+  'stepsDiagnostics.columnDay': 'Day',
+  'stepsDiagnostics.columnRaw': 'Raw total',
+  'stepsDiagnostics.columnCollapsed': 'Counted total',
+  'stepsDiagnostics.columnDropped': 'Records dropped',
+  'stepsDiagnostics.columnPayloads': 'Syncs contributing',
+  'stepsDiagnostics.columnLocalDay': 'Local-day total',
+  'stepsDiagnostics.readingDuplicates': 'Duplicate step records in the database are inflating the raw total.',
+  'stepsDiagnostics.readingMultipleSyncs': 'More than one sync wrote steps for the same day.',
+  'stepsDiagnostics.readingDayBoundary': "Your local day boundary differs from this chart's UTC day.",
+  'stepsDiagnostics.readingNothing': 'Nothing to report — raw, counted and local-day totals agree.',
 
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing

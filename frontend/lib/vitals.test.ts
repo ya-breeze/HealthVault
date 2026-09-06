@@ -1,6 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { DATA_TYPES } from './api';
-import { PRIMARY_METRICS, hasCardPresence, reconcileMetricOrder, secondaryTypes } from './vitals';
+import { PRIMARY_METRICS, hasCardPresence, reconcileMetricOrder, secondaryTypes, extractVital } from './vitals';
+
+describe('extractVital asOf', () => {
+  it('is set from the last bucket for a cumulative type (steps)', () => {
+    const rows = [
+      { bucket_start: '2026-03-14T00:00:00Z', sum: 5000 },
+      { bucket_start: '2026-03-15T00:00:00Z', sum: 6000 },
+    ];
+    const result = extractVital('steps', rows);
+    expect(result?.asOf).toBe('2026-03-15T00:00:00Z');
+  });
+
+  it('is set from the last bucket for a point type (heart_rate)', () => {
+    const rows = [
+      { bucket_start: '2026-03-14T00:00:00Z', avg: 60 },
+      { bucket_start: '2026-03-15T00:00:00Z', avg: 65 },
+    ];
+    const result = extractVital('heart_rate', rows);
+    expect(result?.asOf).toBe('2026-03-15T00:00:00Z');
+  });
+
+  it('is absent when the last row carries no bucket_start', () => {
+    const rows = [{ sum: 5000 }];
+    const result = extractVital('steps', rows);
+    expect(result?.asOf).toBeUndefined();
+  });
+});
 
 describe('reconcileMetricOrder with logging_gap', () => {
   it('reorders a saved order that includes logging_gap', () => {

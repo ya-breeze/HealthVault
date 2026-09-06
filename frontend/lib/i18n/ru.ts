@@ -204,6 +204,7 @@ const ru: Dictionary = {
   'vitals.trend7d': 'тренд за 7 дней',
   'vitals.moveUp': 'Переместить «{metric}» вверх',
   'vitals.moveDown': 'Переместить «{metric}» вниз',
+  'vitals.asOf': 'На {date}',
 
   'loggingGap.title': 'Питание',
   'loggingGap.loading': 'Загружаем данные о питании…',
@@ -257,6 +258,19 @@ const ru: Dictionary = {
   'loggingGap.healthinessReason.sodium_high': 'много натрия',
   'loggingGap.healthinessHintNote':
     'Оценка учитывает баланс БЖУ, общий сахар и натрий только за полностью заполненные дни. Общий сахар включает сахар из фруктов и молочных продуктов. Соль, добавленная при готовке, обычно не попадает в дневник, поэтому отсутствие отметки о натрии — это не то же самое, что низкий натрий.',
+
+  'stepsDiagnostics.hintToggle': 'Показать диагностику',
+  'stepsDiagnostics.title': 'Диагностика шагов',
+  'stepsDiagnostics.columnDay': 'День',
+  'stepsDiagnostics.columnRaw': 'Исходная сумма',
+  'stepsDiagnostics.columnCollapsed': 'Учтённая сумма',
+  'stepsDiagnostics.columnDropped': 'Отброшено записей',
+  'stepsDiagnostics.columnPayloads': 'Источников синхронизации',
+  'stepsDiagnostics.columnLocalDay': 'Сумма по местному дню',
+  'stepsDiagnostics.readingDuplicates': 'Дублирующиеся записи шагов в базе завышают исходную сумму.',
+  'stepsDiagnostics.readingMultipleSyncs': 'Более одной синхронизации записали шаги за один и тот же день.',
+  'stepsDiagnostics.readingDayBoundary': 'Граница вашего местного дня отличается от границы дня UTC на графике.',
+  'stepsDiagnostics.readingNothing': 'Отчитываться не о чем — исходная, учтённая и местная суммы совпадают.',
 
   'metric.steps': 'Шаги',
   'metric.heart_rate': 'Пульс',
