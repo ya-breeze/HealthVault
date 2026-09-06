@@ -244,6 +244,21 @@ const ru: Dictionary = {
   'loggingGap.tierActive': 'высокая активность',
   'loggingGap.tierExtra': 'очень высокая активность',
 
+  'loggingGap.healthinessLine': 'За 7 дней: {label}',
+  'loggingGap.healthinessLabel.good': 'хорошо',
+  'loggingGap.healthinessLabel.fair': 'средне',
+  'loggingGap.healthinessLabel.needs_attention': 'требует внимания',
+  'loggingGap.healthinessReason.protein_low': 'мало белка',
+  'loggingGap.healthinessReason.protein_high': 'много белка',
+  'loggingGap.healthinessReason.carbs_low': 'мало углеводов',
+  'loggingGap.healthinessReason.carbs_high': 'много углеводов',
+  'loggingGap.healthinessReason.fat_low': 'мало жиров',
+  'loggingGap.healthinessReason.fat_high': 'много жиров',
+  'loggingGap.healthinessReason.sugar_high': 'много сахара',
+  'loggingGap.healthinessReason.sodium_high': 'много натрия',
+  'loggingGap.healthinessHintNote':
+    'Оценка учитывает баланс БЖУ, общий сахар и натрий только за полностью заполненные дни. Общий сахар включает сахар из фруктов и молочных продуктов. Соль, добавленная при готовке, обычно не попадает в дневник, поэтому отсутствие отметки о натрии — это не то же самое, что низкий натрий.',
+
   'stepsDiagnostics.hintToggle': 'Показать диагностику',
   'stepsDiagnostics.title': 'Диагностика шагов',
   'stepsDiagnostics.columnDay': 'День',

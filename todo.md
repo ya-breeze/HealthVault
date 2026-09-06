@@ -81,31 +81,32 @@ the `nutrition-card-today-and-on-track` change built two of its three rows on th
 
 - ~~**Card A** — today's calories/macros vs. the Phase-3 Nutrition Target.~~ **Shipped** as the
   card's top row, fed by `GET /api/summary/today`.
-- **Middle row — partly shipped**, tracked as
-  [idea-forge#177](https://github.com/ya-breeze/idea-forge/issues/177). The row is a four-way
-  split; the **sustainability warning** is the first piece to land — see
-  `docs/specs/healthvault-nutrition-card-middle-row-he.md` and ADR-012. It reports two independent,
-  measured findings, `loss_too_fast` (weight-loss rate past ~1%/week, gated on the trend alone) and
-  `intake_below_bmr` (logged intake under BMR, gated on the logging gap resolving to `on_track` so
-  it never fires on a food log that merely under-reports), and settles the row's precedence order
-  for what comes next: this warning outranks the label, which outranks the advice lines. **Still to
-  build**: a **Healthiness Label** (Good / Fair / Needs attention, rolling 7-day window) plus 1-2
-  short recommendation lines under it. The label itself is a **deterministic heuristic** over
-  already-logged `FoodMeal` macro/sugar/sodium fields — explicitly *not* LLM-judged (ADR-004), so
-  it stays free, fast, and reproducible on every dashboard load regardless of entry source
-  (photo/manual/barcode). Whatever renders it must do so only when the sustainability warning has
-  nothing to say (`evaluateSustainability` returns `[]`).
+- **Middle row — sustainability warning and label shipped, advice lines and chat still to
+  build.** Tracked as [idea-forge#177](https://github.com/ya-breeze/idea-forge/issues/177). The row
+  is a four-way split. The **sustainability warning** shipped first — see
+  `docs/specs/healthvault-nutrition-card-middle-row-he.md` and ADR-012 (`Accepted`). It reports two
+  independent, measured findings, `loss_too_fast` (weight-loss rate past ~1%/week, gated on the
+  trend alone) and `intake_below_bmr` (logged intake under BMR, gated on the logging gap resolving
+  to `on_track` so it never fires on a food log that merely under-reports). The **Healthiness
+  Label** (Good / Fair / Needs attention, rolling 7-day window) shipped next, as its own idea,
+  [idea-forge#205](https://github.com/ya-breeze/idea-forge/issues/205) (see
+  `docs/specs/healthvault-nutrition-card-middle-row-th.md`) — a **deterministic heuristic** over
+  already-logged `FoodMeal` macro/sugar/sodium fields (pooled over the daily-totals endpoint's five
+  new sums), explicitly *not* LLM-judged (ADR-004, now `Accepted`), so it stays free, fast, and
+  reproducible on every dashboard load regardless of entry source (photo/manual/barcode). Exact
+  thresholds live as exported constants in `frontend/lib/healthiness.ts`. The two honour the
+  precedence order settled by the sustainability change: the warning outranks the label, so the
+  label renders only when `evaluateSustainability` returns `[]`. **Still to build:** the 1-2 short
+  recommendation lines under the label (see the LLM paragraph below).
 - ~~The logging-gap line~~ — **shipped**, as the card's bottom row, and it now distinguishes "the
   log agrees with the weight trend" from "not enough data" instead of showing the latter for both.
 
-LLM involvement is downstream of the label, not the label itself: (1) an
-automatic once-daily cached call that generates/refines the recommendation
-text, (2) a user-triggered "get advice" button for an on-demand refresh, and
-(3) a small chat affordance for follow-up/clarifying questions about the
-user's nutrition. Still undecided: exact heuristic thresholds (macro-share
-ranges, sugar/sodium cutoffs), and the chat's persistence model (ongoing
-thread vs. ephemeral per session) — both deferred to this phase's own
-`opsx:propose`. Depends on Phase 3's Nutrition Target existing.
+LLM involvement is downstream of the label, not the label itself, and **none of it is built yet**:
+(1) an automatic once-daily cached call that generates/refines the recommendation text, (2) a
+user-triggered "get advice" button for an on-demand refresh, and (3) a small chat affordance for
+follow-up/clarifying questions about the user's nutrition. Still undecided: the chat's persistence
+model (ongoing thread vs. ephemeral per session) — deferred to this phase's own `opsx:propose`.
+Depends on Phase 3's Nutrition Target existing.
 
 ## Idea #10 — Logging Gap Card (was "adaptive TDEE from energy balance")
 

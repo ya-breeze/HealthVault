@@ -322,9 +322,11 @@ const en = {
   'vitals.asOf': 'As of {date}',
 
   // The `loggingGap.` prefix is kept for the whole card, including the keys
-  // below that have nothing to do with the gap. Renaming it is deferred to
-  // Phase 4, when the Healthiness Label row lands and the card fully becomes a
-  // nutrition card — so the churn happens once rather than twice.
+  // below that have nothing to do with the gap — including the Healthiness
+  // Label keys added below. The prefix stays internal and unrenamed
+  // permanently: renaming the registry id would make reconcileMetricOrder
+  // drop the saved dashboard-order entry and silently re-show a hidden card,
+  // and renaming just the key prefix is churn with no reader-facing benefit.
   'loggingGap.title': 'Nutrition',
   'loggingGap.loading': 'Loading your nutrition…',
   'loggingGap.todayCalories': '{consumed} / {target} kcal today',
@@ -365,6 +367,25 @@ const en = {
   'loggingGap.tierModerate': 'moderately active',
   'loggingGap.tierActive': 'very active',
   'loggingGap.tierExtra': 'extra active',
+
+  // The Healthiness Label (middle row): a deterministic heuristic, not an
+  // LLM judgment (ADR-004) — see frontend/lib/healthiness.ts for the
+  // thresholds. Copy says only what was measured: no "healthy"/"unhealthy",
+  // and no claim about sodium the log can't support.
+  'loggingGap.healthinessLine': 'Last 7 days: {label}',
+  'loggingGap.healthinessLabel.good': 'Good',
+  'loggingGap.healthinessLabel.fair': 'Fair',
+  'loggingGap.healthinessLabel.needs_attention': 'Needs attention',
+  'loggingGap.healthinessReason.protein_low': 'protein is low',
+  'loggingGap.healthinessReason.protein_high': 'protein is high',
+  'loggingGap.healthinessReason.carbs_low': 'carbs are low',
+  'loggingGap.healthinessReason.carbs_high': 'carbs are high',
+  'loggingGap.healthinessReason.fat_low': 'fat is low',
+  'loggingGap.healthinessReason.fat_high': 'fat is high',
+  'loggingGap.healthinessReason.sugar_high': 'sugar is high',
+  'loggingGap.healthinessReason.sodium_high': 'sodium is high',
+  'loggingGap.healthinessHintNote':
+    "The label covers macro balance, total sugars and sodium on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
 
   // The steps detail page's diagnostic disclosure (check-the-health-data
   // spec) — collapsed by default, same hint-then-detail pattern as the
