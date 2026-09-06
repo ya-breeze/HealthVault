@@ -257,12 +257,38 @@ function onTrackFixture(): LoggingGapFixture {
 // keep every one of the five signals on the `ok` side.
 const HEALTHY_MACROS = { protein_grams: 110, carbs_grams: 195, fat_grams: 86.667, sugar_grams: 20, sodium_grams: 1.5 };
 
+// A weight series the sustainability check leaves alone: -0.1 kg/day from
+// 100 kg is ~0.7%/week at the window's end, inside
+// MAX_SUSTAINABLE_LOSS_PCT_PER_WEEK (1.0) — the same rate belowBmrFixture
+// uses for the same reason. clearGapFixture's own -0.2 kg/day is ~15%/week
+// over the 58-day series, so it fires `loss_too_fast` every time.
+//
+// That matters here and it is the trap this comment used to fall into. The
+// label's *computation* reads no weight, which is true and is what the
+// earlier version of this comment said — but its *rendering* is gated on the
+// sustainability check producing no warning, which is the precedence rule the
+// spec settles ("the sustainability warning outranks the label"). Inheriting
+// clearGapFixture's slope therefore suppressed the very row these fixtures
+// exist to show, and the two tests below demanded something the spec forbids.
+function healthinessBase(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.1),
+    nutritionTargetCalories: 2500,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 500, unconfirmed_meals: 0 })),
+  };
+}
+
 // Only the last 7 days of the 28-day window feed the Healthiness Label
-// (spec's "Window"), so these fixtures reuse clearGapFixture's weight/target
-// shape — the label doesn't read either — and layer macros onto just the
-// most recent 7 of its daily-totals entries.
+// (spec's "Window"), so these fixtures layer macros onto just the most recent
+// 7 of healthinessBase's daily-totals entries. 500 kcal/day logged against a
+// 2500 target keeps the gap line itself reading `gap`, so the label is
+// rendered in the state it is specified for rather than beside an `on_track`
+// line — and no BMR is mocked, so the below-BMR check has nothing to fire on.
 function healthinessGoodFixture(): LoggingGapFixture {
-  const base = clearGapFixture();
+  const base = healthinessBase();
   const { windowStart, windowEnd } = loggingGapWindow();
   const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
   return {
@@ -275,7 +301,7 @@ function healthinessGoodFixture(): LoggingGapFixture {
 // HEALTHINESS_THRESHOLDS.sodiumGramsPerDay.farLow) — any single `far` signal
 // is enough for `needs_attention` regardless of the other four.
 function healthinessNeedsAttentionFixture(): LoggingGapFixture {
-  const base = clearGapFixture();
+  const base = healthinessBase();
   const { windowStart, windowEnd } = loggingGapWindow();
   const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
   return {
@@ -291,8 +317,13 @@ function healthinessNeedsAttentionFixture(): LoggingGapFixture {
 // (ADR-007) the label shares with the Logging Gap's own hard floor. The
 // other 21 days of the 28-day window are untouched, so the gap line itself
 // still resolves normally; only the middle row should be absent.
+//
+// Built on healthinessBase for the same reason as the two above, and here it
+// is what gives the test its meaning at all: on clearGapFixture's slope the
+// row was absent because a sustainability warning outranked it, so the test
+// passed without ever exercising the eligibility floor it is named for.
 function healthinessTooFewEligibleDaysFixture(): LoggingGapFixture {
-  const base = clearGapFixture();
+  const base = healthinessBase();
   const { windowStart, windowEnd } = loggingGapWindow();
   const last7 = dateRange(windowStart, windowEnd).slice(-7);
   const eligible = new Set(last7.slice(0, 2));

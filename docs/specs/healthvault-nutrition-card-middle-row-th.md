@@ -292,3 +292,32 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
       shipped here, where the thresholds live, and that the LLM-downstream half it also decides is
       still unbuilt
 - [x] Mark completed
+
+### Task 8: The label's own e2e fixtures suppressed the label
+
+Task 7's second box was ticked while `make test-e2e` was red. Two of the three Healthiness Label
+tests failed, and the cause was in the tests, not the card.
+
+All three fixtures were built on `clearGapFixture`, whose weight series loses 0.2 kg/day from
+100 kg. Over the 58-day series that is roughly 15%/week at the window's end, against
+`MAX_SUSTAINABLE_LOSS_PCT_PER_WEEK` of 1.0 — so it fires `loss_too_fast` every time. The precedence
+rule this spec settles says the sustainability warning outranks the label, and `LoggingGapCard`
+implements it exactly (`warnings.length === 0 && state.healthiness`). The label was therefore
+correctly absent, and the two tests demanded something the spec forbids.
+
+The fixtures' own comment records the reasoning that produced the mistake: "these fixtures reuse
+clearGapFixture's weight/target shape — the label doesn't read either". True of the label's
+*computation*, false of its *rendering*.
+
+The third test, which asserts the row is absent below the eligibility floor, passed — but for the
+wrong reason, and so proved nothing about the floor it is named for.
+
+- [x] Give the three healthiness fixtures their own base with a weight series inside the
+      sustainability band (-0.1 kg/day, ~0.7%/week, the rate `belowBmrFixture` uses), keeping
+      500 kcal/day against a 2500 target so the gap line still reads `gap` and no BMR is mocked.
+- [x] Replace the comment that states the wrong reasoning with one that names the precedence gate,
+      so the next reader does not repeat it.
+- [x] Say in the too-few-eligible-days fixture why it needed the same change even though its test
+      was passing.
+- [ ] Re-run the gate against the deployed stack. Task 7's box stays ticked for lint and unit
+      tests, which did pass; this box is the e2e half it claimed and did not have.
