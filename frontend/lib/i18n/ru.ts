@@ -204,6 +204,7 @@ const ru: Dictionary = {
   'vitals.trend7d': 'тренд за 7 дней',
   'vitals.moveUp': 'Переместить «{metric}» вверх',
   'vitals.moveDown': 'Переместить «{metric}» вниз',
+  'vitals.asOf': 'На {date}',
 
   'loggingGap.title': 'Питание',
   'loggingGap.loading': 'Загружаем данные о питании…',
@@ -242,6 +243,19 @@ const ru: Dictionary = {
   'loggingGap.tierModerate': 'умеренная активность',
   'loggingGap.tierActive': 'высокая активность',
   'loggingGap.tierExtra': 'очень высокая активность',
+
+  'stepsDiagnostics.hintToggle': 'Показать диагностику',
+  'stepsDiagnostics.title': 'Диагностика шагов',
+  'stepsDiagnostics.columnDay': 'День',
+  'stepsDiagnostics.columnRaw': 'Исходная сумма',
+  'stepsDiagnostics.columnCollapsed': 'Учтённая сумма',
+  'stepsDiagnostics.columnDropped': 'Отброшено записей',
+  'stepsDiagnostics.columnPayloads': 'Источников синхронизации',
+  'stepsDiagnostics.columnLocalDay': 'Сумма по местному дню',
+  'stepsDiagnostics.readingDuplicates': 'Дублирующиеся записи шагов в базе завышают исходную сумму.',
+  'stepsDiagnostics.readingMultipleSyncs': 'Более одной синхронизации записали шаги за один и тот же день.',
+  'stepsDiagnostics.readingDayBoundary': 'Граница вашего местного дня отличается от границы дня UTC на графике.',
+  'stepsDiagnostics.readingNothing': 'Отчитываться не о чем — исходная, учтённая и местная суммы совпадают.',
 
   'metric.steps': 'Шаги',
   'metric.heart_rate': 'Пульс',
