@@ -39,11 +39,11 @@ The middle row's precedence rule is settled and this change honours it: sustaina
 type AdviceInput struct {
 	Label              string   // "good" | "fair" | "needs_attention"
 	Reasons            []string // the label's own reason codes, opaque here
-	MeanCalories       int
-	MeanProteinGrams   int
-	MeanCarbsGrams     int
-	MeanFatGrams       int
-	MeanSugarGrams     int
+	MeanCalories       float64
+	MeanProteinGrams   float64
+	MeanCarbsGrams     float64
+	MeanFatGrams       float64
+	MeanSugarGrams     float64
 	MeanSodiumGrams    float64
 	TargetCalories     int
 	TargetProteinGrams int
@@ -59,7 +59,7 @@ Advise(ctx context.Context, in AdviceInput) ([]string, error)
 
 One method, one input struct, a slice of strings out. `Unconfigured` returns `ErrNotConfigured` like its five siblings. `Fake` gains `AdviseResult`, `AdviseErr` and `AdviseCalls` so a test can assert on exactly what was sent and on how many calls were made. `OpenAIClient.Advise` follows `Translate`: a system prompt, a strict JSON schema with a single `lines` array of strings, one `c.call`, one unmarshal.
 
-The seven-day mean figures ride in from the client rather than being re-aggregated server-side. That is the same argument `summaryTargetPayload`'s doc comment already makes about its derivation fields: the numbers in the advice must be the numbers behind the label on screen, and a second server-side aggregation could legitimately return a different mean than the one the label was computed from. It also keeps this change independent of whatever shape the label change gives `GET /api/food/daily-totals`. The target figures are the opposite case and are computed server-side: the client has no business telling the server what the user's target is.
+The seven-day mean figures ride in from the client rather than being re-aggregated server-side. That is the same argument `summaryTargetPayload`'s doc comment already makes about its derivation fields: the numbers in the advice must be the numbers behind the label on screen, and a second server-side aggregation could legitimately return a different mean than the one the label was computed from. It also keeps this change independent of whatever shape the label change gives `GET /api/food/daily-totals`. Extend `HealthinessResult` with a `means` object containing calories, protein, carbs, fat, sugar and sodium per eligible day, computed inside `computeHealthinessLabel` from the exact same window and `isValidDay`-filtered set it already pools for the verdict. The card consumes that object rather than duplicating the eligibility and aggregation rules. The means remain `float64` through `AdviceInput`, because the endpoint accepts finite JSON numbers and the label computes real-valued means; silently truncating or rounding an accepted input would make the prompt differ from the figures behind the label. The target figures are the opposite case and are computed server-side: the client has no business telling the server what the user's target is.
 
 ### The prompt, and keeping its tone consistent with the label
 
@@ -73,7 +73,7 @@ The reason codes reach the prompt verbatim, so their shape is bounded before the
 
 The model's output is post-processed deterministically rather than trusted: trim each line, drop empties, truncate each to 120 runes, keep at most the first two. If nothing survives, the call counts as a failure and nothing is cached.
 
-### The cache: one row per user, keyed on the Logged Day and the label
+### The cache: one row per user, keyed on the Logged Day and the complete advice input
 
 ```go
 // FoodAdvice is a user's cached Healthiness Label advice — one row per user,
@@ -85,20 +85,21 @@ type FoodAdvice struct {
 	Label       string
 	ReasonCodes string // normalized, sorted, comma-joined
 	Language    string
+	InputHash   string // SHA-256 of the canonical, normalized AdviceInput
 	Lines       string // JSON array of strings
 	GeneratedAt time.Time
 }
 ```
 
-A cached row is served when all four of `LoggedDay`, `Label`, `ReasonCodes` and `Language` match the request. Any mismatch regenerates. That makes the invalidation rule readable in one sentence: **the advice is regenerated when the day rolls over, when the label or its reasons change, or when the user switches display language.**
+A cached row is served when `LoggedDay` and `InputHash` match the request. `InputHash` is the hex SHA-256 of a canonical JSON encoding of the fully normalized `AdviceInput`, after reason-code sorting and after the server has supplied the Nutrition Target. `Label`, `ReasonCodes` and `Language` remain as explicit columns so the row is inspectable, but the hash covers them plus every mean and target figure. Any mismatch regenerates. That makes the invalidation rule readable in one sentence: **the advice is regenerated when the day rolls over or when anything the model is told changes.**
 
-The mean figures are deliberately *not* part of the freshness key. They cannot move within a Logged Day anyway — the label's window ends yesterday, because `GET /api/food/daily-totals` clamps `to` to yesterday in the caller's zone — so including them would buy nothing and would risk a second paid call for a rounding difference.
+Ending the label window yesterday does not make its inputs immutable. A confirmed meal from a prior day can still have an item added, edited or deleted, and the Nutrition Target can change after a profile, goal-weight, weight or activity update. The label and reason codes can remain the same across those changes while the useful numerical advice changes, so all mean and target figures belong in `InputHash`. Hash the values the model actually receives, without an extra rounding step, so the cache comparison and prompt cannot disagree.
 
-**Generation is lazy, on read.** There is no scheduler in this backend, and adding one for this would generate advice for a day the user never opens the dashboard on, paying for a call nobody reads. It would also have to guess the label, which is computed on the client. Lazy generation costs at most one call per user per day, on the first dashboard load after midnight.
+**Generation is lazy, on read.** There is no scheduler in this backend, and adding one for this would generate advice for a day the user never opens the dashboard on, paying for a call nobody reads. It would also have to guess the label, which is computed on the client. Serialize all advice generation with an advice mutex on `foodHandlers`. After acquiring it, a non-refresh miss re-reads the cache; two tabs loading together must produce one model call rather than both observing the miss. A user-triggered `refresh: true` acquires the same mutex but deliberately skips that second cache read, so every explicit refresh remains an additional call.
 
 ### The endpoint: `POST /api/food/advice`
 
-A POST, not a GET with query parameters, for two reasons. The request carries a structured context object — label, reason codes and six numbers — that does not belong in a query string. And generating advice is a real side effect: a paid model call and a cache write. `foodHandlers.Search` needs `isSameOriginRequest` precisely because it hangs those side effects off a GET; a JSON-bodied POST cannot be issued by a cross-site form at all, so this endpoint needs no such guard.
+A POST, not a GET with query parameters, for two reasons. The request carries a structured context object — label, reason codes and six numbers — that does not belong in a query string. And generating advice is a real side effect: a paid model call and a cache write. Protect those side effects with `isSameOriginRequest`, just as `foodHandlers.Search` does: a sibling origin can issue a simple credentialed `fetch` with `Content-Type: text/plain` and an exact JSON body, so using JSON does not by itself stop a page from riding the caller's same-site cookie. Reject a browser request whose `Sec-Fetch-Site` is anything other than `same-origin` with 403 before reading or writing the cache or calling the model; retain the helper's existing missing-header allowance for non-browser clients and backend tests.
 
 Request body:
 
@@ -114,9 +115,9 @@ Request body:
 }
 ```
 
-Self-only, with no `?user=` override, matching `GetFoodDailyTotals` and `GetCompleteness`. `label` must be one of the three values; `reasons` must pass the shape rule above; every `window` figure must be a finite number between 0 and 100000. Anything else is a 400 — a malformed body is a client bug, not a state to render.
+Self-only, with no `?user=` override, matching `GetFoodDailyTotals` and `GetCompleteness`. `label` must be one of the three values; `reasons` must pass the shape rule above; every `window` figure must be a finite number between 0 and 100000. Preserve accepted fractional values through `AdviceInput`. Anything else is a 400 — a malformed body is a client bug, not a state to render.
 
-Response, always 200 when the request is well-formed:
+Response, always 200 when an authenticated same-origin request is well-formed:
 
 ```json
 {"available": true,  "lines": ["...", "..."], "generated_at": "2026-09-05T06:12:00Z"}
@@ -130,7 +131,7 @@ The `available` / `reason` shape is `summaryTargetPayload`'s, and for its reason
 
 ### Rendering
 
-The advice is a fifth request and must not delay the four the card already makes. It goes out from its own `useEffect`, keyed on the label and its reason codes, after the main load resolves. The card is fully readable before the advice arrives, and the row grows when it lands.
+The advice is a fifth request and must not delay the four the card already makes. It goes out from its own `useEffect` after the main load resolves. Key that effect on a stable signature of the complete normalized request context — the label, sorted reason codes and all six mean figures — plus the target figures and display language that can change the server-computed `AdviceInput`. Keying only on the label and reasons can leave advice from older numerical inputs on screen when those inputs change without crossing a heuristic threshold. The card is fully readable before the advice arrives, and the row grows when it lands.
 
 The block renders under the label, inside the middle row, only when `available` is true and at least one line came back. Testids follow the existing names: `nutrition-advice` on the block, `nutrition-advice-line` on each line, `nutrition-advice-refresh` on the "get advice" control, `nutrition-advice-error` on the failure line.
 
@@ -183,26 +184,29 @@ Nothing gates this change, but one check is the owner's alone. The tests here dr
 - [ ] Mark completed
 
 ### Task 2: The advice cache table
-- [ ] Add `FoodAdvice` to `backend/pkg/database/models_food.go` with `UserID` (unique index), `LoggedDay`, `Label`, `ReasonCodes`, `Language`, `Lines` and `GeneratedAt`, following `FoodSearchTranslation`'s shape
-- [ ] Document on the model that the row is overwritten in place rather than accumulating history, that `Lines` is a JSON array of strings, and that the four-part freshness key is the Logged Day, the label, the sorted reason codes and the language — plus why the mean figures are deliberately not part of it
+- [ ] Add `FoodAdvice` to `backend/pkg/database/models_food.go` with `UserID` (unique index), `LoggedDay`, `Label`, `ReasonCodes`, `Language`, `InputHash`, `Lines` and `GeneratedAt`, following `FoodSearchTranslation`'s shape
+- [ ] Document on the model that the row is overwritten in place rather than accumulating history, that `Lines` is a JSON array of strings, and that freshness requires the Logged Day plus a hash of the complete normalized `AdviceInput` because prior-day food and Nutrition Target inputs remain editable
 - [ ] Register `&FoodAdvice{}` in `db.AutoMigrate` in `backend/pkg/database/db.go`, beside `&FoodDayCompletion{}`
 - [ ] Mark completed
 
 ### Task 3: The POST /api/food/advice endpoint
 - [ ] Create `backend/pkg/server/food_advice.go` with the request and response types from `How`, and register `api.HandleFunc("/food/advice", fh.PostFoodAdvice).Methods("POST")` in `backend/pkg/server/server.go` beside the other `/food/*` routes
-- [ ] Validate the request: `label` one of `good` / `fair` / `needs_attention`; at most six `reasons`, each matching `^[a-z][a-z_]{0,31}$`, deduplicated and sorted before use; every `window` figure finite and between 0 and 100000. Answer 400 for anything else, and 401 when `ClaimsFromCtx` is nil
+- [ ] Require `isSameOriginRequest` before any cache access or model call, answering 403 for a browser `Sec-Fetch-Site` other than `same-origin`; preserve the helper's missing-header allowance for non-browser clients and tests
+- [ ] Validate the request: `label` one of `good` / `fair` / `needs_attention`; at most six `reasons`, each matching `^[a-z][a-z_]{0,31}$`, deduplicated and sorted before use; every `window` figure finite and between 0 and 100000 and preserved as a `float64`. Answer 400 for anything else, and 401 when `ClaimsFromCtx` is nil
 - [ ] Resolve the caller's Logged Day via `callerTimezone` plus `database.LocalDate`, their display language via the settings blob, and their Nutrition Target via `computeNutritionTargetForProfile`; when the target is unavailable, answer `{"available": false, "reason": "unavailable"}` without calling the model
-- [ ] Serve the cached row when `LoggedDay`, `Label`, `ReasonCodes` and `Language` all match, skipping the model call entirely; otherwise call `Advise` inside `h.visionTimeout` and upsert the row with `clause.OnConflict` on `user_id`, the way `translateAndCache` does
+- [ ] Build the normalized `AdviceInput`, hash its canonical JSON encoding, and serve the cached row only when both `LoggedDay` and `InputHash` match; otherwise call `Advise` inside `h.visionTimeout` and upsert the row with `clause.OnConflict` on `user_id`, the way `translateAndCache` does
+- [ ] Add an advice mutex to `foodHandlers` and hold it across every `Advise` call; after acquiring it, repeat the cache lookup for non-refresh misses so concurrent first loads make one paid call, while explicit refresh requests skip the repeated lookup and are serialized but not coalesced
 - [ ] Honour `refresh: true` by skipping the cache read and regenerating; on failure leave any existing row untouched and answer `unavailable`
 - [ ] Map failures: `errors.Is(err, vision.ErrNotConfigured)` to `reason: "unconfigured"`, everything else — API error, timeout, empty result, failed cache write — to `reason: "unavailable"`, logging each at warn level with the user id, and never caching a failure
 - [ ] Remove `Recommendation` from `summaryTodayResponse` and its `nil` assignment in `backend/pkg/server/summary_today.go`, update that struct's doc comment to say the advice moved to its own endpoint and why, and drop the `Recommendation` field and assertion from `backend/pkg/server/summary_today_test.go`
-- [ ] Add `backend/pkg/server/food_advice_test.go` covering: a cache hit serving without calling `Advise` (a `Fake` whose `AdviseErr` fails the test if called, mirroring `TestFoodSearch_CacheHitSkipsTranslation`); a miss generating and persisting a row; regeneration on each of a changed Logged Day, a changed label, changed reason codes and a changed language; `refresh: true` regenerating over a fresh row; `vision.Unconfigured` yielding `unconfigured`; an `Advise` error yielding `unavailable` with no row written; a rejected label and a malformed reason code each yielding 400; and no claims yielding 401
+- [ ] Add `backend/pkg/server/food_advice_test.go` covering: a cache hit serving without calling `Advise` (a `Fake` whose `AdviseErr` fails the test if called, mirroring `TestFoodSearch_CacheHitSkipsTranslation`); a miss generating and persisting a row; regeneration on each of a changed Logged Day, label, reason codes, language, mean figure and target figure; a fractional mean reaching `Advise` unchanged; two concurrent non-refresh misses producing one `Advise` call; `refresh: true` regenerating over a fresh row; `vision.Unconfigured` yielding `unconfigured`; an `Advise` error yielding `unavailable` with no row written; a rejected label and a malformed reason code each yielding 400; a same-site or cross-site browser request yielding 403 with no `Advise` call or cache write; and no claims yielding 401
 - [ ] Mark completed
 
 ### Task 4: The client and the card
 - [ ] Add the request and response types plus `api.getNutritionAdvice(...)` to `frontend/lib/api.ts`, discriminated on `available` the way `TodaySummaryTarget` is, so no caller can read `lines` without checking first; remove `recommendation` from `TodaySummary` and its doc-comment paragraph
-- [ ] Read `frontend/lib/healthiness.ts` and use its own exported result type for the label and reason codes rather than re-deriving either in the card
-- [ ] Add a second `useEffect` in `frontend/components/LoggingGapCard.tsx`, keyed on the label and its reason codes, that requests advice only when the sustainability warnings are empty and a label is on screen; keep it out of the existing four-request load so the card renders before the advice arrives, and guard it with the same `cancelled` flag the main effect uses
+- [ ] Extend `HealthinessResult` in `frontend/lib/healthiness.ts` with a typed `means` object for calories, protein, carbs, fat, sugar and sodium per eligible day; compute it from the same window and `isValidDay`-filtered set already used for the verdict, and add unit coverage proving ineligible/out-of-window days are excluded and fractional means are preserved
+- [ ] Use `HealthinessResult` for the label, reason codes and all six mean figures rather than re-deriving any of them in the card
+- [ ] Add a second `useEffect` in `frontend/components/LoggingGapCard.tsx`, keyed on a stable signature of the full normalized advice request plus the target figures and display language, that requests advice only when the sustainability warnings are empty and a label is on screen; keep it out of the existing four-request load so the card renders before the advice arrives, and give this effect its own `cancelled` flag following the main effect's pattern
 - [ ] Render the advice block under the label with testids `nutrition-advice` and `nutrition-advice-line`, and a `TapTarget` refresh control with testid `nutrition-advice-refresh`, disabled while a request is in flight
 - [ ] Implement the four display states from `How`: lines plus control; nothing at all for `unconfigured`; nothing for `unavailable` on load; a single `nutrition-advice-error` line for `unavailable` after a user-triggered refresh
 - [ ] Show `loggingGap.adviceDetail` inside the existing hint disclosure whenever advice lines are on screen
