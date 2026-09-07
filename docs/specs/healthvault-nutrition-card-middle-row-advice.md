@@ -3,7 +3,7 @@ Idea: ya-breeze/idea-forge#227
 
 ## Why
 
-The dashboard's nutrition card (registry id `logging_gap`, titled "Питание" / "Nutrition") is built from three rows. The top row shows today's calories and macros against the Nutrition Target. The bottom row compares 28 days of logged food against the weight trend. The middle row is a four-part initiative: the sustainability warning shipped in `docs/specs/healthvault-nutrition-card-middle-row-he.md`, the deterministic Healthiness Label that is being built now, and then the two parts the owner deferred — the LLM advice lines and a nutrition chat. This change builds the advice lines.
+The dashboard's nutrition card (registry id `logging_gap`, titled "Питание" / "Nutrition") is built from three rows. The top row shows today's calories and macros against the Nutrition Target. The bottom row compares 28 days of logged food against the weight trend. The middle row is a four-part initiative: the sustainability warning shipped in `docs/specs/healthvault-nutrition-card-middle-row-he.md`, the deterministic Healthiness Label shipped in `docs/specs/healthvault-nutrition-card-middle-row-th.md`, and then the two parts the owner deferred — the LLM advice lines and a nutrition chat. This change builds the advice lines.
 
 The card can compute a judgment but cannot say what to do about it. A label reading "Fair" tells the reader where they stand and nothing else. ADR-004 (`docs/adr/ADR-004-heuristic-food-healthiness-label.md`) settled how to close that: the heuristic produces the judgment, and the LLM sits strictly downstream of it, turning an already-computed label into one or two readable lines such as "add ~40 g protein/day". The LLM never produces the judgment itself.
 
@@ -20,11 +20,11 @@ What has been missing is the set of decisions the idea named: where the cache li
 
 ### Scope
 
-This change ships the advice lines. The nutrition chat is excluded and filed as its own idea — the owner gated it on the advice lines being *used*, not merely shipped, and its persistence model (an ongoing thread versus ephemeral per session) is still an open design question.
+This change ships the advice lines. The nutrition chat is excluded and deliberately not filed yet — the owner gated filing it on the advice lines being *used*, not merely shipped, and its persistence model (an ongoing thread versus ephemeral per session) is still an open design question. The owner will decide when use has justified a follow-up idea.
 
 ### Where the label comes from, and the ordering this change sits in
 
-ADR-004 puts the LLM downstream of the label, so the advice cannot be generated without one. The Healthiness Label change is in flight and lands first: it adds `frontend/lib/healthiness.ts`, which computes the three-level label (Good / Fair / Needs attention) and its reason codes over a rolling 7-day window from per-day macro, sugar and sodium sums returned by `GET /api/food/daily-totals`. Branch this change from a `main` that already contains that file, and read it for the exact exported names before wiring the card — this spec deliberately does not guess them.
+ADR-004 puts the LLM downstream of the label, so the advice cannot be generated without one. The Healthiness Label change has landed: `frontend/lib/healthiness.ts` computes the three-level label (Good / Fair / Needs attention) and its reason codes over a rolling 7-day window from per-day macro, sugar and sodium sums returned by `GET /api/food/daily-totals`. Use its exact exported names when wiring the card rather than introducing a parallel label shape.
 
 The backend half depends on none of that, which is why the task order puts it first. The endpoint takes the label and its reason codes as request fields and validates their *shape*, not their vocabulary. It never re-derives the label and never second-guesses it. If the label change's reason codes change later, nothing on the backend needs updating.
 
@@ -67,7 +67,7 @@ ADR-004 flags a "Fair" label with alarmed advice text as a prompt-design problem
 
 1. **The label is a given, not a question.** The system prompt states that the label was computed by a deterministic heuristic, that it is correct, and that the reply must never restate, dispute, upgrade or downgrade it.
 2. **Tone is keyed to the label, in the prompt.** `good` — confirm what is working and offer at most one small refinement. `fair` — one concrete adjustment, in a neutral register. `needs_attention` — direct and specific, still calm; no alarm words, no prognosis.
-3. **Fixed prohibitions.** No medical claims, no diagnosis, no supplements, no fasting or cleanse suggestions, no calorie prescription below the stated target, no numbers that were not supplied in the input. One or two lines, one clause each, at most about 90 characters, written in the caller's display language.
+3. **Fixed prohibitions.** No medical claims, no diagnosis, no supplements, no fasting or cleanse suggestions, no calorie prescription below the stated target, and no measurements, thresholds or quantities except values supplied in the input or simple differences derived directly from them. Derived differences are allowed because advice such as "add ~40 g protein/day" must subtract mean intake from the supplied target. One or two lines, one clause each, at most about 90 characters, written in the caller's display language.
 
 The reason codes reach the prompt verbatim, so their shape is bounded before they get there: at most six codes, each matching `^[a-z][a-z_]{0,31}$`, deduplicated and sorted. That is at most ~200 bytes of lowercase letters and underscores — the same "bound how much caller-controlled text reaches the model" rule `normalizeDisplayLanguage` already applies to the language tag, for the same reason.
 
@@ -131,7 +131,7 @@ The `available` / `reason` shape is `summaryTargetPayload`'s, and for its reason
 
 ### Rendering
 
-The advice is a fifth request and must not delay the four the card already makes. It goes out from its own `useEffect` after the main load resolves. Key that effect on a stable signature of the complete normalized request context — the label, sorted reason codes and all six mean figures — plus the target figures and display language that can change the server-computed `AdviceInput`. Keying only on the label and reasons can leave advice from older numerical inputs on screen when those inputs change without crossing a heuristic threshold. The card is fully readable before the advice arrives, and the row grows when it lands.
+The advice is a fifth request and must not delay the four the card already makes. It goes out from its own `useEffect` after the main load resolves. Key that effect on a stable signature of the complete normalized request context — the label, sorted reason codes and all six mean figures — plus the target figures and the current `language` from `useLanguage()`. Use the context value rather than treating the `display_language` captured by one main load as a reactive language source. Store the signature alongside every advice result and render it only when that stored signature still equals the current one; also clear the stored result and refresh error in the effect before starting or skipping the next request. The render-time equality check matters because `useEffect` runs after paint, so an effect-only reset can still show the previous result for one render under the new label, figures or language. Without either guard, the previous result can remain indefinitely when the replacement returns `unavailable`. The card is fully readable before the advice arrives, and the row grows when it lands.
 
 The block renders under the label, inside the middle row, only when `available` is true and at least one line came back. Testids follow the existing names: `nutrition-advice` on the block, `nutrition-advice-line` on each line, `nutrition-advice-refresh` on the "get advice" control, `nutrition-advice-error` on the failure line.
 
@@ -154,7 +154,7 @@ So the field goes: removed from `summaryTodayResponse`, from its `nil` assignmen
 
 No new ADR. ADR-004 already decided everything architectural here — heuristic label, LLM downstream of it, cached daily generation, a user-triggered refresh. The prompt design and the cache key are implementation detail, which belongs in this `How` section.
 
-ADR-004 is still `Proposed`. This change ships the second half of what it decides, so flip it to `Accepted` as the last commit — unless the Healthiness Label change already flipped it, in which case add a short `> **Update (docs/specs/…):**` note naming this spec instead of rewriting an Accepted record.
+ADR-004 is already `Accepted`; the Healthiness Label change flipped it when the deterministic half shipped. As the last commit, add a short `> **Update (`docs/specs/healthvault-nutrition-card-middle-row-advice.md`, <date>):**` note recording that this change ships the cached LLM advice lines while the chat remains deferred. Do not rewrite the accepted decision or its earlier update.
 
 ### What the owner still has to do
 
@@ -178,7 +178,7 @@ Nothing gates this change, but one check is the owner's alone. The tests here dr
 - [ ] Implement `Advise` on `Unconfigured` in `backend/pkg/vision/unconfigured.go`, returning `ErrNotConfigured` like its siblings
 - [ ] Add `AdviseResult []string`, `AdviseErr error` and `AdviseCalls []AdviceInput` to `Fake` in `backend/pkg/vision/fake.go`, recording every call's full input
 - [ ] Implement `OpenAIClient.Advise` in `backend/pkg/vision/openai.go` following `Translate`'s shape: an `adviceJSONSchema` with a single required `lines` array of strings and `additionalProperties: false`, an `adviceSystemPrompt`, one `c.call` with schema name `nutrition_advice`, one unmarshal
-- [ ] Write `adviceSystemPrompt` with the three tone rules from `How`: the label is a given and must not be restated or disputed; tone keyed per label value (`good` / `fair` / `needs_attention`); and the fixed prohibitions — no medical claims, no diagnosis, no supplements, no fasting, no calorie prescription below the stated target, no numbers that were not supplied, one or two lines of at most one clause and about 90 characters each, written in the caller's display language
+- [ ] Write `adviceSystemPrompt` with the three tone rules from `How`: the label is a given and must not be restated or disputed; tone keyed per label value (`good` / `fair` / `needs_attention`); and the fixed prohibitions — no medical claims, no diagnosis, no supplements, no fasting, no calorie prescription below the stated target, and no quantities except supplied values or simple differences derived directly from them, one or two lines of at most one clause and about 90 characters each, written in the caller's display language
 - [ ] Post-process the model's output inside `Advise`: trim each line, drop empties, truncate each to 120 runes, keep at most the first two, and return an error when nothing survives
 - [ ] Extend `backend/pkg/vision/openai_test.go` in the style of its existing text-only cases: assert the request body carries no image content, that the label, reason codes, target figures and language all reach the prompt, and that a four-line model reply is truncated to two
 - [ ] Mark completed
@@ -206,7 +206,7 @@ Nothing gates this change, but one check is the owner's alone. The tests here dr
 - [ ] Add the request and response types plus `api.getNutritionAdvice(...)` to `frontend/lib/api.ts`, discriminated on `available` the way `TodaySummaryTarget` is, so no caller can read `lines` without checking first; remove `recommendation` from `TodaySummary` and its doc-comment paragraph
 - [ ] Extend `HealthinessResult` in `frontend/lib/healthiness.ts` with a typed `means` object for calories, protein, carbs, fat, sugar and sodium per eligible day; compute it from the same window and `isValidDay`-filtered set already used for the verdict, and add unit coverage proving ineligible/out-of-window days are excluded and fractional means are preserved
 - [ ] Use `HealthinessResult` for the label, reason codes and all six mean figures rather than re-deriving any of them in the card
-- [ ] Add a second `useEffect` in `frontend/components/LoggingGapCard.tsx`, keyed on a stable signature of the full normalized advice request plus the target figures and display language, that requests advice only when the sustainability warnings are empty and a label is on screen; keep it out of the existing four-request load so the card renders before the advice arrives, and give this effect its own `cancelled` flag following the main effect's pattern
+- [ ] Add a second `useEffect` in `frontend/components/LoggingGapCard.tsx`, keyed on a stable signature of the full normalized advice request plus the target figures and the current `language` from `useLanguage()`, that requests advice only when the sustainability warnings are empty and a label is on screen; store that signature with each result and render only a result whose stored signature still matches, clear any prior advice and refresh error before requesting or whenever those preconditions stop holding, keep it out of the existing four-request load so the card renders before the advice arrives, and give this effect its own `cancelled` flag following the main effect's pattern
 - [ ] Render the advice block under the label with testids `nutrition-advice` and `nutrition-advice-line`, and a `TapTarget` refresh control with testid `nutrition-advice-refresh`, disabled while a request is in flight
 - [ ] Implement the four display states from `How`: lines plus control; nothing at all for `unconfigured`; nothing for `unavailable` on load; a single `nutrition-advice-error` line for `unavailable` after a user-triggered refresh
 - [ ] Show `loggingGap.adviceDetail` inside the existing hint disclosure whenever advice lines are on screen
@@ -226,7 +226,7 @@ Nothing gates this change, but one check is the owner's alone. The tests here dr
 - [ ] Add an `unavailable`-after-refresh case asserting `nutrition-advice-error` is visible
 - [ ] Add the precedence regression: with a sustainability warning firing, assert `nutrition-advice` is absent and no request to `/api/food/advice` was made
 - [ ] Update `todo.md`'s Phase 4 section to record the advice lines as shipped and to name the nutrition chat as the one remaining part of the middle row
-- [ ] Flip `docs/adr/ADR-004-heuristic-food-healthiness-label.md` from `Proposed` to `Accepted` as the last commit; if it is already `Accepted`, add a `> **Update:**` note naming this spec instead of rewriting it
+- [ ] As the last commit, add an `> **Update:**` note to the already-`Accepted` `docs/adr/ADR-004-heuristic-food-healthiness-label.md` naming this spec, recording that the cached advice lines shipped and that the chat remains deferred; do not rewrite the accepted decision or its earlier update
 - [ ] Run `make lint` and `make test` and fix everything they report
 - [ ] Deploy the branch to the WIP stack and run `make test-e2e` against it, fixing every failure rather than recording it as pre-existing
 - [ ] Mark completed
