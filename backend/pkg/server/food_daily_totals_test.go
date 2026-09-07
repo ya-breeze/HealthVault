@@ -35,6 +35,24 @@ func createMealWithCalories(
 	return meal
 }
 
+func createMealWithMacros(
+	t *testing.T, st database.Storage, userID, familyID uuid.UUID, status string, loggedAt time.Time,
+	calories, protein, carbs, fat, sugar, sodium float64,
+) database.FoodMeal {
+	t.Helper()
+	meal := database.FoodMeal{
+		UserID: userID, Status: status, LoggedAt: loggedAt, Name: "Meal",
+		Calories: calories, ProteinGrams: protein, CarbsGrams: carbs, FatGrams: fat,
+		SugarGrams: sugar, SodiumGrams: sodium,
+	}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create meal: %v", err)
+	}
+	return meal
+}
+
 func TestGetFoodDailyTotals_HappyPathAcrossSeveralDaysIncludingZeroMealDay(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
@@ -187,6 +205,138 @@ func TestGetFoodDailyTotals_UnconfirmedMealCountIsPerDay(t *testing.T) {
 	}
 	if got[1].UnconfirmedMeals != 1 {
 		t.Errorf("day -2: expected 1 unconfirmed, got %+v", got[1])
+	}
+}
+
+func TestGetFoodDailyTotals_MacroSugarSodiumSumsAreCorrect(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	day := time.Now().UTC().AddDate(0, 0, -2).Truncate(24 * time.Hour)
+	createMealWithMacros(t, st, userID, familyID, database.MealStatusConfirmed, day.Add(8*time.Hour),
+		500, 30, 60, 15, 10, 1.2)
+	createMealWithMacros(t, st, userID, familyID, database.MealStatusConfirmed, day.Add(19*time.Hour),
+		600, 40, 50, 20, 8, 1.5)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	dateStr := day.Format("2006-01-02")
+
+	w := httptest.NewRecorder()
+	h.GetFoodDailyTotals(w, withClaims(dailyTotalsRequest(fmt.Sprintf("from=%s&to=%s", dateStr, dateStr)), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got []database.DailyTotal
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 day, got %d: %+v", len(got), got)
+	}
+	d := got[0]
+	if d.Calories != 1100 || d.ProteinGrams != 70 || d.CarbsGrams != 110 || d.FatGrams != 35 ||
+		d.SugarGrams != 18 || d.SodiumGrams != 2.7 {
+		t.Errorf("unexpected sums: %+v", d)
+	}
+}
+
+// A non-confirmed meal contributes to UnconfirmedMeals and to none of the
+// five sums, matching how it already behaves for Calories.
+func TestGetFoodDailyTotals_UnconfirmedMealExcludedFromMacroSugarSodiumSums(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	day := time.Now().UTC().AddDate(0, 0, -2).Truncate(24 * time.Hour)
+	createMealWithMacros(t, st, userID, familyID, database.MealStatusConfirmed, day.Add(8*time.Hour),
+		500, 30, 60, 15, 10, 1.2)
+	createMealWithMacros(t, st, userID, familyID, database.MealStatusPendingReview, day.Add(13*time.Hour),
+		999, 99, 99, 99, 99, 9.9)
+
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	dateStr := day.Format("2006-01-02")
+
+	w := httptest.NewRecorder()
+	h.GetFoodDailyTotals(w, withClaims(dailyTotalsRequest(fmt.Sprintf("from=%s&to=%s", dateStr, dateStr)), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got []database.DailyTotal
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 day, got %d: %+v", len(got), got)
+	}
+	d := got[0]
+	if d.UnconfirmedMeals != 1 {
+		t.Errorf("expected 1 unconfirmed meal, got %+v", d)
+	}
+	if d.Calories != 500 || d.ProteinGrams != 30 || d.CarbsGrams != 60 || d.FatGrams != 15 ||
+		d.SugarGrams != 10 || d.SodiumGrams != 1.2 {
+		t.Errorf("unconfirmed meal's macros must not be summed in: %+v", d)
+	}
+}
+
+func TestGetFoodDailyTotals_NoMealsDayReturnsZeroForAllFiveSums(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	dateStr := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	w := httptest.NewRecorder()
+	h.GetFoodDailyTotals(w, withClaims(dailyTotalsRequest(fmt.Sprintf("from=%s&to=%s", dateStr, dateStr)), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got []database.DailyTotal
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 day, got %d: %+v", len(got), got)
+	}
+	d := got[0]
+	if d.Calories != 0 || d.ProteinGrams != 0 || d.CarbsGrams != 0 || d.FatGrams != 0 ||
+		d.SugarGrams != 0 || d.SodiumGrams != 0 {
+		t.Errorf("expected all-zero sums for a day with no meals, got %+v", d)
+	}
+}
+
+// Asserts against the raw JSON, not a decoded struct: decoding a missing key
+// and a present zero-valued key both leave the Go field at its zero value, so
+// only inspecting the raw map can tell "the key was omitted" apart from "the
+// key was present and zero" — exactly the bug an `omitempty` tag would cause.
+func TestGetFoodDailyTotals_AllFiveNewKeysArePresentInRawJSONEvenWhenZero(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	dateStr := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	w := httptest.NewRecorder()
+	h.GetFoodDailyTotals(w, withClaims(dailyTotalsRequest(fmt.Sprintf("from=%s&to=%s", dateStr, dateStr)), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var raw []map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(raw) != 1 {
+		t.Fatalf("expected 1 day, got %d: %+v", len(raw), raw)
+	}
+	for _, key := range []string{"protein_grams", "carbs_grams", "fat_grams", "sugar_grams", "sodium_grams"} {
+		v, ok := raw[0][key]
+		if !ok {
+			t.Errorf("expected key %q to be present even when zero", key)
+			continue
+		}
+		if v != float64(0) {
+			t.Errorf("expected key %q to be 0, got %v", key, v)
+		}
 	}
 }
 
