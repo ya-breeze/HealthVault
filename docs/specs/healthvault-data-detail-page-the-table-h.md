@@ -33,12 +33,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 1: Define localized record-column metadata
 
-- [ ] Add `frontend/lib/dataColumnMeta.ts` with typed shared column-label keys, per-`DataType` overrides, and a `dataColumnLabel(t, type, column)` resolver that prefers a type override, then the shared map, then a localized unknown-field fallback.
-- [ ] Cover every user-visible raw column currently declared by the health models in `backend/pkg/database/models.go`, including the interval, point, blood-pressure, skin-temperature, sleep, exercise, speed, and nutrition-specific fields, as well as every field selected for `food_meals` by `columnAllowlist` in `backend/pkg/database/storage_impl.go`.
-- [ ] Give ambiguous value columns metric-specific labels with their stored units, so similarly named database fields remain understandable without changing or converting the table values.
-- [ ] Add the required `dataTable.*` column, action, state, and error keys to `frontend/lib/i18n/en.ts` and matching Russian translations to `frontend/lib/i18n/ru.ts`; keep the existing `Dictionary = typeof en` parity check intact and update the catalog scope comments that currently call detail pages untranslated.
-- [ ] Keep literal English display copy out of the metadata module by storing only dictionary keys typed against `Dictionary`.
-- [ ] Mark completed
+- [x] Add `frontend/lib/dataColumnMeta.ts` with typed shared column-label keys, per-`DataType` overrides, and a `dataColumnLabel(t, type, column)` resolver that prefers a type override, then the shared map, then a localized unknown-field fallback.
+- [x] Cover every user-visible raw column currently declared by the health models in `backend/pkg/database/models.go`, including the interval, point, blood-pressure, skin-temperature, sleep, exercise, speed, and nutrition-specific fields, as well as every field selected for `food_meals` by `columnAllowlist` in `backend/pkg/database/storage_impl.go`.
+- [x] Give ambiguous value columns metric-specific labels with their stored units, so similarly named database fields remain understandable without changing or converting the table values.
+- [x] Add the required `dataTable.*` column, action, state, and error keys to `frontend/lib/i18n/en.ts` and matching Russian translations to `frontend/lib/i18n/ru.ts`; keep the existing `Dictionary = typeof en` parity check intact and update the catalog scope comments that currently call detail pages untranslated.
+- [x] Keep literal English display copy out of the metadata module by storing only dictionary keys typed against `Dictionary`.
+- [x] Mark completed
 
 ### Task 2: Apply the metadata and translations to the record table
 
