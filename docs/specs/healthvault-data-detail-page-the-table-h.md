@@ -42,12 +42,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 2: Apply the metadata and translations to the record table
 
-- [ ] Update `frontend/app/data/[type]/DataTypeClient.tsx` to read both `t` and `language` from `useLanguage`, render the heading through the existing `metricLabel`, and render each dynamic header through `dataColumnLabel(t, dataType, k)` without changing `displayColumns` or table layout.
-- [ ] Translate the Actions heading, table loading and empty states, delete confirmation and cancellation controls, delete-button `aria-label`, and deletion failure message through the new catalog keys.
-- [ ] Change `handleConfirmDelete` and its state so an `ApiError` or other exception cannot place an English backend message directly into the localized UI; preserve the existing pending-row and retry behavior while showing a localized operation-level failure.
-- [ ] Format record-table timestamps with `dateLocaleFor(language)` and localize a `food_meal` row's known status values through the existing `mealStatusLabel`; leave user-authored meal names and other stored string values unchanged.
-- [ ] Preserve the owner/family-member distinction: the Actions column and delete controls remain absent whenever `userParam` is present.
-- [ ] Mark completed
+- [x] Update `frontend/app/data/[type]/DataTypeClient.tsx` to read both `t` and `language` from `useLanguage`, render the heading through the existing `metricLabel`, and render each dynamic header through `dataColumnLabel(t, dataType, k)` without changing `displayColumns` or table layout.
+- [x] Translate the Actions heading, table loading and empty states, delete confirmation and cancellation controls, delete-button `aria-label`, and deletion failure message through the new catalog keys.
+- [x] Change `handleConfirmDelete` and its state so an `ApiError` or other exception cannot place an English backend message directly into the localized UI; preserve the existing pending-row and retry behavior while showing a localized operation-level failure.
+- [x] Format record-table timestamps with `dateLocaleFor(language)` and localize a `food_meal` row's known status values through the existing `mealStatusLabel`; leave user-authored meal names and other stored string values unchanged.
+- [x] Preserve the owner/family-member distinction: the Actions column and delete controls remain absent whenever `userParam` is present.
+- [x] Mark completed
 
 ### Task 3: Add regression coverage for both languages and all current columns
 

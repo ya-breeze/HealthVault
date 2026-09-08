@@ -18,6 +18,8 @@ import AddRecordForm from '@/components/AddRecordForm';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import { InfoIcon } from '@/components/icons';
+import { dataColumnLabel } from '@/lib/dataColumnMeta';
+import { dateLocaleFor, mealStatusLabel, metricLabel } from '@/lib/i18n';
 
 interface Props {
   type: string;
@@ -85,6 +87,10 @@ const ALL_TIME_FROM = new Date(0).toISOString();
 // plotted weight line/area stays the focal element.
 const BMI_BAND_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444'];
 
+const RECORD_TIMESTAMP_COLUMNS = new Set([
+  'created_at', 'updated_at', 'time', 'start_time', 'end_time', 'session_end_time', 'logged_at',
+]);
+
 export default function DataTypeClient({ type }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -130,7 +136,7 @@ export default function DataTypeClient({ type }: Props) {
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<'operation' | null>(null);
   // Bumped by AddRecordForm's onSuccess to force the fetch effect below to
   // re-run — the effect otherwise only depends on the range/zoom, so a
   // successful write would never appear in `records`/`chartRows` without
@@ -185,7 +191,7 @@ export default function DataTypeClient({ type }: Props) {
   // diagnostic table is worth reading once, not on every visit.
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const diagnosticsId = useId();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   // refreshKey is in the dep list too: rangeForZoom's `to` is `now()` at the
   // time this memo runs, so a record just created via AddRecordForm (timed
@@ -611,8 +617,8 @@ export default function DataTypeClient({ type }: Props) {
     try {
       await api.deleteRecord(type, id);
       setRecords(prev => prev.filter(r => r.id !== id));
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Delete failed');
+    } catch {
+      setDeleteError('operation');
     } finally {
       setDeleting(false);
       setPendingDeleteId(prev => prev === id ? null : prev);
@@ -625,7 +631,7 @@ export default function DataTypeClient({ type }: Props) {
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <h1 className="text-xl font-bold capitalize text-text flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-            {type.replace(/_/g, ' ')}
+            {metricLabel(t, dataType)}
           </h1>
           {!userParam && dataType === 'weight' && !showGoalForm && (
             <TapTarget
@@ -718,7 +724,7 @@ export default function DataTypeClient({ type }: Props) {
 
         {deleteError && (
           <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
-            Delete failed: {deleteError}
+            {t('dataTable.deleteFailed')}
           </div>
         )}
 
@@ -912,19 +918,19 @@ export default function DataTypeClient({ type }: Props) {
 
         <div className="bg-bg-elevated rounded-[12px] border border-border overflow-auto">
           {loading ? (
-            <p className="p-6 text-text-muted text-center text-sm">Loading...</p>
+            <p className="p-6 text-text-muted text-center text-sm">{t('dataTable.loading')}</p>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-bg border-b border-border">
                 <tr>
                   {displayColumns.map(k => (
                     <th key={k} className="px-4 py-3 text-left font-medium text-text-muted text-xs uppercase tracking-wider">
-                      {k}
+                      {dataColumnLabel(t, dataType, k)}
                     </th>
                   ))}
                   {!userParam && (
                     <th className="px-4 py-3 text-left font-medium text-text-muted text-xs uppercase tracking-wider">
-                      Actions
+                      {t('dataTable.actions')}
                     </th>
                   )}
                 </tr>
@@ -940,9 +946,11 @@ export default function DataTypeClient({ type }: Props) {
                     >
                       {displayColumns.map(k => (
                         <td key={k} className="px-4 py-3 text-text">
-                          {typeof r[k] === 'string' && (r[k] as string).includes('T')
-                            ? new Date(r[k] as string).toLocaleString()
-                            : String(r[k] ?? '')}
+                          {dataType === 'food_meal' && k === 'status' && typeof r[k] === 'string'
+                            ? mealStatusLabel(t, r[k])
+                            : RECORD_TIMESTAMP_COLUMNS.has(k) && typeof r[k] === 'string'
+                              ? new Date(r[k]).toLocaleString(dateLocaleFor(language))
+                              : String(r[k] ?? '')}
                         </td>
                       ))}
                       {!userParam && (
@@ -954,20 +962,20 @@ export default function DataTypeClient({ type }: Props) {
                                 disabled={deleting}
                                 className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                {deleting ? '…' : 'Confirm'}
+                                {deleting ? '…' : t('dataTable.confirmDelete')}
                               </TapTarget>
                               <TapTarget
                                 onClick={() => setPendingDeleteId(null)}
                                 disabled={deleting}
                                 className="text-xs px-2 py-1 rounded bg-border text-text hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                Cancel
+                                {t('dataTable.cancelDelete')}
                               </TapTarget>
                             </span>
                           ) : (
                             <TapTarget
                               onClick={() => { setDeleteError(null); setPendingDeleteId(id); }}
-                              aria-label="Delete record"
+                              aria-label={t('dataTable.deleteRecord')}
                               className="text-text-muted hover:text-red-500 transition-colors"
                             >
                               🗑
@@ -982,7 +990,7 @@ export default function DataTypeClient({ type }: Props) {
             </table>
           )}
           {!loading && records.length === 0 && (
-            <p className="p-6 text-text-muted text-center text-sm">No data in this range.</p>
+            <p className="p-6 text-text-muted text-center text-sm">{t('dataTable.empty')}</p>
           )}
         </div>
       </main>
