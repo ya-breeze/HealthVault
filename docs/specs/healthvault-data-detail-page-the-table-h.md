@@ -51,9 +51,9 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 3: Add regression coverage for both languages and all current columns
 
-- [ ] Add `frontend/lib/dataColumnMeta.test.ts` covering shared labels, ambiguous per-type overrides, unique metric fields, the `food_meal` allowlist fields, and the localized fallback for an unknown key.
-- [ ] In that unit test, enumerate the current user-visible raw columns for every `DATA_TYPES` member and assert that both English and Russian resolve each one without returning the raw key or the unknown-field fallback; this is the guard against a model field being exposed without presentation metadata.
-- [ ] Extend `e2e/tests/data-types.spec.ts` with an English record-table case that verifies a real metric page shows readable column and action labels and does not render its snake_case database keys as headings.
-- [ ] Add a Russian case following the settings-save and `try`/`finally` cleanup convention in `e2e/tests/settings.spec.ts`; verify the localized metric title, representative shared and per-type table headers, Actions heading, and delete confirmation/cancellation text, then restore English even if an assertion fails.
-- [ ] Cover a family-member view or equivalent mocked state to prove localization does not accidentally add the owner-only Actions column.
-- [ ] Mark completed
+- [x] Add `frontend/lib/dataColumnMeta.test.ts` covering shared labels, ambiguous per-type overrides, unique metric fields, the `food_meal` allowlist fields, and the localized fallback for an unknown key.
+- [x] In that unit test, enumerate the current user-visible raw columns for every `DATA_TYPES` member and assert that both English and Russian resolve each one without returning the raw key or the unknown-field fallback; this is the guard against a model field being exposed without presentation metadata.
+- [x] Extend `e2e/tests/data-types.spec.ts` with an English record-table case that verifies a real metric page shows readable column and action labels and does not render its snake_case database keys as headings.
+- [x] Add a Russian case following the settings-save and `try`/`finally` cleanup convention in `e2e/tests/settings.spec.ts`; verify the localized metric title, representative shared and per-type table headers, Actions heading, and delete confirmation/cancellation text, then restore English even if an assertion fails.
+- [x] Cover a family-member view or equivalent mocked state to prove localization does not accidentally add the owner-only Actions column.
+- [x] Mark completed
