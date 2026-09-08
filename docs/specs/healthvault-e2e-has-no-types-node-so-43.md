@@ -22,6 +22,13 @@ The end state remains a zero-diagnostic e2e type-check gated by `make lint`, fol
 - `make test`
 - `make test-e2e`
 
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
+
 ### Task 1: Reconcile and reproduce the failed validation
 - [ ] Reconcile candidate `c312752` with current `main`, preserving the existing changes in `Makefile`, `e2e/package.json`, `e2e/package-lock.json`, `e2e/tsconfig.json`, `e2e/tests/helpers/target.ts`, and `e2e/tests/food.spec.ts`.
 - [ ] Run `make lint` on the reconciled tree and capture the first actionable failure, identifying whether it comes from dependency installation, `npm run typecheck --silent`, or `cd backend && go vet -tags sqlite_fts5 ./...`.
