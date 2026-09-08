@@ -44,10 +44,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: Review the repaired integration
-- [ ] Review the complete diff from current `main` for accidental reversions, unrelated behavior changes, weakened type coverage, stale lockfile data, and Makefile dependency or ordering mistakes.
-- [ ] Confirm `lint` still runs both `lint-e2e` and `go vet -tags $(GO_TAGS) ./...`, and that `lint-e2e` still invokes the canonical `typecheck` script.
-- [ ] Fix every correctness or specification-fidelity issue found during review before rerunning validation.
-- [ ] Mark completed
+- [x] Review the complete diff from current `main` for accidental reversions, unrelated behavior changes, weakened type coverage, stale lockfile data, and Makefile dependency or ordering mistakes.
+- [x] Confirm `lint` still runs both `lint-e2e` and `go vet -tags $(GO_TAGS) ./...`, and that `lint-e2e` still invokes the canonical `typecheck` script.
+- [x] Fix every correctness or specification-fidelity issue found during review before rerunning validation.
+- [x] Mark completed
 
 ### Task 4: Validate the final result
 - [ ] Run `make lint` and confirm both the e2e TypeScript check and backend Go vet finish successfully with zero diagnostics.
