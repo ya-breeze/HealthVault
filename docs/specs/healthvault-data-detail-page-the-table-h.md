@@ -20,9 +20,16 @@ In `DataTypeClient`, preserve the existing data-driven `displayColumns`, column 
 This change deliberately does not alter the API response, database models, `displayColumns` filtering, table markup, responsive classes, or horizontal scrolling. It also does not localize the zoom controls, nutrition macro selector, chart legends and tooltips, statistics, BMI and projection copy, weight shortcuts, `AddRecordForm`, or the Suspense fallback; those form the deferred child change. No public hostname, deployment stack, credential, or owner-only action is required.
 
 ## Validation Commands
-- make lint
-- make test
-- make test-e2e
+- `make lint`
+- `make test`
+- `make test-e2e`
+
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
 
 ### Task 1: Define localized record-column metadata
 
