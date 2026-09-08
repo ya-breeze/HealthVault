@@ -56,19 +56,19 @@ test.describe('Data type pages', () => {
 
   test('/data/steps loads with chart area', async ({ page }) => {
     await page.goto('/data/steps/');
-    await expect(page.getByText(/steps/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Steps' })).toBeVisible();
     // Page should render without errors (no "something went wrong")
     await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
   });
 
   test('/data/heart_rate loads', async ({ page }) => {
     await page.goto('/data/heart_rate/');
-    await expect(page.getByText(/heart.?rate/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Heart Rate' })).toBeVisible();
   });
 
   test('/data/sleep loads', async ({ page }) => {
     await page.goto('/data/sleep/');
-    await expect(page.getByText(/sleep/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sleep' })).toBeVisible();
   });
 
   test('unknown type API returns 404', async ({ page }) => {
