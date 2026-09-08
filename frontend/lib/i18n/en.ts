@@ -18,10 +18,10 @@
 // ClarifyModal, CustomFoodModal, DeleteMealControl, MacroSummary,
 // ManualItemEditor, MealMetaEditor and ReanalyzeControl. (AddItemForm's own
 // chrome is English, but the ItemResolver panel it embeds is covered, so
-// that form is partly translated rather than wholly English. The steps
-// detail pages are likewise partly translated: their metric heading, raw
-// record table, and the steps diagnostic disclosure are covered, while the
-// chart and write-form surfaces listed above are not.)
+// that form is partly translated rather than wholly English. The per-type
+// data detail pages are likewise partly translated: their metric heading and
+// raw record table are covered, as is the steps page's diagnostic disclosure,
+// while the chart and write-form surfaces listed above are not.)
 //
 // app/food/manual/page.tsx is now partly translated, not wholly English: its
 // description-first entry path (the textarea, name/time inputs, character
@@ -390,8 +390,8 @@ const en = {
 
   // The steps detail page's diagnostic disclosure (check-the-health-data
   // spec) — collapsed by default, same hint-then-detail pattern as the
-  // loggingGap keys above. The only translated strings on the per-type data
-  // detail pages; see the scope comment at the top of this file.
+  // loggingGap keys above. These are the steps-specific detail-page strings;
+  // the shared record-table translations follow below.
   'stepsDiagnostics.hintToggle': 'Show diagnostic',
   'stepsDiagnostics.title': 'Step diagnostics',
   'stepsDiagnostics.columnDay': 'Day',

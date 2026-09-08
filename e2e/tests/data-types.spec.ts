@@ -49,6 +49,29 @@ async function mockHeartRateRecords(page: Page) {
   });
 }
 
+const FOOD_MEAL_TIME = '2026-09-08T13:45:00Z';
+
+async function mockFoodMealRecordWithFailedDelete(page: Page) {
+  await page.route('**/api/data/food_meal?*', route => route.fulfill({
+    json: [{
+      id: 'localized-food-record',
+      logged_at: FOOD_MEAL_TIME,
+      name: 'T-bone dinner',
+      status: 'confirmed',
+      calories: 650,
+      protein_grams: 45,
+      carbs_grams: 30,
+      fat_grams: 38,
+      sugar_grams: 4,
+      sodium_grams: 1.2,
+      dietary_fiber_grams: 3,
+    }],
+  }));
+  await page.route('**/api/data/food_meal/localized-food-record', route =>
+    route.fulfill({ status: 500, contentType: 'text/plain', body: 'server says delete boom' })
+  );
+}
+
 test.describe('Data type pages', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
@@ -159,6 +182,29 @@ test.describe('Localized record table', () => {
       await page.getByRole('button', { name: 'Удалить запись' }).click();
       await expect(page.getByRole('button', { name: 'Удалить', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Отмена', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+
+      await mockFoodMealRecordWithFailedDelete(page);
+      await page.goto('/data/food_meal/');
+      const localizedTime = await page.evaluate(
+        value => new Date(value).toLocaleString('ru'),
+        FOOD_MEAL_TIME,
+      );
+      await expect(page.getByRole('cell', { name: localizedTime, exact: true })).toBeVisible();
+      await expect(page.getByRole('cell', { name: 'T-bone dinner', exact: true })).toBeVisible();
+      await expect(page.getByRole('cell', { name: 'Подтверждено', exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Удалить запись' }).click();
+      await page.getByRole('button', { name: 'Удалить', exact: true }).click();
+      await expect(page.getByText('Не удалось удалить запись. Попробуйте ещё раз.')).toBeVisible();
+      await expect(page.getByText('server says delete boom')).toHaveCount(0);
+      await expect(page.getByRole('cell', { name: 'T-bone dinner', exact: true })).toBeVisible();
+
+      // A failed attempt closes the pending confirmation and leaves the row
+      // available for retry; opening it again also clears the localized error.
+      await page.getByRole('button', { name: 'Удалить запись' }).click();
+      await expect(page.getByRole('button', { name: 'Удалить', exact: true })).toBeVisible();
+      await expect(page.getByText('Не удалось удалить запись. Попробуйте ещё раз.')).toHaveCount(0);
       await page.getByRole('button', { name: 'Отмена', exact: true }).click();
     } finally {
       await page.goto('/settings').catch(() => {});
