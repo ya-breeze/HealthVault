@@ -36,12 +36,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Repair the candidate-specific failure
-- [ ] Fix the reproduced diagnostic at its source with the smallest scoped change, retaining the local TypeScript compiler, Node 22 declarations, strict no-emit configuration, and the `lint-e2e` gate.
-- [ ] If the failure is in newly reconciled e2e code, fix every resulting TypeScript diagnostic without `any`, suppression comments, relaxed compiler options, or exclusions from `e2e/tsconfig.json`.
-- [ ] If the failure is in Go code, preserve the existing behavior, run vet with `GO_TAGS := sqlite_fts5`, and add or update a focused test if the repair changes executable behavior.
-- [ ] If the failure is in dependency setup, keep `e2e/package.json` and `e2e/package-lock.json` synchronized and ensure the absolute `e2e/node_modules/.install-stamp` prerequisite remains valid for a clean checkout.
-- [ ] Confirm `resolveTarget` remains typed as `NodeJS.ProcessEnv` and that the proxy callbacks in `e2e/tests/auth.spec.ts` rely on the resolved `node:http` inference unless an explicit annotation is genuinely required.
-- [ ] Mark completed
+- [x] Fix the reproduced diagnostic at its source with the smallest scoped change, retaining the local TypeScript compiler, Node 22 declarations, strict no-emit configuration, and the `lint-e2e` gate.
+- [x] If the failure is in newly reconciled e2e code, fix every resulting TypeScript diagnostic without `any`, suppression comments, relaxed compiler options, or exclusions from `e2e/tsconfig.json`.
+- [x] If the failure is in Go code, preserve the existing behavior, run vet with `GO_TAGS := sqlite_fts5`, and add or update a focused test if the repair changes executable behavior.
+- [x] If the failure is in dependency setup, keep `e2e/package.json` and `e2e/package-lock.json` synchronized and ensure the absolute `e2e/node_modules/.install-stamp` prerequisite remains valid for a clean checkout.
+- [x] Confirm `resolveTarget` remains typed as `NodeJS.ProcessEnv` and that the proxy callbacks in `e2e/tests/auth.spec.ts` rely on the resolved `node:http` inference unless an explicit annotation is genuinely required.
+- [x] Mark completed
 
 ### Task 3: Review the repaired integration
 - [ ] Review the complete diff from current `main` for accidental reversions, unrelated behavior changes, weakened type coverage, stale lockfile data, and Makefile dependency or ordering mistakes.
