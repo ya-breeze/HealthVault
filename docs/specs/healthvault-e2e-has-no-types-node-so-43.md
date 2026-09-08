@@ -1,77 +1,50 @@
-# e2e: give the suite `@types/node` and a type-check that reports zero
+# Repair validation for the e2e Node typing gate
 Idea: ya-breeze/idea-forge#269
 
 ## Why
 
-`e2e/package.json` declares one dependency, `@playwright/test`. The specs under `e2e/tests/` use far more than that. `auth.spec.ts` imports `node:http` and `node:net`. `food.spec.ts` imports `path`, calls `await import('fs')` at lines 373 and 1910, reads `__dirname` at five call sites, and builds a `Buffer` at line 375. `import.spec.ts` imports `path`. Sixteen files read `process.env.HCW_USER` and `process.env.HCW_PASS`, and `tests/helpers/target.ts:101` passes `process.env` straight into `resolveTarget`. None of those names have types in this package.
+The original e2e type-check produced 43 diagnostics because `e2e/package.json` lacked Node declarations even though the suite uses `process.env`, `__dirname`, `Buffer`, `node:http`, `node:net`, `path`, and `fs`. That permanent noise prevented TypeScript from exposing real defects in a Playwright suite that creates and deletes Food Meals, rewrites settings, and writes records against hcw-wip.
 
-A type-check over the suite therefore reports 43 diagnostics on `main`, and every one is the same missing dependency: `TS2307` for the node module imports, `TS2580` for `process`, `TS2304` for `__dirname`, and `TS7006` where a callback parameter loses its type because the module it came from did not resolve. The suite still runs, because Playwright transpiles TypeScript without checking it. That is exactly the problem. A real type error introduced tomorrow arrives as diagnostic number 44 and nobody sees it.
+Candidate `c312752` already contains the core solution: `e2e/package.json` declares `@types/node` and a local `typescript`, `e2e/tsconfig.json` enables a strict no-emit check, `tests/helpers/target.ts` uses `NodeJS.ProcessEnv`, the real `CanvasRenderingContext2D` cast diagnostic in `tests/food.spec.ts` is resolved, and the `Makefile` makes `lint` depend on `lint-e2e` before running `go vet -tags sqlite_fts5 ./...`. Its implementation record says the type-check and all three project validation commands passed.
 
-The noise has already changed the code. `tests/helpers/target.ts:54-56` carries a comment explaining that `resolveTarget` takes a `Record<string, string | undefined>` instead of the natural `NodeJS.ProcessEnv` only because "this package has no `@types/node`, so that namespace does not resolve here". A missing devDependency is shaping a public signature.
-
-Now is the moment because this suite mutates a live stack. It creates and deletes meals, rewrites user settings, and writes records against hcw-wip. `tests/helpers/target.ts` exists solely to keep it away from hcw-prod. A suite with that reach deserves a check that fails on a typo, and `make lint` today runs `go vet` over the backend and nothing else.
+Independent reconciliation nevertheless found that the required `go-vet` validation failed for `c312752` while the base passed. The branch is also based on `2961873`, while `main` has advanced through subsequent backend and e2e changes. The candidate therefore cannot ship on its earlier validation record: the exact failure must be reproduced on the current combined tree, repaired without losing the valid typing work, and reviewed and validated again.
 
 ## How
 
-Add `@types/node` and `typescript` to `e2e/package.json` devDependencies, add an `e2e/tsconfig.json`, fix whatever real diagnostics the typing reveals, and wire the check into `make lint`.
+Preserve the candidate's dependency, lockfile, strict TypeScript configuration, `NodeJS.ProcessEnv` signature, focused canvas-stub correction, and `lint-e2e` integration. Reconcile the branch with current `main`, then reproduce `make lint` and distinguish a failure in the `lint-e2e` prerequisite from the backend recipe in `Makefile`. The backend check must retain the repository's `sqlite_fts5` build tag because the USDA index depends on SQLite FTS5.
 
-Both new dependencies are needed. `@types/node` supplies the missing declarations. `typescript` has to be pinned in the lockfile too, because a lint gate must not resolve its own compiler over the network at run time — `npx tsc` with no local install does exactly that. Pin `@types/node` to the major version of the Node that actually runs the suite: run `node -v` in the environment where `make test-e2e` runs and match it. Do not copy `frontend/package.json`'s `^20` by default; `frontend/Dockerfile` builds on `node:22`, so the two are already out of step and the e2e number should follow the runtime, not the neighbour.
+Repair the concrete diagnostic at its source. If current e2e additions reveal TypeScript errors, use accurate types or implementation changes rather than weakening `strict`, excluding files, adding `any`, or introducing `@ts-ignore` or `@ts-expect-error`. If the backend vet step fails, make the smallest correctness-preserving Go change required on the reconciled tree and add focused coverage when behavior changes. If the failure comes from dependency installation or the `.install-stamp` prerequisite, correct the package-lock or Make dependency relationship while keeping `make lint` reproducible from a clean checkout. Do not remove either the Node type-check or Go vet merely to make the gate green.
 
-The `tsconfig.json` is new, so its settings are a decision rather than an inheritance. Start from `strict: true`, `noEmit: true`, `esModuleInterop: true` (`food.spec.ts:2` and `auth.spec.ts:3` use default imports of CommonJS modules), `skipLibCheck: true`, `target: ES2022`, `lib: ["ES2022", "DOM", "DOM.Iterable"]` (specs pass browser-side callbacks to `page.evaluate`, so `window` and `navigator` must resolve), `types: ["node"]`, and `module: "commonjs"` with `moduleResolution: "node10"`, which is closest to how Playwright loads these files. Include `tests/**/*.ts` and `playwright.config.ts`. If one of those settings is the sole cause of a diagnostic that cannot otherwise be removed, change it and say in a comment which setting moved and why.
-
-Expect the idea's estimate of the residual work to shrink. The three `TS7006` parameters in `auth.spec.ts`'s `startLocalProxy` — `req`, `res` at line 45 and `proxyRes` at line 54 — are implicitly `any` only because `node:http` does not resolve. Once it does, `http.createServer` and `http.request` infer them, and no annotation is needed. Annotate them only if a diagnostic survives; a hand-written annotation that duplicates an inferred type is worse than none.
-
-Restore `NodeJS.ProcessEnv` on `resolveTarget`, and delete the comment paragraph that explains its absence. This is safe for `tests/e2e-target.spec.ts`, which calls `resolveTarget({})` and `resolveTarget({ BASE_URL: … })` with object literals; `ProcessEnv` is an index-signature type those literals satisfy.
-
-Wire the check into `make lint` only if the count reaches zero. A gate expected to be red teaches everyone to ignore it, which is the failure this change is trying to end. If some diagnostic cannot be removed, leave the `lint` target untouched, add the check as a separate target, and state in the pull request which diagnostic blocked it. The wiring costs one thing worth naming: `make lint` gains the `e2e/node_modules/.install-stamp` prerequisite the `test-e2e` target already uses, so on a fresh checkout `make lint` runs `npm ci` and needs the network. That is acceptable — `make test-e2e` already has the same dependency, and the stamp makes it a one-time cost.
-
-Deliberately excluded: type-checking `frontend/`. It has a `tsconfig.json` and its own `typescript` dependency, but `make lint` never invokes `tsc` there either. That is a second gap with its own trade-offs, and folding it in would hide this change's result behind an unrelated wall of diagnostics. Also excluded: any change to what the specs test, how they are structured, or the `retries`/`workers` settings in `playwright.config.ts`.
+The end state remains a zero-diagnostic e2e type-check gated by `make lint`, followed by a clean backend vet. Type-checking `frontend/`, changing Playwright retries or workers, restructuring unrelated tests, and changing application behavior are deliberately excluded. Validation must target the existing non-production hcw-wip default; this change does not create or modify a public hostname, Cloudflare Access policy, dogfood stack, or production stack.
 
 ## Validation Commands
 - `make lint`
 - `make test`
 - `make test-e2e`
 
-## Ground rules
-This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+### Task 1: Reconcile and reproduce the failed validation
+- [ ] Reconcile candidate `c312752` with current `main`, preserving the existing changes in `Makefile`, `e2e/package.json`, `e2e/package-lock.json`, `e2e/tsconfig.json`, `e2e/tests/helpers/target.ts`, and `e2e/tests/food.spec.ts`.
+- [ ] Run `make lint` on the reconciled tree and capture the first actionable failure, identifying whether it comes from dependency installation, `npm run typecheck --silent`, or `cd backend && go vet -tags sqlite_fts5 ./...`.
+- [ ] Confirm the failure is specific to the candidate or its integration with current `main`, using the passing base as the comparison rather than treating unrelated pre-existing output as part of this change.
+- [ ] Mark completed
 
-Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+### Task 2: Repair the candidate-specific failure
+- [ ] Fix the reproduced diagnostic at its source with the smallest scoped change, retaining the local TypeScript compiler, Node 22 declarations, strict no-emit configuration, and the `lint-e2e` gate.
+- [ ] If the failure is in newly reconciled e2e code, fix every resulting TypeScript diagnostic without `any`, suppression comments, relaxed compiler options, or exclusions from `e2e/tsconfig.json`.
+- [ ] If the failure is in Go code, preserve the existing behavior, run vet with `GO_TAGS := sqlite_fts5`, and add or update a focused test if the repair changes executable behavior.
+- [ ] If the failure is in dependency setup, keep `e2e/package.json` and `e2e/package-lock.json` synchronized and ensure the absolute `e2e/node_modules/.install-stamp` prerequisite remains valid for a clean checkout.
+- [ ] Confirm `resolveTarget` remains typed as `NodeJS.ProcessEnv` and that the proxy callbacks in `e2e/tests/auth.spec.ts` rely on the resolved `node:http` inference unless an explicit annotation is genuinely required.
+- [ ] Mark completed
 
-Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT merge it. Those are the pipeline's own final steps, run once the task list is complete. The operator reviews the pull request and merges it themselves; that is the only gate this work passes through, so leave it in a state worth reading.
+### Task 3: Review the repaired integration
+- [ ] Review the complete diff from current `main` for accidental reversions, unrelated behavior changes, weakened type coverage, stale lockfile data, and Makefile dependency or ordering mistakes.
+- [ ] Confirm `lint` still runs both `lint-e2e` and `go vet -tags $(GO_TAGS) ./...`, and that `lint-e2e` still invokes the canonical `typecheck` script.
+- [ ] Fix every correctness or specification-fidelity issue found during review before rerunning validation.
+- [ ] Mark completed
 
-### Task 1: Add the typing dependencies
-- [x] Run `node -v` in the environment that runs `make test-e2e` and record the major version.
-- [x] Add `@types/node` to `devDependencies` in `e2e/package.json`, pinned to that major version.
-- [x] Add `typescript` to `devDependencies` in `e2e/package.json`, so the type-check never resolves a compiler over the network.
-- [x] Run `npm install` in `e2e/` to refresh `e2e/package-lock.json`, and commit both files.
-- [x] Confirm `npm ci` in `e2e/` still succeeds from the refreshed lockfile.
-- [x] Mark completed
-
-### Task 2: Add a tsconfig and a type-check script
-- [x] Create `e2e/tsconfig.json` with `strict`, `noEmit`, `esModuleInterop`, `skipLibCheck`, `target: ES2022`, `lib: ["ES2022", "DOM", "DOM.Iterable"]`, `types: ["node"]`, `module: "commonjs"`, and `moduleResolution: "node10"`.
-- [x] Set `include` to `tests/**/*.ts` and `playwright.config.ts`, and `exclude` to `node_modules`.
-- [x] Replace the placeholder `scripts.test` in `e2e/package.json` with a `typecheck` script that runs `tsc --noEmit`, so the check has one canonical spelling.
-- [x] Run the type-check and record the new diagnostic count and the full list. Result: 1 diagnostic, `TS2352` at `tests/food.spec.ts:313:48` (a `getContext` stub cast that doesn't sufficiently overlap the real overload set) — fixed in Task 3.
-- [x] Mark completed
-
-### Task 3: Fix the diagnostics the typing reveals
-- [x] Re-run the type-check and confirm the `TS2307`, `TS2580` and `TS2304` diagnostics for `node:http`, `node:net`, `path`, `fs`, `process`, `__dirname` and `Buffer` are all gone. Confirmed: none appeared once `@types/node` was installed.
-- [x] Check whether `req`, `res` (`e2e/tests/auth.spec.ts:45`) and `proxyRes` (`e2e/tests/auth.spec.ts:54`) still report `TS7006`; annotate them with `http.IncomingMessage`, `http.ServerResponse` and `http.IncomingMessage` only if they do. They did not — `http.createServer`/`http.request` inferred all three once `node:http` resolved, so no annotation was added.
-- [x] Fix every remaining diagnostic in `e2e/tests/` and `e2e/playwright.config.ts`, treating each as a real defect rather than something to suppress. Fixed `tests/food.spec.ts:313` (`TS2352`): the `getContext` stub cast went through `unknown` first, per the compiler's own suggestion, since the stub object never implements the full `CanvasRenderingContext2D` interface a browser context would.
-- [x] Use no `@ts-ignore`, no `@ts-expect-error`, and no `any` to reach zero; if a diagnostic resists, change the code or the tsconfig setting and explain the change in a comment. None were needed; `tsc --noEmit` reports zero diagnostics.
-- [x] Mark completed
-
-### Task 4: Restore `NodeJS.ProcessEnv` on `resolveTarget`
-- [x] Change the `env` parameter of `resolveTarget` in `e2e/tests/helpers/target.ts:60` from `Record<string, string | undefined>` to `NodeJS.ProcessEnv`.
-- [x] Delete the doc-comment paragraph at `e2e/tests/helpers/target.ts:54-56` that explains the missing `@types/node`, and keep the paragraph above it explaining why the function takes `env` at all.
-- [x] Confirm `e2e/tests/e2e-target.spec.ts` still type-checks, since every case there passes an object literal.
-- [x] Mark completed
-
-### Task 5: Gate on the check and validate
-- [x] Confirm the type-check reports zero diagnostics.
-- [x] Add a `lint-e2e` target to the `Makefile` that depends on `$(ROOT_DIR)e2e/node_modules/.install-stamp` and runs the `typecheck` script in `e2e/`.
-- [x] Make `lint` depend on both the existing `go vet` step and `lint-e2e`, add `lint-e2e` to `.PHONY`, and comment why the e2e check is gated rather than advisory.
-- [x] If, and only if, a diagnostic could not be removed, leave `lint` unchanged, keep `lint-e2e` as a standalone target, and state the blocking diagnostic in the pull request description. Not applicable: every diagnostic was removed, so `lint` was wired to depend on `lint-e2e` as the primary path describes.
-- [x] Verify the gate bites: introduce a deliberate type error in a spec, confirm `make lint` fails, then revert it.
-- [x] Run `make lint`, `make test`, and `make test-e2e` against hcw-wip, and confirm all three pass.
-- [x] Mark completed
+### Task 4: Validate the final result
+- [ ] Run `make lint` and confirm both the e2e TypeScript check and backend Go vet finish successfully with zero diagnostics.
+- [ ] Run `make test` and fix any candidate-caused backend or frontend regression.
+- [ ] Run `make test-e2e` against its guarded hcw-wip default and fix any candidate-caused failure without targeting production.
+- [ ] Recheck the final diff after validation so generated files, temporary deliberate errors, and local test artifacts are not included.
+- [ ] Mark completed
