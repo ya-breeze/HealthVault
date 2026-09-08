@@ -36,6 +36,7 @@ const SHARED_COLUMN_LABEL_KEYS: Readonly<Record<string, ColumnLabelKey>> = {
   max_cadence_spm: 'dataTable.column.maximumCadenceSpm',
   stride_length_m: 'dataTable.column.strideLengthMeters',
   meters_per_second: 'dataTable.column.speedMetersPerSecond',
+  ml_per_kg_per_min: 'dataTable.column.vo2MaxMlPerKgPerMin',
   protein_grams: 'dataTable.column.proteinGrams',
   carbs_grams: 'dataTable.column.carbsGrams',
   fat_grams: 'dataTable.column.fatGrams',

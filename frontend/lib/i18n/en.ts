@@ -456,6 +456,7 @@ const en = {
   'dataTable.column.maximumCadenceSpm': 'Maximum cadence (steps/min)',
   'dataTable.column.strideLengthMeters': 'Stride length (m)',
   'dataTable.column.speedMetersPerSecond': 'Speed (m/s)',
+  'dataTable.column.vo2MaxMlPerKgPerMin': 'VO2 max (mL/kg/min)',
   'dataTable.column.activeCaloriesKcal': 'Active calories (kcal)',
   'dataTable.column.totalCaloriesKcal': 'Total calories (kcal)',
   'dataTable.column.nutritionCaloriesKcal': 'Calories (kcal)',

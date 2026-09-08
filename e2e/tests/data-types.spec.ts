@@ -12,6 +12,43 @@ async function login(page: Page) {
   await page.waitForURL('/');
 }
 
+async function withSettingsSave(page: Page, action: () => Promise<unknown>): Promise<boolean> {
+  const saved = page
+    .waitForResponse(
+      r => r.url().includes('/api/users/me/settings') && r.request().method() === 'PUT',
+      { timeout: 15_000 }
+    )
+    .then(r => r.ok())
+    .catch(() => false);
+  await action().catch(() => {});
+  return saved;
+}
+
+async function mockHeartRateRecords(page: Page) {
+  const now = new Date().toISOString();
+  await page.route('**/api/data/heart_rate?*', route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('bucket')) {
+      return route.fulfill({
+        json: [{ bucket_start: now, count: 1, avg: 68, min: 68, max: 68 }],
+      });
+    }
+    return route.fulfill({
+      json: [{
+        id: 'localized-table-record',
+        family_id: 'family-id',
+        user_id: 'user-id',
+        source_payload_id: 'payload-id',
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+        time: now,
+        bpm: 68,
+      }],
+    });
+  });
+}
+
 test.describe('Data type pages', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
@@ -81,6 +118,64 @@ test.describe('Zoom control', () => {
     // never trigger a ?bucket= request, which the backend rejects for this type.
     await page.getByRole('button', { name: 'Year', exact: true }).click();
     await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
+  });
+});
+
+test.describe('Localized record table', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('English headings are readable and do not expose database keys', async ({ page }) => {
+    await mockHeartRateRecords(page);
+    await page.goto('/data/heart_rate/');
+
+    await expect(page.getByRole('heading', { name: 'Heart Rate' })).toBeVisible();
+    for (const heading of ['Created at', 'Updated at', 'Time', 'Heart rate (bpm)', 'Actions']) {
+      await expect(page.getByRole('columnheader', { name: heading, exact: true })).toBeVisible();
+    }
+    const headings = await page.getByRole('columnheader').allTextContents();
+    expect(headings).not.toContain('created_at');
+    expect(headings).not.toContain('updated_at');
+    expect(headings).not.toContain('bpm');
+  });
+
+  test('Russian localizes the metric, record headers, and delete confirmation', async ({ page }) => {
+    await page.goto('/settings');
+    try {
+      const saved = await withSettingsSave(page, () =>
+        page.locator('#display-language').selectOption('ru')
+      );
+      expect(saved).toBe(true);
+      await expect(page.locator('#display-language')).toHaveValue('ru');
+
+      await mockHeartRateRecords(page);
+      await page.goto('/data/heart_rate/');
+      await expect(page.getByRole('heading', { name: 'Пульс' })).toBeVisible();
+      for (const heading of ['Создано', 'Время', 'Пульс (уд/мин)', 'Действия']) {
+        await expect(page.getByRole('columnheader', { name: heading, exact: true })).toBeVisible();
+      }
+
+      await page.getByRole('button', { name: 'Удалить запись' }).click();
+      await expect(page.getByRole('button', { name: 'Удалить', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Отмена', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+    } finally {
+      await page.goto('/settings').catch(() => {});
+      await withSettingsSave(page, () =>
+        page.locator('#display-language').selectOption('en')
+      );
+      await expect(page.locator('#display-language')).toHaveValue('en').catch(() => {});
+    }
+  });
+
+  test('a family-member view keeps the owner-only Actions column absent', async ({ page }) => {
+    await mockHeartRateRecords(page);
+    await page.goto('/data/heart_rate/?user=bob');
+
+    await expect(page.getByRole('columnheader', { name: 'Heart rate (bpm)', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Actions', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Delete record' })).toHaveCount(0);
   });
 });
 

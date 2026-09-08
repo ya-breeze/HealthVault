@@ -320,6 +320,7 @@ const ru: Dictionary = {
   'dataTable.column.maximumCadenceSpm': 'Максимальный темп (шагов/мин)',
   'dataTable.column.strideLengthMeters': 'Длина шага (м)',
   'dataTable.column.speedMetersPerSecond': 'Скорость (м/с)',
+  'dataTable.column.vo2MaxMlPerKgPerMin': 'МПК (мл/кг/мин)',
   'dataTable.column.activeCaloriesKcal': 'Активные калории (ккал)',
   'dataTable.column.totalCaloriesKcal': 'Всего калорий (ккал)',
   'dataTable.column.nutritionCaloriesKcal': 'Калории (ккал)',
