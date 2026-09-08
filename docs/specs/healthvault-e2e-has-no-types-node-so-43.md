@@ -30,10 +30,10 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
 
 ### Task 1: Reconcile and reproduce the failed validation
-- [ ] Reconcile candidate `c312752` with current `main`, preserving the existing changes in `Makefile`, `e2e/package.json`, `e2e/package-lock.json`, `e2e/tsconfig.json`, `e2e/tests/helpers/target.ts`, and `e2e/tests/food.spec.ts`.
-- [ ] Run `make lint` on the reconciled tree and capture the first actionable failure, identifying whether it comes from dependency installation, `npm run typecheck --silent`, or `cd backend && go vet -tags sqlite_fts5 ./...`.
-- [ ] Confirm the failure is specific to the candidate or its integration with current `main`, using the passing base as the comparison rather than treating unrelated pre-existing output as part of this change.
-- [ ] Mark completed
+- [x] Reconcile candidate `c312752` with current `main`, preserving the existing changes in `Makefile`, `e2e/package.json`, `e2e/package-lock.json`, `e2e/tsconfig.json`, `e2e/tests/helpers/target.ts`, and `e2e/tests/food.spec.ts`.
+- [x] Run `make lint` on the reconciled tree and capture the first actionable failure, identifying whether it comes from dependency installation, `npm run typecheck --silent`, or `cd backend && go vet -tags sqlite_fts5 ./...`.
+- [x] Confirm the failure is specific to the candidate or its integration with current `main`, using the passing base as the comparison rather than treating unrelated pre-existing output as part of this change.
+- [x] Mark completed
 
 ### Task 2: Repair the candidate-specific failure
 - [ ] Fix the reproduced diagnostic at its source with the smallest scoped change, retaining the local TypeScript compiler, Node 22 declarations, strict no-emit configuration, and the `lint-e2e` gate.
