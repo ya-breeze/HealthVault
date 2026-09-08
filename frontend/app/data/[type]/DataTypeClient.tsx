@@ -629,7 +629,7 @@ export default function DataTypeClient({ type }: Props) {
     <AuthenticatedShell className="min-h-screen bg-bg">
       <main className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-          <h1 className="text-xl font-bold capitalize text-text flex items-center gap-2">
+          <h1 className="text-xl font-bold text-text flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
             {metricLabel(t, dataType)}
           </h1>
