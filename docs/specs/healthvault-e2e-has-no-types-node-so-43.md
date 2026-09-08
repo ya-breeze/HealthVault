@@ -50,8 +50,8 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Validate the final result
-- [ ] Run `make lint` and confirm both the e2e TypeScript check and backend Go vet finish successfully with zero diagnostics.
-- [ ] Run `make test` and fix any candidate-caused backend or frontend regression.
-- [ ] Run `make test-e2e` against its guarded hcw-wip default and fix any candidate-caused failure without targeting production.
-- [ ] Recheck the final diff after validation so generated files, temporary deliberate errors, and local test artifacts are not included.
-- [ ] Mark completed
+- [x] Run `make lint` and confirm both the e2e TypeScript check and backend Go vet finish successfully with zero diagnostics.
+- [x] Run `make test` and fix any candidate-caused backend or frontend regression.
+- [x] Run `make test-e2e` against its guarded hcw-wip default and fix any candidate-caused failure without targeting production.
+- [x] Recheck the final diff after validation so generated files, temporary deliberate errors, and local test artifacts are not included.
+- [x] Mark completed
