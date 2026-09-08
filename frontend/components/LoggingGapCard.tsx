@@ -14,9 +14,14 @@ import {
   meanLoggedIntake,
   slopeStandardError,
   excludedOutlierCount,
-  DayWindowData,
   LoggingGapResult,
 } from '@/lib/loggingGap';
+import {
+  resolveHealthinessWindow,
+  computeHealthinessLabel,
+  HealthinessDayData,
+  HealthinessResult,
+} from '@/lib/healthiness';
 import { evaluateSustainability, SustainabilityWarning } from '@/lib/sustainability';
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
@@ -57,7 +62,13 @@ type GapLine = LoggingGapResult | { kind: 'retrieval_error' };
 // their first weeks.
 type ContentState =
   | { kind: 'loading' }
-  | { kind: 'ready'; today: TodayRow; gap: GapLine; warnings: SustainabilityWarning[] }
+  | {
+      kind: 'ready';
+      today: TodayRow;
+      gap: GapLine;
+      healthiness: HealthinessResult | null;
+      warnings: SustainabilityWarning[];
+    }
   | { kind: 'nutrition_target_unmet'; reason: NutritionTargetUnmetReason }
   | { kind: 'retrieval_error' };
 
@@ -220,10 +231,20 @@ export default function LoggingGapCard({
           completenessR.status === 'rejected' ||
           dailyTotalsR.status === 'rejected'
         ) {
-          // No trend and no mean survive a partial fetch, so evaluateSustainability
-          // would return [] anyway — spelled out here rather than called, since
-          // there is nothing to pass it.
-          setState({ kind: 'ready', today: todayRow, gap: { kind: 'retrieval_error' }, warnings: [] });
+          // The Healthiness Label shares this fetch group (spec's "Rendering,
+          // and when the row is silent"): it reads completeness and
+          // daily-totals, the same two of the three that feed the gap line,
+          // so a failure here silences both rows together. No trend and no
+          // mean survive a partial fetch either, so evaluateSustainability
+          // would return [] anyway — spelled out here rather than called,
+          // since there is nothing to pass it.
+          setState({
+            kind: 'ready',
+            today: todayRow,
+            gap: { kind: 'retrieval_error' },
+            healthiness: null,
+            warnings: [],
+          });
           return;
         }
         const weightRaw = weightR.value;
@@ -247,13 +268,22 @@ export default function LoggingGapCard({
 
         const { kept, rejected, bootstrapSiblingAmbiguous } = rejectOutliers(rawRecords);
 
-        const perDayWindowData: Record<number, DayWindowData> = {};
+        // HealthinessDayData extends the Logging Gap's own DayWindowData, so
+        // this one map serves both computations below — checkHardFloor and
+        // computeLoggingGap only read the fields DayWindowData declares, and
+        // computeHealthinessLabel additionally reads the five macro fields.
+        const perDayWindowData: Record<number, HealthinessDayData> = {};
         const completenessByDate = new Map(completeness.map(c => [c.date, c.state]));
         for (const total of dailyTotals) {
           perDayWindowData[toDayOffset(total.date)] = {
             state: completenessByDate.get(total.date) ?? 'incomplete',
             calories: total.calories,
             unconfirmedMeals: total.unconfirmed_meals,
+            proteinGrams: total.protein_grams,
+            carbsGrams: total.carbs_grams,
+            fatGrams: total.fat_grams,
+            sugarGrams: total.sugar_grams,
+            sodiumGrams: total.sodium_grams,
           };
         }
 
@@ -309,6 +339,12 @@ export default function LoggingGapCard({
               );
         }
 
+        // No fifth request: the label is computed from the same completeness
+        // and daily-totals responses the gap line already fetched, sliced to
+        // their last seven days by resolveHealthinessWindow.
+        const healthinessWindow = resolveHealthinessWindow(gapWindow.windowLastDayOffset);
+        const healthiness = computeHealthinessLabel(perDayWindowData, healthinessWindow);
+
         const meanIntake = meanLoggedIntake(perDayWindowData, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset);
         const warnings = evaluateSustainability({
           gap: gapResult,
@@ -318,7 +354,7 @@ export default function LoggingGapCard({
         });
 
         if (cancelled) return;
-        setState({ kind: 'ready', today: todayRow, gap: gapResult, warnings });
+        setState({ kind: 'ready', today: todayRow, gap: gapResult, healthiness, warnings });
         setOutlierExcluded(excludedOutlierCount(rejected, gapWindow.windowStartDayOffset, gapWindow.windowLastDayOffset) > 0);
       } catch {
         if (cancelled) return;
@@ -475,6 +511,24 @@ export default function LoggingGapCard({
     }
   }
 
+  // The label line: "Last 7 days: Good", or "Last 7 days: Fair — protein is
+  // low, sugar is high" when there's something to name. Never renders at
+  // all when there's no label to show — see the card's own top-level
+  // silence rule in renderContent's `ready` case.
+  function renderHealthiness(healthiness: HealthinessResult) {
+    const label = t(`loggingGap.healthinessLabel.${healthiness.label}`);
+    const line = interpolate(t('loggingGap.healthinessLine'), { label });
+    const reasons = healthiness.reasons.map(reason => t(`loggingGap.healthinessReason.${reason}`));
+    return (
+      <div className={`mt-1.5 text-xs text-text-muted${dim}`} data-testid="nutrition-healthiness">
+        <span data-testid="nutrition-healthiness-label">
+          {line}
+          {reasons.length > 0 ? ` — ${reasons.join(', ')}` : ''}
+        </span>
+      </div>
+    );
+  }
+
   // The middle row (docs/specs/healthvault-nutrition-card-middle-row-he.md):
   // one or both of the two sustainability checks, each stating a measurement
   // and nothing more — no calorie prescription, matching the on_track line's
@@ -500,7 +554,7 @@ export default function LoggingGapCard({
     );
   }
 
-  function renderGap(gap: GapLine, warnings: SustainabilityWarning[]) {
+  function renderGap(gap: GapLine, warnings: SustainabilityWarning[], healthiness: HealthinessResult | null) {
     return (
       <div>
         {/* The whole row is the toggle, not just the ⓘ. On touch TapTarget's
@@ -551,6 +605,12 @@ export default function LoggingGapCard({
               the framing behind both lines regardless of which one is on
               screen. */}
           {warnings.length > 0 && <p>{t('loggingGap.sustainabilityDetail')}</p>}
+          {/* Shown only when the label is actually rendered — it qualifies
+              what the label row above measured. Gated on `warnings` too,
+              matching the middle row's own precedence: the sustainability
+              warning outranks the label, so the label (and this note) never
+              appear together with it. */}
+          {warnings.length === 0 && healthiness && <p>{t('loggingGap.healthinessHintNote')}</p>}
         </div>
       </div>
     );
@@ -575,19 +635,21 @@ export default function LoggingGapCard({
         return (
           <>
             {renderToday(state.today)}
-            {/* Precedence in this row (see the spec's "Precedence in the
-                middle row"): the sustainability warning outranks the
-                not-yet-built Healthiness Label and LLM advice lines, so it
-                renders unconditionally here. Whatever renders the label next
-                must render it only when this array is empty. An empty middle
-                row is never shown — it would cost the card vertical space to
-                say nothing. */}
+            {/* Precedence in the middle row (see the spec's "Precedence in
+                the middle row"): the sustainability warning outranks the
+                Healthiness Label, so it renders unconditionally here whenever
+                it has something to say, and the label renders only when this
+                array is empty. An empty middle row is never shown — it would
+                cost the card vertical space to say nothing. */}
             {state.warnings.length > 0 && (
               <div className={`mt-2 pt-2 border-t border-border${dim}`}>
                 {renderSustainability(state.warnings)}
               </div>
             )}
-            <div className={`mt-2 pt-2 border-t border-border${dim}`}>{renderGap(state.gap, state.warnings)}</div>
+            {state.warnings.length === 0 && state.healthiness && renderHealthiness(state.healthiness)}
+            <div className={`mt-2 pt-2 border-t border-border${dim}`}>
+              {renderGap(state.gap, state.warnings, state.healthiness)}
+            </div>
           </>
         );
     }

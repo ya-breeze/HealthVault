@@ -17,7 +17,10 @@
 // ClarifyModal, CustomFoodModal, DeleteMealControl, MacroSummary,
 // ManualItemEditor, MealMetaEditor and ReanalyzeControl. (AddItemForm's own
 // chrome is English, but the ItemResolver panel it embeds is covered, so
-// that form is partly translated rather than wholly English.)
+// that form is partly translated rather than wholly English. The steps
+// detail page is the same shape: its chrome is English, but the diagnostic
+// disclosure the check-the-health-data spec added — DataTypeClient.tsx's
+// `stepsDiagnostics.*` keys — is covered.)
 //
 // app/food/manual/page.tsx is now partly translated, not wholly English: its
 // description-first entry path (the textarea, name/time inputs, character
@@ -313,11 +316,17 @@ const en = {
   'vitals.trend7d': '7d trend',
   'vitals.moveUp': 'Move {metric} up',
   'vitals.moveDown': 'Move {metric} down',
+  // Shown on a Vital Card only when its value's source bucket isn't today's
+  // (check-the-health-data spec) — e.g. today has no records yet, so the
+  // card is showing yesterday's full-day total.
+  'vitals.asOf': 'As of {date}',
 
   // The `loggingGap.` prefix is kept for the whole card, including the keys
-  // below that have nothing to do with the gap. Renaming it is deferred to
-  // Phase 4, when the Healthiness Label row lands and the card fully becomes a
-  // nutrition card — so the churn happens once rather than twice.
+  // below that have nothing to do with the gap — including the Healthiness
+  // Label keys added below. The prefix stays internal and unrenamed
+  // permanently: renaming the registry id would make reconcileMetricOrder
+  // drop the saved dashboard-order entry and silently re-show a hidden card,
+  // and renaming just the key prefix is churn with no reader-facing benefit.
   'loggingGap.title': 'Nutrition',
   'loggingGap.loading': 'Loading your nutrition…',
   'loggingGap.todayCalories': '{consumed} / {target} kcal today',
@@ -358,6 +367,42 @@ const en = {
   'loggingGap.tierModerate': 'moderately active',
   'loggingGap.tierActive': 'very active',
   'loggingGap.tierExtra': 'extra active',
+
+  // The Healthiness Label (middle row): a deterministic heuristic, not an
+  // LLM judgment (ADR-004) — see frontend/lib/healthiness.ts for the
+  // thresholds. Copy says only what was measured: no "healthy"/"unhealthy",
+  // and no claim about sodium the log can't support.
+  'loggingGap.healthinessLine': 'Last 7 days: {label}',
+  'loggingGap.healthinessLabel.good': 'Good',
+  'loggingGap.healthinessLabel.fair': 'Fair',
+  'loggingGap.healthinessLabel.needs_attention': 'Needs attention',
+  'loggingGap.healthinessReason.protein_low': 'protein is low',
+  'loggingGap.healthinessReason.protein_high': 'protein is high',
+  'loggingGap.healthinessReason.carbs_low': 'carbs are low',
+  'loggingGap.healthinessReason.carbs_high': 'carbs are high',
+  'loggingGap.healthinessReason.fat_low': 'fat is low',
+  'loggingGap.healthinessReason.fat_high': 'fat is high',
+  'loggingGap.healthinessReason.sugar_high': 'sugar is high',
+  'loggingGap.healthinessReason.sodium_high': 'sodium is high',
+  'loggingGap.healthinessHintNote':
+    "The label covers macro balance, total sugars and sodium on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
+
+  // The steps detail page's diagnostic disclosure (check-the-health-data
+  // spec) — collapsed by default, same hint-then-detail pattern as the
+  // loggingGap keys above. The only translated strings on the per-type data
+  // detail pages; see the scope comment at the top of this file.
+  'stepsDiagnostics.hintToggle': 'Show diagnostic',
+  'stepsDiagnostics.title': 'Step diagnostics',
+  'stepsDiagnostics.columnDay': 'Day',
+  'stepsDiagnostics.columnRaw': 'Raw total',
+  'stepsDiagnostics.columnCollapsed': 'Counted total',
+  'stepsDiagnostics.columnDropped': 'Records dropped',
+  'stepsDiagnostics.columnPayloads': 'Syncs contributing',
+  'stepsDiagnostics.columnLocalDay': 'Local-day total',
+  'stepsDiagnostics.readingDuplicates': 'Duplicate step records in the database are inflating the raw total.',
+  'stepsDiagnostics.readingMultipleSyncs': 'More than one sync wrote steps for the same day.',
+  'stepsDiagnostics.readingDayBoundary': "Your local day boundary differs from this chart's UTC day.",
+  'stepsDiagnostics.readingNothing': 'Nothing to report — raw, counted and local-day totals agree.',
 
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing

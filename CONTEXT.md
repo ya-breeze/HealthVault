@@ -77,6 +77,12 @@ _Avoid_: Nutrition widget, food widget
 Whether the resolved user has ever recorded at least one row of a given data type, computed over all time — the `GET /api/data-types/presence` signal used to hide a type everywhere on the dashboard (vitals grid and More Data) when the user has no data for it at all. Distinct from a Dashboard Card's `hidden` flag (a user preference, only meaningful for types that do have presence) and from the vitals grid's 7-day recency window (a metric with presence but no data in the last 7 days still renders its card, just with the "no data" sparkline placeholder).
 _Avoid_: "Has data" (ambiguous with the recency window), "visible" (conflates with the `hidden` preference)
 
+### Steps
+
+**Step Interval Collapse**:
+The read-time rule that removes double-counted steps: records sorted by `(start_time, end_time)` are walked with a watermark of the latest `end_time` counted so far, and any record whose `end_time` doesn't extend past it is dropped as fully covered by already-counted time, while every other record is kept whole. Runs on every steps read path (`SummarySteps`, `QueryAggregateSteps`, and `fetchDailySteps` via the latter) so Health Connect's per-origin duplicate copies of the same walk (phone sensor, watch, a fitness app, ...) aren't summed twice. Never apportions a count to a partial interval — a record either survives whole or is dropped whole. See ADR-012 and `GET /api/data/steps/diagnostics`, which reports the raw vs. collapsed totals this rule produces.
+_Avoid_: Deduplication (suggests matching exact-duplicate rows, which this isn't — two records with different `start_time`/`end_time` values collapse too, as long as their intervals overlap), step merging (suggests two records' counts get combined into one; a kept record's count is never modified, only kept or dropped whole)
+
 ### Nutrition targets
 
 **Goal Weight**:
@@ -127,7 +133,7 @@ Nutrition Target uncomputable (`insufficient_activity_data`). See ADR-006.
 _Avoid_: Activity multiplier alone (that's the numeric output, not the tier), exercise level
 
 **Healthiness Label**:
-A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment.
+A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment (ADR-004). The window is the 7 Logged Days ending yesterday — the last 7 days of the 28-day Logging Gap window the nutrition card already resolves, so it costs no extra fetch. A day counts only if it passes the Logging Gap's own `isValidDay` test (Day Completeness Complete/Confirmed Complete, and every one of that day's meals `confirmed`) — imported from `loggingGap.ts` rather than reimplemented, so the two rows can never disagree about what "logged" means. Below the ADR-007 3-of-7 floor, or with zero pooled macro energy, there is no label at all. The five signals, computed from *pooled* (not per-day-averaged) totals — three macro-energy shares (protein, carbs, fat, of `4P + 4C + 9F`), total-sugars share, and mean elemental sodium — each land on `ok`/`off`/`far`; any `far`, or 3+ `off`, is Needs attention, 1-2 `off` is Fair, all `ok` is Good.
 _Avoid_: Health score, nutrition score
 
 ### Weight chart
