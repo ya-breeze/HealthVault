@@ -195,6 +195,37 @@ func TestFoodAdvice_RefreshEngagementOutcomesAndTelemetryIsolation(t *testing.T)
 			t.Fatalf("refresh with telemetry failure: %d %s", w.Code, w.Body.String())
 		}
 	})
+
+	t.Run("request telemetry failure cannot create success-only aggregate", func(t *testing.T) {
+		st := newFileFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		configureAdviceTarget(t, st, userID, "en")
+		if err := st.DB().Exec(`CREATE TRIGGER fail_refresh_request
+			BEFORE INSERT ON food_advice_engagements
+			WHEN NEW.refresh_request_count = 1
+			BEGIN SELECT RAISE(FAIL, 'refresh request telemetry unavailable'); END`).Error; err != nil {
+			t.Fatalf("create selective failure trigger: %v", err)
+		}
+		h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(
+			&vision.Fake{AdviseResult: []string{"Still delivered and cached."}}, 10<<20, time.Second,
+		)
+
+		w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, adviceBody("fair", nil, true, 70)))
+		if w.Code != http.StatusOK || !response.Available || len(response.Lines) != 1 {
+			t.Fatalf("refresh with request telemetry failure: %d %s", w.Code, w.Body.String())
+		}
+		var advice database.FoodAdvice
+		if err := st.DB().Where("user_id = ?", userID).First(&advice).Error; err != nil {
+			t.Fatalf("load cached advice: %v", err)
+		}
+		var count int64
+		if err := st.DB().Model(&database.FoodAdviceEngagement{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
+			t.Fatalf("count engagement rows: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("engagement rows = %d, want none", count)
+		}
+	})
 }
 
 func TestFoodAdvice_MissPersistsNormalizedInputAndEveryChangeRegenerates(t *testing.T) {

@@ -159,11 +159,14 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	refreshRequestRecorded := false
 	if req.Refresh {
 		if err := recordFoodAdviceEngagement(
 			h.storage.DB(), claims.UserID, FamilyIDFromCtx(r), loggedDay, "refresh_request", time.Now().UTC(),
 		); err != nil {
 			slog.Warn("nutrition advice refresh-request telemetry failed", "err", err, "user_id", claims.UserID)
+		} else {
+			refreshRequestRecorded = true
 		}
 	}
 
@@ -208,7 +211,7 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		writeFoodAdviceUnavailable(w, "unavailable")
 		return
 	}
-	if req.Refresh {
+	if req.Refresh && refreshRequestRecorded {
 		if err := recordFoodAdviceEngagement(
 			h.storage.DB(), claims.UserID, FamilyIDFromCtx(r), loggedDay, "refresh_success", time.Now().UTC(),
 		); err != nil {

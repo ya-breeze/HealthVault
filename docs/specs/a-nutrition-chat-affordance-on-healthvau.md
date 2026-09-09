@@ -28,11 +28,11 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
 
 ### Task 1: Pair refresh success with the current request measurement
-- [ ] Update `foodHandlers.PostFoodAdvice` in `backend/pkg/server/food_advice.go` to remember whether `recordFoodAdviceEngagement` successfully persisted `refresh_request` for the current refresh invocation
-- [ ] Record `refresh_success` only when that request write succeeded and the refreshed `database.FoodAdvice` row was persisted; retain the existing ordering of request measurement before `vision.Client.Advise` and success measurement after the cache write
-- [ ] Keep telemetry best-effort so a failed request measurement is logged but does not change advice generation, cache persistence, or the successful response
-- [ ] Extend `TestFoodAdvice_RefreshEngagementOutcomesAndTelemetryIsolation` in `backend/pkg/server/food_advice_test.go` with a selective request-event failure that would allow a success insert, proving the advice is returned and cached while no success-only aggregate is created
-- [ ] Mark completed
+- [x] Update `foodHandlers.PostFoodAdvice` in `backend/pkg/server/food_advice.go` to remember whether `recordFoodAdviceEngagement` successfully persisted `refresh_request` for the current refresh invocation
+- [x] Record `refresh_success` only when that request write succeeded and the refreshed `database.FoodAdvice` row was persisted; retain the existing ordering of request measurement before `vision.Client.Advise` and success measurement after the cache write
+- [x] Keep telemetry best-effort so a failed request measurement is logged but does not change advice generation, cache persistence, or the successful response
+- [x] Extend `TestFoodAdvice_RefreshEngagementOutcomesAndTelemetryIsolation` in `backend/pkg/server/food_advice_test.go` with a selective request-event failure that would allow a success insert, proving the advice is returned and cached while no success-only aggregate is created
+- [x] Mark completed
 
 ### Task 2: Cover failure to persist refreshed advice
 - [ ] Add a fresh-cache refresh case in `backend/pkg/server/food_advice_test.go` whose SQLite trigger rejects insertion into `food_advices` after the model returns valid lines
