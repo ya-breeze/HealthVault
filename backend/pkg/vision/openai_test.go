@@ -309,6 +309,70 @@ func TestOpenAIClient_Clarify_SendsNoImageContent(t *testing.T) {
 	}
 }
 
+func TestOpenAIClient_Advise_SendsCompleteTextOnlyInputAndBoundsLines(t *testing.T) {
+	var capturedBody map[string]any
+	longLine := strings.Repeat("я", 130)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"lines":["  Keep protein steady.  ","`+longLine+`","third","fourth"]}`)))
+	})
+
+	lines, err := c.Advise(context.Background(), vision.AdviceInput{
+		Label:              "fair",
+		Reasons:            []string{"protein_far", "sugar_off"},
+		MeanCalories:       1820.5,
+		MeanProteinGrams:   74.25,
+		MeanCarbsGrams:     210,
+		MeanFatGrams:       62,
+		MeanSugarGrams:     88,
+		MeanSodiumGrams:    3.1,
+		TargetCalories:     2500,
+		TargetProteinGrams: 110,
+		TargetCarbsGrams:   278,
+		TargetFatGrams:     105,
+		DisplayLanguage:    "ru",
+	})
+	if err != nil {
+		t.Fatalf("Advise: %v", err)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("expected first two usable lines, got %#v", lines)
+	}
+	if lines[0] != "Keep protein steady." {
+		t.Errorf("expected whitespace-trimmed first line, got %q", lines[0])
+	}
+	if got := len([]rune(lines[1])); got != 120 {
+		t.Errorf("expected 120-rune truncation, got %d", got)
+	}
+
+	b, err := json.Marshal(capturedBody)
+	if err != nil {
+		t.Fatalf("marshal captured request: %v", err)
+	}
+	body := string(b)
+	if strings.Contains(body, "image_url") {
+		t.Error("expected advice request to contain no image content")
+	}
+	for _, want := range []string{
+		`\"label\":\"fair\"`, `\"reasons\":[\"protein_far\",\"sugar_off\"]`,
+		`\"target_calories\":2500`, `\"target_protein_grams\":110`,
+		`\"target_carbs_grams\":278`, `\"target_fat_grams\":105`,
+		`\"display_language\":\"ru\"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("expected %s in advice request: %s", want, body)
+		}
+	}
+	responseFormat := capturedBody["response_format"].(map[string]any)
+	jsonSchema := responseFormat["json_schema"].(map[string]any)
+	if jsonSchema["name"] != "nutrition_advice" {
+		t.Errorf("expected nutrition_advice schema name, got %#v", jsonSchema["name"])
+	}
+}
+
 // On the describe path the description is the meal's only evidence, and a
 // vague one arrives here with an empty item list, so it has to be in the
 // request rather than merely stored on the row.
