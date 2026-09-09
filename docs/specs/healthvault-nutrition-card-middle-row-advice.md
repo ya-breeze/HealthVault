@@ -234,7 +234,7 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Add an `unavailable`-after-refresh case asserting `nutrition-advice-error` is visible
 - [x] Add the precedence regression: with a sustainability warning firing, assert `nutrition-advice` is absent and no request to `/api/food/advice` was made
 - [x] Update `todo.md`'s Phase 4 section to record the advice lines as shipped and to name the nutrition chat as the one remaining part of the middle row
-- [ ] As the last commit, add an `> **Update:**` note to the already-`Accepted` `docs/adr/ADR-004-heuristic-food-healthiness-label.md` naming this spec, recording that the cached advice lines shipped and that the chat remains deferred; do not rewrite the accepted decision or its earlier update
+- [x] As the last commit, add an `> **Update:**` note to the already-`Accepted` `docs/adr/ADR-004-heuristic-food-healthiness-label.md` naming this spec, recording that the cached advice lines shipped and that the chat remains deferred; do not rewrite the accepted decision or its earlier update
 - [x] Run `make lint` and `make test` and fix everything they report
-- [ ] Deploy the branch to the WIP stack and run `make test-e2e` against it, fixing every failure rather than recording it as pre-existing
-- [ ] Mark completed
+- [x] Deploy the branch to the WIP stack and run `make test-e2e` against it, fixing every failure rather than recording it as pre-existing
+- [x] Mark completed
