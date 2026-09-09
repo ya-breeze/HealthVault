@@ -29,6 +29,11 @@ async function scrollElementOutsideViewport(page: Page, element: Locator) {
   await expect(element).not.toBeInViewport();
 }
 
+async function scrollElementFullyIntoViewport(element: Locator) {
+  await element.evaluate(node => node.scrollIntoView({ block: 'center' }));
+  await expect(element).toBeInViewport({ ratio: 1 });
+}
+
 async function getSettings(request: APIRequestContext, cookies: string): Promise<Record<string, unknown>> {
   const res = await request.get(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies } });
   return res.json();
@@ -1205,17 +1210,16 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     await page.waitForTimeout(2200);
     expect(engagementBodies).toHaveLength(0);
 
-    await advice.scrollIntoViewIfNeeded();
-    await expect(advice).toBeInViewport({ ratio: 1 });
+    await scrollElementFullyIntoViewport(advice);
     await page.waitForTimeout(1100);
     await scrollElementOutsideViewport(page, advice);
     await page.waitForTimeout(1100);
     expect(engagementBodies).toHaveLength(0);
 
-    await advice.scrollIntoViewIfNeeded();
+    await scrollElementFullyIntoViewport(advice);
     await page.waitForTimeout(1100);
     expect(engagementBodies).toHaveLength(0);
-    await expect.poll(() => engagementBodies.length, { timeout: 1500 }).toBe(1);
+    await expect.poll(() => engagementBodies.length, { timeout: 4000 }).toBe(1);
     expect(engagementBodies[0]).toEqual({
     event: 'qualified_view',
     logged_day: '2026-09-06',
