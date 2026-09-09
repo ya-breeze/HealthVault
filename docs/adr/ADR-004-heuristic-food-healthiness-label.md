@@ -3,6 +3,11 @@
 ## Status
 Accepted
 
+> **Update (`docs/specs/healthvault-nutrition-card-middle-row-advice.md`, 2026-09-09):** the
+> cached LLM advice lines downstream of the deterministic label have shipped, including lazy
+> daily generation and a user-triggered refresh. The nutrition chat remains deferred until use of
+> these lines justifies a follow-up and its persistence model is decided.
+>
 > **Update (`docs/specs/healthvault-nutrition-card-middle-row-th.md`, 2026-09-03):** the heuristic
 > half of this decision has shipped — the nutrition card's middle row now renders a deterministic
 > Healthiness Label (Good / Fair / Needs attention) computed by `frontend/lib/healthiness.ts` over

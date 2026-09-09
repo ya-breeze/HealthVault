@@ -866,6 +866,10 @@ func (c *gatedRecognizeClient) Translate(context.Context, string) (string, error
 	return "", nil
 }
 
+func (c *gatedRecognizeClient) Advise(context.Context, vision.AdviceInput) ([]string, error) {
+	return nil, nil
+}
+
 func (c *gatedRecognizeClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }

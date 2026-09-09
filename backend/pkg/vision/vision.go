@@ -147,6 +147,26 @@ type ClarifyTurn struct {
 	Answer   string `json:"answer"`
 }
 
+// AdviceInput is everything the model is told when writing nutrition advice.
+// Label and Reasons are the caller's already-computed Healthiness Label inputs,
+// not a judgment for the model to revisit. Target figures are supplied by the
+// server from the user's Nutrition Target.
+type AdviceInput struct {
+	Label              string   `json:"label"`
+	Reasons            []string `json:"reasons"`
+	MeanCalories       float64  `json:"mean_calories"`
+	MeanProteinGrams   float64  `json:"mean_protein_grams"`
+	MeanCarbsGrams     float64  `json:"mean_carbs_grams"`
+	MeanFatGrams       float64  `json:"mean_fat_grams"`
+	MeanSugarGrams     float64  `json:"mean_sugar_grams"`
+	MeanSodiumGrams    float64  `json:"mean_sodium_grams"`
+	TargetCalories     int      `json:"target_calories"`
+	TargetProteinGrams int      `json:"target_protein_grams"`
+	TargetCarbsGrams   int      `json:"target_carbs_grams"`
+	TargetFatGrams     int      `json:"target_fat_grams"`
+	DisplayLanguage    string   `json:"display_language"`
+}
+
 // Client recognizes foods in a photo and selects among retrieved candidates.
 // Every implementation sets store:false on outbound requests — see design.md
 // "Third-Party Disclosure and Retention".
@@ -188,6 +208,10 @@ type Client interface {
 	// "porridge" -> "oatmeal", "овсянка" -> "oatmeal"). Text-only, no
 	// image. See openspec/changes/multilingual-food-search/design.md.
 	Translate(ctx context.Context, query string) (string, error)
+	// Advise is text-only. Label and Reasons are an already-computed judgment
+	// that implementations must never dispute; returned lines are written in
+	// DisplayLanguage.
+	Advise(ctx context.Context, in AdviceInput) ([]string, error)
 	// Describe is text-only: it identifies foods from the user's own written
 	// description of a meal, with no image at all — the manual-entry
 	// counterpart to Recognize. It returns the same RecognizeResult shape and

@@ -546,6 +546,11 @@ func (slowRecognizeClient) Translate(ctx context.Context, _ string) (string, err
 	return "", ctx.Err()
 }
 
+func (slowRecognizeClient) Advise(ctx context.Context, _ vision.AdviceInput) ([]string, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func (slowRecognizeClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }

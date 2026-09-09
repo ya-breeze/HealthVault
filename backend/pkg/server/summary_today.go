@@ -57,9 +57,10 @@ type summaryTargetPayload struct {
 }
 
 // summaryTodayResponse is the 200 response body for GET /api/summary/today
-// (design.md §1). `recommendation` is always null in this change (Phase 4's
-// non-goal). `LastLoggedAt` is a pointer so a day with no logged meals yet
-// serializes as `null`, per design.md's "or null if none".
+// (design.md §1). Nutrition advice lives on POST /api/food/advice because it
+// depends on the client-computed Healthiness Label and must not put model
+// latency on this dashboard-critical response. LastLoggedAt is a pointer so a
+// day with no logged meals yet serializes as null.
 type summaryTodayResponse struct {
 	Date                 string               `json:"date"`
 	CaloriesConsumed     float64              `json:"calories_consumed"`
@@ -70,7 +71,6 @@ type summaryTodayResponse struct {
 	LastLoggedAt         *time.Time           `json:"last_logged_at"`
 	DisplayLanguage      string               `json:"display_language"`
 	Target               summaryTargetPayload `json:"target"`
-	Recommendation       any                  `json:"recommendation"`
 }
 
 // SummaryTodayHandler computes GET /api/summary/today fresh on every call:
@@ -148,7 +148,6 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 			LastLoggedAt:         lastLoggedAt,
 			DisplayLanguage:      displayLanguageFromSettings(settingsJSON),
 			Target:               target,
-			Recommendation:       nil,
 		})
 	}
 }

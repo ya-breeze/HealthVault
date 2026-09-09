@@ -60,6 +60,15 @@ export interface HealthinessResult {
   label: HealthinessLabel;
   /** At most two, `far` before `off`, ties broken by signal order protein/sugar/sodium/fat/carbs. */
   reasons: HealthinessReasonCode[];
+  /** Per eligible day, from the exact same filtered seven-day pool as the verdict. */
+  means: {
+    calories: number;
+    proteinGrams: number;
+    carbsGrams: number;
+    fatGrams: number;
+    sugarGrams: number;
+    sodiumGrams: number;
+  };
 }
 
 interface TwoSidedBands {
@@ -188,13 +197,14 @@ export function computeHealthinessLabel(
 
   const pooled = eligible.reduce(
     (acc, d) => ({
+      calories: acc.calories + d.calories,
       protein: acc.protein + d.proteinGrams,
       carbs: acc.carbs + d.carbsGrams,
       fat: acc.fat + d.fatGrams,
       sugar: acc.sugar + d.sugarGrams,
       sodium: acc.sodium + d.sodiumGrams,
     }),
-    { protein: 0, carbs: 0, fat: 0, sugar: 0, sodium: 0 }
+    { calories: 0, protein: 0, carbs: 0, fat: 0, sugar: 0, sodium: 0 }
   );
 
   const macroEnergy = 4 * pooled.protein + 4 * pooled.carbs + 9 * pooled.fat;
@@ -229,5 +239,16 @@ export function computeHealthinessLabel(
   const offReasons = evals.filter(e => e.verdict === 'off' && e.reason).map(e => e.reason as HealthinessReasonCode);
   const reasons = [...farReasons, ...offReasons].slice(0, 2);
 
-  return { label, reasons };
+  return {
+    label,
+    reasons,
+    means: {
+      calories: pooled.calories / eligible.length,
+      proteinGrams: pooled.protein / eligible.length,
+      carbsGrams: pooled.carbs / eligible.length,
+      fatGrams: pooled.fat / eligible.length,
+      sugarGrams: pooled.sugar / eligible.length,
+      sodiumGrams: pooled.sodium / eligible.length,
+    },
+  };
 }

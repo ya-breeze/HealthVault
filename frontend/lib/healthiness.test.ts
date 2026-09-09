@@ -59,7 +59,7 @@ describe('computeHealthinessLabel — eligibility floor', () => {
       4: day({ state: 'incomplete', proteinGrams: 0, carbsGrams: 0, fatGrams: 0, sugarGrams: 500, sodiumGrams: 10 }),
     };
     const result = computeHealthinessLabel(perDayData, WINDOW);
-    expect(result).toEqual({ label: 'good', reasons: [] });
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('excludes a day whose meals never reached confirmed even when Day Completeness says complete', () => {
@@ -87,12 +87,44 @@ describe('computeHealthinessLabel — eligibility floor', () => {
     };
     expect(computeHealthinessLabel(perDayData, WINDOW)).toBeNull();
   });
+
+  it('computes fractional means from only eligible in-window days', () => {
+    const perDayData: Record<number, HealthinessDayData> = {
+      0: day({ ...GOOD_DAY, calories: 1900, proteinGrams: 100, sugarGrams: 10, sodiumGrams: 1 }),
+      1: day({ ...GOOD_DAY, calories: 2000, proteinGrams: 101, sugarGrams: 11, sodiumGrams: 2 }),
+      2: day({ ...GOOD_DAY, calories: 2100, proteinGrams: 102, sugarGrams: 12, sodiumGrams: 3 }),
+      // Both would visibly change every mean if either leaked into the pool.
+      3: day({ ...GOOD_DAY, state: 'incomplete', calories: 99999, proteinGrams: 99999 }),
+      8: day({ ...GOOD_DAY, calories: 99999, proteinGrams: 99999 }),
+    };
+
+    const means = computeHealthinessLabel(perDayData, WINDOW)?.means;
+    expect(means).toMatchObject({
+      calories: 2000,
+      proteinGrams: 101,
+      carbsGrams: 195,
+      sugarGrams: 11,
+      sodiumGrams: 2,
+    });
+    expect(means?.fatGrams).toBeCloseTo(86.667);
+  });
+
+  it('preserves non-integer means without rounding', () => {
+    const perDayData: Record<number, HealthinessDayData> = {
+      0: day({ ...GOOD_DAY, calories: 1900, proteinGrams: 100 }),
+      1: day({ ...GOOD_DAY, calories: 1901, proteinGrams: 101 }),
+      2: day({ ...GOOD_DAY, calories: 1901, proteinGrams: 101 }),
+    };
+    const means = computeHealthinessLabel(perDayData, WINDOW)?.means;
+    expect(means?.calories).toBe(1900 + 2 / 3);
+    expect(means?.proteinGrams).toBe(100 + 2 / 3);
+  });
 });
 
 describe('computeHealthinessLabel — the Nutrition Target split is good', () => {
   it('labels a pooled window built from this app\'s own Nutrition Target split as good', () => {
     const perDayData = poolOf(7, GOOD_DAY);
-    expect(computeHealthinessLabel(perDayData, WINDOW)).toEqual({ label: 'good', reasons: [] });
+    expect(computeHealthinessLabel(perDayData, WINDOW)).toMatchObject({ label: 'good', reasons: [] });
   });
 });
 
@@ -119,22 +151,22 @@ describe('computeHealthinessLabel — protein share boundaries (fat fixed ok at 
 
   it('0.15 (offLow/ok boundary) lands on the ok side', () => {
     const result = computeHealthinessLabel(poolAtProteinShare(HEALTHINESS_THRESHOLDS.proteinShare.offLow), WINDOW);
-    expect(result).toEqual({ label: 'good', reasons: [] });
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('0.40 (ok/offHigh boundary) lands on the ok side', () => {
     const result = computeHealthinessLabel(poolAtProteinShare(HEALTHINESS_THRESHOLDS.proteinShare.offHigh), WINDOW);
-    expect(result).toEqual({ label: 'good', reasons: [] });
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('0.10 (farLow/offLow boundary) lands on the off side, not far', () => {
     const result = computeHealthinessLabel(poolAtProteinShare(HEALTHINESS_THRESHOLDS.proteinShare.farLow), WINDOW);
-    expect(result).toEqual({ label: 'fair', reasons: ['protein_low'] });
+    expect(result).toMatchObject({ label: 'fair', reasons: ['protein_low'] });
   });
 
   it('0.45 (offHigh/farHigh boundary) lands on the off side, not far', () => {
     const result = computeHealthinessLabel(poolAtProteinShare(HEALTHINESS_THRESHOLDS.proteinShare.farHigh), WINDOW);
-    expect(result).toEqual({ label: 'fair', reasons: ['protein_high'] });
+    expect(result).toMatchObject({ label: 'fair', reasons: ['protein_high'] });
   });
 
   it('just under the farLow boundary is far, not off', () => {
@@ -163,22 +195,22 @@ describe('computeHealthinessLabel — fat share boundaries (protein fixed ok at 
 
   it('0.20 (offLow/ok boundary) lands on the ok side', () => {
     const result = computeHealthinessLabel(poolAtFatShare(HEALTHINESS_THRESHOLDS.fatShare.offLow), WINDOW);
-    expect(result).toEqual({ label: 'good', reasons: [] });
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('0.40 (ok/offHigh boundary) lands on the ok side', () => {
     const result = computeHealthinessLabel(poolAtFatShare(HEALTHINESS_THRESHOLDS.fatShare.offHigh), WINDOW);
-    expect(result).toEqual({ label: 'good', reasons: [] });
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('0.15 (farLow/offLow boundary) lands on the off side, not far', () => {
     const result = computeHealthinessLabel(poolAtFatShare(HEALTHINESS_THRESHOLDS.fatShare.farLow), WINDOW);
-    expect(result).toEqual({ label: 'fair', reasons: ['fat_low'] });
+    expect(result).toMatchObject({ label: 'fair', reasons: ['fat_low'] });
   });
 
   it('0.48 (offHigh/farHigh boundary) lands on the off side, not far', () => {
     const result = computeHealthinessLabel(poolAtFatShare(HEALTHINESS_THRESHOLDS.fatShare.farHigh), WINDOW);
-    expect(result).toEqual({ label: 'fair', reasons: ['fat_high'] });
+    expect(result).toMatchObject({ label: 'fair', reasons: ['fat_high'] });
   });
 });
 
@@ -188,7 +220,7 @@ describe('computeHealthinessLabel — carb share boundaries', () => {
     const proteinGrams = gramsForShare(0.36, 4);
     const fatGrams = (M - 4 * proteinGrams - 4 * carbGrams) / 9;
     const perDayData = poolOf(3, { proteinGrams, carbsGrams: carbGrams, fatGrams });
-    expect(computeHealthinessLabel(perDayData, WINDOW)).toEqual({ label: 'good', reasons: [] });
+    expect(computeHealthinessLabel(perDayData, WINDOW)).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('0.65 (ok/offHigh boundary) lands on the ok side — the only fit forces protein and fat to their own offLow boundaries too', () => {
@@ -200,7 +232,7 @@ describe('computeHealthinessLabel — carb share boundaries', () => {
     const proteinGrams = 135; // proteinShare = 4*135/3600 = 0.15
     const fatGrams = 80; // fatShare = 9*80/3600 = 0.20
     const perDayData = poolOf(3, { proteinGrams, carbsGrams: carbGrams, fatGrams });
-    expect(computeHealthinessLabel(perDayData, WINDOW)).toEqual({ label: 'good', reasons: [] });
+    expect(computeHealthinessLabel(perDayData, WINDOW)).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('a carb share below farLow is far — its arithmetic partners cannot be the explanation', () => {
@@ -234,17 +266,17 @@ describe('computeHealthinessLabel — sugar share boundary (macros held at the g
 
   it('0.15 (offLow/ok boundary) lands on the ok side', () => {
     const result = computeHealthinessLabel(poolAtSugarShare(HEALTHINESS_THRESHOLDS.sugarShare.offLow), WINDOW);
-    expect(result).toEqual({ label: 'good', reasons: [] });
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('0.22 (offHigh/farLow boundary) lands on the off side, not far', () => {
     const result = computeHealthinessLabel(poolAtSugarShare(HEALTHINESS_THRESHOLDS.sugarShare.farLow), WINDOW);
-    expect(result).toEqual({ label: 'fair', reasons: ['sugar_high'] });
+    expect(result).toMatchObject({ label: 'fair', reasons: ['sugar_high'] });
   });
 
   it('just over 0.22 is far', () => {
     const result = computeHealthinessLabel(poolAtSugarShare(0.23), WINDOW);
-    expect(result).toEqual({ label: 'needs_attention', reasons: ['sugar_high'] });
+    expect(result).toMatchObject({ label: 'needs_attention', reasons: ['sugar_high'] });
   });
 });
 
@@ -258,7 +290,7 @@ describe('computeHealthinessLabel — sodium boundary (macros held at the good b
       poolAtSodiumGramsPerDay(HEALTHINESS_THRESHOLDS.sodiumGramsPerDay.offLow),
       WINDOW
     );
-    expect(result).toEqual({ label: 'good', reasons: [] });
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
   });
 
   it('3.5 g/day (offHigh/farLow boundary) lands on the off side, not far', () => {
@@ -266,19 +298,19 @@ describe('computeHealthinessLabel — sodium boundary (macros held at the good b
       poolAtSodiumGramsPerDay(HEALTHINESS_THRESHOLDS.sodiumGramsPerDay.farLow),
       WINDOW
     );
-    expect(result).toEqual({ label: 'fair', reasons: ['sodium_high'] });
+    expect(result).toMatchObject({ label: 'fair', reasons: ['sodium_high'] });
   });
 
   it('just over 3.5 g/day is far', () => {
     const result = computeHealthinessLabel(poolAtSodiumGramsPerDay(3.6), WINDOW);
-    expect(result).toEqual({ label: 'needs_attention', reasons: ['sodium_high'] });
+    expect(result).toMatchObject({ label: 'needs_attention', reasons: ['sodium_high'] });
   });
 });
 
 describe('computeHealthinessLabel — combination rule', () => {
   it('one off signal is fair', () => {
     const perDayData = poolOf(7, { ...GOOD_DAY, sodiumGrams: 2.8 });
-    expect(computeHealthinessLabel(perDayData, WINDOW)).toEqual({ label: 'fair', reasons: ['sodium_high'] });
+    expect(computeHealthinessLabel(perDayData, WINDOW)).toMatchObject({ label: 'fair', reasons: ['sodium_high'] });
   });
 
   it('three off signals is needs_attention', () => {
@@ -300,7 +332,7 @@ describe('computeHealthinessLabel — combination rule', () => {
 
   it('any far signal is needs_attention even with every other signal ok', () => {
     const perDayData = poolOf(7, { ...GOOD_DAY, sodiumGrams: 4.0 });
-    expect(computeHealthinessLabel(perDayData, WINDOW)).toEqual({
+    expect(computeHealthinessLabel(perDayData, WINDOW)).toMatchObject({
       label: 'needs_attention',
       reasons: ['sodium_high'],
     });
@@ -308,7 +340,7 @@ describe('computeHealthinessLabel — combination rule', () => {
 
   it('all five signals ok is good, with no reasons', () => {
     const perDayData = poolOf(7, GOOD_DAY);
-    expect(computeHealthinessLabel(perDayData, WINDOW)).toEqual({ label: 'good', reasons: [] });
+    expect(computeHealthinessLabel(perDayData, WINDOW)).toMatchObject({ label: 'good', reasons: [] });
   });
 });
 

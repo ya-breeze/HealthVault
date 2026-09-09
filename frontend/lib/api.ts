@@ -600,6 +600,41 @@ export type TodaySummaryTarget =
       activity_tier: string;
     };
 
+export interface NutritionAdviceWindow {
+  mean_calories: number;
+  mean_protein_grams: number;
+  mean_carbs_grams: number;
+  mean_fat_grams: number;
+  mean_sugar_grams: number;
+  mean_sodium_grams: number;
+}
+
+export interface NutritionAdviceRequest {
+  label: 'good' | 'fair' | 'needs_attention';
+  reasons: string[];
+  window: NutritionAdviceWindow;
+  refresh: boolean;
+}
+
+export interface NutritionAdviceContext {
+  target_calories: number;
+  target_protein_grams: number;
+  target_carbs_grams: number;
+  target_fat_grams: number;
+  display_language: 'en' | 'ru';
+}
+
+// Discriminated so lines and the server-effective context are inaccessible
+// until the caller has proved this response is available.
+export type NutritionAdviceResponse =
+  | { available: false; reason: 'unconfigured' | 'unavailable' }
+  | {
+      available: true;
+      lines: string[];
+      generated_at: string;
+      context: NutritionAdviceContext;
+    };
+
 /**
  * GET /api/summary/today — the caller's Logged Day so far, plus their
  * Nutrition Target, in one response.
@@ -622,8 +657,6 @@ export type TodaySummaryTarget =
  * it rather than re-deriving "today" locally, so the two cannot disagree across
  * a local midnight.
  *
- * `recommendation` is always `null` today — it is the reserved home for Phase
- * 4's advice lines (see todo.md), not something any caller can rely on yet.
  */
 export interface TodaySummary {
   date: string;
@@ -635,7 +668,6 @@ export interface TodaySummary {
   last_logged_at: string | null;
   display_language: string;
   target: TodaySummaryTarget;
-  recommendation: null;
 }
 
 // Named rather than left inline on `api.me` below: AuthenticatedShell holds
@@ -692,6 +724,12 @@ export const api = {
   // comment for why a caller needing both today's intake and the target
   // should reach for this instead of getNutritionTarget.
   getTodaySummary: () => apiFetch<TodaySummary>('/summary/today'),
+
+  getNutritionAdvice: (input: NutritionAdviceRequest) =>
+    apiFetch<NutritionAdviceResponse>('/food/advice', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   // Self-only: no ?user= support, unlike most /data endpoints — see
   // design.md's "Self-only" decision. Throws NutritionTargetUnmetError on
