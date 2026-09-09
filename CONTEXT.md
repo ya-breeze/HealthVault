@@ -136,6 +136,17 @@ _Avoid_: Activity multiplier alone (that's the numeric output, not the tier), ex
 A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment (ADR-004). The window is the 7 Logged Days ending yesterday — the last 7 days of the 28-day Logging Gap window the nutrition card already resolves, so it costs no extra fetch. A day counts only if it passes the Logging Gap's own `isValidDay` test (Day Completeness Complete/Confirmed Complete, and every one of that day's meals `confirmed`) — imported from `loggingGap.ts` rather than reimplemented, so the two rows can never disagree about what "logged" means. Below the ADR-007 3-of-7 floor, or with zero pooled macro energy, there is no label at all. The five signals, computed from *pooled* (not per-day-averaged) totals — three macro-energy shares (protein, carbs, fat, of `4P + 4C + 9F`), total-sugars share, and mean elemental sodium — each land on `ok`/`off`/`far`; any `far`, or 3+ `off`, is Needs attention, 1-2 `off` is Fair, all `ok` is Good.
 _Avoid_: Health score, nutrition score
 
+**Qualified Advice View**:
+A conservative engagement signal for the nutrition advice under a Healthiness Label: the complete
+rendered advice element remained inside the viewport while the document was visible for two
+continuous seconds. This is a visibility proxy, not proof that the user read, understood, or acted
+on the text. It is deduplicated per advice Logged Day and generation timestamp within one browser
+tab when `sessionStorage` is available. The server persists only a per-user, per-Logged-Day
+aggregate: qualified-view, refresh-request, and refresh-success counts with their first/last
+timestamps. It never stores advice text, health measurements, browser or session identifiers,
+user-agent data, IP addresses, or future chat content in the engagement aggregate.
+_Avoid_: Read, impression (both claim more attention than the signal establishes)
+
 ### Weight chart
 
 **Bucket Start**:
