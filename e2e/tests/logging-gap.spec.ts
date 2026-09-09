@@ -1,4 +1,4 @@
-import { test, expect, type Page, type APIRequestContext, type Route } from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext, type Locator, type Route } from '@playwright/test';
 // These tests PUT settings that change `timezone`, needed so the fixture dates
 // below line up exactly with what resolveLoggingGapWindow computes — one of the
 // reasons `target.ts` refuses to resolve a prod URL at all.
@@ -18,6 +18,15 @@ async function login(page: Page) {
 async function cookieHeader(page: Page): Promise<string> {
   const cookies = await page.context().cookies();
   return cookies.map(c => `${c.name}=${c.value}`).join('; ');
+}
+
+async function scrollElementOutsideViewport(page: Page, element: Locator) {
+  await element.evaluate(node => {
+    const absoluteTop = window.scrollY + node.getBoundingClientRect().top;
+    const pageMiddle = document.documentElement.scrollHeight / 2;
+    window.scrollTo(0, absoluteTop < pageMiddle ? document.documentElement.scrollHeight : 0);
+  });
+  await expect(element).not.toBeInViewport();
 }
 
 async function getSettings(request: APIRequestContext, cookies: string): Promise<Record<string, unknown>> {
@@ -971,6 +980,7 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
         adviceHandler: route => route.fulfill({ json: {
           available: true,
           lines: ['Keep your protein pattern steady.', 'Choose whole-food carbs most often.'],
+      logged_day: '2026-09-05',
           generated_at: '2026-09-05T06:12:00Z',
           context: matchingAdviceContext,
         } }),
@@ -1008,6 +1018,7 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
           return route.fulfill({ json: {
             available: true,
             lines: [calls === 1 ? 'Wrong target.' : 'Wrong language.'],
+      logged_day: '2026-09-05',
             generated_at: '2026-09-05T06:12:00Z',
             context: calls === 1
               ? { ...matchingAdviceContext, target_calories: 2600 }
@@ -1047,6 +1058,7 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
           await route.fulfill({ json: {
             available: true,
             lines: [refreshed ? 'New advice.' : 'Original advice.'],
+      logged_day: '2026-09-05',
             generated_at: '2026-09-05T06:12:00Z',
             context: matchingAdviceContext,
           } });
@@ -1107,6 +1119,7 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
           return route.fulfill({ json: calls === 1 ? {
             available: true,
             lines: ['Original advice.'],
+      logged_day: '2026-09-05',
             generated_at: '2026-09-05T06:12:00Z',
             context: matchingAdviceContext,
           } : { available: false, reason: 'unavailable' } });
@@ -1130,6 +1143,7 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     const original = await getSettings(request, cookies);
     await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
     let adviceCalls = 0;
+  let engagementCalls = 0;
     const fixture = tooFastLossFixture();
     const last7 = new Set(dateRange(loggingGapWindow().windowStart, loggingGapWindow().windowEnd).slice(-7));
     fixture.dailyTotals = fixture.dailyTotals!.map(d => last7.has(d.date) ? { ...d, ...HEALTHY_MACROS } : d);
@@ -1140,16 +1154,157 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
           return route.fulfill({ json: { available: false, reason: 'unconfigured' } });
         },
       });
+    await page.route('**/api/food/advice/engagement', route => {
+    engagementCalls++;
+    return route.fulfill({ status: 204, body: '' });
+    });
       await page.goto('/');
 
       const card = page.getByTestId('logging-gap-card');
       await expect(card.getByTestId('nutrition-sustainability')).toBeVisible({ timeout: 15_000 });
       await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(2200);
       expect(adviceCalls).toBe(0);
+    expect(engagementCalls).toBe(0);
     } finally {
       await putSettings(request, cookies, original);
     }
+  });
+
+  test('counts only after two continuous seconds fully in view and resets an interrupted interval', async ({ page, request }) => {
+  await login(page);
+  const cookies = await cookieHeader(page);
+  const original = await getSettings(request, cookies);
+  await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+  const engagementBodies: Record<string, unknown>[] = [];
+  try {
+    await mockLoggingGapApis(page, healthinessGoodFixture(), {
+    adviceHandler: route => route.fulfill({ json: {
+      available: true,
+      lines: ['Visibility-tested advice.'],
+      logged_day: '2026-09-06',
+      generated_at: '2026-09-06T06:12:00Z',
+      context: matchingAdviceContext,
+    } }),
+    });
+    await page.route('**/api/food/advice/engagement', route => {
+    engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ status: 204, body: '' });
+    });
+    await page.goto('/');
+
+    const advice = page.getByTestId('nutrition-advice');
+    await expect(advice).toBeVisible({ timeout: 15_000 });
+    await scrollElementOutsideViewport(page, advice);
+    await page.waitForTimeout(2200);
+    expect(engagementBodies).toHaveLength(0);
+
+    await advice.scrollIntoViewIfNeeded();
+    await expect(advice).toBeInViewport({ ratio: 1 });
+    await page.waitForTimeout(1100);
+    await scrollElementOutsideViewport(page, advice);
+    await page.waitForTimeout(1100);
+    expect(engagementBodies).toHaveLength(0);
+
+    await advice.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1100);
+    expect(engagementBodies).toHaveLength(0);
+    await expect.poll(() => engagementBodies.length, { timeout: 1500 }).toBe(1);
+    expect(engagementBodies[0]).toEqual({
+    event: 'qualified_view',
+    logged_day: '2026-09-06',
+    generated_at: '2026-09-06T06:12:00Z',
+    });
+  } finally {
+    await putSettings(request, cookies, original);
+  }
+  });
+
+  test('deduplicates a revision across rerender and reload in the same tab session', async ({ page, request }) => {
+  await login(page);
+  const cookies = await cookieHeader(page);
+  const original = await getSettings(request, cookies);
+  await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+  let engagementCalls = 0;
+  try {
+    await mockLoggingGapApis(page, healthinessGoodFixture(), {
+    adviceHandler: route => route.fulfill({ json: {
+      available: true,
+      lines: ['One revision.'],
+      logged_day: '2026-09-07',
+      generated_at: '2026-09-07T06:12:00Z',
+      context: matchingAdviceContext,
+    } }),
+    });
+    await page.route('**/api/food/advice/engagement', route => {
+    engagementCalls++;
+    return route.fulfill({ status: 204, body: '' });
+    });
+    await page.goto('/');
+    const advice = page.getByTestId('nutrition-advice');
+    await advice.scrollIntoViewIfNeeded();
+    await expect.poll(() => engagementCalls, { timeout: 4000 }).toBe(1);
+
+    await page.getByTestId('logging-gap-hint-toggle').click();
+    await page.getByTestId('logging-gap-hint-toggle').click();
+    await page.waitForTimeout(2200);
+    expect(engagementCalls).toBe(1);
+
+    await page.reload();
+    const reloadedAdvice = page.getByTestId('nutrition-advice');
+    await expect(reloadedAdvice).toBeVisible({ timeout: 15_000 });
+    await reloadedAdvice.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(2200);
+    expect(engagementCalls).toBe(1);
+  } finally {
+    await putSettings(request, cookies, original);
+  }
+  });
+
+  test('a refreshed revision earns its own view even when engagement delivery fails', async ({ page, request }) => {
+  await login(page);
+  const cookies = await cookieHeader(page);
+  const original = await getSettings(request, cookies);
+  await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+  const engagementBodies: Record<string, unknown>[] = [];
+  let adviceCalls = 0;
+  try {
+    await mockLoggingGapApis(page, healthinessGoodFixture(), {
+    adviceHandler: route => {
+      adviceCalls++;
+      return route.fulfill({ json: {
+      available: true,
+      lines: [adviceCalls === 1 ? 'Original advice.' : 'Refreshed advice.'],
+      logged_day: '2026-09-08',
+      generated_at: adviceCalls === 1 ? '2026-09-08T06:12:00Z' : '2026-09-08T06:13:00Z',
+      context: matchingAdviceContext,
+      } });
+    },
+    });
+    await page.route('**/api/food/advice/engagement', route => {
+    engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ status: 503, json: { error: 'telemetry unavailable' } });
+    });
+    await page.goto('/');
+    const advice = page.getByTestId('nutrition-advice');
+    await advice.scrollIntoViewIfNeeded();
+    await expect.poll(() => engagementBodies.length, { timeout: 4000 }).toBe(1);
+    await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Original advice.');
+
+    const refresh = page.getByTestId('nutrition-advice-refresh');
+    await refresh.click();
+    await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Refreshed advice.');
+    await expect(refresh).toBeEnabled();
+    await advice.scrollIntoViewIfNeeded();
+    await expect.poll(() => engagementBodies.length, { timeout: 4000 }).toBe(2);
+    expect(engagementBodies.map(body => body.generated_at)).toEqual([
+    '2026-09-08T06:12:00Z',
+    '2026-09-08T06:13:00Z',
+    ]);
+    await expect(page.getByTestId('nutrition-advice-error')).toHaveCount(0);
+  } finally {
+    await putSettings(request, cookies, original);
+  }
   });
 });
 
