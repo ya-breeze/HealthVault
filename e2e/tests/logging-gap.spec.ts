@@ -1188,9 +1188,15 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     } }),
     });
     await page.route('**/api/food/advice/engagement', route => {
-    engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
-    return route.fulfill({ status: 204, body: '' });
+      engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      return route.fulfill({ status: 204, body: '' });
     });
+    // The shared account may currently have no other data-backed cards, in
+    // which case the dashboard is shorter than the default viewport and
+    // cannot physically scroll this card out of view. A short viewport makes
+    // both sides of the intersection boundary reachable without depending on
+    // the account's saved card order or data presence.
+    await page.setViewportSize({ width: 1280, height: 240 });
     await page.goto('/');
 
     const advice = page.getByTestId('nutrition-advice');
