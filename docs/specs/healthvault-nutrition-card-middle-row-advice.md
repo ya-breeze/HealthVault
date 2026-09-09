@@ -226,15 +226,15 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 6: End-to-end coverage, documentation and validation
-- [ ] Route `**/api/food/advice` in `mockLoggingGapApis` (`e2e/tests/logging-gap.spec.ts`), defaulting to `{"available": false, "reason": "unconfigured"}` so every existing fixture keeps its current assertions, and drop `recommendation: null` from the summary fixture
-- [ ] Add a case where the endpoint returns two lines with context matching the mocked summary target and current display language: assert both `nutrition-advice-line` elements are visible and that the block sits under the label
-- [ ] Add stale-context cases where an available response reports, in turn, a different target and a different display language from the card currently rendered, asserting its advice never appears in either case; these must fail if either part of the response-context signature guard is deleted
-- [ ] Add a refresh case whose two available responses carry matching context: click `nutrition-advice-refresh`, assert a second request was issued with `refresh: true`, and assert the newly returned line replaces the old one
-- [ ] Add an `unconfigured` case asserting `nutrition-advice` and `nutrition-advice-refresh` are both absent, and an `unavailable`-on-load case asserting the same
-- [ ] Add an `unavailable`-after-refresh case asserting `nutrition-advice-error` is visible
-- [ ] Add the precedence regression: with a sustainability warning firing, assert `nutrition-advice` is absent and no request to `/api/food/advice` was made
-- [ ] Update `todo.md`'s Phase 4 section to record the advice lines as shipped and to name the nutrition chat as the one remaining part of the middle row
+- [x] Route `**/api/food/advice` in `mockLoggingGapApis` (`e2e/tests/logging-gap.spec.ts`), defaulting to `{"available": false, "reason": "unconfigured"}` so every existing fixture keeps its current assertions, and drop `recommendation: null` from the summary fixture
+- [x] Add a case where the endpoint returns two lines with context matching the mocked summary target and current display language: assert both `nutrition-advice-line` elements are visible and that the block sits under the label
+- [x] Add stale-context cases where an available response reports, in turn, a different target and a different display language from the card currently rendered, asserting its advice never appears in either case; these must fail if either part of the response-context signature guard is deleted
+- [x] Add a refresh case whose two available responses carry matching context: click `nutrition-advice-refresh`, assert a second request was issued with `refresh: true`, and assert the newly returned line replaces the old one
+- [x] Add an `unconfigured` case asserting `nutrition-advice` and `nutrition-advice-refresh` are both absent, and an `unavailable`-on-load case asserting the same
+- [x] Add an `unavailable`-after-refresh case asserting `nutrition-advice-error` is visible
+- [x] Add the precedence regression: with a sustainability warning firing, assert `nutrition-advice` is absent and no request to `/api/food/advice` was made
+- [x] Update `todo.md`'s Phase 4 section to record the advice lines as shipped and to name the nutrition chat as the one remaining part of the middle row
 - [ ] As the last commit, add an `> **Update:**` note to the already-`Accepted` `docs/adr/ADR-004-heuristic-food-healthiness-label.md` naming this spec, recording that the cached advice lines shipped and that the chat remains deferred; do not rewrite the accepted decision or its earlier update
-- [ ] Run `make lint` and `make test` and fix everything they report
+- [x] Run `make lint` and `make test` and fix everything they report
 - [ ] Deploy the branch to the WIP stack and run `make test-e2e` against it, fixing every failure rather than recording it as pre-existing
 - [ ] Mark completed
