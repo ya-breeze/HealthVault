@@ -256,6 +256,23 @@ type FoodSearchTranslation struct {
 	TranslatedQuery string    `gorm:"not null" json:"translated_query"`
 }
 
+// FoodAdvice is a user's cached Healthiness Label advice. It is unique per
+// user and overwritten in place rather than accumulating history. Lines is a
+// JSON array of strings. Freshness requires both LoggedDay and InputHash: the
+// hash covers the complete normalized vision.AdviceInput because prior-day
+// food and Nutrition Target inputs remain editable after the day ends.
+type FoodAdvice struct {
+	models.TenantModel
+	UserID      uuid.UUID `gorm:"type:uuid;not null;uniqueIndex" json:"user_id"`
+	LoggedDay   string    `gorm:"not null" json:"logged_day"`
+	Label       string    `gorm:"not null" json:"label"`
+	ReasonCodes string    `gorm:"not null" json:"reason_codes"`
+	Language    string    `gorm:"not null" json:"language"`
+	InputHash   string    `gorm:"not null" json:"input_hash"`
+	Lines       string    `gorm:"type:text;not null" json:"lines"`
+	GeneratedAt time.Time `gorm:"not null" json:"generated_at"`
+}
+
 // FoodCalibrationSample is a weighed-food ground-truth photo used to benchmark
 // vision models. It never produces a FoodMeal.
 type FoodCalibrationSample struct {

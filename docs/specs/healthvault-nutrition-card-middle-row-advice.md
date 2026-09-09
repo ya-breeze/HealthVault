@@ -191,10 +191,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: The advice cache table
-- [ ] Add `FoodAdvice` to `backend/pkg/database/models_food.go` with `UserID` (unique index), `LoggedDay`, `Label`, `ReasonCodes`, `Language`, `InputHash`, `Lines` and `GeneratedAt`, following `FoodSearchTranslation`'s shape
-- [ ] Document on the model that the row is overwritten in place rather than accumulating history, that `Lines` is a JSON array of strings, and that freshness requires the Logged Day plus a hash of the complete normalized `AdviceInput` because prior-day food and Nutrition Target inputs remain editable
-- [ ] Register `&FoodAdvice{}` in `db.AutoMigrate` in `backend/pkg/database/db.go`, beside `&FoodDayCompletion{}`
-- [ ] Mark completed
+- [x] Add `FoodAdvice` to `backend/pkg/database/models_food.go` with `UserID` (unique index), `LoggedDay`, `Label`, `ReasonCodes`, `Language`, `InputHash`, `Lines` and `GeneratedAt`, following `FoodSearchTranslation`'s shape
+- [x] Document on the model that the row is overwritten in place rather than accumulating history, that `Lines` is a JSON array of strings, and that freshness requires the Logged Day plus a hash of the complete normalized `AdviceInput` because prior-day food and Nutrition Target inputs remain editable
+- [x] Register `&FoodAdvice{}` in `db.AutoMigrate` in `backend/pkg/database/db.go`, beside `&FoodDayCompletion{}`
+- [x] Mark completed
 
 ### Task 3: The POST /api/food/advice endpoint
 - [ ] Create `backend/pkg/server/food_advice.go` with the request and response types from `How`, and register `api.HandleFunc("/food/advice", fh.PostFoodAdvice).Methods("POST")` in `backend/pkg/server/server.go` beside the other `/food/*` routes
