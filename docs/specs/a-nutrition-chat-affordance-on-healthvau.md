@@ -49,7 +49,7 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Normalize the engagement slice formatting
-- [ ] Align `logged_day` with the other available-response fields in `NutritionAdviceResponse` in `frontend/lib/api.ts`
-- [ ] Re-indent the nutrition-advice fixtures, engagement route handlers, payload assertions, and visibility/deduplication tests added in `e2e/tests/logging-gap.spec.ts` to match the surrounding two-space nesting and multiline callback style
-- [ ] Make no behavioral, timing, fixture-value, or assertion changes while performing the formatting cleanup
-- [ ] Mark completed
+- [x] Align `logged_day` with the other available-response fields in `NutritionAdviceResponse` in `frontend/lib/api.ts`
+- [x] Re-indent the nutrition-advice fixtures, engagement route handlers, payload assertions, and visibility/deduplication tests added in `e2e/tests/logging-gap.spec.ts` to match the surrounding two-space nesting and multiline callback style
+- [x] Make no behavioral, timing, fixture-value, or assertion changes while performing the formatting cleanup
+- [x] Mark completed

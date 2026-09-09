@@ -631,7 +631,7 @@ export type NutritionAdviceResponse =
   | {
       available: true;
       lines: string[];
-    logged_day: string;
+      logged_day: string;
       generated_at: string;
       context: NutritionAdviceContext;
     };
