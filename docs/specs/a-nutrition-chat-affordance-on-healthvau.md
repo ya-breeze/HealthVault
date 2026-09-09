@@ -41,12 +41,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: Complete low-level engagement regression coverage
-- [ ] Add `backend/pkg/server/food_advice_engagement_internal_test.go` using `package server` to exercise the unexported `recordFoodAdviceEngagement` helper without widening the production API
-- [ ] Cover `qualified_view`, `refresh_request`, and `refresh_success` using fixed timestamps, invoking success only after a request; verify the selected count and first/last bounds update while unrelated event fields remain unchanged
-- [ ] Cover earlier, later, and already-bracketed timestamps, including UTC normalization, so each event family preserves minimum first and maximum last semantics
-- [ ] Prove an unknown event returns an error without creating or changing an aggregate
-- [ ] Extend `backend/pkg/server/food_advice_engagement_test.go` to assert rejected authentication, origin, and malformed-input requests leave engagement aggregates untouched, and that an engagement insert failure returns HTTP 500 without a partial row
-- [ ] Mark completed
+- [x] Add `backend/pkg/server/food_advice_engagement_internal_test.go` using `package server` to exercise the unexported `recordFoodAdviceEngagement` helper without widening the production API
+- [x] Cover `qualified_view`, `refresh_request`, and `refresh_success` using fixed timestamps, invoking success only after a request; verify the selected count and first/last bounds update while unrelated event fields remain unchanged
+- [x] Cover earlier, later, and already-bracketed timestamps, including UTC normalization, so each event family preserves minimum first and maximum last semantics
+- [x] Prove an unknown event returns an error without creating or changing an aggregate
+- [x] Extend `backend/pkg/server/food_advice_engagement_test.go` to assert rejected authentication, origin, and malformed-input requests leave engagement aggregates untouched, and that an engagement insert failure returns HTTP 500 without a partial row
+- [x] Mark completed
 
 ### Task 4: Normalize the engagement slice formatting
 - [ ] Align `logged_day` with the other available-response fields in `NutritionAdviceResponse` in `frontend/lib/api.ts`

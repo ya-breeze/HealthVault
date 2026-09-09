@@ -53,6 +53,16 @@ func TestFoodAdviceEngagement_AuthenticationOriginAndInput(t *testing.T) {
 	day := "2026-09-08"
 	generatedAt := time.Date(2026, 9, 8, 12, 0, 0, 123000000, time.UTC)
 	persistAdviceRevision(t, st, userID, familyID, day, generatedAt)
+	assertNoEngagementRows := func(t *testing.T) {
+		t.Helper()
+		var count int64
+		if err := st.DB().Model(&database.FoodAdviceEngagement{}).Count(&count).Error; err != nil {
+			t.Fatalf("count engagement rows: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("engagement rows = %d, want none", count)
+		}
+	}
 
 	t.Run("authentication required", func(t *testing.T) {
 		b, _ := json.Marshal(qualifiedViewBody(day, generatedAt))
@@ -61,6 +71,7 @@ func TestFoodAdviceEngagement_AuthenticationOriginAndInput(t *testing.T) {
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401", w.Code)
 		}
+		assertNoEngagementRows(t)
 	})
 
 	for _, site := range []string{"same-site", "cross-site", "none"} {
@@ -72,6 +83,7 @@ func TestFoodAdviceEngagement_AuthenticationOriginAndInput(t *testing.T) {
 			if w.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, want 403", w.Code)
 			}
+			assertNoEngagementRows(t)
 		})
 	}
 
@@ -90,8 +102,23 @@ func TestFoodAdviceEngagement_AuthenticationOriginAndInput(t *testing.T) {
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
 			}
+			assertNoEngagementRows(t)
 		})
 	}
+
+	t.Run("insert failure leaves no partial row", func(t *testing.T) {
+		if err := st.DB().Exec(`CREATE TRIGGER fail_engagement_insert
+			BEFORE INSERT ON food_advice_engagements
+			BEGIN SELECT RAISE(FAIL, 'engagement unavailable'); END`).Error; err != nil {
+			t.Fatalf("create failure trigger: %v", err)
+		}
+		w := httptest.NewRecorder()
+		h.RecordFoodAdviceEngagement(w, engagementRequest(t, userID, familyID, qualifiedViewBody(day, generatedAt)))
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500: %s", w.Code, w.Body.String())
+		}
+		assertNoEngagementRows(t)
+	})
 }
 
 func TestFoodAdviceEngagement_RejectsAbsentStaleAndCrossUserRevisions(t *testing.T) {
