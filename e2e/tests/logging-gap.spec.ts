@@ -1363,6 +1363,83 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     await putSettings(request, cookies, original);
   }
   });
+
+  test('a queued observer callback cannot report a revision after its effect is cleaned up', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    const engagementBodies: Record<string, unknown>[] = [];
+    let adviceCalls = 0;
+    try {
+      // IntersectionObserver.disconnect() does not have to discard an entry
+      // already queued for delivery. Delay that delivery so refreshing the
+      // advice first cleans up the original revision's effect.
+      await page.addInitScript(() => {
+        class DelayedIntersectionObserver {
+          readonly root = null;
+          readonly rootMargin = '0px';
+          readonly thresholds = [1];
+          private readonly callback: IntersectionObserverCallback;
+
+          constructor(callback: IntersectionObserverCallback) {
+            this.callback = callback;
+          }
+
+          observe(target: Element) {
+            window.setTimeout(() => {
+              this.callback([{
+                isIntersecting: true,
+                intersectionRatio: 1,
+                target,
+              } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+            }, 1000);
+          }
+
+          unobserve() {}
+          disconnect() {}
+          takeRecords(): IntersectionObserverEntry[] { return []; }
+        }
+
+        Object.defineProperty(window, 'IntersectionObserver', {
+          configurable: true,
+          writable: true,
+          value: DelayedIntersectionObserver,
+        });
+      });
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route => {
+          adviceCalls++;
+          return route.fulfill({ json: {
+            available: true,
+            lines: [adviceCalls === 1 ? 'Original advice.' : 'Refreshed advice.'],
+            logged_day: '2026-09-09',
+            generated_at: adviceCalls === 1 ? '2026-09-09T06:12:00Z' : '2026-09-09T06:13:00Z',
+            context: matchingAdviceContext,
+          } });
+        },
+      });
+      await page.route('**/api/food/advice/engagement', route => {
+        engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+        return route.fulfill({ status: 204, body: '' });
+      });
+      await page.goto('/');
+
+      const advice = page.getByTestId('nutrition-advice');
+      await expect(advice).toBeVisible({ timeout: 15_000 });
+      await page.getByTestId('nutrition-advice-refresh').click();
+      await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Refreshed advice.');
+      await expect.poll(() => engagementBodies.length, { timeout: 5000 }).toBe(1);
+      await page.waitForTimeout(500);
+      expect(engagementBodies).toEqual([{
+        event: 'qualified_view',
+        logged_day: '2026-09-09',
+        generated_at: '2026-09-09T06:13:00Z',
+      }]);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
 });
 
 // Restores the Logging Gap card to its default state (visible, last among

@@ -493,6 +493,7 @@ export default function LoggingGapCard({
     let fullyVisible = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let sent = false;
+    let disposed = false;
 
     const stopTimer = () => {
       if (timer !== null) clearTimeout(timer);
@@ -500,10 +501,10 @@ export default function LoggingGapCard({
     };
     const updateTimer = () => {
       stopTimer();
-      if (sent || !fullyVisible || document.visibilityState !== 'visible') return;
+      if (disposed || sent || !fullyVisible || document.visibilityState !== 'visible') return;
       timer = setTimeout(() => {
         timer = null;
-        if (!fullyVisible || document.visibilityState !== 'visible' || sent) return;
+        if (disposed || !fullyVisible || document.visibilityState !== 'visible' || sent) return;
         sent = true;
         try {
           sessionStorage.setItem(markerKey, '1');
@@ -530,6 +531,10 @@ export default function LoggingGapCard({
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
+      // disconnect() stops future observations but does not discard entries
+      // already queued for delivery. Keep a late callback from restarting a
+      // timer for advice that has since changed or unmounted.
+      disposed = true;
       stopTimer();
       observer.disconnect();
       document.removeEventListener('visibilitychange', onVisibilityChange);
