@@ -20,6 +20,13 @@ No schema, route, or request/response changes are required. The nutrition chat t
 - `make test`
 - `make test-e2e`
 
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
+
 ### Task 1: Pair refresh success with the current request measurement
 - [ ] Update `foodHandlers.PostFoodAdvice` in `backend/pkg/server/food_advice.go` to remember whether `recordFoodAdviceEngagement` successfully persisted `refresh_request` for the current refresh invocation
 - [ ] Record `refresh_success` only when that request write succeeded and the refreshed `database.FoodAdvice` row was persisted; retain the existing ordering of request measurement before `vision.Client.Advise` and success measurement after the cache write
