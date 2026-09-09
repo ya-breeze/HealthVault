@@ -30,36 +30,36 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
 
 ### Task 1: Persist privacy-minimized advice engagement aggregates
-- [ ] Add `FoodAdviceEngagement` to `backend/pkg/database/models_food.go`, using the repository’s `models.TenantModel` convention and a unique index over `user_id` and the advice Logged Day
-- [ ] Store qualified-view, refresh-request and refresh-success counts plus nullable first/last timestamps; do not store advice text, health data, user-agent data, session identifiers or IP addresses
-- [ ] Register the model in `database.Open`’s `AutoMigrate` list in `backend/pkg/database/db.go`
-- [ ] Add database coverage proving migration, uniqueness and isolation between users and Logged Days
-- [ ] Mark completed
+- [x] Add `FoodAdviceEngagement` to `backend/pkg/database/models_food.go`, using the repository’s `models.TenantModel` convention and a unique index over `user_id` and the advice Logged Day
+- [x] Store qualified-view, refresh-request and refresh-success counts plus nullable first/last timestamps; do not store advice text, health data, user-agent data, session identifiers or IP addresses
+- [x] Register the model in `database.Open`’s `AutoMigrate` list in `backend/pkg/database/db.go`
+- [x] Add database coverage proving migration, uniqueness and isolation between users and Logged Days
+- [x] Mark completed
 
 ### Task 2: Record qualified views and refresh outcomes server-side
-- [ ] Add `backend/pkg/server/food_advice_engagement.go` with a `foodHandlers.RecordFoodAdviceEngagement` handler accepting only a qualified-view event tied to the advice response’s Logged Day and stable generation timestamp
-- [ ] Register `POST /api/food/advice/engagement` beside the other protected food routes in `backend/pkg/server/server.go`; require authenticated same-origin requests and reject malformed dates, unknown revisions and advice belonging to another user
-- [ ] Atomically upsert the caller’s daily aggregate so concurrent dashboard tabs cannot lose increments or move first/last timestamps backwards
-- [ ] Extend the refresh branch behind `POST /api/food/advice` in `backend/pkg/server/food_advice.go` to record a validated refresh request before generation and a success only after refreshed advice is persisted; telemetry-write failures must be logged without changing the advice response
-- [ ] Ensure the advice response exposes its Logged Day and stable generation timestamp so the client can identify the exact rendered revision without receiving database IDs
-- [ ] Mark completed
+- [x] Add `backend/pkg/server/food_advice_engagement.go` with a `foodHandlers.RecordFoodAdviceEngagement` handler accepting only a qualified-view event tied to the advice response’s Logged Day and stable generation timestamp
+- [x] Register `POST /api/food/advice/engagement` beside the other protected food routes in `backend/pkg/server/server.go`; require authenticated same-origin requests and reject malformed dates, unknown revisions and advice belonging to another user
+- [x] Atomically upsert the caller’s daily aggregate so concurrent dashboard tabs cannot lose increments or move first/last timestamps backwards
+- [x] Extend the refresh branch behind `POST /api/food/advice` in `backend/pkg/server/food_advice.go` to record a validated refresh request before generation and a success only after refreshed advice is persisted; telemetry-write failures must be logged without changing the advice response
+- [x] Ensure the advice response exposes its Logged Day and stable generation timestamp so the client can identify the exact rendered revision without receiving database IDs
+- [x] Mark completed
 
 ### Task 3: Emit a conservative client-side visibility signal
-- [ ] Add the engagement request type and `api.recordFoodAdviceEngagement` method to `frontend/lib/api.ts`, matching the authenticated JSON conventions already used by the `api` object
-- [ ] In `frontend/components/LoggingGapCard.tsx`, observe the advice element introduced by PR #64 and start a two-second timer only while the whole element intersects the viewport and `document.visibilityState` is `visible`; reset the timer whenever either condition stops holding
-- [ ] Send one qualified-view event per advice Logged Day and generation timestamp in the current tab session, using guarded `sessionStorage` access consistent with `frontend/lib/session.ts`
-- [ ] Keep measurement best-effort: swallow request/storage failures, clean up observers and timers on state changes or unmount, and never change advice rendering, refresh behaviour or the warning-label-advice precedence
-- [ ] Mark completed
+- [x] Add the engagement request type and `api.recordFoodAdviceEngagement` method to `frontend/lib/api.ts`, matching the authenticated JSON conventions already used by the `api` object
+- [x] In `frontend/components/LoggingGapCard.tsx`, observe the advice element introduced by PR #64 and start a two-second timer only while the whole element intersects the viewport and `document.visibilityState` is `visible`; reset the timer whenever either condition stops holding
+- [x] Send one qualified-view event per advice Logged Day and generation timestamp in the current tab session, using guarded `sessionStorage` access consistent with `frontend/lib/session.ts`
+- [x] Keep measurement best-effort: swallow request/storage failures, clean up observers and timers on state changes or unmount, and never change advice rendering, refresh behaviour or the warning-label-advice precedence
+- [x] Mark completed
 
 ### Task 4: Cover privacy, counting and browser behaviour
-- [ ] Add `backend/pkg/server/food_advice_engagement_test.go` covering authentication, same-origin enforcement, invalid input, absent or stale advice revisions, cross-user isolation, atomic aggregation and first/last timestamp semantics
-- [ ] Extend the advice handler tests introduced by PR #64 to prove successful refreshes increment both refresh counters, failed model calls increment requests only, cached non-refresh requests increment neither, and telemetry failures do not fail advice delivery
-- [ ] Extend `e2e/tests/logging-gap.spec.ts` to prove advice hidden by precedence or outside the viewport is not counted, two continuous visible seconds produces one event, interrupted visibility resets the timer, and rerender/reload within the same tab session does not duplicate the same revision
-- [ ] Assert that a newly refreshed revision can produce its own qualified view and that engagement endpoint failures leave the advice and refresh control usable
-- [ ] Mark completed
+- [x] Add `backend/pkg/server/food_advice_engagement_test.go` covering authentication, same-origin enforcement, invalid input, absent or stale advice revisions, cross-user isolation, atomic aggregation and first/last timestamp semantics
+- [x] Extend the advice handler tests introduced by PR #64 to prove successful refreshes increment both refresh counters, failed model calls increment requests only, cached non-refresh requests increment neither, and telemetry failures do not fail advice delivery
+- [x] Extend `e2e/tests/logging-gap.spec.ts` to prove advice hidden by precedence or outside the viewport is not counted, two continuous visible seconds produces one event, interrupted visibility resets the timer, and rerender/reload within the same tab session does not duplicate the same revision
+- [x] Assert that a newly refreshed revision can produce its own qualified view and that engagement endpoint failures leave the advice and refresh control usable
+- [x] Mark completed
 
 ### Task 5: Record the evidence gate
-- [ ] Update `CONTEXT.md` to define a qualified advice view as a visibility proxy, not proof that the text was read, and document the aggregate-only privacy boundary
-- [ ] Update `todo.md`’s Phase 4 section to record that chat remains unbuilt until the owner observes real qualified views and refresh requests from the deployed advice lines
-- [ ] Document that production inspection and the resulting go/no-go decision belong to the owner because unattended implementation cannot access the `dogfood` or `prod` stack or its data
-- [ ] Mark completed
+- [x] Update `CONTEXT.md` to define a qualified advice view as a visibility proxy, not proof that the text was read, and document the aggregate-only privacy boundary
+- [x] Update `todo.md`’s Phase 4 section to record that chat remains unbuilt until the owner observes real qualified views and refresh requests from the deployed advice lines
+- [x] Document that production inspection and the resulting go/no-go decision belong to the owner because unattended implementation cannot access the `dogfood` or `prod` stack or its data
+- [x] Mark completed
