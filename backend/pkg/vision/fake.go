@@ -19,6 +19,8 @@ type Fake struct {
 	SelectErr             error
 	TranslateResult       string
 	TranslateErr          error
+	AdviseResult          []string
+	AdviseErr             error
 	DescribeResult        *RecognizeResult
 	DescribeErr           error
 
@@ -31,6 +33,7 @@ type Fake struct {
 	ClarifyCalls         []ClarifyCall
 	SelectCalls          [][]ItemCandidates
 	TranslateCalls       []string
+	AdviseCalls          []AdviceInput
 	DescribeCalls        []DescribeCall
 }
 
@@ -115,6 +118,14 @@ func (f *Fake) Translate(_ context.Context, query string) (string, error) {
 		return "", f.TranslateErr
 	}
 	return f.TranslateResult, nil
+}
+
+func (f *Fake) Advise(_ context.Context, in AdviceInput) ([]string, error) {
+	f.AdviseCalls = append(f.AdviseCalls, in)
+	if f.AdviseErr != nil {
+		return nil, f.AdviseErr
+	}
+	return f.AdviseResult, nil
 }
 
 func (f *Fake) Describe(_ context.Context, description, displayLanguage string) (*RecognizeResult, error) {

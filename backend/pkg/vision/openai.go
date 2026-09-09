@@ -739,4 +739,75 @@ func (c *OpenAIClient) Translate(ctx context.Context, query string) (string, err
 	return strings.TrimSpace(schemaResp.TranslatedQuery), nil
 }
 
+var adviceJSONSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"lines": map[string]any{
+			"type":  "array",
+			"items": map[string]any{"type": "string"},
+		},
+	},
+	"required":             []string{"lines"},
+	"additionalProperties": false,
+}
+
+type adviceSchemaResponse struct {
+	Lines []string `json:"lines"`
+}
+
+const adviceSystemPrompt = `You write brief nutrition advice from an already-computed deterministic Healthiness Label.
+
+The supplied label and reason codes are correct and final. Never restate,
+dispute, upgrade, or downgrade the label. Key the tone to the supplied label:
+- good: confirm what is working and offer at most one small refinement;
+- fair: suggest one concrete adjustment in a neutral register;
+- needs_attention: be direct and specific but calm, with no alarm words or prognosis.
+
+Make no medical claims or diagnosis. Do not recommend supplements, fasting,
+or cleanses. Do not prescribe calories below the supplied target. Use no
+measurements, thresholds, or quantities except values supplied in the input
+or simple differences derived directly from them. Return one or two lines,
+each with at most one clause and about 90 characters. Write in the supplied
+display_language.`
+
+// Advise is text-only: it sends the complete normalized input as JSON and no
+// image. The model's lines are bounded again after structured-output parsing.
+func (c *OpenAIClient) Advise(ctx context.Context, in AdviceInput) ([]string, error) {
+	payload, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("marshal nutrition advice input: %w", err)
+	}
+	messages := []chatMessage{
+		{Role: "system", Content: adviceSystemPrompt},
+		{Role: "user", Content: string(payload)},
+	}
+	resp, _, err := c.call(ctx, messages, "nutrition_advice", adviceJSONSchema)
+	if err != nil {
+		return nil, err
+	}
+	var schemaResp adviceSchemaResponse
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &schemaResp); err != nil {
+		return nil, fmt.Errorf("unmarshal structured content: %w", err)
+	}
+	lines := make([]string, 0, 2)
+	for _, raw := range schemaResp.Lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		runes := []rune(line)
+		if len(runes) > 120 {
+			line = string(runes[:120])
+		}
+		lines = append(lines, line)
+		if len(lines) == 2 {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("nutrition advice response contained no usable lines")
+	}
+	return lines, nil
+}
+
 var _ Client = (*OpenAIClient)(nil)

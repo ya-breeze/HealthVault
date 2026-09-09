@@ -11,16 +11,17 @@
 // (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
 // custom-food catalog list, and the Expert Mode toggle.
 //
-// Still English regardless of Display Language: the per-type data detail
-// pages, the import and login screens, app/food/upload/page.tsx, and the
+// Still English regardless of Display Language: the charts, statistics,
+// zoom controls and write forms on the per-type data detail pages; the import
+// and login screens; app/food/upload/page.tsx; and the
 // food components not on the review path: AddItemForm, CameraCapture,
 // ClarifyModal, CustomFoodModal, DeleteMealControl, MacroSummary,
 // ManualItemEditor, MealMetaEditor and ReanalyzeControl. (AddItemForm's own
 // chrome is English, but the ItemResolver panel it embeds is covered, so
-// that form is partly translated rather than wholly English. The steps
-// detail page is the same shape: its chrome is English, but the diagnostic
-// disclosure the check-the-health-data spec added — DataTypeClient.tsx's
-// `stepsDiagnostics.*` keys — is covered.)
+// that form is partly translated rather than wholly English. The per-type
+// data detail pages are likewise partly translated: their metric heading and
+// raw record table are covered, as is the steps page's diagnostic disclosure,
+// while the chart and write-form surfaces listed above are not.)
 //
 // app/food/manual/page.tsx is now partly translated, not wholly English: its
 // description-first entry path (the textarea, name/time inputs, character
@@ -386,11 +387,16 @@ const en = {
   'loggingGap.healthinessReason.sodium_high': 'sodium is high',
   'loggingGap.healthinessHintNote':
     "The label covers macro balance, total sugars and sodium on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
+  'loggingGap.adviceRefresh': 'Get new advice',
+  'loggingGap.adviceRefreshing': 'Writing new advice…',
+  'loggingGap.adviceUnavailable': 'Advice is temporarily unavailable.',
+  'loggingGap.adviceDetail':
+    'These lines are written by an AI model from the label, its reason codes and your Nutrition Target. They are cached for the current day and regenerate when those inputs change or you request new advice. They are not medical advice.',
 
   // The steps detail page's diagnostic disclosure (check-the-health-data
   // spec) — collapsed by default, same hint-then-detail pattern as the
-  // loggingGap keys above. The only translated strings on the per-type data
-  // detail pages; see the scope comment at the top of this file.
+  // loggingGap keys above. These are the steps-specific detail-page strings;
+  // the shared record-table translations follow below.
   'stepsDiagnostics.hintToggle': 'Show diagnostic',
   'stepsDiagnostics.title': 'Step diagnostics',
   'stepsDiagnostics.columnDay': 'Day',
@@ -403,6 +409,69 @@ const en = {
   'stepsDiagnostics.readingMultipleSyncs': 'More than one sync wrote steps for the same day.',
   'stepsDiagnostics.readingDayBoundary': "Your local day boundary differs from this chart's UTC day.",
   'stepsDiagnostics.readingNothing': 'Nothing to report — raw, counted and local-day totals agree.',
+
+  // Raw record table on every per-type data detail page. Column labels name
+  // the stored value and unit; charts may intentionally convert that value to
+  // another display unit (distance and sleep), but the table does not.
+  'dataTable.actions': 'Actions',
+  'dataTable.loading': 'Loading…',
+  'dataTable.empty': 'No data in this range.',
+  'dataTable.confirmDelete': 'Confirm',
+  'dataTable.cancelDelete': 'Cancel',
+  'dataTable.deleteRecord': 'Delete record',
+  'dataTable.deleteFailed': 'Could not delete the record. Try again.',
+  'dataTable.column.unknown': 'Field',
+  'dataTable.column.createdAt': 'Created at',
+  'dataTable.column.updatedAt': 'Updated at',
+  'dataTable.column.time': 'Time',
+  'dataTable.column.startTime': 'Start time',
+  'dataTable.column.endTime': 'End time',
+  'dataTable.column.sessionEndTime': 'Session end time',
+  'dataTable.column.loggedAt': 'Logged at',
+  'dataTable.column.name': 'Name',
+  'dataTable.column.status': 'Status',
+  'dataTable.column.stepCount': 'Steps',
+  'dataTable.column.distanceMeters': 'Distance (m)',
+  'dataTable.column.heightMeters': 'Height (m)',
+  'dataTable.column.hydrationLiters': 'Hydration (L)',
+  'dataTable.column.heartRateBpm': 'Heart rate (bpm)',
+  'dataTable.column.restingHeartRateBpm': 'Resting heart rate (bpm)',
+  'dataTable.column.rmssdMillis': 'RMSSD (ms)',
+  'dataTable.column.weightKilograms': 'Weight (kg)',
+  'dataTable.column.goalWeightKilograms': 'Goal weight (kg)',
+  'dataTable.column.leanBodyMassKilograms': 'Lean body mass (kg)',
+  'dataTable.column.boneMassKilograms': 'Bone mass (kg)',
+  'dataTable.column.bloodGlucoseMmolPerLiter': 'Blood glucose (mmol/L)',
+  'dataTable.column.oxygenSaturationPercentage': 'Oxygen saturation (%)',
+  'dataTable.column.bodyFatPercentage': 'Body fat (%)',
+  'dataTable.column.bodyTemperatureCelsius': 'Body temperature (°C)',
+  'dataTable.column.respiratoryRate': 'Respiratory rate (breaths/min)',
+  'dataTable.column.basalMetabolicRateWatts': 'Basal metabolic rate (W)',
+  'dataTable.column.systolic': 'Systolic (mmHg)',
+  'dataTable.column.diastolic': 'Diastolic (mmHg)',
+  'dataTable.column.skinTemperatureDeltaCelsius': 'Temperature change (°C)',
+  'dataTable.column.skinTemperatureBaselineCelsius': 'Baseline temperature (°C)',
+  'dataTable.column.measurementLocation': 'Measurement location',
+  'dataTable.column.sleepDurationSeconds': 'Sleep duration (seconds)',
+  'dataTable.column.exerciseDurationSeconds': 'Exercise duration (seconds)',
+  'dataTable.column.exerciseType': 'Exercise type',
+  'dataTable.column.exerciseDistanceMeters': 'Distance (m)',
+  'dataTable.column.exerciseSteps': 'Steps',
+  'dataTable.column.averageCadenceSpm': 'Average cadence (steps/min)',
+  'dataTable.column.maximumCadenceSpm': 'Maximum cadence (steps/min)',
+  'dataTable.column.strideLengthMeters': 'Stride length (m)',
+  'dataTable.column.speedMetersPerSecond': 'Speed (m/s)',
+  'dataTable.column.vo2MaxMlPerKgPerMin': 'VO2 max (mL/kg/min)',
+  'dataTable.column.activeCaloriesKcal': 'Active calories (kcal)',
+  'dataTable.column.totalCaloriesKcal': 'Total calories (kcal)',
+  'dataTable.column.nutritionCaloriesKcal': 'Calories (kcal)',
+  'dataTable.column.mealCaloriesKcal': 'Calories (kcal)',
+  'dataTable.column.proteinGrams': 'Protein (g)',
+  'dataTable.column.carbsGrams': 'Carbohydrates (g)',
+  'dataTable.column.fatGrams': 'Fat (g)',
+  'dataTable.column.sugarGrams': 'Sugar (g)',
+  'dataTable.column.sodiumGrams': 'Sodium (g)',
+  'dataTable.column.dietaryFiberGrams': 'Dietary fiber (g)',
 
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing

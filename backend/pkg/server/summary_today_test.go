@@ -46,7 +46,6 @@ type summaryTodayTestResponse struct {
 		ActivityMultiplier float64 `json:"activity_multiplier"`
 		ActivityTier       string  `json:"activity_tier"`
 	} `json:"target"`
-	Recommendation any `json:"recommendation"`
 }
 
 func decodeSummaryToday(t *testing.T, w *httptest.ResponseRecorder) summaryTodayTestResponse {
@@ -164,9 +163,6 @@ func TestSummaryToday_TargetAvailable(t *testing.T) {
 	}
 	if resp.Target.Calories <= 0 || resp.Target.ProteinGrams <= 0 {
 		t.Errorf("expected positive target calories/protein, got %+v", resp.Target)
-	}
-	if resp.Recommendation != nil {
-		t.Errorf("recommendation = %v, want null", resp.Recommendation)
 	}
 
 	nh := server.NutritionTargetHandler(st)
