@@ -110,6 +110,9 @@ func TestFoodAdvice_CacheHitSkipsAdviseAndCarriesServerContext(t *testing.T) {
 	if cached.Context != generated.Context || cached.GeneratedAt == nil || !cached.GeneratedAt.Equal(*generated.GeneratedAt) {
 		t.Errorf("cache context/time = %+v/%v, want %+v/%v", cached.Context, cached.GeneratedAt, generated.Context, generated.GeneratedAt)
 	}
+	if cached.LoggedDay != generated.LoggedDay {
+		t.Errorf("cached Logged Day = %q, want %q", cached.LoggedDay, generated.LoggedDay)
+	}
 }
 
 func TestFoodAdvice_RefreshEngagementOutcomesAndTelemetryIsolation(t *testing.T) {

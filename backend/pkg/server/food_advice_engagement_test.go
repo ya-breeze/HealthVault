@@ -167,14 +167,62 @@ func TestFoodAdviceEngagement_AtomicAggregationAndTimeBounds(t *testing.T) {
 		t.Fatalf("first view %v is after last view %v", got.FirstQualifiedViewAt, got.LastQualifiedViewAt)
 	}
 
-	first := got.FirstQualifiedViewAt.Add(-time.Hour)
-	last := got.LastQualifiedViewAt.Add(time.Hour)
+	// A later event must expand the last bound without changing an earlier
+	// first bound.
+	pastFirst := time.Now().UTC().Add(-2 * time.Hour)
+	pastLast := time.Now().UTC().Add(-time.Hour)
 	if err := st.DB().Model(&got).Updates(map[string]any{
-		"first_qualified_view_at": first, "last_qualified_view_at": last,
+		"first_qualified_view_at": pastFirst, "last_qualified_view_at": pastLast,
 	}).Error; err != nil {
-		t.Fatalf("seed wider bounds: %v", err)
+		t.Fatalf("seed past bounds: %v", err)
 	}
 	w := httptest.NewRecorder()
+	h.RecordFoodAdviceEngagement(w, engagementRequest(t, userID, familyID, qualifiedViewBody(day, generatedAt)))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("later update status = %d", w.Code)
+	}
+	if err := st.DB().First(&got, "id = ?", got.ID).Error; err != nil {
+		t.Fatalf("reload aggregate: %v", err)
+	}
+	if got.FirstQualifiedViewAt == nil || !got.FirstQualifiedViewAt.Equal(pastFirst) ||
+		got.LastQualifiedViewAt == nil || !got.LastQualifiedViewAt.After(pastLast) {
+		t.Fatalf("later event bounds = %v/%v, want first %v and last after %v",
+			got.FirstQualifiedViewAt, got.LastQualifiedViewAt, pastFirst, pastLast)
+	}
+
+	// An earlier event must expand the first bound without changing a later
+	// last bound.
+	futureFirst := time.Now().UTC().Add(time.Hour)
+	futureLast := time.Now().UTC().Add(2 * time.Hour)
+	if err := st.DB().Model(&got).Updates(map[string]any{
+		"first_qualified_view_at": futureFirst, "last_qualified_view_at": futureLast,
+	}).Error; err != nil {
+		t.Fatalf("seed future bounds: %v", err)
+	}
+	w = httptest.NewRecorder()
+	h.RecordFoodAdviceEngagement(w, engagementRequest(t, userID, familyID, qualifiedViewBody(day, generatedAt)))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("earlier update status = %d", w.Code)
+	}
+	if err := st.DB().First(&got, "id = ?", got.ID).Error; err != nil {
+		t.Fatalf("reload aggregate: %v", err)
+	}
+	if got.FirstQualifiedViewAt == nil || !got.FirstQualifiedViewAt.Before(futureFirst) ||
+		got.LastQualifiedViewAt == nil || !got.LastQualifiedViewAt.Equal(futureLast) {
+		t.Fatalf("earlier event bounds = %v/%v, want first before %v and last %v",
+			got.FirstQualifiedViewAt, got.LastQualifiedViewAt, futureFirst, futureLast)
+	}
+
+	// An event already bracketed by the stored range must not shrink either
+	// bound.
+	wideFirst := time.Now().UTC().Add(-time.Hour)
+	wideLast := time.Now().UTC().Add(time.Hour)
+	if err := st.DB().Model(&got).Updates(map[string]any{
+		"first_qualified_view_at": wideFirst, "last_qualified_view_at": wideLast,
+	}).Error; err != nil {
+		t.Fatalf("seed wide bounds: %v", err)
+	}
+	w = httptest.NewRecorder()
 	h.RecordFoodAdviceEngagement(w, engagementRequest(t, userID, familyID, qualifiedViewBody(day, generatedAt)))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("bounded update status = %d", w.Code)
@@ -182,8 +230,9 @@ func TestFoodAdviceEngagement_AtomicAggregationAndTimeBounds(t *testing.T) {
 	if err := st.DB().First(&got, "id = ?", got.ID).Error; err != nil {
 		t.Fatalf("reload aggregate: %v", err)
 	}
-	if got.FirstQualifiedViewAt == nil || !got.FirstQualifiedViewAt.Equal(first) ||
-		got.LastQualifiedViewAt == nil || !got.LastQualifiedViewAt.Equal(last) {
-		t.Fatalf("bounds moved backwards: first=%v last=%v, want %v/%v", got.FirstQualifiedViewAt, got.LastQualifiedViewAt, first, last)
+	if got.FirstQualifiedViewAt == nil || !got.FirstQualifiedViewAt.Equal(wideFirst) ||
+		got.LastQualifiedViewAt == nil || !got.LastQualifiedViewAt.Equal(wideLast) {
+		t.Fatalf("bracketing bounds changed: first=%v last=%v, want %v/%v",
+			got.FirstQualifiedViewAt, got.LastQualifiedViewAt, wideFirst, wideLast)
 	}
 }

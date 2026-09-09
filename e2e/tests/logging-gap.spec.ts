@@ -34,6 +34,13 @@ async function scrollElementFullyIntoViewport(element: Locator) {
   await expect(element).toBeInViewport({ ratio: 1 });
 }
 
+async function setDocumentVisibility(page: Page, state: DocumentVisibilityState) {
+  await page.evaluate(nextState => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: nextState });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, state);
+}
+
 async function getSettings(request: APIRequestContext, cookies: string): Promise<Record<string, unknown>> {
   const res = await request.get(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies } });
   return res.json();
@@ -1225,6 +1232,46 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     logged_day: '2026-09-06',
     generated_at: '2026-09-06T06:12:00Z',
     });
+  } finally {
+    await putSettings(request, cookies, original);
+  }
+  });
+
+  test('counts only while the document is visible and restarts when it becomes active', async ({ page, request }) => {
+  await login(page);
+  const cookies = await cookieHeader(page);
+  const original = await getSettings(request, cookies);
+  await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+  let engagementCalls = 0;
+  try {
+    await mockLoggingGapApis(page, healthinessGoodFixture(), {
+    adviceHandler: route => route.fulfill({ json: {
+      available: true,
+      lines: ['Document-visibility-tested advice.'],
+      logged_day: '2026-09-06',
+      generated_at: '2026-09-06T07:12:00Z',
+      context: matchingAdviceContext,
+    } }),
+    });
+    await page.route('**/api/food/advice/engagement', route => {
+    engagementCalls++;
+    return route.fulfill({ status: 204, body: '' });
+    });
+    await page.addInitScript(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    });
+    await page.goto('/');
+
+    const advice = page.getByTestId('nutrition-advice');
+    await expect(advice).toBeVisible({ timeout: 15_000 });
+    await scrollElementFullyIntoViewport(advice);
+    await page.waitForTimeout(2200);
+    expect(engagementCalls).toBe(0);
+
+    await setDocumentVisibility(page, 'visible');
+    await page.waitForTimeout(1100);
+    expect(engagementCalls).toBe(0);
+    await expect.poll(() => engagementCalls, { timeout: 4000 }).toBe(1);
   } finally {
     await putSettings(request, cookies, original);
   }
