@@ -159,6 +159,43 @@ func TestFoodAdvice_RefreshEngagementOutcomesAndTelemetryIsolation(t *testing.T)
 		}
 	})
 
+	t.Run("cache write failure increments request only", func(t *testing.T) {
+		st := newFileFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		configureAdviceTarget(t, st, userID, "en")
+		if err := st.DB().Exec(`CREATE TRIGGER fail_food_advice_insert
+			BEFORE INSERT ON food_advices
+			BEGIN SELECT RAISE(FAIL, 'advice cache unavailable'); END`).Error; err != nil {
+			t.Fatalf("create cache failure trigger: %v", err)
+		}
+		fake := &vision.Fake{AdviseResult: []string{"Valid but uncacheable."}}
+		h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+		w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, adviceBody("fair", nil, true, 70)))
+		if w.Code != http.StatusOK || response.Available || response.Reason != "unavailable" {
+			t.Fatalf("refresh with cache failure: %d %s", w.Code, w.Body.String())
+		}
+		if len(fake.AdviseCalls) != 1 {
+			t.Fatalf("Advise calls = %d, want 1", len(fake.AdviseCalls))
+		}
+		var adviceCount int64
+		if err := st.DB().Model(&database.FoodAdvice{}).Where("user_id = ?", userID).Count(&adviceCount).Error; err != nil {
+			t.Fatalf("count cached advice: %v", err)
+		}
+		if adviceCount != 0 {
+			t.Fatalf("cached advice rows = %d, want none", adviceCount)
+		}
+		var got database.FoodAdviceEngagement
+		if err := st.DB().Where("user_id = ?", userID).First(&got).Error; err != nil {
+			t.Fatalf("load engagement: %v", err)
+		}
+		if got.RefreshRequestCount != 1 || got.RefreshSuccessCount != 0 ||
+			got.FirstRefreshRequestAt == nil || got.LastRefreshRequestAt == nil ||
+			got.FirstRefreshSuccessAt != nil || got.LastRefreshSuccessAt != nil {
+			t.Fatalf("refresh aggregate = %+v, want one request and no success", got)
+		}
+	})
+
 	t.Run("cached request increments neither", func(t *testing.T) {
 		st := newFileFoodTestStorage(t)
 		userID, familyID := seedFoodUser(t, st)

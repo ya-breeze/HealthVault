@@ -35,10 +35,10 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Cover failure to persist refreshed advice
-- [ ] Add a fresh-cache refresh case in `backend/pkg/server/food_advice_test.go` whose SQLite trigger rejects insertion into `food_advices` after the model returns valid lines
-- [ ] Assert the handler returns HTTP 200 with `{available:false, reason:"unavailable"}`, persists no `FoodAdvice`, and retains exactly one refresh request with zero refresh successes and no success timestamps
-- [ ] Keep the existing model-failure, cache-hit, successful-refresh, and all-telemetry-failure assertions intact so the new regression isolates the cache-write boundary
-- [ ] Mark completed
+- [x] Add a fresh-cache refresh case in `backend/pkg/server/food_advice_test.go` whose SQLite trigger rejects insertion into `food_advices` after the model returns valid lines
+- [x] Assert the handler returns HTTP 200 with `{available:false, reason:"unavailable"}`, persists no `FoodAdvice`, and retains exactly one refresh request with zero refresh successes and no success timestamps
+- [x] Keep the existing model-failure, cache-hit, successful-refresh, and all-telemetry-failure assertions intact so the new regression isolates the cache-write boundary
+- [x] Mark completed
 
 ### Task 3: Complete low-level engagement regression coverage
 - [ ] Add `backend/pkg/server/food_advice_engagement_internal_test.go` using `package server` to exercise the unexported `recordFoodAdviceEngagement` helper without widening the production API
