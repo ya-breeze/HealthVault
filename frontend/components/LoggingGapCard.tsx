@@ -1,6 +1,13 @@
 'use client';
-import { useEffect, useId, useState } from 'react';
-import { api, NutritionTargetUnmetReason, DayCompletenessState, TodaySummary } from '@/lib/api';
+import { useEffect, useId, useMemo, useState } from 'react';
+import {
+  api,
+  NutritionAdviceContext,
+  NutritionAdviceRequest,
+  NutritionTargetUnmetReason,
+  DayCompletenessState,
+  TodaySummary,
+} from '@/lib/api';
 import { activityTierKey, sexKey, formatNutritionTargetValues, NutritionTargetDerivation } from '@/lib/nutritionTarget';
 import { emaSeries, linearRegression, toDayOffset } from '@/lib/dataTypeMeta';
 import { loggedDayKey } from '@/lib/loggedDay';
@@ -53,6 +60,32 @@ interface TodayRow {
 // state rather than a card-level one, since the top row is still perfectly
 // renderable when only those three failed.
 type GapLine = LoggingGapResult | { kind: 'retrieval_error' };
+
+interface DisplayedAdvice {
+  lines: string[];
+  signature: string;
+}
+
+function nutritionAdviceSignature(
+  request: NutritionAdviceRequest,
+  context: NutritionAdviceContext,
+): string {
+  return JSON.stringify([
+    request.label,
+    request.reasons,
+    request.window.mean_calories,
+    request.window.mean_protein_grams,
+    request.window.mean_carbs_grams,
+    request.window.mean_fat_grams,
+    request.window.mean_sugar_grams,
+    request.window.mean_sodium_grams,
+    context.target_calories,
+    context.target_protein_grams,
+    context.target_carbs_grams,
+    context.target_fat_grams,
+    context.display_language,
+  ]);
+}
 
 // `loading`, `retrieval_error` and `nutrition_target_unmet` are whole-card
 // states: each means there is no top row *and* no gap line to draw. Only
@@ -116,7 +149,7 @@ export default function LoggingGapCard({
   timezone, editing, onMoveUp, onMoveDown, moveUpDisabled, moveDownDisabled,
   hidden, onToggleHidden, controlsDisabled,
 }: LoggingGapCardProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [state, setState] = useState<ContentState>({ kind: 'loading' });
   const [outlierExcluded, setOutlierExcluded] = useState(false);
   // Collapsed by default: the caveats below are worth reading once and carry
@@ -134,6 +167,9 @@ export default function LoggingGapCard({
   // close independently (docs/specs/idea.md's "not a shared one").
   const [todayHintOpen, setTodayHintOpen] = useState(false);
   const todayHintId = useId();
+  const [advice, setAdvice] = useState<DisplayedAdvice | null>(null);
+  const [adviceLoading, setAdviceLoading] = useState(false);
+  const [adviceRefreshError, setAdviceRefreshError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -367,6 +403,98 @@ export default function LoggingGapCard({
     };
   }, [timezone]);
 
+  // Advice deliberately starts only after the main four-request load has
+  // produced the exact label, means, target, and warning precedence state.
+  const adviceRequest = useMemo(() => {
+    if (state.kind !== 'ready' || state.warnings.length > 0 || !state.healthiness) return null;
+    const healthiness = state.healthiness;
+    const request: NutritionAdviceRequest = {
+      label: healthiness.label,
+      reasons: healthiness.reasons,
+      window: {
+        mean_calories: healthiness.means.calories,
+        mean_protein_grams: healthiness.means.proteinGrams,
+        mean_carbs_grams: healthiness.means.carbsGrams,
+        mean_fat_grams: healthiness.means.fatGrams,
+        mean_sugar_grams: healthiness.means.sugarGrams,
+        mean_sodium_grams: healthiness.means.sodiumGrams,
+      },
+      refresh: false,
+    };
+    const context: NutritionAdviceContext = {
+      target_calories: state.today.targetCalories,
+      target_protein_grams: state.today.targetProteinGrams,
+      target_carbs_grams: state.today.targetCarbsGrams,
+      target_fat_grams: state.today.targetFatGrams,
+      display_language: language,
+    };
+    return { request, context, signature: nutritionAdviceSignature(request, context) };
+  }, [state, language]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAdvice(null);
+    setAdviceRefreshError(false);
+    if (!adviceRequest) {
+      setAdviceLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setAdviceLoading(true);
+    void api.getNutritionAdvice(adviceRequest.request)
+      .then(response => {
+        if (cancelled || !response.available || response.lines.length === 0) return;
+        setAdvice({
+          lines: response.lines,
+          // The server may have read a newer target or language than the
+          // summary/provider values this request captured. Attribute the
+          // result to what the model actually received, not stale client state.
+          signature: nutritionAdviceSignature(adviceRequest.request, response.context),
+        });
+      })
+      .catch(() => {
+        // A background failure is intentionally silent. The reader did not
+        // ask for advice, and the rest of the card is already complete.
+      })
+      .finally(() => {
+        if (!cancelled) setAdviceLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adviceRequest]);
+
+  const visibleAdvice = adviceRequest && advice?.signature === adviceRequest.signature ? advice : null;
+
+  async function refreshAdvice() {
+    if (!adviceRequest || adviceLoading) return;
+    setAdviceLoading(true);
+    setAdviceRefreshError(false);
+    try {
+      const response = await api.getNutritionAdvice({ ...adviceRequest.request, refresh: true });
+      if (!response.available) {
+        if (response.reason === 'unavailable') setAdviceRefreshError(true);
+        else setAdvice(null);
+        return;
+      }
+      if (response.lines.length === 0) {
+        setAdviceRefreshError(true);
+        return;
+      }
+      setAdvice({
+        lines: response.lines,
+        signature: nutritionAdviceSignature(adviceRequest.request, response.context),
+      });
+    } catch {
+      setAdviceRefreshError(true);
+    } finally {
+      setAdviceLoading(false);
+    }
+  }
+
   const dim = editing && hidden ? ' opacity-40' : '';
 
   function renderToday(today: TodayRow) {
@@ -525,6 +653,29 @@ export default function LoggingGapCard({
           {line}
           {reasons.length > 0 ? ` — ${reasons.join(', ')}` : ''}
         </span>
+        {visibleAdvice && (
+          <div className="mt-2 space-y-1.5" data-testid="nutrition-advice">
+            <div className="space-y-1 text-sm text-text">
+              {visibleAdvice.lines.map((line, index) => (
+                <p key={`${index}:${line}`} data-testid="nutrition-advice-line">{line}</p>
+              ))}
+            </div>
+            <TapTarget
+              compactOnMouse
+              onClick={() => void refreshAdvice()}
+              disabled={adviceLoading}
+              data-testid="nutrition-advice-refresh"
+              className="text-xs text-accent underline disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t(adviceLoading ? 'loggingGap.adviceRefreshing' : 'loggingGap.adviceRefresh')}
+            </TapTarget>
+            {adviceRefreshError && (
+              <p className="text-xs text-text-muted" data-testid="nutrition-advice-error">
+                {t('loggingGap.adviceUnavailable')}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -611,6 +762,7 @@ export default function LoggingGapCard({
               warning outranks the label, so the label (and this note) never
               appear together with it. */}
           {warnings.length === 0 && healthiness && <p>{t('loggingGap.healthinessHintNote')}</p>}
+          {visibleAdvice && <p>{t('loggingGap.adviceDetail')}</p>}
         </div>
       </div>
     );

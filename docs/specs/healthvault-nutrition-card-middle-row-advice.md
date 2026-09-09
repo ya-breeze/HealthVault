@@ -210,20 +210,20 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: The client and the card
-- [ ] Add the request and response types plus `api.getNutritionAdvice(...)` to `frontend/lib/api.ts`, discriminated on `available` the way `TodaySummaryTarget` is, so no caller can read `lines` or the required server-effective `context` without checking first; remove `recommendation` from `TodaySummary` and its doc-comment paragraph
-- [ ] Extend `HealthinessResult` in `frontend/lib/healthiness.ts` with a typed `means` object for calories, protein, carbs, fat, sugar and sodium per eligible day; compute it from the same window and `isValidDay`-filtered set already used for the verdict, and add unit coverage proving ineligible/out-of-window days are excluded and fractional means are preserved
-- [ ] Use `HealthinessResult` for the label, reason codes and all six mean figures rather than re-deriving any of them in the card
-- [ ] Add a second `useEffect` in `frontend/components/LoggingGapCard.tsx`, keyed on a stable signature of the full normalized advice request plus the target figures and the current `language` from `useLanguage()`, that requests advice only when the sustainability warnings are empty and a label is on screen; on an available response, build the stored signature from the request label/reasons/means and the response's server-effective target/language context, render only a result whose stored signature still matches, clear any prior advice and refresh error before requesting or whenever those preconditions stop holding, keep it out of the existing four-request load so the card renders before the advice arrives, and give this effect its own `cancelled` flag following the main effect's pattern
-- [ ] Render the advice block under the label with testids `nutrition-advice` and `nutrition-advice-line`, and a `TapTarget` refresh control with testid `nutrition-advice-refresh`, disabled while a request is in flight
-- [ ] Implement the four display states from `How`: lines plus control; nothing at all for `unconfigured`; nothing for `unavailable` on load; a single `nutrition-advice-error` line for `unavailable` after a user-triggered refresh
-- [ ] Show `loggingGap.adviceDetail` inside the existing hint disclosure whenever advice lines are on screen
-- [ ] Mark completed
+- [x] Add the request and response types plus `api.getNutritionAdvice(...)` to `frontend/lib/api.ts`, discriminated on `available` the way `TodaySummaryTarget` is, so no caller can read `lines` or the required server-effective `context` without checking first; remove `recommendation` from `TodaySummary` and its doc-comment paragraph
+- [x] Extend `HealthinessResult` in `frontend/lib/healthiness.ts` with a typed `means` object for calories, protein, carbs, fat, sugar and sodium per eligible day; compute it from the same window and `isValidDay`-filtered set already used for the verdict, and add unit coverage proving ineligible/out-of-window days are excluded and fractional means are preserved
+- [x] Use `HealthinessResult` for the label, reason codes and all six mean figures rather than re-deriving any of them in the card
+- [x] Add a second `useEffect` in `frontend/components/LoggingGapCard.tsx`, keyed on a stable signature of the full normalized advice request plus the target figures and the current `language` from `useLanguage()`, that requests advice only when the sustainability warnings are empty and a label is on screen; on an available response, build the stored signature from the request label/reasons/means and the response's server-effective target/language context, render only a result whose stored signature still matches, clear any prior advice and refresh error before requesting or whenever those preconditions stop holding, keep it out of the existing four-request load so the card renders before the advice arrives, and give this effect its own `cancelled` flag following the main effect's pattern
+- [x] Render the advice block under the label with testids `nutrition-advice` and `nutrition-advice-line`, and a `TapTarget` refresh control with testid `nutrition-advice-refresh`, disabled while a request is in flight
+- [x] Implement the four display states from `How`: lines plus control; nothing at all for `unconfigured`; nothing for `unavailable` on load; a single `nutrition-advice-error` line for `unavailable` after a user-triggered refresh
+- [x] Show `loggingGap.adviceDetail` inside the existing hint disclosure whenever advice lines are on screen
+- [x] Mark completed
 
 ### Task 5: Copy in both languages
-- [ ] Add `loggingGap.adviceRefresh`, `loggingGap.adviceRefreshing`, `loggingGap.adviceUnavailable` and `loggingGap.adviceDetail` to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`, keeping the `loggingGap.` prefix
-- [ ] Write `loggingGap.adviceDetail` to say what was actually done: the lines are written by an AI model from the label, its reason codes and the Nutrition Target, they are cached for the current day and regenerate when those inputs change or the reader requests a refresh, and they are not medical advice
-- [ ] Confirm the two dictionaries have identical key sets
-- [ ] Mark completed
+- [x] Add `loggingGap.adviceRefresh`, `loggingGap.adviceRefreshing`, `loggingGap.adviceUnavailable` and `loggingGap.adviceDetail` to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts`, keeping the `loggingGap.` prefix
+- [x] Write `loggingGap.adviceDetail` to say what was actually done: the lines are written by an AI model from the label, its reason codes and the Nutrition Target, they are cached for the current day and regenerate when those inputs change or the reader requests a refresh, and they are not medical advice
+- [x] Confirm the two dictionaries have identical key sets
+- [x] Mark completed
 
 ### Task 6: End-to-end coverage, documentation and validation
 - [ ] Route `**/api/food/advice` in `mockLoggingGapApis` (`e2e/tests/logging-gap.spec.ts`), defaulting to `{"available": false, "reason": "unconfigured"}` so every existing fixture keeps its current assertions, and drop `recommendation: null` from the summary fixture
