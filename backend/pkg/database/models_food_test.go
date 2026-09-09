@@ -84,7 +84,7 @@ func TestFoodItem_CarriesUserID(t *testing.T) {
 // created, because creating it through the current schema is not the case
 // that could actually break: AutoMigrate adds the column to existing tables
 // without backfilling it, so a genuinely pre-change row holds NULL, whereas a
-// row written by today's code holds ''. Scanning '' into a string can never
+// row written by today's code holds an empty string. Scanning an empty string can never
 // fail; scanning NULL into a non-pointer string is the case worth a
 // regression test. Both the direct read and the Preload path used by the meal
 // detail endpoint are exercised, since they build different queries. Test
@@ -212,6 +212,59 @@ func TestCustomFood_DuplicateNameRejected(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "unique") {
 		t.Errorf("error = %v, want a uniqueness violation", err)
+	}
+}
+
+func TestFoodAdviceEngagement_MigratesUniquePerUserAndDay(t *testing.T) {
+	s := newTestStorage(t)
+	userID, familyID := seedUserAndFamily(t, s)
+
+	if !s.DB().Migrator().HasTable(&database.FoodAdviceEngagement{}) {
+		t.Fatal("food_advice_engagements table was not migrated")
+	}
+	columns, err := s.DB().Migrator().ColumnTypes(&database.FoodAdviceEngagement{})
+	if err != nil {
+		t.Fatalf("inspect migrated columns: %v", err)
+	}
+	for _, column := range columns {
+		name := strings.ToLower(column.Name())
+		for _, forbidden := range []string{"advice_text", "health", "user_agent", "session", "browser", "ip_address", "chat"} {
+			if strings.Contains(name, forbidden) {
+				t.Errorf("privacy boundary violated by column %q", name)
+			}
+		}
+	}
+
+	mk := func(user uuid.UUID, family uuid.UUID, day string) *database.FoodAdviceEngagement {
+		row := &database.FoodAdviceEngagement{UserID: user, LoggedDay: day}
+		row.ID = uuid.New()
+		row.FamilyID = family
+		return row
+	}
+	if err := s.DB().Create(mk(userID, familyID, "2026-09-08")).Error; err != nil {
+		t.Fatalf("create first aggregate: %v", err)
+	}
+	if err := s.DB().Create(mk(userID, familyID, "2026-09-08")).Error; err == nil ||
+		!strings.Contains(strings.ToLower(err.Error()), "unique") {
+		t.Fatalf("duplicate user/day error = %v, want unique violation", err)
+	}
+
+	// A different Logged Day for the same user and the same Logged Day for a
+	// different user are independent aggregate slots.
+	if err := s.DB().Create(mk(userID, familyID, "2026-09-09")).Error; err != nil {
+		t.Fatalf("create second day: %v", err)
+	}
+	otherUser := uuid.New()
+	if err := s.DB().Create(mk(otherUser, familyID, "2026-09-08")).Error; err != nil {
+		t.Fatalf("create same day for another user: %v", err)
+	}
+
+	var rows []database.FoodAdviceEngagement
+	if err := s.DB().Order("user_id, logged_day").Find(&rows).Error; err != nil {
+		t.Fatalf("load aggregates: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("aggregate rows = %d, want 3", len(rows))
 	}
 }
 
