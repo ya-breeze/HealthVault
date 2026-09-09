@@ -597,6 +597,9 @@ func (c slowClarifyClient) Select(context.Context, []vision.ItemCandidates) (*vi
 func (c slowClarifyClient) Translate(context.Context, string) (string, error) {
 	return "", nil
 }
+func (c slowClarifyClient) Advise(context.Context, vision.AdviceInput) ([]string, error) {
+	return nil, nil
+}
 func (c slowClarifyClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }

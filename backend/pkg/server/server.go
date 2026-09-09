@@ -119,6 +119,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/import/health-connect", importHealthConnectHandler(storage)).Methods("POST")
 	api.HandleFunc("/import/libra", importLibraHandler(storage)).Methods("POST")
 	api.HandleFunc("/food/search", fh.Search).Methods("GET")
+	api.HandleFunc("/food/advice", fh.PostFoodAdvice).Methods("POST")
 	api.HandleFunc("/food/custom", fh.CreateCustomFood).Methods("POST")
 	api.HandleFunc("/food/custom", fh.ListCustomFoods).Methods("GET")
 	api.HandleFunc("/food/custom/{id}", fh.UpdateCustomFood).Methods("PUT")
