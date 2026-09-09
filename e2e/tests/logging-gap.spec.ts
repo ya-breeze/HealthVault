@@ -1020,11 +1020,13 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
       const card = page.getByTestId('logging-gap-card');
       await expect(card.getByTestId('nutrition-healthiness-label')).toBeVisible({ timeout: 15_000 });
       await expect.poll(() => calls).toBe(1);
+      await page.waitForTimeout(250);
       await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
 
       await page.goto('/');
       await expect(card.getByTestId('nutrition-healthiness-label')).toBeVisible({ timeout: 15_000 });
       await expect.poll(() => calls).toBe(2);
+      await page.waitForTimeout(250);
       await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
     } finally {
       await putSettings(request, cookies, original);
@@ -1143,7 +1145,8 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
       const card = page.getByTestId('logging-gap-card');
       await expect(card.getByTestId('nutrition-sustainability')).toBeVisible({ timeout: 15_000 });
       await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
-      await expect.poll(() => adviceCalls).toBe(0);
+      await page.waitForTimeout(500);
+      expect(adviceCalls).toBe(0);
     } finally {
       await putSettings(request, cookies, original);
     }

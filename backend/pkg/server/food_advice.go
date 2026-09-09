@@ -25,12 +25,12 @@ import (
 var adviceReasonCode = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
 
 type foodAdviceWindow struct {
-	MeanCalories     float64 `json:"mean_calories"`
-	MeanProteinGrams float64 `json:"mean_protein_grams"`
-	MeanCarbsGrams   float64 `json:"mean_carbs_grams"`
-	MeanFatGrams     float64 `json:"mean_fat_grams"`
-	MeanSugarGrams   float64 `json:"mean_sugar_grams"`
-	MeanSodiumGrams  float64 `json:"mean_sodium_grams"`
+	MeanCalories     *float64 `json:"mean_calories"`
+	MeanProteinGrams *float64 `json:"mean_protein_grams"`
+	MeanCarbsGrams   *float64 `json:"mean_carbs_grams"`
+	MeanFatGrams     *float64 `json:"mean_fat_grams"`
+	MeanSugarGrams   *float64 `json:"mean_sugar_grams"`
+	MeanSodiumGrams  *float64 `json:"mean_sodium_grams"`
 }
 
 type foodAdviceRequest struct {
@@ -115,9 +115,9 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 
 	in := vision.AdviceInput{
 		Label: req.Label, Reasons: reasons,
-		MeanCalories: req.Window.MeanCalories, MeanProteinGrams: req.Window.MeanProteinGrams,
-		MeanCarbsGrams: req.Window.MeanCarbsGrams, MeanFatGrams: req.Window.MeanFatGrams,
-		MeanSugarGrams: req.Window.MeanSugarGrams, MeanSodiumGrams: req.Window.MeanSodiumGrams,
+		MeanCalories: *req.Window.MeanCalories, MeanProteinGrams: *req.Window.MeanProteinGrams,
+		MeanCarbsGrams: *req.Window.MeanCarbsGrams, MeanFatGrams: *req.Window.MeanFatGrams,
+		MeanSugarGrams: *req.Window.MeanSugarGrams, MeanSodiumGrams: *req.Window.MeanSodiumGrams,
 		TargetCalories: target.Calories, TargetProteinGrams: target.ProteinGrams,
 		TargetCarbsGrams: target.CarbsGrams, TargetFatGrams: target.FatGrams,
 		DisplayLanguage: language,
@@ -224,12 +224,12 @@ func normalizeAdviceRequest(req *foodAdviceRequest) ([]string, bool) {
 		seen[reason] = struct{}{}
 		reasons = append(reasons, reason)
 	}
-	figures := [...]float64{
+	figures := [...]*float64{
 		req.Window.MeanCalories, req.Window.MeanProteinGrams, req.Window.MeanCarbsGrams,
 		req.Window.MeanFatGrams, req.Window.MeanSugarGrams, req.Window.MeanSodiumGrams,
 	}
 	for _, figure := range figures {
-		if math.IsNaN(figure) || math.IsInf(figure, 0) || figure < 0 || figure > 100000 {
+		if figure == nil || math.IsNaN(*figure) || math.IsInf(*figure, 0) || *figure < 0 || *figure > 100000 {
 			return nil, false
 		}
 	}

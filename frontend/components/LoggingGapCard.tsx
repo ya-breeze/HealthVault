@@ -465,7 +465,9 @@ export default function LoggingGapCard({
     return () => {
       cancelled = true;
     };
-  }, [adviceRequest]);
+  // The signature, not object identity, is the key: an equivalent main-load
+  // result must keep using the same cached advice context.
+  }, [adviceRequest?.signature]);
 
   const visibleAdvice = adviceRequest && advice?.signature === adviceRequest.signature ? advice : null;
 

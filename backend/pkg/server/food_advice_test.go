@@ -251,6 +251,11 @@ func TestFoodAdvice_FailureValidationOriginAndAuthStates(t *testing.T) {
 	}{
 		{"rejected label", adviceBody("excellent", nil, false, 70)},
 		{"malformed reason", adviceBody("fair", []string{"Protein-Low"}, false, 70)},
+		{"missing window figure", func() map[string]any {
+			body := adviceBody("fair", nil, false, 70)
+			delete(body["window"].(map[string]any), "mean_sodium_grams")
+			return body
+		}()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &vision.Fake{AdviseResult: []string{"unused"}}
