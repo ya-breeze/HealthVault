@@ -30,6 +30,9 @@ const (
 	// told what the means rest on and the server must not guess it.
 	nutritionChatWindowDays = 7
 	nutritionChatMaxSignals = 5
+	// A provider error can carry a whole response body, so the logged form is
+	// bounded as well as redacted.
+	nutritionChatMaxLoggedErrorRune = 300
 )
 
 var nutritionChatVerdicts = map[string]struct{}{"ok": {}, "off": {}, "far": {}}
@@ -170,7 +173,7 @@ func (h *foodHandlers) PostFoodAdviceChat(w http.ResponseWriter, r *http.Request
 		// The model's own error text can carry provider detail and echo the
 		// question back; the caller gets the same two reasons the advice
 		// endpoint uses, and nothing else.
-		slog.Warn("nutrition chat failed", "err", err, "user_id", claims.UserID)
+		slog.Warn("nutrition chat failed", "err", redactQuestion(err, question), "user_id", claims.UserID)
 		if errors.Is(err, vision.ErrNotConfigured) {
 			writeNutritionChatUnavailable(w, "unconfigured")
 			return
@@ -250,4 +253,21 @@ func normalizeNutritionChatTurns(in []nutritionChatTurn) ([]vision.NutritionChat
 		out = append(out, vision.NutritionChatTurn{Role: turn.Role, Text: text})
 	}
 	return out, true
+}
+
+// redactQuestion keeps a model error useful in the log without writing the
+// user's own words into it. A provider that fails mid-request can quote the
+// prompt back in its error, and the prompt carries a medical question; the
+// spec's storage boundary says no raw prompt log, and an application log is
+// one. The text is bounded as well, because a provider error can also carry a
+// whole response body.
+func redactQuestion(err error, question string) string {
+	text := err.Error()
+	if question != "" {
+		text = strings.ReplaceAll(text, question, "<question>")
+	}
+	if runes := []rune(text); len(runes) > nutritionChatMaxLoggedErrorRune {
+		text = string(runes[:nutritionChatMaxLoggedErrorRune]) + "…"
+	}
+	return text
 }

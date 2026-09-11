@@ -340,6 +340,24 @@ function healthinessNeedsAttentionFixture(): LoggingGapFixture {
   };
 }
 
+// Protein pushed far below its band: 4*30 + 4*275 + 9*86.667 = 2000 kcal of
+// macro energy, so protein's share is 6% — under
+// HEALTHINESS_THRESHOLDS.proteinShare.farLow (10%). It exists to prove the
+// basis row says "below" for a signal that fell under its band; a two-sided
+// signal flagged for being too low is the case a verdict-only wording gets
+// backwards.
+function healthinessProteinFarLowFixture(): LoggingGapFixture {
+  const base = healthinessBase();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d =>
+      last7.has(d.date) ? { ...d, ...HEALTHY_MACROS, protein_grams: 30, carbs_grams: 275 } : d
+    ),
+  };
+}
+
 // Only 2 of the label's own last-7-day window are eligible (5 carry an
 // unconfirmed meal, which fails isValidDay) — below the 3-of-7 floor
 // (ADR-007) the label shares with the Logging Gap's own hard floor. The
@@ -1676,6 +1694,32 @@ test.describe('Nutrition advice chat', () => {
         'user',
         'assistant',
       ]);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a signal that fell below its band reads as below, not above', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessProteinFarLowFixture(), { adviceHandler: adviceOk });
+      await page.route('**/api/food/advice/chat', route =>
+        route.fulfill({ json: { available: true, answer: 'Protein is the low one.' } })
+      );
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      const row = sheet.getByTestId('nutrition-chat-basis-row').filter({ hasText: 'Protein' });
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText('well below');
+      await expect(row).not.toContainText('above');
+      // 6% measured, against the 15% guideline and the 10% far mark.
+      await expect(row).toContainText('6%');
+      await expect(row).toContainText('15%');
+      await expect(row).toContainText('10%');
     } finally {
       await putSettings(request, cookies, original);
     }

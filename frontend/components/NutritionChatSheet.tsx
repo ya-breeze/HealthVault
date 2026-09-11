@@ -138,6 +138,15 @@ export default function NutritionChatSheet({
       : interpolate(t('nutritionChat.gramsPerDay'), { value: value.toFixed(1) });
   }
 
+  // Which side of its band the signal fell on. A two-sided signal can be
+  // flagged for being too low as well as too high, and saying "above" for a
+  // low-protein finding states the opposite of what was measured. The stored
+  // boundary is already the pair on the side the value fell, so comparing
+  // against it answers the question for one-sided signals too.
+  function direction(signal: HealthinessResult['signals'][number]) {
+    return signal.value < signal.offBoundary ? 'below' : 'above';
+  }
+
   const flagged = healthiness.signals.filter(signal => signal.reason !== null);
 
   return (
@@ -183,7 +192,7 @@ export default function NutritionChatSheet({
           ) : (
             flagged.map(signal => (
               <p key={signal.code} className="text-xs text-text-muted" data-testid="nutrition-chat-basis-row">
-                {interpolate(t(`nutritionChat.basis.${signal.verdict === 'far' ? 'far' : 'off'}`), {
+                {interpolate(t(`nutritionChat.basis.${signal.verdict === 'far' ? 'far' : 'off'}.${direction(signal)}`), {
                   signal: t(`nutritionChat.signal.${signal.code}`),
                   value: formatValue(signal, signal.value),
                   // The guideline is where the signal stopped being ok, and
