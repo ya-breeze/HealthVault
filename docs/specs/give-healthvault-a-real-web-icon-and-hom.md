@@ -58,9 +58,9 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 4: Review and validate the design package
 
-- [ ] Review the candidate sources and comparison together at their intended display sizes, correcting clipping, uneven optical weight, insufficient contrast, or mask-unsafe geometry before finalizing the decision record.
-- [ ] Confirm this split has not changed `frontend/app/layout.tsx`, replaced `frontend/app/favicon.ico`, added production assets under `frontend/public/`, or removed any starter asset.
-- [ ] Confirm all candidate artwork remains retained and the decision record points to filenames that exist, with one and only one selected default.
-- [ ] Run `make lint`, `make test`, and `make test-e2e`, and resolve any change-caused failure without targeting a dogfood or production stack.
-- [ ] Recheck the final diff for temporary exports, duplicate captures, external-resource references, and unrelated files.
-- [ ] Mark completed
+- [x] Review the candidate sources and comparison together at their intended display sizes, correcting clipping, uneven optical weight, insufficient contrast, or mask-unsafe geometry before finalizing the decision record.
+- [x] Confirm this split has not changed `frontend/app/layout.tsx`, replaced `frontend/app/favicon.ico`, added production assets under `frontend/public/`, or removed any starter asset.
+- [x] Confirm all candidate artwork remains retained and the decision record points to filenames that exist, with one and only one selected default.
+- [x] Run `make lint`, `make test`, and `make test-e2e`, and resolve any change-caused failure without targeting a dogfood or production stack.
+- [x] Recheck the final diff for temporary exports, duplicate captures, external-resource references, and unrelated files.
+- [x] Mark completed
