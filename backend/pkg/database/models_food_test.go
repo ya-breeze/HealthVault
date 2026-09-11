@@ -84,7 +84,7 @@ func TestFoodItem_CarriesUserID(t *testing.T) {
 // created, because creating it through the current schema is not the case
 // that could actually break: AutoMigrate adds the column to existing tables
 // without backfilling it, so a genuinely pre-change row holds NULL, whereas a
-// row written by today's code holds an empty string. Scanning an empty string can never
+// row written by today's code holds ''. Scanning '' into a string can never
 // fail; scanning NULL into a non-pointer string is the case worth a
 // regression test. Both the direct read and the Preload path used by the meal
 // detail endpoint are exercised, since they build different queries. Test

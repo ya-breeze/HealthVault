@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	kinmodels "github.com/ya-breeze/kin-core/models"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
@@ -261,5 +262,93 @@ func TestFoodAdviceEngagement_AtomicAggregationAndTimeBounds(t *testing.T) {
 		got.LastQualifiedViewAt == nil || !got.LastQualifiedViewAt.Equal(wideLast) {
 		t.Fatalf("bracketing bounds changed: first=%v last=%v, want %v/%v",
 			got.FirstQualifiedViewAt, got.LastQualifiedViewAt, wideFirst, wideLast)
+	}
+}
+
+// seedSecondFoodUser adds a user in a family of its own, because seedFoodUser
+// uses a fixed username and cannot be called twice against one database.
+func seedSecondFoodUser(t *testing.T, s database.Storage) (userID, familyID uuid.UUID) {
+	t.Helper()
+	familyID = uuid.New()
+	userID = uuid.New()
+	if err := s.DB().Create(&kinmodels.Family{ID: familyID, Name: "OtherTestFamily"}).Error; err != nil {
+		t.Fatalf("create second family: %v", err)
+	}
+	user := kinmodels.User{ID: userID, Username: "othertestuser", PasswordHash: "x", FamilyID: familyID}
+	if err := s.DB().Create(&user).Error; err != nil {
+		t.Fatalf("create second user: %v", err)
+	}
+	return userID, familyID
+}
+
+// TestFoodAdviceEngagement_IsolatesCallersAndDays proves at the handler layer
+// that aggregates never merge across callers or Logged Days. The unique index
+// is covered in the database package, but the upsert's conflict target is what
+// decides which row a request lands in, and only the handler exercises that.
+func TestFoodAdviceEngagement_IsolatesCallersAndDays(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	otherUserID, otherFamilyID := seedSecondFoodUser(t, st)
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+
+	const firstDay = "2026-09-08"
+	const secondDay = "2026-09-09"
+	firstGeneratedAt := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	secondGeneratedAt := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	otherGeneratedAt := time.Date(2026, 9, 8, 13, 0, 0, 0, time.UTC)
+	persistAdviceRevision(t, st, userID, familyID, firstDay, firstGeneratedAt)
+	persistAdviceRevision(t, st, otherUserID, otherFamilyID, firstDay, otherGeneratedAt)
+
+	record := func(t *testing.T, uid, fid uuid.UUID, day string, generatedAt time.Time) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		h.RecordFoodAdviceEngagement(w, engagementRequest(t, uid, fid, qualifiedViewBody(day, generatedAt)))
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("record status = %d, want 204", w.Code)
+		}
+	}
+	record(t, userID, familyID, firstDay, firstGeneratedAt)
+	record(t, userID, familyID, firstDay, firstGeneratedAt)
+	record(t, otherUserID, otherFamilyID, firstDay, otherGeneratedAt)
+
+	// A caller holds at most one cached advice row, so the next day replaces
+	// the previous revision rather than adding one beside it. The engagement
+	// aggregate must still open a separate row for that day.
+	if err := st.DB().Model(&database.FoodAdvice{}).Where("user_id = ?", userID).
+		Updates(map[string]any{"logged_day": secondDay, "generated_at": secondGeneratedAt}).
+		Error; err != nil {
+		t.Fatalf("move advice revision to the next day: %v", err)
+	}
+	record(t, userID, familyID, secondDay, secondGeneratedAt)
+
+	var rows int64
+	if err := st.DB().Model(&database.FoodAdviceEngagement{}).Count(&rows).Error; err != nil {
+		t.Fatalf("count engagement rows: %v", err)
+	}
+	if rows != 3 {
+		t.Fatalf("engagement rows = %d, want 3 (two days for the caller, one for the other user)", rows)
+	}
+
+	for _, want := range []struct {
+		userID uuid.UUID
+		day    string
+		count  uint64
+	}{
+		{userID, firstDay, 2},
+		{userID, secondDay, 1},
+		{otherUserID, firstDay, 1},
+	} {
+		var got database.FoodAdviceEngagement
+		if err := st.DB().Where("user_id = ? AND logged_day = ?", want.userID, want.day).
+			First(&got).Error; err != nil {
+			t.Fatalf("load aggregate for %s on %s: %v", want.userID, want.day, err)
+		}
+		if got.QualifiedViewCount != want.count {
+			t.Fatalf("aggregate for %s on %s has %d views, want %d",
+				want.userID, want.day, got.QualifiedViewCount, want.count)
+		}
+		if got.RefreshRequestCount != 0 || got.RefreshSuccessCount != 0 {
+			t.Fatalf("aggregate for %s on %s recorded refresh events: %+v", want.userID, want.day, got)
+		}
 	}
 }
