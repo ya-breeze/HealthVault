@@ -41,11 +41,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 2: Produce and retain distinct vector candidates
 
-- [ ] Add at least three semantically named candidate SVG files under `docs/assets/healthvault-icon/`, with genuinely different geometry rather than palette-only variants.
-- [ ] Make every candidate a standalone square SVG with a consistent `viewBox`, no embedded font, no external resource, no copied artwork, and critical geometry kept inside the documented mask-safe area.
-- [ ] Use only the documented HealthVault palette plus transparency or a necessary neutral container, and keep each silhouette readable without relying on color alone.
-- [ ] Inspect each source at 16px before accepting it into the comparison and simplify any paths or gaps that merge, disappear, or become ambiguous at that size.
-- [ ] Mark completed
+- [x] Add at least three semantically named candidate SVG files under `docs/assets/healthvault-icon/`, with genuinely different geometry rather than palette-only variants.
+- [x] Make every candidate a standalone square SVG with a consistent `viewBox`, no embedded font, no external resource, no copied artwork, and critical geometry kept inside the documented mask-safe area.
+- [x] Use only the documented HealthVault palette plus transparency or a necessary neutral container, and keep each silhouette readable without relying on color alone.
+- [x] Inspect each source at 16px before accepting it into the comparison and simplify any paths or gaps that merge, disappear, or become ambiguous at that size.
+- [x] Mark completed
 
 ### Task 3: Compare candidates and select the default
 
