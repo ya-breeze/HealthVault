@@ -21,6 +21,7 @@ type adviceTestResponse struct {
 	Available   bool       `json:"available"`
 	Reason      string     `json:"reason"`
 	Lines       []string   `json:"lines"`
+	LoggedDay   string     `json:"logged_day"`
 	GeneratedAt *time.Time `json:"generated_at"`
 	Context     struct {
 		TargetCalories     int    `json:"target_calories"`
@@ -96,6 +97,9 @@ func TestFoodAdvice_CacheHitSkipsAdviseAndCarriesServerContext(t *testing.T) {
 	if generated.Context.DisplayLanguage != "ru" || generated.Context.TargetCalories == 0 || generated.GeneratedAt == nil {
 		t.Fatalf("generated response missing effective context: %+v", generated)
 	}
+	if generated.LoggedDay == "" {
+		t.Fatalf("generated response missing Logged Day: %+v", generated)
+	}
 
 	hitFake := &vision.Fake{AdviseErr: errors.New("Advise must not be called on a cache hit")}
 	hitHandler := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(hitFake, 10<<20, time.Second)
@@ -106,6 +110,159 @@ func TestFoodAdvice_CacheHitSkipsAdviseAndCarriesServerContext(t *testing.T) {
 	if cached.Context != generated.Context || cached.GeneratedAt == nil || !cached.GeneratedAt.Equal(*generated.GeneratedAt) {
 		t.Errorf("cache context/time = %+v/%v, want %+v/%v", cached.Context, cached.GeneratedAt, generated.Context, generated.GeneratedAt)
 	}
+	if cached.LoggedDay != generated.LoggedDay {
+		t.Errorf("cached Logged Day = %q, want %q", cached.LoggedDay, generated.LoggedDay)
+	}
+}
+
+func TestFoodAdvice_RefreshEngagementOutcomesAndTelemetryIsolation(t *testing.T) {
+	t.Run("success increments request and success", func(t *testing.T) {
+		st := newFileFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		configureAdviceTarget(t, st, userID, "en")
+		fake := &vision.Fake{AdviseResult: []string{"Refreshed."}}
+		h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+		w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, adviceBody("fair", nil, true, 70)))
+		if w.Code != http.StatusOK || !response.Available {
+			t.Fatalf("refresh: %d %s", w.Code, w.Body.String())
+		}
+		var got database.FoodAdviceEngagement
+		if err := st.DB().Where("user_id = ? AND logged_day = ?", userID, response.LoggedDay).First(&got).Error; err != nil {
+			t.Fatalf("load engagement: %v", err)
+		}
+		if got.RefreshRequestCount != 1 || got.RefreshSuccessCount != 1 ||
+			got.FirstRefreshRequestAt == nil || got.LastRefreshRequestAt == nil ||
+			got.FirstRefreshSuccessAt == nil || got.LastRefreshSuccessAt == nil {
+			t.Fatalf("refresh aggregate = %+v", got)
+		}
+	})
+
+	t.Run("model failure increments request only", func(t *testing.T) {
+		st := newFileFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		configureAdviceTarget(t, st, userID, "en")
+		h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(
+			&vision.Fake{AdviseErr: errors.New("model down")}, 10<<20, time.Second,
+		)
+
+		w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, adviceBody("fair", nil, true, 70)))
+		if w.Code != http.StatusOK || response.Available {
+			t.Fatalf("refresh failure: %d %s", w.Code, w.Body.String())
+		}
+		var got database.FoodAdviceEngagement
+		if err := st.DB().Where("user_id = ?", userID).First(&got).Error; err != nil {
+			t.Fatalf("load engagement: %v", err)
+		}
+		if got.RefreshRequestCount != 1 || got.RefreshSuccessCount != 0 {
+			t.Fatalf("refresh counts = %d/%d, want 1/0", got.RefreshRequestCount, got.RefreshSuccessCount)
+		}
+	})
+
+	t.Run("cache write failure increments request only", func(t *testing.T) {
+		st := newFileFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		configureAdviceTarget(t, st, userID, "en")
+		if err := st.DB().Exec(`CREATE TRIGGER fail_food_advice_insert
+			BEFORE INSERT ON food_advices
+			BEGIN SELECT RAISE(FAIL, 'advice cache unavailable'); END`).Error; err != nil {
+			t.Fatalf("create cache failure trigger: %v", err)
+		}
+		fake := &vision.Fake{AdviseResult: []string{"Valid but uncacheable."}}
+		h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+		w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, adviceBody("fair", nil, true, 70)))
+		if w.Code != http.StatusOK || response.Available || response.Reason != "unavailable" {
+			t.Fatalf("refresh with cache failure: %d %s", w.Code, w.Body.String())
+		}
+		if len(fake.AdviseCalls) != 1 {
+			t.Fatalf("Advise calls = %d, want 1", len(fake.AdviseCalls))
+		}
+		var adviceCount int64
+		if err := st.DB().Model(&database.FoodAdvice{}).Where("user_id = ?", userID).Count(&adviceCount).Error; err != nil {
+			t.Fatalf("count cached advice: %v", err)
+		}
+		if adviceCount != 0 {
+			t.Fatalf("cached advice rows = %d, want none", adviceCount)
+		}
+		var got database.FoodAdviceEngagement
+		if err := st.DB().Where("user_id = ?", userID).First(&got).Error; err != nil {
+			t.Fatalf("load engagement: %v", err)
+		}
+		if got.RefreshRequestCount != 1 || got.RefreshSuccessCount != 0 ||
+			got.FirstRefreshRequestAt == nil || got.LastRefreshRequestAt == nil ||
+			got.FirstRefreshSuccessAt != nil || got.LastRefreshSuccessAt != nil {
+			t.Fatalf("refresh aggregate = %+v, want one request and no success", got)
+		}
+	})
+
+	t.Run("cached request increments neither", func(t *testing.T) {
+		st := newFileFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		configureAdviceTarget(t, st, userID, "en")
+		fake := &vision.Fake{AdviseResult: []string{"Cached."}}
+		h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+		body := adviceBody("fair", nil, false, 70)
+		for range 2 {
+			w, _ := callAdvice(t, h, newAdviceRequest(t, userID, familyID, body))
+			if w.Code != http.StatusOK {
+				t.Fatalf("advice: %d %s", w.Code, w.Body.String())
+			}
+		}
+		var count int64
+		if err := st.DB().Model(&database.FoodAdviceEngagement{}).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("engagement rows = %d, err=%v; want none", count, err)
+		}
+	})
+
+	t.Run("telemetry failure does not fail delivery", func(t *testing.T) {
+		st := newFileFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		configureAdviceTarget(t, st, userID, "en")
+		if err := st.DB().Exec(`CREATE TRIGGER fail_advice_engagement
+			BEFORE INSERT ON food_advice_engagements
+			BEGIN SELECT RAISE(FAIL, 'telemetry unavailable'); END`).Error; err != nil {
+			t.Fatalf("create failure trigger: %v", err)
+		}
+		h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(
+			&vision.Fake{AdviseResult: []string{"Still delivered."}}, 10<<20, time.Second,
+		)
+		w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, adviceBody("fair", nil, true, 70)))
+		if w.Code != http.StatusOK || !response.Available || len(response.Lines) != 1 {
+			t.Fatalf("refresh with telemetry failure: %d %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("request telemetry failure cannot create success-only aggregate", func(t *testing.T) {
+		st := newFileFoodTestStorage(t)
+		userID, familyID := seedFoodUser(t, st)
+		configureAdviceTarget(t, st, userID, "en")
+		if err := st.DB().Exec(`CREATE TRIGGER fail_refresh_request
+			BEFORE INSERT ON food_advice_engagements
+			WHEN NEW.refresh_request_count = 1
+			BEGIN SELECT RAISE(FAIL, 'refresh request telemetry unavailable'); END`).Error; err != nil {
+			t.Fatalf("create selective failure trigger: %v", err)
+		}
+		h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(
+			&vision.Fake{AdviseResult: []string{"Still delivered and cached."}}, 10<<20, time.Second,
+		)
+
+		w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, adviceBody("fair", nil, true, 70)))
+		if w.Code != http.StatusOK || !response.Available || len(response.Lines) != 1 {
+			t.Fatalf("refresh with request telemetry failure: %d %s", w.Code, w.Body.String())
+		}
+		var advice database.FoodAdvice
+		if err := st.DB().Where("user_id = ?", userID).First(&advice).Error; err != nil {
+			t.Fatalf("load cached advice: %v", err)
+		}
+		var count int64
+		if err := st.DB().Model(&database.FoodAdviceEngagement{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
+			t.Fatalf("count engagement rows: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("engagement rows = %d, want none", count)
+		}
+	})
 }
 
 func TestFoodAdvice_MissPersistsNormalizedInputAndEveryChangeRegenerates(t *testing.T) {

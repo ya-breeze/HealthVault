@@ -631,9 +631,16 @@ export type NutritionAdviceResponse =
   | {
       available: true;
       lines: string[];
+      logged_day: string;
       generated_at: string;
       context: NutritionAdviceContext;
     };
+
+export interface FoodAdviceEngagementRequest {
+  event: 'qualified_view';
+  logged_day: string;
+  generated_at: string;
+}
 
 /**
  * GET /api/summary/today — the caller's Logged Day so far, plus their
@@ -727,6 +734,12 @@ export const api = {
 
   getNutritionAdvice: (input: NutritionAdviceRequest) =>
     apiFetch<NutritionAdviceResponse>('/food/advice', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  recordFoodAdviceEngagement: (input: FoodAdviceEngagementRequest) =>
+    apiFetchNoBody('/food/advice/engagement', {
       method: 'POST',
       body: JSON.stringify(input),
     }),

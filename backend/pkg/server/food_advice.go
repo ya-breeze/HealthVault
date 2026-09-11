@@ -52,6 +52,7 @@ type foodAdviceResponse struct {
 	Available   bool               `json:"available"`
 	Reason      string             `json:"reason,omitempty"`
 	Lines       []string           `json:"lines,omitempty"`
+	LoggedDay   string             `json:"logged_day,omitempty"`
 	GeneratedAt *time.Time         `json:"generated_at,omitempty"`
 	Context     *foodAdviceContext `json:"context,omitempty"`
 }
@@ -158,6 +159,16 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	refreshRequestRecorded := false
+	if req.Refresh {
+		if err := recordFoodAdviceEngagement(
+			h.storage.DB(), claims.UserID, FamilyIDFromCtx(r), loggedDay, refreshRequestEvent, time.Now().UTC(),
+		); err != nil {
+			slog.Warn("nutrition advice refresh-request telemetry failed", "err", err, "user_id", claims.UserID)
+		} else {
+			refreshRequestRecorded = true
+		}
+	}
 
 	tctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)
 	defer cancel()
@@ -200,8 +211,15 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		writeFoodAdviceUnavailable(w, "unavailable")
 		return
 	}
+	if req.Refresh && refreshRequestRecorded {
+		if err := recordFoodAdviceEngagement(
+			h.storage.DB(), claims.UserID, FamilyIDFromCtx(r), loggedDay, refreshSuccessEvent, time.Now().UTC(),
+		); err != nil {
+			slog.Warn("nutrition advice refresh-success telemetry failed", "err", err, "user_id", claims.UserID)
+		}
+	}
 	writeJSON(w, foodAdviceResponse{
-		Available: true, Lines: lines, GeneratedAt: &generatedAt, Context: &responseContext,
+		Available: true, Lines: lines, LoggedDay: loggedDay, GeneratedAt: &generatedAt, Context: &responseContext,
 	})
 }
 
@@ -265,7 +283,7 @@ func (h *foodHandlers) serveCachedAdvice(
 		return false, nil
 	}
 	writeJSON(w, foodAdviceResponse{
-		Available: true, Lines: lines, GeneratedAt: &row.GeneratedAt, Context: &responseContext,
+		Available: true, Lines: lines, LoggedDay: row.LoggedDay, GeneratedAt: &row.GeneratedAt, Context: &responseContext,
 	})
 	return true, nil
 }

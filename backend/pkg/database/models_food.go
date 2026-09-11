@@ -273,6 +273,28 @@ type FoodAdvice struct {
 	GeneratedAt time.Time `gorm:"not null" json:"generated_at"`
 }
 
+// FoodAdviceEngagement is a privacy-minimized daily aggregate for one user's
+// nutrition advice. It deliberately records only counts and their time bounds:
+// the rendered advice, health inputs, browser/session identifiers, user agent,
+// and network address never enter this table.
+type FoodAdviceEngagement struct {
+	models.TenantModel
+	UserID    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_food_advice_engagement_user_day" json:"user_id"`
+	LoggedDay string    `gorm:"type:varchar(10);not null;uniqueIndex:idx_food_advice_engagement_user_day" json:"logged_day"`
+
+	QualifiedViewCount   uint64     `gorm:"not null;default:0" json:"qualified_view_count"`
+	FirstQualifiedViewAt *time.Time `json:"first_qualified_view_at,omitempty"`
+	LastQualifiedViewAt  *time.Time `json:"last_qualified_view_at,omitempty"`
+
+	RefreshRequestCount   uint64     `gorm:"not null;default:0" json:"refresh_request_count"`
+	FirstRefreshRequestAt *time.Time `json:"first_refresh_request_at,omitempty"`
+	LastRefreshRequestAt  *time.Time `json:"last_refresh_request_at,omitempty"`
+
+	RefreshSuccessCount   uint64     `gorm:"not null;default:0" json:"refresh_success_count"`
+	FirstRefreshSuccessAt *time.Time `json:"first_refresh_success_at,omitempty"`
+	LastRefreshSuccessAt  *time.Time `json:"last_refresh_success_at,omitempty"`
+}
+
 // FoodCalibrationSample is a weighed-food ground-truth photo used to benchmark
 // vision models. It never produces a FoodMeal.
 type FoodCalibrationSample struct {
