@@ -37,29 +37,29 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 1: Define localized chart metadata and formatting contracts
 
-- [ ] Add the complete `dataDetail.*` English catalog to `frontend/lib/i18n/en.ts` and matching Russian entries to `frontend/lib/i18n/ru.ts`: zooms, shortcuts, seven nutrition macros, blood-pressure labels and ranges, Goal/Range/Avg/Trend/Projection, Avg/Max/Total/BMI summaries, four BMI categories, reached/not-on-track/on-track/insufficient-data/load-failure projection messages, and the page loading state, using the copy specified in `## How`.
-- [ ] Update the localization scope comment in `en.ts` so data-detail charts and page loading are covered while writable forms remain explicitly English until the deferred child; keep `Dictionary = typeof en` enforcing exact Russian key parity.
-- [ ] Change `ZOOMS` in `DataTypeClient.tsx` and `NUTRITION_MACROS` in `frontend/lib/dataTypeMeta.ts` to carry `keyof Dictionary` label keys instead of English display strings, without changing their zoom/macro values, order, or sole current consumer.
-- [ ] Add `numberLocaleFor` to `frontend/lib/i18n/index.ts`, extend `formatMetricValue` with an optional locale that defaults to `en-US`, and update its documentation so existing dashboard callers retain their current output while data-detail callers can request `ru-RU` formatting.
-- [ ] Change `BmiCategory` and `classifyBmi` to the stable lower-case identifiers specified in `## How`; extend `frontend/lib/dataTypeMeta.test.ts` to retain interior and exact-boundary BMI coverage and to assert English and Russian grouping/decimal behavior from `formatMetricValue` without changing precision.
-- [ ] Mark completed
+- [x] Add the complete `dataDetail.*` English catalog to `frontend/lib/i18n/en.ts` and matching Russian entries to `frontend/lib/i18n/ru.ts`: zooms, shortcuts, seven nutrition macros, blood-pressure labels and ranges, Goal/Range/Avg/Trend/Projection, Avg/Max/Total/BMI summaries, four BMI categories, reached/not-on-track/on-track/insufficient-data/load-failure projection messages, and the page loading state, using the copy specified in `## How`.
+- [x] Update the localization scope comment in `en.ts` so data-detail charts and page loading are covered while writable forms remain explicitly English until the deferred child; keep `Dictionary = typeof en` enforcing exact Russian key parity.
+- [x] Change `ZOOMS` in `DataTypeClient.tsx` and `NUTRITION_MACROS` in `frontend/lib/dataTypeMeta.ts` to carry `keyof Dictionary` label keys instead of English display strings, without changing their zoom/macro values, order, or sole current consumer.
+- [x] Add `numberLocaleFor` to `frontend/lib/i18n/index.ts`, extend `formatMetricValue` with an optional locale that defaults to `en-US`, and update its documentation so existing dashboard callers retain their current output while data-detail callers can request `ru-RU` formatting.
+- [x] Change `BmiCategory` and `classifyBmi` to the stable lower-case identifiers specified in `## How`; extend `frontend/lib/dataTypeMeta.test.ts` to retain interior and exact-boundary BMI coverage and to assert English and Russian grouping/decimal behavior from `formatMetricValue` without changing precision.
+- [x] Mark completed
 
 ### Task 2: Localize controls, every Recharts series, and chart formatting
 
-- [ ] Update `DataTypeClient.tsx` to translate Day/Week/Month/Year, Set goal, Set height, and all seven nutrition macro selectors through `t`, preserving selected state, ordering, owner/family gates, and existing form-opening behavior.
-- [ ] Assign the explicit localized names described in `## How` to every tooltip-visible `Line`, `Bar`, and `Area`, including ordinary Day metrics, Day and bucketed nutrition, Day and bucketed blood pressure, both blood-pressure ranges, cumulative bars, point ranges and averages, weight trend, and projection; preserve the range Areas' hidden legend behavior.
-- [ ] Translate the Goal `ReferenceLine` label and ensure the same translated names reach Recharts legends and both pointer and touch tooltip paths without changing `dataKey`, chart interaction, or series visibility.
-- [ ] Pass `numberLocaleFor(language)` through every Y-axis tick, scalar/range tooltip value, and Avg/Max/Total readout, and format BMI to one localized decimal without changing the underlying values, conversions, or precision.
-- [ ] Make `bucketLabel` accept the selected date locale and apply `dateLocaleFor(language)` to every bucket label, Day-axis time tick, Day tooltip timestamp, steps-diagnostic day, and projection ETA while preserving the current options, UTC rules, and invalid-label fallback.
-- [ ] Mark completed
+- [x] Update `DataTypeClient.tsx` to translate Day/Week/Month/Year, Set goal, Set height, and all seven nutrition macro selectors through `t`, preserving selected state, ordering, owner/family gates, and existing form-opening behavior.
+- [x] Assign the explicit localized names described in `## How` to every tooltip-visible `Line`, `Bar`, and `Area`, including ordinary Day metrics, Day and bucketed nutrition, Day and bucketed blood pressure, both blood-pressure ranges, cumulative bars, point ranges and averages, weight trend, and projection; preserve the range Areas' hidden legend behavior.
+- [x] Translate the Goal `ReferenceLine` label and ensure the same translated names reach Recharts legends and both pointer and touch tooltip paths without changing `dataKey`, chart interaction, or series visibility.
+- [x] Pass `numberLocaleFor(language)` through every Y-axis tick, scalar/range tooltip value, and Avg/Max/Total readout, and format BMI to one localized decimal without changing the underlying values, conversions, or precision.
+- [x] Make `bucketLabel` accept the selected date locale and apply `dateLocaleFor(language)` to every bucket label, Day-axis time tick, Day tooltip timestamp, steps-diagnostic day, and projection ETA while preserving the current options, UTC rules, and invalid-label fallback.
+- [x] Mark completed
 
 ### Task 3: Localize weight summaries, BMI, and projection outcomes
 
-- [ ] Translate Avg, Max, Total, and BMI summary headings and resolve `classifyBmi`'s stable result through the matching `dataDetail.bmi.*` key, without changing summary calculations, height gating, BMI thresholds, band rendering, or the one-decimal readout.
-- [ ] Translate Goal, Range, Avg, Trend, and Projection everywhere they surface through reference labels, legends, and tooltips, preserving the current Week/Month/Year trend and Month/Year projection-line rules.
-- [ ] Replace the projection literals with dictionary-backed copy for reached, not-on-track, on-track ETA, insufficient data, and weight-history load failure; interpolate the localized UTC crossing date into the on-track message while preserving `weightContextStatus`, goal gates, and outcome priority.
-- [ ] Keep the weight-context loading state silent and keep a missing goal free of projection copy exactly as today; localization must not collapse loading, ready-with-insufficient-data, and fetch failure into one state.
-- [ ] Mark completed
+- [x] Translate Avg, Max, Total, and BMI summary headings and resolve `classifyBmi`'s stable result through the matching `dataDetail.bmi.*` key, without changing summary calculations, height gating, BMI thresholds, band rendering, or the one-decimal readout.
+- [x] Translate Goal, Range, Avg, Trend, and Projection everywhere they surface through reference labels, legends, and tooltips, preserving the current Week/Month/Year trend and Month/Year projection-line rules.
+- [x] Replace the projection literals with dictionary-backed copy for reached, not-on-track, on-track ETA, insufficient data, and weight-history load failure; interpolate the localized UTC crossing date into the on-track message while preserving `weightContextStatus`, goal gates, and outcome priority.
+- [x] Keep the weight-context loading state silent and keep a missing goal free of projection copy exactly as today; localization must not collapse loading, ready-with-insufficient-data, and fetch failure into one state.
+- [x] Mark completed
 
 ### Task 4: Localize the Suspense fallback
 

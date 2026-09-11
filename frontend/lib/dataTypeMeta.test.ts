@@ -5,6 +5,7 @@ import {
   computeProjection,
   computeYDomain,
   emaSeries,
+  formatMetricValue,
   hasEnoughDataForProjection,
   hasHeightRecord,
   last30DayEmaWindow,
@@ -82,16 +83,35 @@ describe('bmiBandEdgesKg', () => {
 
 describe('classifyBmi', () => {
   it('classifies clearly interior values', () => {
-    expect(classifyBmi(17)).toBe('Underweight');
-    expect(classifyBmi(22)).toBe('Normal');
-    expect(classifyBmi(27)).toBe('Overweight');
-    expect(classifyBmi(35)).toBe('Obese');
+    expect(classifyBmi(17)).toBe('underweight');
+    expect(classifyBmi(22)).toBe('normal');
+    expect(classifyBmi(27)).toBe('overweight');
+    expect(classifyBmi(35)).toBe('obese');
   });
 
   it('classifies exact boundary values into the higher category', () => {
-    expect(classifyBmi(18.5)).toBe('Normal');
-    expect(classifyBmi(25)).toBe('Overweight');
-    expect(classifyBmi(30)).toBe('Obese');
+    expect(classifyBmi(18.5)).toBe('normal');
+    expect(classifyBmi(25)).toBe('overweight');
+    expect(classifyBmi(30)).toBe('obese');
+  });
+});
+
+describe('formatMetricValue', () => {
+  it('defaults to en-US grouping and the type\'s own decimal precision', () => {
+    expect(formatMetricValue('steps', 12345)).toBe('12,345');
+    expect(formatMetricValue('weight', 72.4)).toBe('72.4');
+  });
+
+  it('formats with en-US explicitly the same as the default', () => {
+    expect(formatMetricValue('steps', 12345, 'en-US')).toBe('12,345');
+  });
+
+  it('formats grouping and the decimal separator for ru-RU without changing precision', () => {
+    // ru-RU groups thousands with a non-breaking space (U+00A0) and uses a
+    // comma decimal separator; decimals must still match the type's own
+    // precision (steps: 0, weight: 1), just like the en-US default.
+    expect(formatMetricValue('steps', 12345, 'ru-RU')).toBe('12 345');
+    expect(formatMetricValue('weight', 72.4, 'ru-RU')).toBe('72,4');
   });
 });
 

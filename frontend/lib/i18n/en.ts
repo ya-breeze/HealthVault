@@ -11,17 +11,20 @@
 // (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
 // custom-food catalog list, and the Expert Mode toggle.
 //
-// Still English regardless of Display Language: the charts, statistics,
-// zoom controls and write forms on the per-type data detail pages; the import
-// and login screens; app/food/upload/page.tsx; and the
-// food components not on the review path: AddItemForm, CameraCapture,
-// ClarifyModal, CustomFoodModal, DeleteMealControl, MacroSummary,
-// ManualItemEditor, MealMetaEditor and ReanalyzeControl. (AddItemForm's own
-// chrome is English, but the ItemResolver panel it embeds is covered, so
-// that form is partly translated rather than wholly English. The per-type
-// data detail pages are likewise partly translated: their metric heading and
-// raw record table are covered, as is the steps page's diagnostic disclosure,
-// while the chart and write-form surfaces listed above are not.)
+// Still English regardless of Display Language: the write form on the
+// per-type data detail pages (AddRecordForm); the import and login screens;
+// app/food/upload/page.tsx; and the food components not on the review path:
+// AddItemForm, CameraCapture, ClarifyModal, CustomFoodModal,
+// DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
+// ReanalyzeControl. (AddItemForm's own chrome is English, but the
+// ItemResolver panel it embeds is covered, so that form is partly translated
+// rather than wholly English. The per-type data detail pages are likewise
+// partly translated: their metric heading, raw record table, steps
+// diagnostic disclosure, zoom/macro controls, every chart series name and
+// tooltip, the Avg/Max/Total/BMI summary row, the BMI category and the
+// weight trend-projection copy, and the route's loading fallback are all
+// covered — only the AddRecordForm write surface is not. See dataDetail.*
+// below; AddRecordForm is the deferred child change.)
 //
 // app/food/manual/page.tsx is now partly translated, not wholly English: its
 // description-first entry path (the textarea, name/time inputs, character
@@ -522,6 +525,50 @@ const en = {
   'metric.bone_mass': 'Bone Mass',
   'metric.speed': 'Speed',
   'metric.food_meal': 'Food Meal',
+
+  // The per-type data detail page (DataTypeClient.tsx): zoom control,
+  // nutrition macro selector, every explicit Recharts series name (Day and
+  // bucketed lines/bars/areas), the Avg/Max/Total/BMI summary row, the BMI
+  // category readout, and the weight trend-projection copy. See en.ts's
+  // scope comment above for what this route still leaves English
+  // (AddRecordForm) and docs/specs/complete-the-owner-selected-english-and.md
+  // for why the two are split.
+  'dataDetail.zoomDay': 'Day',
+  'dataDetail.zoomWeek': 'Week',
+  'dataDetail.zoomMonth': 'Month',
+  'dataDetail.zoomYear': 'Year',
+  'dataDetail.setGoal': 'Set goal',
+  'dataDetail.setHeight': 'Set height',
+  'dataDetail.macroCalories': 'Calories',
+  'dataDetail.macroProtein': 'Protein',
+  'dataDetail.macroCarbs': 'Carbs',
+  'dataDetail.macroFat': 'Fat',
+  'dataDetail.macroSugar': 'Sugar',
+  'dataDetail.macroSodium': 'Sodium',
+  'dataDetail.macroFiber': 'Fiber',
+  'dataDetail.systolic': 'Systolic',
+  'dataDetail.diastolic': 'Diastolic',
+  'dataDetail.systolicRange': 'Systolic range',
+  'dataDetail.diastolicRange': 'Diastolic range',
+  'dataDetail.goal': 'Goal',
+  'dataDetail.range': 'Range',
+  'dataDetail.avg': 'Avg',
+  'dataDetail.trend': 'Trend',
+  'dataDetail.projection': 'Projection',
+  'dataDetail.max': 'Max',
+  'dataDetail.total': 'Total',
+  'dataDetail.bmi': 'BMI',
+  'dataDetail.bmiUnderweight': 'Underweight',
+  'dataDetail.bmiNormal': 'Normal',
+  'dataDetail.bmiOverweight': 'Overweight',
+  'dataDetail.bmiObese': 'Obese',
+  'dataDetail.projectionReached': "You've reached your goal weight",
+  'dataDetail.projectionNotOnTrack': 'Not on track at your current trend',
+  'dataDetail.projectionOnTrack': 'On track to reach your goal around {date}',
+  'dataDetail.projectionInsufficientData': 'Not enough data to project yet',
+  'dataDetail.projectionLoadFailed': "Couldn't load your weight history",
+  // The route's <Suspense> fallback (app/data/[type]/DataTypeLoading.tsx).
+  'dataDetail.loading': 'Loading...',
 };
 
 export default en;

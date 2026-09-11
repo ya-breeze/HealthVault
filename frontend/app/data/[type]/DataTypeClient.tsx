@@ -9,7 +9,7 @@ import { api, DataType, WRITABLE_TYPES, StepsDiagnosticDay } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import {
   TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue,
-  toDisplayUnit, bmiBandEdgesKg, classifyBmi, hasHeightRecord, toDayOffset, linearRegression,
+  toDisplayUnit, bmiBandEdgesKg, classifyBmi, BmiCategory, hasHeightRecord, toDayOffset, linearRegression,
   last30DayEmaWindow, hasEnoughDataForProjection, computeProjection, projectionPoints,
   ProjectionResult,
 } from '@/lib/dataTypeMeta';
@@ -21,17 +21,20 @@ import useCoarsePointer from '@/lib/useCoarsePointer';
 import { useLanguage } from '@/components/LanguageContext';
 import { InfoIcon } from '@/components/icons';
 import { dataColumnLabel } from '@/lib/dataColumnMeta';
-import { dateLocaleFor, mealStatusLabel, metricLabel } from '@/lib/i18n';
+import { dateLocaleFor, Dictionary, interpolate, mealStatusLabel, metricLabel, numberLocaleFor } from '@/lib/i18n';
 
 interface Props {
   type: string;
 }
 
-const ZOOMS: { key: Zoom; label: string }[] = [
-  { key: 'day', label: 'Day' },
-  { key: 'week', label: 'Week' },
-  { key: 'month', label: 'Month' },
-  { key: 'year', label: 'Year' },
+// `label` names a dataDetail.* dictionary key, resolved through `t` at
+// render time, rather than an English display string — see NUTRITION_MACROS
+// in lib/dataTypeMeta.ts for the same pattern.
+const ZOOMS: { key: Zoom; label: keyof Dictionary }[] = [
+  { key: 'day', label: 'dataDetail.zoomDay' },
+  { key: 'week', label: 'dataDetail.zoomWeek' },
+  { key: 'month', label: 'dataDetail.zoomMonth' },
+  { key: 'year', label: 'dataDetail.zoomYear' },
 ];
 
 function num(v: unknown): number {
@@ -46,12 +49,12 @@ function num(v: unknown): number {
 // UTC-midnight instant as if it were local, which shifts the label by a
 // day for any viewer behind UTC. timeZone: 'UTC' reads the label back the
 // same way it was written.
-function bucketLabel(bucketStart: unknown, zoom: Zoom): string {
+function bucketLabel(bucketStart: unknown, zoom: Zoom, dateLocale: string | undefined): string {
   const d = new Date(String(bucketStart));
   if (isNaN(d.getTime())) return String(bucketStart ?? '');
   return zoom === 'year'
-    ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' })
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    ? d.toLocaleDateString(dateLocale, { month: 'short', year: '2-digit', timeZone: 'UTC' })
+    : d.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function mean(values: number[]): number {
@@ -89,6 +92,16 @@ const ALL_TIME_FROM = new Date(0).toISOString();
 // plotted weight line/area stays the focal element.
 const BMI_BAND_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444'];
 
+// classifyBmi (lib/dataTypeMeta.ts) returns a stable lower-case identifier,
+// not a display string — this is the one place that resolves it to a
+// dataDetail.bmi* dictionary key.
+const BMI_CATEGORY_KEYS: Record<BmiCategory, keyof Dictionary> = {
+  underweight: 'dataDetail.bmiUnderweight',
+  normal: 'dataDetail.bmiNormal',
+  overweight: 'dataDetail.bmiOverweight',
+  obese: 'dataDetail.bmiObese',
+};
+
 const RECORD_TIMESTAMP_COLUMNS = new Set([
   'created_at', 'updated_at', 'time', 'start_time', 'end_time', 'session_end_time', 'logged_at',
 ]);
@@ -125,11 +138,11 @@ export default function DataTypeClient({ type }: Props) {
   ): [string, string | number] => {
     if (value === undefined) return ['', name ?? ''];
     if (Array.isArray(value)) {
-      return [value.map(v => formatMetricValue(dataType, Number(v))).join(' – '), name ?? ''];
+      return [value.map(v => formatMetricValue(dataType, Number(v), numberLocale)).join(' – '), name ?? ''];
     }
-    return [formatMetricValue(dataType, Number(value)), name ?? ''];
+    return [formatMetricValue(dataType, Number(value), numberLocale), name ?? ''];
   };
-  const yAxisTickFormatter = (v: number) => formatMetricValue(dataType, v);
+  const yAxisTickFormatter = (v: number) => formatMetricValue(dataType, v, numberLocale);
 
   // Pins the tooltip to the top of the plot area on a coarse pointer, so the
   // readout isn't hidden under the thumb that's producing it. Extracted into
@@ -204,6 +217,12 @@ export default function DataTypeClient({ type }: Props) {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const diagnosticsId = useId();
   const { t, language } = useLanguage();
+  const numberLocale = numberLocaleFor(language);
+  const dateLocale = dateLocaleFor(language);
+  // The selected macro's own dataDetail.* label key, resolved through `t` —
+  // shared by the macro selector, the nutrition Day Line's name and the
+  // nutrition bucketed Bar's name, so all three always agree.
+  const macroLabelText = t(NUTRITION_MACROS.find(m => m.key === macro)?.label ?? 'dataDetail.macroCalories');
 
   // refreshKey is in the dep list too: rangeForZoom's `to` is `now()` at the
   // time this memo runs, so a record just created via AddRecordForm (timed
@@ -359,7 +378,7 @@ export default function DataTypeClient({ type }: Props) {
   const visibleTrend = trendFull.filter((_, i) => visibleMask[i]);
 
   const bucketBarData = visibleChartRows.map(r => ({
-    label: bucketLabel(r.bucket_start, zoom),
+    label: bucketLabel(r.bucket_start, zoom, dateLocale),
     value: isNutrition ? num(r[`sum_${macro}`]) : numDisplay(r.sum),
   }));
 
@@ -370,14 +389,14 @@ export default function DataTypeClient({ type }: Props) {
   // baseline at the stack's absolute value origin (0), which silently pulls
   // the Y-axis back toward zero regardless of the `domain` prop below.
   const bucketBandData: BandRow[] = visibleChartRows.map((r, i) => ({
-    label: bucketLabel(r.bucket_start, zoom),
+    label: bucketLabel(r.bucket_start, zoom, dateLocale),
     avg: num(r.avg),
     range: [num(r.min), num(r.max)] as [number, number],
     ...(dataType === 'weight' ? { trend: visibleTrend[i] } : {}),
   }));
 
   const bucketBPData = visibleChartRows.map(r => ({
-    label: bucketLabel(r.bucket_start, zoom),
+    label: bucketLabel(r.bucket_start, zoom, dateLocale),
     sysAvg: num(r.systolic_avg), sysRange: [num(r.systolic_min), num(r.systolic_max)] as [number, number],
     diaAvg: num(r.diastolic_avg), diaRange: [num(r.diastolic_min), num(r.diastolic_max)] as [number, number],
   }));
@@ -504,7 +523,7 @@ export default function DataTypeClient({ type }: Props) {
   // branches below, same as the BMI bands. Unlike the bands, its value is
   // already folded into dayDomain/bandDomain above, so it's never clipped.
   const goalLine = latestGoalKg !== undefined
-    ? <ReferenceLine y={latestGoalKg} stroke="var(--accent)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: 'Goal', position: 'insideTopRight', fill: 'var(--accent)', fontSize: 11 }} />
+    ? <ReferenceLine y={latestGoalKg} stroke="var(--accent)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: t('dataDetail.goal'), position: 'insideTopRight', fill: 'var(--accent)', fontSize: 11 }} />
     : null;
 
   // Trend projection (task 7) — `undefined` (no line, no text) whenever no
@@ -555,25 +574,27 @@ export default function DataTypeClient({ type }: Props) {
   }, [dataType, latestGoalKg, allTimeWeightRecords, projectionBucketRows]);
 
   const projectionMessage = !projection ? null : (
-    projection.status === 'reached' ? "You've reached your goal weight" :
-    projection.status === 'not-on-track' ? 'Not on track at your current trend' :
+    projection.status === 'reached' ? t('dataDetail.projectionReached') :
+    projection.status === 'not-on-track' ? t('dataDetail.projectionNotOnTrack') :
     // timeZone: 'UTC' — see bucketLabel's comment: crossingDate is built from
     // a day offset (toDayOffset), the same UTC-midnight-label convention as
     // bucket_start, so it needs the same read-back-in-UTC formatting.
-    `On track to reach your goal around ${projection.crossingDate!.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`
+    interpolate(t('dataDetail.projectionOnTrack'), {
+      date: projection.crossingDate!.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
+    })
   );
   // Only claim "not enough data" once we actually know. While loading, say
   // nothing; on failure, say the history could not be loaded rather than
   // stating a false fact about the user's records.
   const noDataMessage = dataType === 'weight' && latestGoalKg !== undefined
     && projection === undefined && weightContextStatus === 'ready'
-    ? 'Not enough data to project yet'
+    ? t('dataDetail.projectionInsufficientData')
     : null;
   // Deliberately NOT gated on latestGoalKg: the goal is one of the fetches
   // that just failed, so on error it is always undefined and gating on it
   // would suppress the very message the failure needs to produce.
   const projectionErrorMessage = dataType === 'weight' && weightContextStatus === 'error'
-    ? "Couldn't load your weight history"
+    ? t('dataDetail.projectionLoadFailed')
     : null;
 
   // Dashed projection line (task 7.5) renders only at Month/Year zoom; the
@@ -593,7 +614,7 @@ export default function DataTypeClient({ type }: Props) {
       projection.intercept, projection.slope, projection.lastDayOffset, projection.crossingDayOffset, projectionGranularity
     );
     const syntheticRows: BandRow[] = pts.map(p => ({
-      label: bucketLabel(new Date(p.dayOffset * 24 * 60 * 60 * 1000).toISOString(), zoom),
+      label: bucketLabel(new Date(p.dayOffset * 24 * 60 * 60 * 1000).toISOString(), zoom, dateLocale),
       projection: p.value,
     }));
     if (bucketBandData.length === 0) return syntheticRows;
@@ -651,7 +672,7 @@ export default function DataTypeClient({ type }: Props) {
               onClick={() => setShowGoalForm(true)}
               className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
             >
-              Set goal
+              {t('dataDetail.setGoal')}
             </TapTarget>
           )}
           {/*
@@ -676,7 +697,7 @@ export default function DataTypeClient({ type }: Props) {
               data-testid="set-height"
               className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
             >
-              Set height
+              {t('dataDetail.setHeight')}
             </TapTarget>
           )}
           <div className="flex gap-1 bg-bg-elevated border border-border rounded-lg p-1">
@@ -693,7 +714,7 @@ export default function DataTypeClient({ type }: Props) {
                   zoom === z.key ? 'bg-border text-accent' : 'text-text-muted hover:text-text'
                 }`}
               >
-                {z.label}
+                {t(z.label)}
               </TapTarget>
             ))}
           </div>
@@ -728,7 +749,7 @@ export default function DataTypeClient({ type }: Props) {
                   macro === m.key ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text'
                 }`}
               >
-                {m.label}
+                {t(m.label)}
               </TapTarget>
             ))}
           </div>
@@ -759,14 +780,14 @@ export default function DataTypeClient({ type }: Props) {
                     type="number"
                     scale="time"
                     domain={[fromMs, toMs]}
-                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
+                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(dateLocale, { hour: 'numeric' })}
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString(dateLocale)} formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="systolic" stroke={color} dot strokeWidth={2} name="Systolic" />
-                  <Line type="monotone" dataKey="diastolic" stroke={color} strokeDasharray="4 3" dot strokeWidth={2} name="Diastolic" />
+                  <Line type="monotone" dataKey="systolic" stroke={color} dot strokeWidth={2} name={t('dataDetail.systolic')} />
+                  <Line type="monotone" dataKey="diastolic" stroke={color} strokeDasharray="4 3" dot strokeWidth={2} name={t('dataDetail.diastolic')} />
                 </LineChart>
               ) : (
                 <LineChart data={dayLineData}>
@@ -776,11 +797,11 @@ export default function DataTypeClient({ type }: Props) {
                     type="number"
                     scale="time"
                     domain={[fromMs, toMs]}
-                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
+                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(dateLocale, { hour: 'numeric' })}
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString(dateLocale)} formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                   {bmiBandAreas}
                   {goalLine}
                   <Line
@@ -789,6 +810,7 @@ export default function DataTypeClient({ type }: Props) {
                     stroke={color}
                     dot
                     strokeWidth={2}
+                    name={isNutrition ? macroLabelText : metricLabel(t, dataType)}
                   />
                 </LineChart>
               )
@@ -799,10 +821,10 @@ export default function DataTypeClient({ type }: Props) {
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
                 <Tooltip formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" name="Systolic range" />
-                <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" name="Diastolic range" />
-                <Line type="monotone" dataKey="sysAvg" stroke={color} strokeWidth={2} dot={false} name="Systolic" />
-                <Line type="monotone" dataKey="diaAvg" stroke={color} strokeDasharray="4 3" strokeWidth={2} dot={false} name="Diastolic" />
+                <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" name={t('dataDetail.systolicRange')} />
+                <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" name={t('dataDetail.diastolicRange')} />
+                <Line type="monotone" dataKey="sysAvg" stroke={color} strokeWidth={2} dot={false} name={t('dataDetail.systolic')} />
+                <Line type="monotone" dataKey="diaAvg" stroke={color} strokeDasharray="4 3" strokeWidth={2} dot={false} name={t('dataDetail.diastolic')} />
               </ComposedChart>
             ) : meta?.family === 'cumulative' ? (
               <BarChart data={bucketBarData}>
@@ -810,7 +832,7 @@ export default function DataTypeClient({ type }: Props) {
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
                 <Tooltip formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
-                <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} name={isNutrition ? macroLabelText : metricLabel(t, dataType)} />
               </BarChart>
             ) : (
               <ComposedChart data={dataType === 'weight' ? extendedBucketBandData : bucketBandData}>
@@ -821,8 +843,8 @@ export default function DataTypeClient({ type }: Props) {
                 {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
                 {bmiBandAreas}
                 {goalLine}
-                <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" name="Range" />
-                <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name="Avg" />
+                <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" name={t('dataDetail.range')} />
+                <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name={t('dataDetail.avg')} />
                 {dataType === 'weight' && (
                   <Line
                     type="monotone"
@@ -831,7 +853,7 @@ export default function DataTypeClient({ type }: Props) {
                     strokeWidth={2}
                     strokeDasharray="5 4"
                     dot={false}
-                    name="Trend"
+                    name={t('dataDetail.trend')}
                   />
                 )}
                 {showProjectionLine && (
@@ -842,7 +864,7 @@ export default function DataTypeClient({ type }: Props) {
                     strokeWidth={1.5}
                     strokeDasharray="2 4"
                     dot={false}
-                    name="Projection"
+                    name={t('dataDetail.projection')}
                   />
                 )}
               </ComposedChart>
@@ -858,23 +880,25 @@ export default function DataTypeClient({ type }: Props) {
 
           <div className="flex gap-6 mt-3 pt-3 border-t border-border">
             <div>
-              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Avg</p>
-              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.avg)}</p>
+              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.avg')}</p>
+              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.avg, numberLocale)}</p>
             </div>
             <div>
-              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Max</p>
-              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.max)}</p>
+              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.max')}</p>
+              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.max, numberLocale)}</p>
             </div>
             {showTotal && (
               <div>
-                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Total</p>
-                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.total)}</p>
+                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.total')}</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.total, numberLocale)}</p>
               </div>
             )}
             {bmi !== undefined && (
               <div>
-                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">BMI</p>
-                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{bmi.toFixed(1)} · {classifyBmi(bmi)}</p>
+                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.bmi')}</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">
+                  {bmi.toLocaleString(numberLocale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} · {t(BMI_CATEGORY_KEYS[classifyBmi(bmi)])}
+                </p>
               </div>
             )}
           </div>
@@ -915,7 +939,7 @@ export default function DataTypeClient({ type }: Props) {
                   <tbody className="divide-y divide-border">
                     {stepsDiagnostics.map(d => (
                       <tr key={d.bucket_start}>
-                        <td className="px-2 py-2 text-text">{new Date(d.bucket_start).toLocaleDateString()}</td>
+                        <td className="px-2 py-2 text-text">{new Date(d.bucket_start).toLocaleDateString(dateLocale)}</td>
                         <td className="px-2 py-2 text-text tabular-nums">{d.raw_sum}</td>
                         <td className="px-2 py-2 text-text tabular-nums">{d.collapsed_sum}</td>
                         <td className="px-2 py-2 text-text tabular-nums">{d.dropped_records}</td>
