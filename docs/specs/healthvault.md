@@ -32,11 +32,11 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
 
 ### Task 1: Coalesce concurrent bootstrap reads
-- [ ] In `frontend/lib/api.ts`, introduce separate module-level in-flight promise slots for the parameterless `/users/me` and `/users/me/settings` GETs, and route `api.me()` and `api.getSettings()` through them.
-- [ ] Return the same promise to concurrent callers and clear only the matching slot in `finally`, on both fulfillment and rejection, so a settled request is never retained as cached data and an old promise cannot clear a newer one.
-- [ ] Give `api.updateSettings()` a private uncached settings read before its merge and PUT; retain its rejection behavior when that fresh read fails and update the surrounding comments to distinguish bootstrap coalescing from write-path freshness.
-- [ ] Do not coalesce parameterized data calls, mutation calls, authentication exchanges, or the four independent sources used by `LoggingGapCard`.
-- [ ] Mark completed
+- [x] In `frontend/lib/api.ts`, introduce separate module-level in-flight promise slots for the parameterless `/users/me` and `/users/me/settings` GETs, and route `api.me()` and `api.getSettings()` through them.
+- [x] Return the same promise to concurrent callers and clear only the matching slot in `finally`, on both fulfillment and rejection, so a settled request is never retained as cached data and an old promise cannot clear a newer one.
+- [x] Give `api.updateSettings()` a private uncached settings read before its merge and PUT; retain its rejection behavior when that fresh read fails and update the surrounding comments to distinguish bootstrap coalescing from write-path freshness.
+- [x] Do not coalesce parameterized data calls, mutation calls, authentication exchanges, or the four independent sources used by `LoggingGapCard`.
+- [x] Mark completed
 
 ### Task 2: Make settings drive one primary-vitals load
 - [ ] In `frontend/app/page.tsx`, start the dashboard settings effect without waiting for `ready`, while retaining the current `settingsStatus`, toast, retry, strict `more_data_hidden === true` normalization, and saved-order reconciliation behavior.
@@ -47,11 +47,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [ ] Mark completed
 
 ### Task 3: Unit-test the in-flight-only contract
-- [ ] Extend `frontend/lib/api.test.ts` with controlled fetch promises proving that two overlapping `api.me()` calls issue one `/users/me` request and both receive its result.
-- [ ] Add the equivalent overlapping-call case for `api.getSettings()` and assert both successful and rejected requests clear their slot so a later sequential call performs a new GET.
-- [ ] Cover `api.updateSettings()` independently: while a bootstrap settings GET is in flight, the update path must issue its own fresh GET, merge that response, and then PUT the complete settings document.
-- [ ] Keep the existing transparent-refresh tests intact; coalescing must continue to use `apiFetch` and therefore preserve refresh and Cloudflare Access exchange behavior.
-- [ ] Mark completed
+- [x] Extend `frontend/lib/api.test.ts` with controlled fetch promises proving that two overlapping `api.me()` calls issue one `/users/me` request and both receive its result.
+- [x] Add the equivalent overlapping-call case for `api.getSettings()` and assert both successful and rejected requests clear their slot so a later sequential call performs a new GET.
+- [x] Cover `api.updateSettings()` independently: while a bootstrap settings GET is in flight, the update path must issue its own fresh GET, merge that response, and then PUT the complete settings document.
+- [x] Keep the existing transparent-refresh tests intact; coalescing must continue to use `apiFetch` and therefore preserve refresh and Cloudflare Access exchange behavior.
+- [x] Mark completed
 
 ### Task 4: Lock the dashboard request budget in E2E coverage
 - [ ] Extend `e2e/tests/dashboard.spec.ts` with a fresh-navigation case whose settings GET returns a non-UTC timezone, ensuring the historical `undefined`-to-saved-timezone transition is exercised.
