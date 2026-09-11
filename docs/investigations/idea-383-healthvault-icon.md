@@ -1,6 +1,6 @@
 # HealthVault web icon exploration
 
-Idea: [ya-breeze/idea-forge#383](https://github.com/ya-breeze/idea-forge/issues/383)
+Idea: [ya-breeze/idea-forge#383](https://ideaforge.ikoro.in/idea/383)
 
 ## Decision status
 
