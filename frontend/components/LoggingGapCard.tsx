@@ -739,24 +739,28 @@ export default function LoggingGapCard({
                 <p key={`${index}:${line}`} data-testid="nutrition-advice-line">{line}</p>
               ))}
             </div>
-            <TapTarget
-              compactOnMouse
-              onClick={() => void refreshAdvice()}
-              disabled={adviceLoading}
-              data-testid="nutrition-advice-refresh"
-              className="text-xs text-accent underline disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {t(adviceLoading ? 'loggingGap.adviceRefreshing' : 'loggingGap.adviceRefresh')}
-            </TapTarget>
-            <TapTarget
-              compactOnMouse
-              ref={chatOpenerRef}
-              onClick={() => setChatOpen(true)}
-              data-testid="nutrition-advice-discuss"
-              className="text-xs text-accent underline"
-            >
-              {t('nutritionChat.open')}
-            </TapTarget>
+            {/* A row, not two stacked blocks: both controls are inline, so
+                without a flex parent they render touching each other. */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <TapTarget
+                compactOnMouse
+                onClick={() => void refreshAdvice()}
+                disabled={adviceLoading}
+                data-testid="nutrition-advice-refresh"
+                className="text-xs text-accent underline disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t(adviceLoading ? 'loggingGap.adviceRefreshing' : 'loggingGap.adviceRefresh')}
+              </TapTarget>
+              <TapTarget
+                compactOnMouse
+                ref={chatOpenerRef}
+                onClick={() => setChatOpen(true)}
+                data-testid="nutrition-advice-discuss"
+                className="text-xs text-accent underline"
+              >
+                {t('nutritionChat.open')}
+              </TapTarget>
+            </div>
             {adviceRefreshError && (
               <p className="text-xs text-text-muted" data-testid="nutrition-advice-error">
                 {t('loggingGap.adviceUnavailable')}
