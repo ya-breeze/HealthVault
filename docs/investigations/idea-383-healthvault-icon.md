@@ -69,4 +69,49 @@ The mark also excludes letters, words, embedded fonts, gradients, shadows, hairl
 
 ## Candidate comparison and decision
 
-To be completed after all retained candidates have been rendered and inspected at 16px, 32px, 180px, 192px, and 512px on both application surfaces and through all target masks.
+The self-contained [comparison page](../assets/healthvault-icon/comparison.html) and its committed [PNG capture](../assets/healthvault-icon/comparison.png) render all retained sources in light and dark favicon tabs at 16px and 32px. They also render every source at 180px, 192px, and 512px in square, rounded-square, and circular masks on both application surfaces. The active-tab rules use `#0f9c8c` on light and `#4fd8c4` on dark; the source artwork does not change between contexts.
+
+### Scores
+
+| Candidate | Recognizable | Health + vault | Silhouette | 16 / 32 | Contrast | Masks | Derivatives | Monochrome | Total / 40 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pulse-dial.svg` | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | **39** |
+| `record-chamber.svg` | 4 | 5 | 4 | 3 | 5 | 5 | 4 | 4 | **34** |
+| `hv-aperture.svg` | 4 | 3 | 5 | 3 | 5 | 5 | 4 | 4 | **33** |
+
+### Selected source
+
+**Selected default: [`pulse-dial.svg`](../assets/healthvault-icon/pulse-dial.svg).**
+
+Pulse Dial wins because one economical relationship carries the whole idea: the circular vault rim establishes secure storage, while the dial spindle becomes the health-data pulse. The identifying rim, central void, and pulse remain separate at 16px and become cleaner rather than busier at home-screen sizes. The circular construction is naturally mask-safe, and the teal rim remains visible when the dark chamber blends into dark browser chrome. A monochrome derivative can render the teal geometry as one foreground shape and the dark chamber as a knockout without redrawing the mark.
+
+The main trade-off is that an isolated pulse is a familiar health gesture and a circular dial can suggest other instrument categories. Their integration and the unusually heavy rim make the combination specific enough for this product, but future brand use should not separate the pulse from its dial or decorate the circle with extra tick marks.
+
+### Rejected alternatives
+
+- [`record-chamber.svg`](../assets/healthvault-icon/record-chamber.svg) communicates stored records most explicitly. Its octagonal perimeter is sturdy, optically even in all three masks, and visibly different from the dial. It loses because the two record bands and the pulse channel compress into a denser, less immediate glyph at 16px. Removing another band would improve reduction but weaken the protected-record-chamber idea that distinguishes this proposal.
+- [`hv-aperture.svg`](../assets/healthvault-icon/hv-aperture.svg) has the most distinctive outer silhouette and the strongest single-color poster quality. The continuous geometric H-to-V construction survives home-screen masks cleanly. It loses because the negative spaces can read as a face, gem, or directional marker before they read as personal health data in a vault; at 16px the lower counter also becomes less obvious than the Pulse Dial’s open waveform.
+
+## Production contract for the selected mark
+
+### Color
+
+- The source and default full-color derivatives use `#4fd8c4` for the live rim and pulse and `#10141a` for the vault chamber. The transparent area outside the dial is not a third color.
+- Favicon and ICO sizes retain transparency outside the 48-unit dial. Opaque Apple touch and 192/512 application canvases use `#10141a` behind the unchanged mark; the teal rim and pulse remain the defining silhouette on that surface.
+- `#0f9c8c` is the light-interface accent and may replace the teal only in a deliberately theme-aware, one-color UI treatment. It must not be mixed with `#4fd8c4` inside one mark. The committed default source stays stable across browser themes.
+
+### Clear space and mask safety
+
+- Preserve the 8-unit clear-space margin on all four sides of the 64-unit canvas: 12.5% of the output width, or 2px at 16px, 4px at 32px, 22.5px at 180px, 24px at 192px, and 64px at 512px.
+- Keep the dial centered at `(32, 32)` with radius 24. Do not enlarge it to fill a rounded-square or circular mask; the clear area is what makes the same source safe in both.
+- Do not place badges, borders, or status dots inside the `(8, 8)` to `(56, 56)` critical-geometry box. Any product-owned container belongs outside the source mark and may not consume its clear space.
+
+### Favicon behavior
+
+- At 16px and 32px, use the source exactly as drawn: a 5-unit rim and a 5-unit round-joined pulse. Do not add dial ticks or restore detail from a larger concept.
+- Rasterize directly from SVG at each target size with antialiasing; do not downsample the 512px application raster or upscale the 16px favicon.
+- If a one-color favicon is required, keep the ring and pulse as foreground and knock out the chamber. The pulse endpoints, peak, trough, and round joins must remain visible.
+
+### Invariants across derivatives
+
+The centered 24-unit-radius dial, 5-unit rim, five-segment pulse path, round endpoints and joins, 8-unit canvas margin, and relative alignment of the pulse to the dial are invariant. Raster derivatives may change file format, canvas opacity, and pixel-snapped antialiasing only. They may not rotate, crop, skew, outline, shadow, relabel, or separate the pulse from its vault ring.

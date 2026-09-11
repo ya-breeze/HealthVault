@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HealthVault icon comparison</title>
+  <style>
+    :root {
+      --light-bg: #f7f8fa;
+      --dark-bg: #10141a;
+      --light-accent: #0f9c8c;
+      --dark-accent: #4fd8c4;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-width: 3600px;
+      background: var(--dark-bg);
+      color: var(--dark-bg);
+      font-family: "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .sheet {
+      width: 3600px;
+      overflow: hidden;
+      background: var(--light-bg);
+    }
+
+    .study-header {
+      min-height: 250px;
+      padding: 56px 72px 48px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+      gap: 80px;
+      color: var(--light-bg);
+      background: var(--dark-bg);
+      border-bottom: 10px solid var(--dark-accent);
+    }
+
+    .eyebrow,
+    .candidate-index,
+    .size-number,
+    figcaption,
+    .surface-label,
+    .token code,
+    .selected-chip {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow {
+      margin: 0 0 16px;
+      color: var(--dark-accent);
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 1700px;
+      font-size: 80px;
+      line-height: .94;
+      letter-spacing: -.045em;
+      font-weight: 700;
+    }
+
+    .header-note {
+      max-width: 1700px;
+      margin: 24px 0 0;
+      color: rgba(247, 248, 250, .72);
+      font-size: 25px;
+      line-height: 1.4;
+    }
+
+    .tokens {
+      display: grid;
+      grid-template-columns: repeat(4, 166px);
+      gap: 12px;
+    }
+
+    .token {
+      height: 128px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      border: 1px solid rgba(247, 248, 250, .28);
+    }
+
+    .token span {
+      margin-bottom: 7px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .token code { font-size: 15px; }
+    .token.light-bg { color: var(--dark-bg); background: var(--light-bg); }
+    .token.dark-bg { color: var(--light-bg); background: var(--dark-bg); }
+    .token.light-accent { color: var(--light-bg); background: var(--light-accent); }
+    .token.dark-accent { color: var(--dark-bg); background: var(--dark-accent); }
+
+    .candidate {
+      padding: 56px 72px 72px;
+      border-bottom: 2px solid rgba(16, 20, 26, .18);
+      background: var(--light-bg);
+    }
+
+    .candidate[data-selected="true"] {
+      box-shadow: inset 12px 0 0 var(--light-accent);
+    }
+
+    .candidate-header {
+      min-height: 112px;
+      display: flex;
+      align-items: flex-start;
+      gap: 28px;
+    }
+
+    .candidate-index {
+      padding-top: 11px;
+      color: var(--light-accent);
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .candidate h2 {
+      margin: 0;
+      font-size: 54px;
+      line-height: 1;
+      letter-spacing: -.035em;
+    }
+
+    .candidate-summary {
+      max-width: 1420px;
+      margin: 13px 0 0;
+      color: rgba(16, 20, 26, .65);
+      font-size: 22px;
+      line-height: 1.35;
+    }
+
+    .selected-chip {
+      margin: 4px 0 0 auto;
+      padding: 12px 15px 10px;
+      color: var(--light-bg);
+      background: var(--light-accent);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .favicon-lab {
+      margin: 16px 0 52px;
+      display: grid;
+      grid-template-columns: 132px 1fr 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .size-number {
+      padding-top: 19px;
+      color: rgba(16, 20, 26, .52);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .tab-rail {
+      min-height: 108px;
+      padding: 20px 24px 0;
+      display: flex;
+      align-items: end;
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    .tab-rail.light { background: var(--light-bg); border: 1px solid rgba(16, 20, 26, .22); }
+    .tab-rail.dark { background: var(--dark-bg); border: 1px solid var(--dark-bg); }
+
+    .browser-tab {
+      width: 680px;
+      height: 68px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      border-radius: 12px 12px 0 0;
+      font-size: 21px;
+      font-weight: 650;
+    }
+
+    .light .browser-tab {
+      color: var(--dark-bg);
+      background: #f7f8fa;
+      border-top: 5px solid var(--light-accent);
+      box-shadow: 0 -1px 0 rgba(16, 20, 26, .16), 1px 0 0 rgba(16, 20, 26, .12), -1px 0 0 rgba(16, 20, 26, .12);
+    }
+
+    .dark .browser-tab {
+      color: var(--light-bg);
+      background: var(--dark-bg);
+      border-top: 5px solid var(--dark-accent);
+      box-shadow: 0 -1px 0 rgba(79, 216, 196, .42), 1px 0 0 rgba(79, 216, 196, .22), -1px 0 0 rgba(79, 216, 196, .22);
+    }
+
+    .browser-tab img { flex: none; display: block; }
+    .tab-size {
+      margin-left: auto;
+      opacity: .56;
+      font: 15px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .home-row {
+      margin-top: 42px;
+      display: grid;
+      grid-template-columns: 132px repeat(6, max-content);
+      gap: 24px;
+      align-items: start;
+    }
+
+    figure { margin: 0; }
+
+    .mask {
+      position: relative;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .mask.light {
+      background: var(--light-bg);
+      box-shadow: 0 0 0 2px rgba(16, 20, 26, .19);
+    }
+
+    .mask.dark {
+      background: var(--dark-bg);
+      box-shadow: 0 0 0 2px rgba(79, 216, 196, .42);
+    }
+
+    .mask.square { border-radius: 0; }
+    .mask.rounded { border-radius: 22%; }
+    .mask.circle { border-radius: 50%; }
+    .mask img { display: block; }
+
+    figcaption {
+      margin-top: 13px;
+      color: rgba(16, 20, 26, .58);
+      font-size: 14px;
+      line-height: 1.25;
+      text-align: center;
+    }
+
+    .surface-label {
+      margin-right: 5px;
+      font-weight: 700;
+    }
+
+    .sheet-footer {
+      min-height: 132px;
+      padding: 34px 72px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 60px;
+      color: rgba(247, 248, 250, .7);
+      background: var(--dark-bg);
+      font-size: 19px;
+    }
+
+    .sheet-footer strong { color: var(--dark-accent); }
+  </style>
+</head>
+<body>
+  <main class="sheet">
+    <header class="study-header">
+      <div>
+        <p class="eyebrow">Idea 383 · Clinical Aperture</p>
+        <h1>HealthVault icon study</h1>
+        <p class="header-note">Actual-size reduction, surface contrast, and mask-safety proof. Artwork is never enlarged or reduced by the comparison layout.</p>
+      </div>
+      <div class="tokens" aria-label="Instrument Panel palette">
+        <div class="token light-bg"><span>Light surface</span><code>#f7f8fa</code></div>
+        <div class="token dark-bg"><span>Dark surface</span><code>#10141a</code></div>
+        <div class="token light-accent"><span>Light accent</span><code>#0f9c8c</code></div>
+        <div class="token dark-accent"><span>Dark accent</span><code>#4fd8c4</code></div>
+      </div>
+    </header>
+    <div id="candidates"></div>
+    <footer class="sheet-footer">
+      <span><strong>Selected default:</strong> pulse-dial.svg</span>
+      <span>Source canvas 64 × 64 · critical geometry 8–56 · no production assets</span>
+    </footer>
+  </main>
+
+  <script>
+    const candidates = [
+      {
+        file: "pulse-dial.svg",
+        name: "Pulse Dial",
+        summary: "A vault-door dial reduced to its ring and spindle; the spindle resolves as a live health signal.",
+        selected: true,
+      },
+      {
+        file: "record-chamber.svg",
+        name: "Record Chamber",
+        summary: "An octagonal secure chamber holding two record bands around a protected pulse channel.",
+        selected: false,
+      },
+      {
+        file: "hv-aperture.svg",
+        name: "HV Aperture",
+        summary: "A diamond vault aperture containing one continuous, geometric H-to-V monogram.",
+        selected: false,
+      },
+    ];
+
+    const masks = ["square", "rounded", "circle"];
+    const surfaces = ["light", "dark"];
+    const homeSizes = [180, 192, 512];
+    const root = document.querySelector("#candidates");
+
+    function icon(file, size, alt = "") {
+      const img = document.createElement("img");
+      img.src = file;
+      img.width = size;
+      img.height = size;
+      img.alt = alt;
+      return img;
+    }
+
+    function faviconRail(candidate, surface) {
+      const rail = document.createElement("div");
+      rail.className = `tab-rail ${surface}`;
+      [16, 32].forEach((size) => {
+        const tab = document.createElement("div");
+        tab.className = "browser-tab";
+        tab.append(icon(candidate.file, size));
+        tab.append(document.createTextNode("HealthVault"));
+        const label = document.createElement("span");
+        label.className = "tab-size";
+        label.textContent = `${size}px · ${surface}`;
+        tab.append(label);
+        rail.append(tab);
+      });
+      return rail;
+    }
+
+    function homeSpecimen(candidate, size, surface, maskName) {
+      const figure = document.createElement("figure");
+      const frame = document.createElement("div");
+      frame.className = `mask ${surface} ${maskName}`;
+      frame.style.width = `${size}px`;
+      frame.style.height = `${size}px`;
+      frame.append(icon(candidate.file, size, `${candidate.name}, ${size}px, ${surface} ${maskName} mask`));
+      const caption = document.createElement("figcaption");
+      caption.innerHTML = `<span class="surface-label">${surface}</span>${maskName}`;
+      figure.append(frame, caption);
+      return figure;
+    }
+
+    candidates.forEach((candidate, index) => {
+      const section = document.createElement("section");
+      section.className = "candidate";
+      section.dataset.selected = String(candidate.selected);
+
+      const header = document.createElement("header");
+      header.className = "candidate-header";
+      header.innerHTML = `
+        <span class="candidate-index">0${index + 1}</span>
+        <div><h2>${candidate.name}</h2><p class="candidate-summary">${candidate.summary}</p></div>
+        ${candidate.selected ? '<span class="selected-chip">selected default</span>' : ''}
+      `;
+      section.append(header);
+
+      const favicon = document.createElement("div");
+      favicon.className = "favicon-lab";
+      favicon.innerHTML = '<div class="size-number">Favicon<br>16 / 32</div>';
+      favicon.append(faviconRail(candidate, "light"), faviconRail(candidate, "dark"));
+      section.append(favicon);
+
+      homeSizes.forEach((size) => {
+        const row = document.createElement("div");
+        row.className = "home-row";
+        row.innerHTML = `<div class="size-number">Home<br>${size}px</div>`;
+        surfaces.forEach((surface) => masks.forEach((maskName) => {
+          row.append(homeSpecimen(candidate, size, surface, maskName));
+        }));
+        section.append(row);
+      });
+
+      root.append(section);
+    });
+  </script>
+</body>
+</html>

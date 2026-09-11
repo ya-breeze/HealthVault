@@ -49,12 +49,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 3: Compare candidates and select the default
 
-- [ ] Add `docs/assets/healthvault-icon/comparison.html` as a self-contained comparison grid showing every candidate at 16px, 32px, 180px, 192px, and 512px on the documented light and dark backgrounds.
-- [ ] Include favicon-like tab contexts plus square, rounded-square, and circular home-screen masks, without scaling labels or surrounding decoration in ways that obscure the actual rendered sizes.
-- [ ] Capture the completed grid as `docs/assets/healthvault-icon/comparison.png` so the light/dark and mask comparison is directly reviewable with the committed change.
-- [ ] Score the candidates against the rubric in `docs/investigations/idea-383-healthvault-icon.md`, select one named SVG as the default, and record concrete strengths and failure modes for every candidate.
-- [ ] Document the selected mark's production palette, clear-space and safe-zone rules, minimum-detail behavior at favicon sizes, and which features must remain invariant when raster derivatives are produced.
-- [ ] Mark completed
+- [x] Add `docs/assets/healthvault-icon/comparison.html` as a self-contained comparison grid showing every candidate at 16px, 32px, 180px, 192px, and 512px on the documented light and dark backgrounds.
+- [x] Include favicon-like tab contexts plus square, rounded-square, and circular home-screen masks, without scaling labels or surrounding decoration in ways that obscure the actual rendered sizes.
+- [x] Capture the completed grid as `docs/assets/healthvault-icon/comparison.png` so the light/dark and mask comparison is directly reviewable with the committed change.
+- [x] Score the candidates against the rubric in `docs/investigations/idea-383-healthvault-icon.md`, select one named SVG as the default, and record concrete strengths and failure modes for every candidate.
+- [x] Document the selected mark's production palette, clear-space and safe-zone rules, minimum-detail behavior at favicon sizes, and which features must remain invariant when raster derivatives are produced.
+- [x] Mark completed
 
 ### Task 4: Review and validate the design package
 
