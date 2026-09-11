@@ -28,6 +28,13 @@ This part deliberately does not change `AddRecordForm`, write bounds, API contra
 - `make test`
 - `make test-e2e`
 
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
+
 ### Task 1: Define localized chart metadata and formatting contracts
 
 - [ ] Add the complete `dataDetail.*` English catalog to `frontend/lib/i18n/en.ts` and matching Russian entries to `frontend/lib/i18n/ru.ts`: zooms, shortcuts, seven nutrition macros, blood-pressure labels and ranges, Goal/Range/Avg/Trend/Projection, Avg/Max/Total/BMI summaries, four BMI categories, reached/not-on-track/on-track/insufficient-data/load-failure projection messages, and the page loading state, using the copy specified in `## How`.
