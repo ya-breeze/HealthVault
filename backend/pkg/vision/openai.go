@@ -823,11 +823,16 @@ type nutritionChatSchemaResponse struct {
 	Answer string `json:"answer"`
 }
 
-// nutritionChatAnswerMaxRunes bounds the answer after parsing, the way Advise
+// NutritionChatAnswerMaxRunes bounds the answer after parsing, the way Advise
 // bounds its lines. The prompt asks for brevity; this is what holds when the
 // model ignores it. Runes, not bytes, so a Russian answer is not cut mid-
 // character.
-const nutritionChatAnswerMaxRunes = 900
+//
+// Exported because an assistant turn is replayed verbatim on the next
+// question, so the server's own limit on a replayed turn has to be this exact
+// number. Two independent constants would drift, and the symptom would be a
+// conversation that rejects its own second question.
+const NutritionChatAnswerMaxRunes = 900
 
 const nutritionChatSystemPrompt = `You answer one question about nutrition advice the user is already looking at.
 
@@ -876,8 +881,8 @@ func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput)
 	if answer == "" {
 		return nil, fmt.Errorf("nutrition chat response contained no answer")
 	}
-	if runes := []rune(answer); len(runes) > nutritionChatAnswerMaxRunes {
-		answer = string(runes[:nutritionChatAnswerMaxRunes])
+	if runes := []rune(answer); len(runes) > NutritionChatAnswerMaxRunes {
+		answer = string(runes[:NutritionChatAnswerMaxRunes])
 	}
 	return &NutritionChatResult{
 		Answer:           answer,

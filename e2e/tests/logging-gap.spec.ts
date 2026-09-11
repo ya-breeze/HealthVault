@@ -1649,6 +1649,8 @@ test.describe('Nutrition advice chat', () => {
       await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('Sodium');
       await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('4.0 g');
       await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('2.3 g');
+      // A far verdict names the boundary that produced it, not only the guideline.
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('3.5 g');
       await expect(sheet.getByTestId('nutrition-chat-basis-days')).toContainText('7');
 
       await sheet.getByTestId('nutrition-chat-input').fill('why do you say that?');

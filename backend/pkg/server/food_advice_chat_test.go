@@ -254,18 +254,26 @@ func TestFoodAdviceChat_ModelFailureIsReportedAsUnavailable(t *testing.T) {
 	userID, familyID := seedFoodUser(t, st)
 	configureAdviceTarget(t, st, userID, "en")
 
-	for name, client := range map[string]vision.Client{
-		"a model failure":         &vision.Fake{NutritionChatErr: errors.New("model down: за какие дни?")},
-		"an unconfigured api key": vision.Unconfigured{},
+	for name, tc := range map[string]struct {
+		client     vision.Client
+		wantReason string
+	}{
+		"a model failure": {
+			client:     &vision.Fake{NutritionChatErr: errors.New("model down: за какие дни?")},
+			wantReason: "unavailable",
+		},
+		// Distinguished the way PostFoodAdvice distinguishes it, so the
+		// response type's two reasons both actually occur.
+		"an unconfigured api key": {client: vision.Unconfigured{}, wantReason: "unconfigured"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(client, 10<<20, time.Second)
+			h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(tc.client, 10<<20, time.Second)
 			w, response := callChat(t, h, newChatRequest(t, userID, familyID, chatBody("why?", nil)))
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200 carrying an unavailable body: %s", w.Code, w.Body.String())
 			}
-			if response.Available || response.Reason != "unavailable" || response.Answer != "" {
-				t.Fatalf("expected an unavailable response, got %+v", response)
+			if response.Available || response.Reason != tc.wantReason || response.Answer != "" {
+				t.Fatalf("expected reason %q, got %+v", tc.wantReason, response)
 			}
 			if strings.Contains(w.Body.String(), "model down") {
 				t.Error("the model's own error text reached the caller")

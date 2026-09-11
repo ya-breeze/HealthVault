@@ -22,9 +22,9 @@ const (
 	nutritionChatMaxBodyBytes    = 16 << 10
 	nutritionChatMaxQuestionRune = 500
 	// An assistant turn is replayed verbatim, so its limit is the bound the
-	// model's own answer is cut to, not the question limit. A shorter one here
-	// would reject the conversation on the second question.
-	nutritionChatMaxAnswerRune = 900
+	// model's own answer is cut to, not the question limit. Taken from the
+	// vision package rather than restated, so the two cannot drift.
+	nutritionChatMaxAnswerRune = vision.NutritionChatAnswerMaxRunes
 	nutritionChatMaxTurns      = 8
 	// The Healthiness Label's own window, restated here because the model is
 	// told what the means rest on and the server must not guess it.
@@ -168,9 +168,13 @@ func (h *foodHandlers) PostFoodAdviceChat(w http.ResponseWriter, r *http.Request
 	result, err := h.vision.NutritionChat(tctx, in)
 	if err != nil {
 		// The model's own error text can carry provider detail and echo the
-		// question back; the caller gets the same unavailable shape every
-		// other nutrition surface uses.
+		// question back; the caller gets the same two reasons the advice
+		// endpoint uses, and nothing else.
 		slog.Warn("nutrition chat failed", "err", err, "user_id", claims.UserID)
+		if errors.Is(err, vision.ErrNotConfigured) {
+			writeNutritionChatUnavailable(w, "unconfigured")
+			return
+		}
 		writeNutritionChatUnavailable(w, "unavailable")
 		return
 	}

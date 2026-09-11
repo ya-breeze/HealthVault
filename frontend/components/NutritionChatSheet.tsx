@@ -186,7 +186,12 @@ export default function NutritionChatSheet({
                 {interpolate(t(`nutritionChat.basis.${signal.verdict === 'far' ? 'far' : 'off'}`), {
                   signal: t(`nutritionChat.signal.${signal.code}`),
                   value: formatValue(signal, signal.value),
+                  // The guideline is where the signal stopped being ok, and
+                  // farThreshold is the boundary a `far` verdict itself
+                  // crossed. A far row names both, so the number that produced
+                  // its verdict is on screen rather than only in the request.
                   threshold: formatValue(signal, signal.offBoundary),
+                  farThreshold: formatValue(signal, signal.farBoundary),
                 })}
               </p>
             ))

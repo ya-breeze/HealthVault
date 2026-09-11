@@ -393,7 +393,7 @@ const en = {
   'nutritionChat.title': 'About this advice',
   'nutritionChat.basisTitle': 'What this is based on',
   'nutritionChat.basis.off': '{signal}: {value} per day on average, above the {threshold} guideline.',
-  'nutritionChat.basis.far': '{signal}: {value} per day on average, well above the {threshold} guideline.',
+  'nutritionChat.basis.far': '{signal}: {value} per day on average, well above the {threshold} guideline and past the {farThreshold} mark.',
   'nutritionChat.basisNothingFlagged': 'Nothing crossed a guideline in this window.',
   'nutritionChat.basisDays': 'Measured over {days} fully logged days in the last 7.',
   'nutritionChat.signal.protein': 'Protein share',

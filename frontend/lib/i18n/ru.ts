@@ -264,7 +264,7 @@ const ru: Dictionary = {
   'nutritionChat.title': 'Об этом совете',
   'nutritionChat.basisTitle': 'На чём это основано',
   'nutritionChat.basis.off': '{signal}: в среднем {value} в день, выше ориентира {threshold}.',
-  'nutritionChat.basis.far': '{signal}: в среднем {value} в день, намного выше ориентира {threshold}.',
+  'nutritionChat.basis.far': '{signal}: в среднем {value} в день, намного выше ориентира {threshold} и за отметкой {farThreshold}.',
   'nutritionChat.basisNothingFlagged': 'В этом окне ни один показатель не вышел за ориентир.',
   'nutritionChat.basisDays': 'Посчитано по {days} полностью записанным дням из последних 7.',
   'nutritionChat.signal.protein': 'Доля белка',
