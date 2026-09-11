@@ -37,7 +37,6 @@ type foodAdviceRequest struct {
 	Label   string           `json:"label"`
 	Reasons []string         `json:"reasons"`
 	Window  foodAdviceWindow `json:"window"`
-	Refresh bool             `json:"refresh"`
 }
 
 type foodAdviceContext struct {
@@ -52,6 +51,7 @@ type foodAdviceResponse struct {
 	Available   bool               `json:"available"`
 	Reason      string             `json:"reason,omitempty"`
 	Lines       []string           `json:"lines,omitempty"`
+	LoggedDay   string             `json:"logged_day,omitempty"`
 	GeneratedAt *time.Time         `json:"generated_at,omitempty"`
 	Context     *foodAdviceContext `json:"context,omitempty"`
 }
@@ -137,26 +137,25 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		DisplayLanguage: language,
 	}
 
-	if !req.Refresh {
-		if served, err := h.serveCachedAdvice(w, claims.UserID, loggedDay, inputHash, responseContext); err != nil {
-			slog.Warn("nutrition advice cache lookup failed", "err", err, "user_id", claims.UserID)
-			writeFoodAdviceUnavailable(w, "unavailable")
-			return
-		} else if served {
-			return
-		}
+	if served, err := h.serveCachedAdvice(w, claims.UserID, loggedDay, inputHash, responseContext); err != nil {
+		slog.Warn("nutrition advice cache lookup failed", "err", err, "user_id", claims.UserID)
+		writeFoodAdviceUnavailable(w, "unavailable")
+		return
+	} else if served {
+		return
 	}
 
+	// Checked again under the mutex: two tabs opening at once still race for
+	// the first generation of the day, and the loser must serve what the
+	// winner just cached rather than paying for a second model call.
 	h.adviceMu.Lock()
 	defer h.adviceMu.Unlock()
-	if !req.Refresh {
-		if served, err := h.serveCachedAdvice(w, claims.UserID, loggedDay, inputHash, responseContext); err != nil {
-			slog.Warn("nutrition advice repeated cache lookup failed", "err", err, "user_id", claims.UserID)
-			writeFoodAdviceUnavailable(w, "unavailable")
-			return
-		} else if served {
-			return
-		}
+	if served, err := h.serveCachedAdvice(w, claims.UserID, loggedDay, inputHash, responseContext); err != nil {
+		slog.Warn("nutrition advice repeated cache lookup failed", "err", err, "user_id", claims.UserID)
+		writeFoodAdviceUnavailable(w, "unavailable")
+		return
+	} else if served {
+		return
 	}
 
 	tctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)
@@ -201,7 +200,7 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, foodAdviceResponse{
-		Available: true, Lines: lines, GeneratedAt: &generatedAt, Context: &responseContext,
+		Available: true, Lines: lines, LoggedDay: loggedDay, GeneratedAt: &generatedAt, Context: &responseContext,
 	})
 }
 
@@ -265,7 +264,7 @@ func (h *foodHandlers) serveCachedAdvice(
 		return false, nil
 	}
 	writeJSON(w, foodAdviceResponse{
-		Available: true, Lines: lines, GeneratedAt: &row.GeneratedAt, Context: &responseContext,
+		Available: true, Lines: lines, LoggedDay: row.LoggedDay, GeneratedAt: &row.GeneratedAt, Context: &responseContext,
 	})
 	return true, nil
 }

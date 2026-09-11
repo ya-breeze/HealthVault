@@ -21,6 +21,8 @@ type Fake struct {
 	TranslateErr          error
 	AdviseResult          []string
 	AdviseErr             error
+	NutritionChatResult   *NutritionChatResult
+	NutritionChatErr      error
 	DescribeResult        *RecognizeResult
 	DescribeErr           error
 
@@ -34,6 +36,7 @@ type Fake struct {
 	SelectCalls          [][]ItemCandidates
 	TranslateCalls       []string
 	AdviseCalls          []AdviceInput
+	NutritionChatCalls   []NutritionChatInput
 	DescribeCalls        []DescribeCall
 }
 
@@ -137,6 +140,19 @@ func (f *Fake) Describe(_ context.Context, description, displayLanguage string) 
 		return f.DescribeResult, nil
 	}
 	return &RecognizeResult{}, nil
+}
+
+func (f *Fake) NutritionChat(_ context.Context, in NutritionChatInput) (*NutritionChatResult, error) {
+	f.NutritionChatCalls = append(f.NutritionChatCalls, in)
+	if f.NutritionChatErr != nil {
+		return nil, f.NutritionChatErr
+	}
+	if f.NutritionChatResult != nil {
+		return f.NutritionChatResult, nil
+	}
+	// Deterministic, and derived from the question, so a test can tell an
+	// answer that travelled through the handler from a fixture it hard-coded.
+	return &NutritionChatResult{Answer: "fake answer to: " + in.Question}, nil
 }
 
 var _ Client = (*Fake)(nil)

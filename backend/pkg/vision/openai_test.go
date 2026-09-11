@@ -653,3 +653,82 @@ func mustMarshal(t *testing.T, v any) []byte {
 	}
 	return b
 }
+
+func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *testing.T) {
+	var capturedBody map[string]any
+	longAnswer := strings.Repeat("я", 1000)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"answer":"  `+longAnswer+`  "}`)))
+	})
+
+	got, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Label:   "needs_attention",
+		Reasons: []string{"sodium_high"},
+		Signals: []vision.NutritionChatSignal{{
+			Code: "sodium", Value: 4.1, Unit: "gramsPerDay", Verdict: "far",
+			Reason: "sodium_high", OffBoundary: 2.3, FarBoundary: 3.5,
+		}},
+		EligibleDays:       5,
+		WindowDays:         7,
+		MeanCalories:       1820.5,
+		MeanSodiumGrams:    4.1,
+		TargetCalories:     2500,
+		TargetProteinGrams: 110,
+		DisplayLanguage:    "ru",
+		Turns: []vision.NutritionChatTurn{
+			{Role: "user", Text: "я уже уменьшил соль"},
+			{Role: "assistant", Text: "за какие дни?"},
+		},
+		Question: "за какие дни это считается?",
+	})
+	if err != nil {
+		t.Fatalf("NutritionChat: %v", err)
+	}
+	if runes := []rune(got.Answer); len(runes) != 900 {
+		t.Errorf("expected a 900-rune bound on the answer, got %d", len(runes))
+	}
+	if strings.HasPrefix(got.Answer, " ") {
+		t.Error("expected the answer to be whitespace-trimmed before bounding")
+	}
+
+	b, err := json.Marshal(capturedBody)
+	if err != nil {
+		t.Fatalf("marshal captured request: %v", err)
+	}
+	body := string(b)
+	if strings.Contains(body, "image_url") {
+		t.Error("expected the chat request to contain no image content")
+	}
+	for _, want := range []string{
+		`\"label\":\"needs_attention\"`, `\"eligible_days\":5`, `\"window_days\":7`,
+		`\"off_boundary\":2.3`, `\"far_boundary\":3.5`,
+		`\"question\":\"за какие дни это считается?\"`,
+		`\"role\":\"user\"`, `\"role\":\"assistant\"`,
+		`\"display_language\":\"ru\"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("expected %s in the chat request: %s", want, body)
+		}
+	}
+	if capturedBody["store"] != false {
+		t.Errorf("expected store:false on the chat request, got %#v", capturedBody["store"])
+	}
+	responseFormat := capturedBody["response_format"].(map[string]any)
+	jsonSchema := responseFormat["json_schema"].(map[string]any)
+	if jsonSchema["name"] != "nutrition_chat" {
+		t.Errorf("expected nutrition_chat schema name, got %#v", jsonSchema["name"])
+	}
+}
+
+func TestOpenAIClient_NutritionChat_RejectsAnEmptyAnswer(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(chatResponse(t, `{"answer":"   "}`))) //nolint:errcheck
+	})
+	if _, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Question: "why?"}); err == nil {
+		t.Fatal("expected an error for a whitespace-only answer")
+	}
+}

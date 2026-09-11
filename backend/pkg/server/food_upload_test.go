@@ -1354,3 +1354,7 @@ func TestCreateMeal_RankedCustomFoodAdditiveWithOFFCandidates(t *testing.T) {
 		t.Errorf("expected both OFF and custom-food candidates present, got %+v", fake.SelectCalls[0][0].Candidates)
 	}
 }
+
+func (slowRecognizeClient) NutritionChat(context.Context, vision.NutritionChatInput) (*vision.NutritionChatResult, error) {
+	return &vision.NutritionChatResult{}, nil
+}

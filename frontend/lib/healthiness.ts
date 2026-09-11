@@ -56,10 +56,39 @@ export type HealthinessReasonCode =
   | 'sugar_high'
   | 'sodium_high';
 
+/** The unit a signal's measured value is in, so the reader knows what the number means. */
+export type HealthinessSignalUnit = 'share' | 'gramsPerDay';
+
+/**
+ * One signal's workings, reported rather than dropped, so the card can show the user what a
+ * flagged advice line was actually measuring. `reason` is the code this signal contributed when
+ * it was flagged and `null` when the signal was `ok`. `offBoundary` and `farBoundary` are the two
+ * boundaries the value was judged against on the side it fell: for a two-sided signal that is the
+ * low pair when the value sits below the `ok` band and the high pair when it sits above, and for
+ * an upper-only signal it is always the upper pair. A signal that is `ok` reports the boundary
+ * pair it came closest to crossing, so a row can still say what the limit was.
+ */
+export interface HealthinessSignal {
+  code: HealthinessSignalCode;
+  value: number;
+  unit: HealthinessSignalUnit;
+  verdict: HealthinessVerdict;
+  reason: HealthinessReasonCode | null;
+  offBoundary: number;
+  farBoundary: number;
+}
+
+/** The five signals, in the fixed tie-break order they are evaluated in. */
+export type HealthinessSignalCode = 'protein' | 'sugar' | 'sodium' | 'fat' | 'carbs';
+
 export interface HealthinessResult {
   label: HealthinessLabel;
   /** At most two, `far` before `off`, ties broken by signal order protein/sugar/sodium/fat/carbs. */
   reasons: HealthinessReasonCode[];
+  /** How many of the seven days were eligible, and so how much the means rest on. */
+  eligibleDays: number;
+  /** All five signals with their measured values and boundaries, in evaluation order. */
+  signals: HealthinessSignal[];
   /** Per eligible day, from the exact same filtered seven-day pool as the verdict. */
   means: {
     calories: number;
@@ -142,25 +171,48 @@ function verdictUpperOnly(value: number, bands: UpperOnlyBands): HealthinessVerd
 
 // Fixed signal order for reason-list tie-breaking (spec: "protein, sugar, sodium, fat, carbs"),
 // encoded as the order signals are evaluated in rather than as a separate sort step.
-interface SignalEval {
-  verdict: HealthinessVerdict;
-  reason: HealthinessReasonCode | null;
-}
+type SignalEval = HealthinessSignal;
 
 function evalTwoSided(
+  code: HealthinessSignalCode,
   value: number,
   bands: TwoSidedBands,
   lowReason: HealthinessReasonCode,
   highReason: HealthinessReasonCode
 ): SignalEval {
   const verdict = verdictTwoSided(value, bands);
-  if (verdict === 'ok') return { verdict, reason: null };
-  return { verdict, reason: value < bands.offLow ? lowReason : highReason };
+  // Which side the value fell on decides which boundary pair describes it. An `ok` value has not
+  // fallen on either side, so it reports the pair it sits nearer to; the midpoint of the `ok` band
+  // is the only place that choice is arbitrary, and either answer is true there.
+  const low = value < (bands.offLow + bands.offHigh) / 2;
+  return {
+    code,
+    value,
+    unit: 'share',
+    verdict,
+    reason: verdict === 'ok' ? null : value < bands.offLow ? lowReason : highReason,
+    offBoundary: low ? bands.offLow : bands.offHigh,
+    farBoundary: low ? bands.farLow : bands.farHigh,
+  };
 }
 
-function evalUpperOnly(value: number, bands: UpperOnlyBands, highReason: HealthinessReasonCode): SignalEval {
+function evalUpperOnly(
+  code: HealthinessSignalCode,
+  value: number,
+  bands: UpperOnlyBands,
+  highReason: HealthinessReasonCode,
+  unit: HealthinessSignalUnit
+): SignalEval {
   const verdict = verdictUpperOnly(value, bands);
-  return { verdict, reason: verdict === 'ok' ? null : highReason };
+  return {
+    code,
+    value,
+    unit,
+    verdict,
+    reason: verdict === 'ok' ? null : highReason,
+    offBoundary: bands.offLow,
+    farBoundary: bands.farLow,
+  };
 }
 
 /**
@@ -218,11 +270,17 @@ export function computeHealthinessLabel(
 
   // Order is the fixed tie-break order the spec specifies: protein, sugar, sodium, fat, carbs.
   const evals: SignalEval[] = [
-    evalTwoSided(proteinShare, HEALTHINESS_THRESHOLDS.proteinShare, 'protein_low', 'protein_high'),
-    evalUpperOnly(sugarShare, HEALTHINESS_THRESHOLDS.sugarShare, 'sugar_high'),
-    evalUpperOnly(sodiumGramsPerDay, HEALTHINESS_THRESHOLDS.sodiumGramsPerDay, 'sodium_high'),
-    evalTwoSided(fatShare, HEALTHINESS_THRESHOLDS.fatShare, 'fat_low', 'fat_high'),
-    evalTwoSided(carbShare, HEALTHINESS_THRESHOLDS.carbShare, 'carbs_low', 'carbs_high'),
+    evalTwoSided('protein', proteinShare, HEALTHINESS_THRESHOLDS.proteinShare, 'protein_low', 'protein_high'),
+    evalUpperOnly('sugar', sugarShare, HEALTHINESS_THRESHOLDS.sugarShare, 'sugar_high', 'share'),
+    evalUpperOnly(
+      'sodium',
+      sodiumGramsPerDay,
+      HEALTHINESS_THRESHOLDS.sodiumGramsPerDay,
+      'sodium_high',
+      'gramsPerDay'
+    ),
+    evalTwoSided('fat', fatShare, HEALTHINESS_THRESHOLDS.fatShare, 'fat_low', 'fat_high'),
+    evalTwoSided('carbs', carbShare, HEALTHINESS_THRESHOLDS.carbShare, 'carbs_low', 'carbs_high'),
   ];
 
   const farCount = evals.filter(e => e.verdict === 'far').length;
@@ -242,6 +300,8 @@ export function computeHealthinessLabel(
   return {
     label,
     reasons,
+    eligibleDays: eligible.length,
+    signals: evals,
     means: {
       calories: pooled.calories / eligible.length,
       proteinGrams: pooled.protein / eligible.length,
