@@ -24,6 +24,13 @@ Persistent browser caching, HTTP cache headers, service-worker storage, database
 - `make test`
 - `make test-e2e`
 
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
+
 ### Task 1: Coalesce concurrent bootstrap reads
 - [ ] In `frontend/lib/api.ts`, introduce separate module-level in-flight promise slots for the parameterless `/users/me` and `/users/me/settings` GETs, and route `api.me()` and `api.getSettings()` through them.
 - [ ] Return the same promise to concurrent callers and clear only the matching slot in `finally`, on both fulfillment and rejection, so a settled request is never retained as cached data and an old promise cannot clear a newer one.
