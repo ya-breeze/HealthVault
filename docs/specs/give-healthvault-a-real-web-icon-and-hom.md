@@ -24,6 +24,13 @@ This part deliberately excludes production icons, manifest metadata, changes to 
 - `make test`
 - `make test-e2e`
 
+## Ground rules
+This spec is implemented by an automated pass running unattended. **There is no approval step and nothing is waiting for one** — do not look for a tick, a marker, or a sign-off anywhere, and do not wait for one.
+
+Tick the boxes in this file as the work is completed; they are the record of progress, and the pipeline reads them to decide whether the change is finished.
+
+Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
+
 ### Task 1: Establish the icon brief and evaluation rubric
 
 - [ ] Create `docs/investigations/idea-383-healthvault-icon.md` and cite the current favicon-only state in `frontend/app/`, the starter files in `frontend/public/`, the metadata and safe-area viewport exports in `frontend/app/layout.tsx`, and the Instrument Panel tokens in `frontend/app/globals.css`.
