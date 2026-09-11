@@ -340,6 +340,24 @@ function healthinessNeedsAttentionFixture(): LoggingGapFixture {
   };
 }
 
+// Protein pushed far below its band: 4*30 + 4*275 + 9*86.667 = 2000 kcal of
+// macro energy, so protein's share is 6% — under
+// HEALTHINESS_THRESHOLDS.proteinShare.farLow (10%). It exists to prove the
+// basis row says "below" for a signal that fell under its band; a two-sided
+// signal flagged for being too low is the case a verdict-only wording gets
+// backwards.
+function healthinessProteinFarLowFixture(): LoggingGapFixture {
+  const base = healthinessBase();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d =>
+      last7.has(d.date) ? { ...d, ...HEALTHY_MACROS, protein_grams: 30, carbs_grams: 275 } : d
+    ),
+  };
+}
+
 // Only 2 of the label's own last-7-day window are eligible (5 carry an
 // unconfirmed meal, which fails isValidDay) — below the 3-of-7 floor
 // (ADR-007) the label shares with the Logging Gap's own hard floor. The
@@ -1600,6 +1618,231 @@ test.describe('Logging Gap Card in Edit mode', () => {
       await expect(page.getByTestId('vital-card-steps')).toBeVisible();
     } finally {
       await restoreLoggingGapDefault(page);
+    }
+  });
+});
+
+// The chat sheet the discuss control opens (docs/specs/nutrition-chat.md).
+// Every test seeds the needs_attention fixture, whose sodium mean of 4.0 g/day
+// sits past the 3.5 g/day `far` boundary, so exactly one signal is flagged and
+// the basis rows have a known value to assert.
+test.describe('Nutrition advice chat', () => {
+  const adviceOk = (route: Route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        lines: ['Cut back on salty foods.'],
+        logged_day: '2026-09-05',
+        generated_at: '2026-09-05T06:12:00Z',
+        context: matchingAdviceContext,
+      },
+    });
+
+  async function openSheet(page: Page) {
+    const card = page.getByTestId('logging-gap-card');
+    await expect(card.getByTestId('nutrition-advice')).toBeVisible({ timeout: 15_000 });
+    await card.getByTestId('nutrition-advice-discuss').click();
+    const sheet = page.getByTestId('nutrition-chat-sheet');
+    await expect(sheet).toBeVisible();
+    return sheet;
+  }
+
+  test('shows the measured basis of the flagged signal and answers a question', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      const chatBodies: Array<Record<string, unknown>> = [];
+      await page.route('**/api/food/advice/chat', route => {
+        chatBodies.push(route.request().postDataJSON());
+        return route.fulfill({ json: { available: true, answer: 'It is the seven-day mean.' } });
+      });
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      // Exactly one signal crossed a boundary, so exactly one basis row.
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toHaveCount(1);
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('Sodium');
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('4.0 g');
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('2.3 g');
+      // A far verdict names the boundary that produced it, not only the guideline.
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('3.5 g');
+      await expect(sheet.getByTestId('nutrition-chat-basis-days')).toContainText('7');
+
+      await sheet.getByTestId('nutrition-chat-input').fill('why do you say that?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-user')).toHaveText('why do you say that?');
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveText('It is the seven-day mean.');
+
+      expect(chatBodies).toHaveLength(1);
+      const body = chatBodies[0] as { question: string; turns: unknown[]; eligible_days: number; signals: Array<{ code: string; verdict: string }> };
+      expect(body.question).toBe('why do you say that?');
+      // The first question carries no prior turns: the conversation starts empty.
+      expect(body.turns).toEqual([]);
+      expect(body.eligible_days).toBe(7);
+      expect(body.signals.find(s => s.code === 'sodium')?.verdict).toBe('far');
+
+      // The second question replays the first exchange, because neither side
+      // keeps a thread.
+      await sheet.getByTestId('nutrition-chat-input').fill('over how many days?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(2);
+      expect(chatBodies).toHaveLength(2);
+      expect((chatBodies[1] as { turns: Array<{ role: string }> }).turns.map(turn => turn.role)).toEqual([
+        'user',
+        'assistant',
+      ]);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a signal that fell below its band reads as below, not above', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessProteinFarLowFixture(), { adviceHandler: adviceOk });
+      await page.route('**/api/food/advice/chat', route =>
+        route.fulfill({ json: { available: true, answer: 'Protein is the low one.' } })
+      );
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      const row = sheet.getByTestId('nutrition-chat-basis-row').filter({ hasText: 'Protein' });
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText('well below');
+      await expect(row).not.toContainText('above');
+      // 6% measured, against the 15% guideline and the 10% far mark.
+      await expect(row).toContainText('6%');
+      await expect(row).toContainText('15%');
+      await expect(row).toContainText('10%');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('discards the conversation when the sheet closes, and again after a reload', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      await page.route('**/api/food/advice/chat', route =>
+        route.fulfill({ json: { available: true, answer: 'It is the seven-day mean.' } })
+      );
+      await page.goto('/');
+
+      let sheet = await openSheet(page);
+      await sheet.getByTestId('nutrition-chat-input').fill('why?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(1);
+
+      await sheet.getByTestId('nutrition-chat-close').click();
+      await expect(page.getByTestId('nutrition-chat-sheet')).toHaveCount(0);
+
+      sheet = await openSheet(page);
+      await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(0);
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(0);
+
+      await sheet.getByTestId('nutrition-chat-input').fill('why?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(1);
+      await page.reload();
+
+      sheet = await openSheet(page);
+      await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(0);
+      // Nothing was written anywhere a reload could restore it from.
+      const stored = await page.evaluate(() => {
+        const keys = [
+          ...Object.keys(window.localStorage),
+          ...Object.keys(window.sessionStorage),
+        ];
+        return keys.filter(key => key.toLowerCase().includes('chat'));
+      });
+      expect(stored).toEqual([]);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a failing answer leaves the sheet, the advice and the refresh control usable', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      let fail = true;
+      await page.route('**/api/food/advice/chat', route => {
+        if (fail) {
+          fail = false;
+          return route.fulfill({ json: { available: false, reason: 'unavailable' } });
+        }
+        return route.fulfill({ json: { available: true, answer: 'Recovered.' } });
+      });
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      await sheet.getByTestId('nutrition-chat-input').fill('why?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-error')).toBeVisible();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(0);
+
+      // The same sheet still answers the next question.
+      await sheet.getByTestId('nutrition-chat-input').fill('and now?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveText('Recovered.');
+      await expect(sheet.getByTestId('nutrition-chat-error')).toHaveCount(0);
+
+      await sheet.getByTestId('nutrition-chat-close').click();
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('nutrition-advice-line')).toBeVisible();
+      await expect(card.getByTestId('nutrition-advice-refresh')).toBeEnabled();
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('offers no discuss control when there is no advice to discuss', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), {
+        adviceHandler: route => route.fulfill({ json: { available: false, reason: 'unconfigured' } }),
+      });
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('nutrition-healthiness-label')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-advice-discuss')).toHaveCount(0);
+      await expect(page.getByTestId('nutrition-chat-sheet')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('Escape closes the sheet and returns focus to the control that opened it', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      await page.goto('/');
+
+      await openSheet(page);
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('nutrition-chat-sheet')).toHaveCount(0);
+      await expect(page.getByTestId('nutrition-advice-discuss')).toBeFocused();
+    } finally {
+      await putSettings(request, cookies, original);
     }
   });
 });
