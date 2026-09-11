@@ -39,12 +39,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Make settings drive one primary-vitals load
-- [ ] In `frontend/app/page.tsx`, start the dashboard settings effect without waiting for `ready`, while retaining the current `settingsStatus`, toast, retry, strict `more_data_hidden === true` normalization, and saved-order reconciliation behavior.
-- [ ] Extract or locally encapsulate the existing primary-vitals loading logic and invoke it once from a successful settings result, passing `s.timezone` directly and using one captured `now` for the request upper bound and cutoff calculation.
-- [ ] Preserve the existing eight-day over-fetch followed by `loggedDayKey` filtering to seven local calendar days, `Promise.all` parallelism, per-metric `.catch(() => [])` degradation, and `extractVital` response transformation.
-- [ ] Remove the standalone `[ready, timezone]` vitals effect so `setTimezone(s.timezone)` updates `LoggingGapCard` without issuing a second daily-bucket wave.
-- [ ] Prevent a settled request from updating state after the effect is cleaned up, including during unmount and a settings retry, without weakening `dashboardReady` or the existing Presence and authentication behavior.
-- [ ] Mark completed
+- [x] In `frontend/app/page.tsx`, start the dashboard settings effect without waiting for `ready`, while retaining the current `settingsStatus`, toast, retry, strict `more_data_hidden === true` normalization, and saved-order reconciliation behavior.
+- [x] Extract or locally encapsulate the existing primary-vitals loading logic and invoke it once from a successful settings result, passing `s.timezone` directly and using one captured `now` for the request upper bound and cutoff calculation.
+- [x] Preserve the existing eight-day over-fetch followed by `loggedDayKey` filtering to seven local calendar days, `Promise.all` parallelism, per-metric `.catch(() => [])` degradation, and `extractVital` response transformation.
+- [x] Remove the standalone `[ready, timezone]` vitals effect so `setTimezone(s.timezone)` updates `LoggingGapCard` without issuing a second daily-bucket wave.
+- [x] Prevent a settled request from updating state after the effect is cleaned up, including during unmount and a settings retry, without weakening `dashboardReady` or the existing Presence and authentication behavior.
+- [x] Mark completed
 
 ### Task 3: Unit-test the in-flight-only contract
 - [x] Extend `frontend/lib/api.test.ts` with controlled fetch promises proving that two overlapping `api.me()` calls issue one `/users/me` request and both receive its result.
