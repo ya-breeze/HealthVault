@@ -68,9 +68,9 @@ have their own branches.
 
 ### Task 4: Cover it and validate
 
-- [ ] Add an e2e check that the served document advertises an icon and a manifest, that the
+- [x] Add an e2e check that the served document advertises an icon and a manifest, that the
       manifest responds with a JSON body naming icons that themselves respond, and that the
       Apple touch icon is reachable.
-- [ ] Run `make lint`, `make test` and `make test-e2e` against the deployed WIP stack and fix
+- [x] Run `make lint`, `make test` and `make test-e2e` against the deployed WIP stack and fix
       what they report.
-- [ ] Mark completed
+- [x] Mark completed
