@@ -142,9 +142,10 @@ rendered advice element remained inside the viewport while the document was visi
 continuous seconds. This is a visibility proxy, not proof that the user read, understood, or acted
 on the text. It is deduplicated per advice Logged Day and generation timestamp within one browser
 tab when `sessionStorage` is available. The server persists only a per-user, per-Logged-Day
-aggregate: qualified-view, refresh-request, and refresh-success counts with their first/last
-timestamps. It never stores advice text, health measurements, browser or session identifiers,
-user-agent data, IP addresses, or future chat content in the engagement aggregate.
+aggregate: the qualified-view count with its first and last timestamps. It never stores advice
+text, health measurements, browser or session identifiers, user-agent data, IP addresses, or chat
+content in the engagement aggregate. It counted advice refreshes too until the refresh control was
+removed on 2026-09-11.
 _Avoid_: Read, impression (both claim more attention than the signal establishes)
 
 **Advice Basis**:

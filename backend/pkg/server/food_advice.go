@@ -37,7 +37,6 @@ type foodAdviceRequest struct {
 	Label   string           `json:"label"`
 	Reasons []string         `json:"reasons"`
 	Window  foodAdviceWindow `json:"window"`
-	Refresh bool             `json:"refresh"`
 }
 
 type foodAdviceContext struct {
@@ -138,36 +137,25 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		DisplayLanguage: language,
 	}
 
-	if !req.Refresh {
-		if served, err := h.serveCachedAdvice(w, claims.UserID, loggedDay, inputHash, responseContext); err != nil {
-			slog.Warn("nutrition advice cache lookup failed", "err", err, "user_id", claims.UserID)
-			writeFoodAdviceUnavailable(w, "unavailable")
-			return
-		} else if served {
-			return
-		}
+	if served, err := h.serveCachedAdvice(w, claims.UserID, loggedDay, inputHash, responseContext); err != nil {
+		slog.Warn("nutrition advice cache lookup failed", "err", err, "user_id", claims.UserID)
+		writeFoodAdviceUnavailable(w, "unavailable")
+		return
+	} else if served {
+		return
 	}
 
+	// Checked again under the mutex: two tabs opening at once still race for
+	// the first generation of the day, and the loser must serve what the
+	// winner just cached rather than paying for a second model call.
 	h.adviceMu.Lock()
 	defer h.adviceMu.Unlock()
-	if !req.Refresh {
-		if served, err := h.serveCachedAdvice(w, claims.UserID, loggedDay, inputHash, responseContext); err != nil {
-			slog.Warn("nutrition advice repeated cache lookup failed", "err", err, "user_id", claims.UserID)
-			writeFoodAdviceUnavailable(w, "unavailable")
-			return
-		} else if served {
-			return
-		}
-	}
-	refreshRequestRecorded := false
-	if req.Refresh {
-		if err := recordFoodAdviceEngagement(
-			h.storage.DB(), claims.UserID, FamilyIDFromCtx(r), loggedDay, refreshRequestEvent, time.Now().UTC(),
-		); err != nil {
-			slog.Warn("nutrition advice refresh-request telemetry failed", "err", err, "user_id", claims.UserID)
-		} else {
-			refreshRequestRecorded = true
-		}
+	if served, err := h.serveCachedAdvice(w, claims.UserID, loggedDay, inputHash, responseContext); err != nil {
+		slog.Warn("nutrition advice repeated cache lookup failed", "err", err, "user_id", claims.UserID)
+		writeFoodAdviceUnavailable(w, "unavailable")
+		return
+	} else if served {
+		return
 	}
 
 	tctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)
@@ -210,13 +198,6 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("nutrition advice cache write failed", "err", err, "user_id", claims.UserID)
 		writeFoodAdviceUnavailable(w, "unavailable")
 		return
-	}
-	if req.Refresh && refreshRequestRecorded {
-		if err := recordFoodAdviceEngagement(
-			h.storage.DB(), claims.UserID, FamilyIDFromCtx(r), loggedDay, refreshSuccessEvent, time.Now().UTC(),
-		); err != nil {
-			slog.Warn("nutrition advice refresh-success telemetry failed", "err", err, "user_id", claims.UserID)
-		}
 	}
 	writeJSON(w, foodAdviceResponse{
 		Available: true, Lines: lines, LoggedDay: loggedDay, GeneratedAt: &generatedAt, Context: &responseContext,

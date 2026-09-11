@@ -175,8 +175,6 @@ export default function LoggingGapCard({
   // the accessibility tree and out of test locators while the card is idle.
   const [chatOpen, setChatOpen] = useState(false);
   const chatOpenerRef = useRef<HTMLButtonElement>(null);
-  const [adviceLoading, setAdviceLoading] = useState(false);
-  const [adviceRefreshError, setAdviceRefreshError] = useState(false);
   const adviceElementRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -427,7 +425,6 @@ export default function LoggingGapCard({
         mean_sugar_grams: healthiness.means.sugarGrams,
         mean_sodium_grams: healthiness.means.sodiumGrams,
       },
-      refresh: false,
     };
     const context: NutritionAdviceContext = {
       target_calories: state.today.targetCalories,
@@ -442,15 +439,12 @@ export default function LoggingGapCard({
   useEffect(() => {
     let cancelled = false;
     setAdvice(null);
-    setAdviceRefreshError(false);
     if (!adviceRequest) {
-      setAdviceLoading(false);
       return () => {
         cancelled = true;
       };
     }
 
-    setAdviceLoading(true);
     void api.getNutritionAdvice(adviceRequest.request)
       .then(response => {
         if (cancelled || !response.available || response.lines.length === 0) return;
@@ -467,9 +461,6 @@ export default function LoggingGapCard({
       .catch(() => {
         // A background failure is intentionally silent. The reader did not
         // ask for advice, and the rest of the card is already complete.
-      })
-      .finally(() => {
-        if (!cancelled) setAdviceLoading(false);
       });
 
     return () => {
@@ -545,34 +536,6 @@ export default function LoggingGapCard({
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [visibleAdvice?.loggedDay, visibleAdvice?.generatedAt]);
-
-  async function refreshAdvice() {
-    if (!adviceRequest || adviceLoading) return;
-    setAdviceLoading(true);
-    setAdviceRefreshError(false);
-    try {
-      const response = await api.getNutritionAdvice({ ...adviceRequest.request, refresh: true });
-      if (!response.available) {
-        if (response.reason === 'unavailable') setAdviceRefreshError(true);
-        else setAdvice(null);
-        return;
-      }
-      if (response.lines.length === 0) {
-        setAdviceRefreshError(true);
-        return;
-      }
-      setAdvice({
-        lines: response.lines,
-        signature: nutritionAdviceSignature(adviceRequest.request, response.context),
-        loggedDay: response.logged_day,
-        generatedAt: response.generated_at,
-      });
-    } catch {
-      setAdviceRefreshError(true);
-    } finally {
-      setAdviceLoading(false);
-    }
-  }
 
   const dim = editing && hidden ? ' opacity-40' : '';
 
@@ -739,33 +702,15 @@ export default function LoggingGapCard({
                 <p key={`${index}:${line}`} data-testid="nutrition-advice-line">{line}</p>
               ))}
             </div>
-            {/* A row, not two stacked blocks: both controls are inline, so
-                without a flex parent they render touching each other. */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <TapTarget
-                compactOnMouse
-                onClick={() => void refreshAdvice()}
-                disabled={adviceLoading}
-                data-testid="nutrition-advice-refresh"
-                className="text-xs text-accent underline disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {t(adviceLoading ? 'loggingGap.adviceRefreshing' : 'loggingGap.adviceRefresh')}
-              </TapTarget>
-              <TapTarget
-                compactOnMouse
-                ref={chatOpenerRef}
-                onClick={() => setChatOpen(true)}
-                data-testid="nutrition-advice-discuss"
-                className="text-xs text-accent underline"
-              >
-                {t('nutritionChat.open')}
-              </TapTarget>
-            </div>
-            {adviceRefreshError && (
-              <p className="text-xs text-text-muted" data-testid="nutrition-advice-error">
-                {t('loggingGap.adviceUnavailable')}
-              </p>
-            )}
+            <TapTarget
+              compactOnMouse
+              ref={chatOpenerRef}
+              onClick={() => setChatOpen(true)}
+              data-testid="nutrition-advice-discuss"
+              className="text-xs text-accent underline"
+            >
+              {t('nutritionChat.open')}
+            </TapTarget>
           </div>
         )}
         {chatOpen && adviceRequest && (

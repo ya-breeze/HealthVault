@@ -387,9 +387,6 @@ const en = {
   'loggingGap.healthinessReason.sodium_high': 'sodium is high',
   'loggingGap.healthinessHintNote':
     "The label covers macro balance, total sugars and sodium on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
-  'loggingGap.adviceRefresh': 'Get new advice',
-  'loggingGap.adviceRefreshing': 'Writing new advice…',
-  'loggingGap.adviceUnavailable': 'Advice is temporarily unavailable.',
   'nutritionChat.title': 'About this advice',
   'nutritionChat.basisTitle': 'What this is based on',
   'nutritionChat.basis.off.above': '{signal}: {value} per day on average, above the {threshold} guideline.',
@@ -413,7 +410,7 @@ const en = {
   'nutritionChat.ephemeralNote': 'This conversation is not saved. Closing this panel discards it.',
   'nutritionChat.open': 'Why this advice?',
   'loggingGap.adviceDetail':
-    'These lines are written by an AI model from the label, its reason codes and your Nutrition Target. They are cached for the current day and regenerate when those inputs change or you request new advice. They are not medical advice.',
+    'These lines are written by an AI model from the label, its reason codes and your Nutrition Target. They are cached for the current day and regenerate when those inputs change. They are not medical advice.',
 
   // The steps detail page's diagnostic disclosure (check-the-health-data
   // spec) — collapsed by default, same hint-then-detail pattern as the

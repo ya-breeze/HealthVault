@@ -285,14 +285,11 @@ type FoodAdviceEngagement struct {
 	QualifiedViewCount   uint64     `gorm:"not null;default:0" json:"qualified_view_count"`
 	FirstQualifiedViewAt *time.Time `json:"first_qualified_view_at,omitempty"`
 	LastQualifiedViewAt  *time.Time `json:"last_qualified_view_at,omitempty"`
-
-	RefreshRequestCount   uint64     `gorm:"not null;default:0" json:"refresh_request_count"`
-	FirstRefreshRequestAt *time.Time `json:"first_refresh_request_at,omitempty"`
-	LastRefreshRequestAt  *time.Time `json:"last_refresh_request_at,omitempty"`
-
-	RefreshSuccessCount   uint64     `gorm:"not null;default:0" json:"refresh_success_count"`
-	FirstRefreshSuccessAt *time.Time `json:"first_refresh_success_at,omitempty"`
-	LastRefreshSuccessAt  *time.Time `json:"last_refresh_success_at,omitempty"`
+	// The six refresh_* columns this struct used to declare went with the
+	// refresh control itself. AutoMigrate never drops a column, so an existing
+	// table still carries them holding whatever they last did; nothing reads
+	// or writes them, and no migration removes them. They only ever held
+	// counts and timestamps, so the privacy boundary above is unaffected.
 }
 
 // FoodCalibrationSample is a weighed-food ground-truth photo used to benchmark
