@@ -90,7 +90,7 @@ The main trade-off is that an isolated pulse is a familiar health gesture and a 
 ### Rejected alternatives
 
 - [`record-chamber.svg`](../assets/healthvault-icon/record-chamber.svg) communicates stored records most explicitly. Its octagonal perimeter is sturdy, optically even in all three masks, and visibly different from the dial. It loses because the two record bands and the pulse channel compress into a denser, less immediate glyph at 16px. Removing another band would improve reduction but weaken the protected-record-chamber idea that distinguishes this proposal.
-- [`hv-aperture.svg`](../assets/healthvault-icon/hv-aperture.svg) has the most distinctive outer silhouette and the strongest single-color poster quality. The continuous geometric H-to-V construction survives home-screen masks cleanly. It loses because the negative spaces can read as a face, gem, or directional marker before they read as personal health data in a vault; at 16px the lower counter also becomes less obvious than the Pulse Dial’s open waveform.
+- [`hv-aperture.svg`](../assets/healthvault-icon/hv-aperture.svg) has the most distinctive outer silhouette and the strongest single-color poster quality. Its continuous negative-space H-to-V construction survives home-screen masks cleanly. It loses because the monogram can read as a technical badge or directional marker before it reads as personal health data in a vault; at 16px its two letterforms consolidate more than the Pulse Dial’s open waveform.
 
 ## Production contract for the selected mark
 

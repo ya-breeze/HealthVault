@@ -1,5 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <path d="M32 8 56 32 32 56 8 32z" fill="#4fd8c4"/>
-  <path d="M32 14 50 32 32 50 14 32z" fill="#10141a"/>
-  <path d="M20 18h6v10h12V18h6v16L32 48 20 34zm6 16 6 7 6-7z" fill="#4fd8c4" fill-rule="evenodd"/>
+  <defs>
+    <mask id="hv-cutout">
+      <rect width="64" height="64" fill="white"/>
+      <path d="M24 20h4v7h8v-7h4v14h-4v-3h-8v3h-4zm0 12h5l3 6 3-6h5l-8 12z" fill="black"/>
+    </mask>
+  </defs>
+  <path d="M32 8 56 32 32 56 8 32z" fill="#4fd8c4" mask="url(#hv-cutout)"/>
 </svg>

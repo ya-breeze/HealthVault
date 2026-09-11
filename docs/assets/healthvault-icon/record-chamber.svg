@@ -2,6 +2,6 @@
   <path d="M17 8h30l9 9v30l-9 9H17l-9-9V17z" fill="#4fd8c4"/>
   <path d="M19 13h26l6 6v26l-6 6H19l-6-6V19z" fill="#10141a"/>
   <rect x="19" y="19" width="26" height="5" rx="2.5" fill="#4fd8c4"/>
-  <path d="M19 34h7l3-6 5 12 4-6h7" fill="none" stroke="#4fd8c4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M19 34h7l3-4 5 8 4-4h7" fill="none" stroke="#4fd8c4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   <rect x="19" y="44" width="26" height="4" rx="2" fill="#4fd8c4"/>
 </svg>
