@@ -101,6 +101,11 @@ the `nutrition-card-today-and-on-track` change built two of its three rows on th
   views (the whole advice visible in an active document for two continuous seconds) and refresh
   requests/successes are now recorded as privacy-minimized per-user, per-Logged-Day aggregates.
   A qualified view remains a visibility proxy, not proof that the advice was read.
+- ~~The "Get new advice" link~~ — **removed** 2026-09-11 at the owner's request, along with the
+  `refresh` request flag and the two refresh engagement counters that existed to measure it. The
+  advice is a deterministic judgment turned into prose, so a refresh could only reword the same
+  finding; the surface that answers "why does it say that" is the advice basis and the chat, which
+  shipped the same day.
 - ~~The logging-gap line~~ — **shipped**, as the card's bottom row, and it now distinguishes "the
   log agrees with the weight trend" from "not enough data" instead of showing the latter for both.
 

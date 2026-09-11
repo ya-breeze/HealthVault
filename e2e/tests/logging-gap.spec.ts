@@ -1025,6 +1025,9 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
       const advice = card.getByTestId('nutrition-advice');
       await expect(advice).toBeVisible({ timeout: 15_000 });
       await expect(advice.getByTestId('nutrition-advice-line')).toHaveCount(2);
+      // The refresh control was removed: it must not come back beside advice
+      // that is rendering normally, which is the only place it ever appeared.
+      await expect(advice.getByTestId('nutrition-advice-refresh')).toHaveCount(0);
       const labelBox = await label.boundingBox();
       const adviceBox = await advice.boundingBox();
       expect(labelBox).not.toBeNull();
@@ -1080,41 +1083,6 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     }
   });
 
-  test('refresh sends refresh true and replaces the existing line', async ({ page, request }) => {
-    await login(page);
-    const cookies = await cookieHeader(page);
-    const original = await getSettings(request, cookies);
-    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
-    const requestBodies: Record<string, unknown>[] = [];
-    try {
-      await mockLoggingGapApis(page, healthinessGoodFixture(), {
-        adviceHandler: async route => {
-          requestBodies.push(route.request().postDataJSON() as Record<string, unknown>);
-          const refreshed = requestBodies.length > 1;
-          await route.fulfill({
-            json: {
-              available: true,
-              lines: [refreshed ? 'New advice.' : 'Original advice.'],
-              logged_day: '2026-09-05',
-              generated_at: '2026-09-05T06:12:00Z',
-              context: matchingAdviceContext,
-            },
-          });
-        },
-      });
-      await page.goto('/');
-
-      const card = page.getByTestId('logging-gap-card');
-      await expect(card.getByTestId('nutrition-advice-line')).toHaveText('Original advice.', { timeout: 15_000 });
-      await card.getByTestId('nutrition-advice-refresh').click();
-      await expect.poll(() => requestBodies.length).toBe(2);
-      expect(requestBodies[1].refresh).toBe(true);
-      await expect(card.getByTestId('nutrition-advice-line')).toHaveText('New advice.');
-    } finally {
-      await putSettings(request, cookies, original);
-    }
-  });
-
   test('unconfigured and unavailable background responses advertise nothing', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
@@ -1139,44 +1107,7 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
         await expect(card.getByTestId('nutrition-healthiness-label')).toBeVisible({ timeout: 15_000 });
         await expect.poll(() => calls).toBe(expectedCalls);
         await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
-        await expect(card.getByTestId('nutrition-advice-refresh')).toHaveCount(0);
       }
-    } finally {
-      await putSettings(request, cookies, original);
-    }
-  });
-
-  test('an unavailable refresh keeps the prior lines and shows the requested error', async ({ page, request }) => {
-    await login(page);
-    const cookies = await cookieHeader(page);
-    const original = await getSettings(request, cookies);
-    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
-    let calls = 0;
-    try {
-      await mockLoggingGapApis(page, healthinessGoodFixture(), {
-        adviceHandler: route => {
-          calls++;
-          return route.fulfill({
-            json:
-              calls === 1
-                ? {
-                    available: true,
-                    lines: ['Original advice.'],
-                    logged_day: '2026-09-05',
-                    generated_at: '2026-09-05T06:12:00Z',
-                    context: matchingAdviceContext,
-                  }
-                : { available: false, reason: 'unavailable' },
-          });
-        },
-      });
-      await page.goto('/');
-
-      const card = page.getByTestId('logging-gap-card');
-      await expect(card.getByTestId('nutrition-advice-line')).toHaveText('Original advice.', { timeout: 15_000 });
-      await card.getByTestId('nutrition-advice-refresh').click();
-      await expect(card.getByTestId('nutrition-advice-error')).toBeVisible();
-      await expect(card.getByTestId('nutrition-advice-error')).toContainText('temporarily unavailable');
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -1366,7 +1297,7 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     }
   });
 
-  test('a refreshed revision earns its own view even when engagement delivery fails', async ({ page, request }) => {
+  test('a new revision earns its own view even when engagement delivery fails', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
     const original = await getSettings(request, cookies);
@@ -1374,13 +1305,18 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     const engagementBodies: Record<string, unknown>[] = [];
     let adviceCalls = 0;
     try {
+      // The refresh control is gone, so a second revision arrives the way a
+      // real one now does: the next load finds the server has regenerated the
+      // advice. The dedup key carries the generation timestamp, so a genuinely
+      // new revision is counted again while an unchanged one is not — which is
+      // what the reload test above asserts from the other side.
       await mockLoggingGapApis(page, healthinessGoodFixture(), {
         adviceHandler: route => {
           adviceCalls++;
           return route.fulfill({
             json: {
               available: true,
-              lines: [adviceCalls === 1 ? 'Original advice.' : 'Refreshed advice.'],
+              lines: [adviceCalls === 1 ? 'Original advice.' : 'Newer advice.'],
               logged_day: '2026-09-08',
               generated_at: adviceCalls === 1 ? '2026-09-08T06:12:00Z' : '2026-09-08T06:13:00Z',
               context: matchingAdviceContext,
@@ -1398,20 +1334,19 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
       await expect.poll(() => engagementBodies.length, { timeout: 4000 }).toBe(1);
       await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Original advice.');
 
-      const refresh = page.getByTestId('nutrition-advice-refresh');
-      await refresh.click();
-      await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Refreshed advice.');
-      await expect(refresh).toBeEnabled();
-      await advice.scrollIntoViewIfNeeded();
+      await page.reload();
+      await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Newer advice.', { timeout: 15_000 });
+      await page.getByTestId('nutrition-advice').scrollIntoViewIfNeeded();
       await expect.poll(() => engagementBodies.length, { timeout: 4000 }).toBe(2);
       expect(engagementBodies.map(body => body.generated_at)).toEqual(['2026-09-08T06:12:00Z', '2026-09-08T06:13:00Z']);
-      await expect(page.getByTestId('nutrition-advice-error')).toHaveCount(0);
+      // A 503 from the engagement endpoint never reaches the reader.
+      await expect(page.getByTestId('nutrition-advice-line')).toBeVisible();
     } finally {
       await putSettings(request, cookies, original);
     }
   });
 
-  test('a queued observer callback cannot report a revision after its effect is cleaned up', async ({
+  test('a queued observer callback cannot report a revision after the card unmounts', async ({
     page,
     request,
   }) => {
@@ -1423,8 +1358,8 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
     let adviceCalls = 0;
     try {
       // IntersectionObserver.disconnect() does not have to discard an entry
-      // already queued for delivery. Delay that delivery so refreshing the
-      // advice first cleans up the original revision's effect.
+      // already queued for delivery. Delay that delivery so navigating away
+      // cleans up the revision's effect before the callback arrives.
       await page.addInitScript(() => {
         class DelayedIntersectionObserver {
           readonly root = null;
@@ -1470,9 +1405,9 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
           return route.fulfill({
             json: {
               available: true,
-              lines: [adviceCalls === 1 ? 'Original advice.' : 'Refreshed advice.'],
+              lines: ['Original advice.'],
               logged_day: '2026-09-09',
-              generated_at: adviceCalls === 1 ? '2026-09-09T06:12:00Z' : '2026-09-09T06:13:00Z',
+              generated_at: '2026-09-09T06:12:00Z',
               context: matchingAdviceContext,
             },
           });
@@ -1486,17 +1421,13 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
 
       const advice = page.getByTestId('nutrition-advice');
       await expect(advice).toBeVisible({ timeout: 15_000 });
-      await page.getByTestId('nutrition-advice-refresh').click();
-      await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Refreshed advice.');
-      await expect.poll(() => engagementBodies.length, { timeout: 5000 }).toBe(1);
-      await page.waitForTimeout(500);
-      expect(engagementBodies).toEqual([
-        {
-          event: 'qualified_view',
-          logged_day: '2026-09-09',
-          generated_at: '2026-09-09T06:13:00Z',
-        },
-      ]);
+      // Leave the dashboard well inside the observer's 1000 ms delay, so the
+      // queued callback is delivered to an effect that has already been torn
+      // down. The `disposed` guard is the only thing stopping it reporting.
+      await page.goto('/settings/');
+      await expect(page.getByTestId('nutrition-advice')).toHaveCount(0);
+      await page.waitForTimeout(1500);
+      expect(engagementBodies).toEqual([]);
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -1770,7 +1701,7 @@ test.describe('Nutrition advice chat', () => {
     }
   });
 
-  test('a failing answer leaves the sheet, the advice and the refresh control usable', async ({ page, request }) => {
+  test('a failing answer leaves the sheet and the advice usable', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
     const original = await getSettings(request, cookies);
@@ -1802,7 +1733,7 @@ test.describe('Nutrition advice chat', () => {
       await sheet.getByTestId('nutrition-chat-close').click();
       const card = page.getByTestId('logging-gap-card');
       await expect(card.getByTestId('nutrition-advice-line')).toBeVisible();
-      await expect(card.getByTestId('nutrition-advice-refresh')).toBeEnabled();
+      await expect(card.getByTestId('nutrition-advice-discuss')).toBeEnabled();
     } finally {
       await putSettings(request, cookies, original);
     }

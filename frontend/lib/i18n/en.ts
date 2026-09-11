@@ -387,9 +387,6 @@ const en = {
   'loggingGap.healthinessReason.sodium_high': 'sodium is high',
   'loggingGap.healthinessHintNote':
     "The label covers macro balance, total sugars and sodium on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
-  'loggingGap.adviceRefresh': 'Get new advice',
-  'loggingGap.adviceRefreshing': 'Writing new advice…',
-  'loggingGap.adviceUnavailable': 'Advice is temporarily unavailable.',
   'nutritionChat.title': 'About this advice',
   'nutritionChat.basisTitle': 'What this is based on',
   'nutritionChat.basis.off.above': '{signal}: {value} per day on average, above the {threshold} guideline.',

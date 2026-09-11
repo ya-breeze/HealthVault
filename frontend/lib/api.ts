@@ -613,7 +613,6 @@ export interface NutritionAdviceRequest {
   label: 'good' | 'fair' | 'needs_attention';
   reasons: string[];
   window: NutritionAdviceWindow;
-  refresh: boolean;
 }
 
 export interface NutritionAdviceContext {

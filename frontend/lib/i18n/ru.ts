@@ -258,9 +258,6 @@ const ru: Dictionary = {
   'loggingGap.healthinessReason.sodium_high': 'много натрия',
   'loggingGap.healthinessHintNote':
     'Оценка учитывает баланс БЖУ, общий сахар и натрий только за полностью заполненные дни. Общий сахар включает сахар из фруктов и молочных продуктов. Соль, добавленная при готовке, обычно не попадает в дневник, поэтому отсутствие отметки о натрии — это не то же самое, что низкий натрий.',
-  'loggingGap.adviceRefresh': 'Получить новый совет',
-  'loggingGap.adviceRefreshing': 'Готовим новый совет…',
-  'loggingGap.adviceUnavailable': 'Совет временно недоступен.',
   'nutritionChat.title': 'Об этом совете',
   'nutritionChat.basisTitle': 'На чём это основано',
   'nutritionChat.basis.off.above': '{signal}: в среднем {value} в день, выше ориентира {threshold}.',

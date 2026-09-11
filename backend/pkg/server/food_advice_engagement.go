@@ -14,14 +14,10 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/database"
 )
 
-// The three engagement events. Every call site names one of these rather
-// than a literal, because an unrecognized event is only caught at run time
-// by recordFoodAdviceEngagement's default branch.
-const (
-	qualifiedViewEvent  = "qualified_view"
-	refreshRequestEvent = "refresh_request"
-	refreshSuccessEvent = "refresh_success"
-)
+// The one engagement event. Named rather than written as a literal at each
+// call site, because an unrecognized event is only caught at run time by
+// recordFoodAdviceEngagement's default branch.
+const qualifiedViewEvent = "qualified_view"
 
 type foodAdviceEngagementRequest struct {
 	Event       string    `json:"event"`
@@ -102,16 +98,6 @@ func recordFoodAdviceEngagement(
 		row.FirstQualifiedViewAt = &at
 		row.LastQualifiedViewAt = &at
 		countColumn, firstColumn, lastColumn = "qualified_view_count", "first_qualified_view_at", "last_qualified_view_at"
-	case refreshRequestEvent:
-		row.RefreshRequestCount = 1
-		row.FirstRefreshRequestAt = &at
-		row.LastRefreshRequestAt = &at
-		countColumn, firstColumn, lastColumn = "refresh_request_count", "first_refresh_request_at", "last_refresh_request_at"
-	case refreshSuccessEvent:
-		row.RefreshSuccessCount = 1
-		row.FirstRefreshSuccessAt = &at
-		row.LastRefreshSuccessAt = &at
-		countColumn, firstColumn, lastColumn = "refresh_success_count", "first_refresh_success_at", "last_refresh_success_at"
 	default:
 		return errors.New("unknown food advice engagement event")
 	}

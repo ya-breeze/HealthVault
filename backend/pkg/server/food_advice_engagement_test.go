@@ -347,8 +347,5 @@ func TestFoodAdviceEngagement_IsolatesCallersAndDays(t *testing.T) {
 			t.Fatalf("aggregate for %s on %s has %d views, want %d",
 				want.userID, want.day, got.QualifiedViewCount, want.count)
 		}
-		if got.RefreshRequestCount != 0 || got.RefreshSuccessCount != 0 {
-			t.Fatalf("aggregate for %s on %s recorded refresh events: %+v", want.userID, want.day, got)
-		}
 	}
 }
