@@ -33,11 +33,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 1: Establish the icon brief and evaluation rubric
 
-- [ ] Create `docs/investigations/idea-383-healthvault-icon.md` and cite the current favicon-only state in `frontend/app/`, the starter files in `frontend/public/`, the metadata and safe-area viewport exports in `frontend/app/layout.tsx`, and the Instrument Panel tokens in `frontend/app/globals.css`.
-- [ ] Record the light background `#f7f8fa`, dark background `#10141a`, light accent `#0f9c8c`, and dark accent `#4fd8c4` as the palette from which candidates must be built.
-- [ ] Define the comparison rubric covering recognizability, combined health/vault meaning, distinctive silhouette, 16px and 32px legibility, light/dark contrast, circular and rounded-square mask safety, and suitability for SVG, ICO, Apple touch, and 192/512 derivatives.
-- [ ] Document the exclusions on stock heart, cross, shield, padlock, house, text, gradient, and fine-detail treatments so the exploration remains specific to HealthVault.
-- [ ] Mark completed
+- [x] Create `docs/investigations/idea-383-healthvault-icon.md` and cite the current favicon-only state in `frontend/app/`, the starter files in `frontend/public/`, the metadata and safe-area viewport exports in `frontend/app/layout.tsx`, and the Instrument Panel tokens in `frontend/app/globals.css`.
+- [x] Record the light background `#f7f8fa`, dark background `#10141a`, light accent `#0f9c8c`, and dark accent `#4fd8c4` as the palette from which candidates must be built.
+- [x] Define the comparison rubric covering recognizability, combined health/vault meaning, distinctive silhouette, 16px and 32px legibility, light/dark contrast, circular and rounded-square mask safety, and suitability for SVG, ICO, Apple touch, and 192/512 derivatives.
+- [x] Document the exclusions on stock heart, cross, shield, padlock, house, text, gradient, and fine-detail treatments so the exploration remains specific to HealthVault.
+- [x] Mark completed
 
 ### Task 2: Produce and retain distinct vector candidates
 
