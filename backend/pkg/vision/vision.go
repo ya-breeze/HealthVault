@@ -167,6 +167,72 @@ type AdviceInput struct {
 	DisplayLanguage    string   `json:"display_language"`
 }
 
+// NutritionChatSignal is one Healthiness Label signal's workings, exactly as
+// the deterministic heuristic computed them: what was measured, the unit that
+// measurement is in, the verdict it produced, and the two boundaries it was
+// judged against. The model is given these so it can explain a flagged advice
+// line from the same arithmetic the user is looking at on screen, rather than
+// inventing a threshold of its own.
+type NutritionChatSignal struct {
+	Code        string  `json:"code"`
+	Value       float64 `json:"value"`
+	Unit        string  `json:"unit"`
+	Verdict     string  `json:"verdict"`
+	Reason      string  `json:"reason,omitempty"`
+	OffBoundary float64 `json:"off_boundary"`
+	FarBoundary float64 `json:"far_boundary"`
+}
+
+// NutritionChatTurn is one exchange already on screen. Role is "user" or
+// "assistant".
+type NutritionChatTurn struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
+}
+
+// NutritionChatInput is everything the model is told when answering a question
+// about the nutrition advice. It is the same evidence Advise was given, plus
+// the signal workings behind it and the conversation so far.
+//
+// Deliberately absent: weight, steps and sleep. The Healthiness Label is
+// computed from logged food alone, so handing the model signals the label never
+// measured would invite it to assert a link the arithmetic never established,
+// and the user could not tell that assertion apart from the rest of the answer.
+type NutritionChatInput struct {
+	Label              string                `json:"label"`
+	Reasons            []string              `json:"reasons"`
+	Signals            []NutritionChatSignal `json:"signals"`
+	EligibleDays       int                   `json:"eligible_days"`
+	WindowDays         int                   `json:"window_days"`
+	MeanCalories       float64               `json:"mean_calories"`
+	MeanProteinGrams   float64               `json:"mean_protein_grams"`
+	MeanCarbsGrams     float64               `json:"mean_carbs_grams"`
+	MeanFatGrams       float64               `json:"mean_fat_grams"`
+	MeanSugarGrams     float64               `json:"mean_sugar_grams"`
+	MeanSodiumGrams    float64               `json:"mean_sodium_grams"`
+	TargetCalories     int                   `json:"target_calories"`
+	TargetProteinGrams int                   `json:"target_protein_grams"`
+	TargetCarbsGrams   int                   `json:"target_carbs_grams"`
+	TargetFatGrams     int                   `json:"target_fat_grams"`
+	DisplayLanguage    string                `json:"display_language"`
+	// Turns is the conversation already on screen, oldest first, and Question
+	// is what the user just asked. Turns is replayed in full on every call
+	// because no implementation keeps a thread.
+	Turns    []NutritionChatTurn `json:"turns,omitempty"`
+	Question string              `json:"question"`
+}
+
+// NutritionChatResult is one answer. It carries the usual accounting fields so
+// a chat call is as traceable as any other call in this package.
+type NutritionChatResult struct {
+	Answer string `json:"answer"`
+
+	Model            string        `json:"model"`
+	PromptTokens     int           `json:"prompt_tokens"`
+	CompletionTokens int           `json:"completion_tokens"`
+	Latency          time.Duration `json:"latency"`
+}
+
 // Client recognizes foods in a photo and selects among retrieved candidates.
 // Every implementation sets store:false on outbound requests — see design.md
 // "Third-Party Disclosure and Retention".
@@ -221,4 +287,14 @@ type Client interface {
 	// it has on Recognize: the Display Name comes back in that language, and
 	// each Item's CanonicalName is additionally produced in English.
 	Describe(ctx context.Context, description, displayLanguage string) (*RecognizeResult, error)
+	// NutritionChat is text-only and bounded: it answers one question about the
+	// advice the user is looking at, from the evidence that advice was built
+	// on. The conversation so far is replayed on every call, the way Clarify
+	// replays its rounds, because nothing here keeps a thread — the turns live
+	// in the browser tab and are discarded when it closes.
+	//
+	// Implementations must hold the same standing rule Advise has: the label
+	// and its reason codes are an already-computed judgment, and the model
+	// never disputes them.
+	NutritionChat(ctx context.Context, in NutritionChatInput) (*NutritionChatResult, error)
 }

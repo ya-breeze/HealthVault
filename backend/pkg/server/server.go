@@ -121,6 +121,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/food/search", fh.Search).Methods("GET")
 	api.HandleFunc("/food/advice", fh.PostFoodAdvice).Methods("POST")
 	api.HandleFunc("/food/advice/engagement", fh.RecordFoodAdviceEngagement).Methods("POST")
+	api.HandleFunc("/food/advice/chat", fh.PostFoodAdviceChat).Methods("POST")
 	api.HandleFunc("/food/custom", fh.CreateCustomFood).Methods("POST")
 	api.HandleFunc("/food/custom", fh.ListCustomFoods).Methods("GET")
 	api.HandleFunc("/food/custom/{id}", fh.UpdateCustomFood).Methods("PUT")

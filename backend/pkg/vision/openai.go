@@ -810,4 +810,82 @@ func (c *OpenAIClient) Advise(ctx context.Context, in AdviceInput) ([]string, er
 	return lines, nil
 }
 
+var nutritionChatJSONSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"answer": map[string]any{"type": "string"},
+	},
+	"required":             []string{"answer"},
+	"additionalProperties": false,
+}
+
+type nutritionChatSchemaResponse struct {
+	Answer string `json:"answer"`
+}
+
+// nutritionChatAnswerMaxRunes bounds the answer after parsing, the way Advise
+// bounds its lines. The prompt asks for brevity; this is what holds when the
+// model ignores it. Runes, not bytes, so a Russian answer is not cut mid-
+// character.
+const nutritionChatAnswerMaxRunes = 900
+
+const nutritionChatSystemPrompt = `You answer one question about nutrition advice the user is already looking at.
+
+The supplied label, reason codes, and signal values are an already-computed
+deterministic judgment. Never dispute, restate, upgrade, or downgrade the
+label, and never contradict a supplied measurement or boundary.
+
+Answer only from the supplied input. Use no measurement, threshold, or
+quantity that is not in the input or a simple difference derived directly
+from it. When the user asks about something the input does not contain —
+activity, sleep, weight, a specific meal, a day outside the window — say
+plainly that it was not measured here, and do not estimate it.
+
+The means are per eligible day over the supplied window, and eligible_days
+says how many days they rest on. Say so when it matters to the answer: a
+mean over three days is weaker evidence than one over seven, and the user
+cannot see that unless you tell them.
+
+Make no medical claim, diagnosis, or prognosis. Do not recommend
+supplements, fasting, or cleanses. Do not prescribe calories below the
+supplied target. Do not reassure beyond what the input supports.
+
+Answer in at most four short sentences, in the supplied display_language.`
+
+// NutritionChat is text-only: it sends the evidence and the conversation so far
+// as JSON and no image. The conversation is replayed in full on every call
+// because nothing here keeps a thread.
+func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput) (*NutritionChatResult, error) {
+	payload, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("marshal nutrition chat input: %w", err)
+	}
+	messages := []chatMessage{
+		{Role: "system", Content: nutritionChatSystemPrompt},
+		{Role: "user", Content: string(payload)},
+	}
+	resp, latency, err := c.call(ctx, messages, "nutrition_chat", nutritionChatJSONSchema)
+	if err != nil {
+		return nil, err
+	}
+	var schemaResp nutritionChatSchemaResponse
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &schemaResp); err != nil {
+		return nil, fmt.Errorf("unmarshal structured content: %w", err)
+	}
+	answer := strings.TrimSpace(schemaResp.Answer)
+	if answer == "" {
+		return nil, fmt.Errorf("nutrition chat response contained no answer")
+	}
+	if runes := []rune(answer); len(runes) > nutritionChatAnswerMaxRunes {
+		answer = string(runes[:nutritionChatAnswerMaxRunes])
+	}
+	return &NutritionChatResult{
+		Answer:           answer,
+		Model:            resp.Model,
+		PromptTokens:     resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens,
+		Latency:          latency,
+	}, nil
+}
+
 var _ Client = (*OpenAIClient)(nil)

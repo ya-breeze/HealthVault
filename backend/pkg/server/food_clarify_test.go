@@ -769,3 +769,7 @@ func TestClarifyMeal_EnglishDoesNotCarryForwardCanonicalName(t *testing.T) {
 		t.Errorf("CanonicalName = %q, want empty for an English Display Language", got.Items[0].CanonicalName)
 	}
 }
+
+func (c slowClarifyClient) NutritionChat(context.Context, vision.NutritionChatInput) (*vision.NutritionChatResult, error) {
+	return &vision.NutritionChatResult{}, nil
+}

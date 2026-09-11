@@ -957,3 +957,7 @@ func TestReanalyze_ConcurrentCallsOnlyOneProceeds(t *testing.T) {
 		t.Errorf("expected the first call to succeed, got %d: %s", w1.Code, w1.Body.String())
 	}
 }
+
+func (c *gatedRecognizeClient) NutritionChat(context.Context, vision.NutritionChatInput) (*vision.NutritionChatResult, error) {
+	return &vision.NutritionChatResult{}, nil
+}

@@ -42,3 +42,7 @@ func (Unconfigured) Advise(context.Context, AdviceInput) ([]string, error) {
 func (Unconfigured) Describe(context.Context, string, string) (*RecognizeResult, error) {
 	return nil, ErrNotConfigured
 }
+
+func (Unconfigured) NutritionChat(context.Context, NutritionChatInput) (*NutritionChatResult, error) {
+	return nil, ErrNotConfigured
+}
