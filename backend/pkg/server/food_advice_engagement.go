@@ -25,9 +25,9 @@ type foodAdviceEngagementRequest struct {
 	GeneratedAt time.Time `json:"generated_at"`
 }
 
-// RecordFoodAdviceEngagement records only a qualified view of an exact advice
-// revision. Refresh telemetry is authoritative in PostFoodAdvice and cannot be
-// supplied by a client.
+// RecordFoodAdviceEngagement records a qualified view of an exact advice
+// revision, which is the only engagement event left: the refresh events went
+// with the refresh control on 2026-09-11.
 func (h *foodHandlers) RecordFoodAdviceEngagement(w http.ResponseWriter, r *http.Request) {
 	if !isSameOriginRequest(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)

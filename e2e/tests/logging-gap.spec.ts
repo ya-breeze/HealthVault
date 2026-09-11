@@ -1413,6 +1413,10 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
           });
         },
       });
+      // One revision per page life is the point of this test: a second advice
+      // request would mean a second effect, and the callback could then be
+      // reporting a live revision rather than the disposed one.
+      const assertOneAdviceCall = () => expect(adviceCalls).toBe(1);
       await page.route('**/api/food/advice/engagement', route => {
         engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
         return route.fulfill({ status: 204, body: '' });
@@ -1442,6 +1446,7 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
       // the two-second qualified-view timer. Wait past both.
       await page.waitForTimeout(3500);
       expect(engagementBodies).toEqual([]);
+      assertOneAdviceCall();
     } finally {
       await putSettings(request, cookies, original);
     }

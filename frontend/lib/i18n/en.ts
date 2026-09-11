@@ -410,7 +410,7 @@ const en = {
   'nutritionChat.ephemeralNote': 'This conversation is not saved. Closing this panel discards it.',
   'nutritionChat.open': 'Why this advice?',
   'loggingGap.adviceDetail':
-    'These lines are written by an AI model from the label, its reason codes and your Nutrition Target. They are cached for the current day and regenerate when those inputs change or you request new advice. They are not medical advice.',
+    'These lines are written by an AI model from the label, its reason codes and your Nutrition Target. They are cached for the current day and regenerate when those inputs change. They are not medical advice.',
 
   // The steps detail page's diagnostic disclosure (check-the-health-data
   // spec) — collapsed by default, same hint-then-detail pattern as the
