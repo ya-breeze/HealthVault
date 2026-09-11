@@ -495,6 +495,80 @@ test.describe('Dashboard card visibility', () => {
   });
 });
 
+// Locks the request-deduplication contract in place: a fresh dashboard
+// navigation must issue exactly one /users/me GET, one /users/me/settings
+// GET, and one bucket=day request per DataType-backed primary metric — see
+// docs/specs/healthvault.md. The saved timezone is deliberately non-UTC so
+// the historical bug (a second, duplicate vitals wave firing once the
+// settings response's timezone replaced the effect's initial `undefined`)
+// is actually exercised rather than accidentally matching the UTC default.
+test.describe('Dashboard request budget', () => {
+  test('a fresh navigation with a saved non-UTC timezone issues exactly one request per bootstrap read and per primary metric', async ({ page }) => {
+    await login(page);
+    // Settles the post-login page's own bootstrap requests before this test
+    // installs its counting listener. Without this, a request that page's
+    // effects dispatch late (its own network activity has no reason to be
+    // fully drained the instant `waitForURL` resolves) can land after the
+    // listener below is attached but before the counted navigation actually
+    // tears that page down — inflating the count with a request that has
+    // nothing to do with the navigation under test. This test never edits
+    // dashboard_order or visibility, so — unlike its sibling describe blocks
+    // — it has nothing for restoreAllVisible to fix and doesn't call it.
+    await page.waitForLoadState('networkidle');
+
+    await page.route('**/api/users/me/settings', route => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ json: { timezone: 'America/Los_Angeles' } });
+    });
+
+    const meRequests: string[] = [];
+    const settingsRequests: string[] = [];
+    // Keyed by DataType, counting only requests whose query string names
+    // `bucket=day` — this is what excludes LoggingGapCard's own intentional
+    // raw (non-bucketed) `/api/data/weight` request from the primary-vitals
+    // count below, rather than relying on request order or timing.
+    const bucketDayRequests = new Map<string, number>();
+    let rawWeightRequests = 0;
+
+    page.on('request', req => {
+      const url = new URL(req.url());
+      if (req.method() !== 'GET') return;
+      if (url.pathname === '/api/users/me') meRequests.push(req.url());
+      if (url.pathname === '/api/users/me/settings') settingsRequests.push(req.url());
+      const dataMatch = url.pathname.match(/^\/api\/data\/([a-z_]+)$/);
+      if (!dataMatch) return;
+      const [, type] = dataMatch;
+      if (url.searchParams.get('bucket') === 'day') {
+        bucketDayRequests.set(type, (bucketDayRequests.get(type) ?? 0) + 1);
+      } else if (type === 'weight') {
+        rawWeightRequests++;
+      }
+    });
+
+    // A fresh navigation, not a client-side one: this is the shape the spec
+    // measures, and it's what makes every bootstrap effect in the app (this
+    // page's own settings/vitals effects, AuthenticatedShell's api.me(),
+    // LanguageProvider's settings read) mount and fire together.
+    await page.goto('/');
+
+    await expect(page.getByTestId('vitals-grid')).toBeVisible();
+    // Waits for every expected daily-bucket response to have actually
+    // arrived before counting — a count taken while requests can still start
+    // would under-count just as easily as it could over-count, and either
+    // way would not be measuring what the spec asks for.
+    await expect
+      .poll(() => PRIMARY_METRIC_TYPES.every(type => (bucketDayRequests.get(type) ?? 0) >= 1))
+      .toBe(true);
+
+    expect(meRequests, 'exactly one /users/me GET on a fresh navigation').toHaveLength(1);
+    expect(settingsRequests, 'exactly one /users/me/settings GET on a fresh navigation').toHaveLength(1);
+    for (const type of PRIMARY_METRIC_TYPES) {
+      expect(bucketDayRequests.get(type), `${type} should receive exactly one bucket=day request`).toBe(1);
+    }
+    expect(rawWeightRequests, "LoggingGapCard's own raw weight request still fires, separately").toBeGreaterThan(0);
+  });
+});
+
 test.describe('Webhook ingest + dashboard', () => {
   test('webhook POST is reflected in the steps vital card and its bucketed API response', async ({ page, request }) => {
     const ts = new Date().toISOString();

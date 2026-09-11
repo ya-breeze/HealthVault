@@ -54,9 +54,9 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Lock the dashboard request budget in E2E coverage
-- [ ] Extend `e2e/tests/dashboard.spec.ts` with a fresh-navigation case whose settings GET returns a non-UTC timezone, ensuring the historical `undefined`-to-saved-timezone transition is exercised.
-- [ ] Count browser requests and assert exactly one GET reaches `/api/users/me`, exactly one GET reaches `/api/users/me/settings`, and each DataType-backed member of `PRIMARY_METRIC_TYPES` receives exactly one request with `bucket=day`.
-- [ ] Match the bucket query explicitly so `LoggingGapCard`'s intentional raw `/api/data/weight` request is excluded from the primary-vitals count.
-- [ ] Wait for the grid and all expected daily-bucket responses before asserting counts, avoiding timing-based sleeps or a count taken while requests can still start.
-- [ ] Confirm the existing settings-error retry, Presence fail-open, card visibility/order persistence, and needs-attention cases still pass with the new request lifecycle.
-- [ ] Mark completed
+- [x] Extend `e2e/tests/dashboard.spec.ts` with a fresh-navigation case whose settings GET returns a non-UTC timezone, ensuring the historical `undefined`-to-saved-timezone transition is exercised.
+- [x] Count browser requests and assert exactly one GET reaches `/api/users/me`, exactly one GET reaches `/api/users/me/settings`, and each DataType-backed member of `PRIMARY_METRIC_TYPES` receives exactly one request with `bucket=day`.
+- [x] Match the bucket query explicitly so `LoggingGapCard`'s intentional raw `/api/data/weight` request is excluded from the primary-vitals count.
+- [x] Wait for the grid and all expected daily-bucket responses before asserting counts, avoiding timing-based sleeps or a count taken while requests can still start.
+- [x] Confirm the existing settings-error retry, Presence fail-open, card visibility/order persistence, and needs-attention cases still pass with the new request lifecycle.
+- [x] Mark completed
