@@ -7,6 +7,13 @@ import type { MetadataRoute } from "next";
 // `icon.png` and `apple-icon.png` are NOT listed here. Those are App Router file conventions:
 // Next.js emits their <link> tags itself, with hashed URLs, and repeating them in the manifest
 // would pin a second, unhashed copy of the same asset.
+// This app builds with `output: "export"`, which has no server to run a route handler at
+// request time. A metadata route is dynamic by default, so without this the build fails
+// outright: "export const dynamic = force-static ... not configured on route
+// /manifest.webmanifest". The manifest is a constant, so emitting it at build time is also
+// what it should have been doing anyway.
+export const dynamic = "force-static";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "HealthVault",
