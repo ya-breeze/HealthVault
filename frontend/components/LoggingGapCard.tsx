@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   api,
   NutritionAdviceContext,
@@ -33,6 +33,7 @@ import { evaluateSustainability, SustainabilityWarning } from '@/lib/sustainabil
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
+import NutritionChatSheet from './NutritionChatSheet';
 import { EyeIcon, EyeOffIcon, InfoIcon } from './icons';
 
 // Today's intake beside the target it is measured against — the card's top
@@ -64,6 +65,8 @@ type GapLine = LoggingGapResult | { kind: 'retrieval_error' };
 interface DisplayedAdvice {
   lines: string[];
   signature: string;
+  loggedDay: string;
+  generatedAt: string;
 }
 
 function nutritionAdviceSignature(
@@ -168,8 +171,11 @@ export default function LoggingGapCard({
   const [todayHintOpen, setTodayHintOpen] = useState(false);
   const todayHintId = useId();
   const [advice, setAdvice] = useState<DisplayedAdvice | null>(null);
-  const [adviceLoading, setAdviceLoading] = useState(false);
-  const [adviceRefreshError, setAdviceRefreshError] = useState(false);
+  // The chat sheet is mounted only while open, so its controls stay out of
+  // the accessibility tree and out of test locators while the card is idle.
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatOpenerRef = useRef<HTMLButtonElement>(null);
+  const adviceElementRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -419,7 +425,6 @@ export default function LoggingGapCard({
         mean_sugar_grams: healthiness.means.sugarGrams,
         mean_sodium_grams: healthiness.means.sodiumGrams,
       },
-      refresh: false,
     };
     const context: NutritionAdviceContext = {
       target_calories: state.today.targetCalories,
@@ -434,15 +439,12 @@ export default function LoggingGapCard({
   useEffect(() => {
     let cancelled = false;
     setAdvice(null);
-    setAdviceRefreshError(false);
     if (!adviceRequest) {
-      setAdviceLoading(false);
       return () => {
         cancelled = true;
       };
     }
 
-    setAdviceLoading(true);
     void api.getNutritionAdvice(adviceRequest.request)
       .then(response => {
         if (cancelled || !response.available || response.lines.length === 0) return;
@@ -452,14 +454,13 @@ export default function LoggingGapCard({
           // summary/provider values this request captured. Attribute the
           // result to what the model actually received, not stale client state.
           signature: nutritionAdviceSignature(adviceRequest.request, response.context),
+          loggedDay: response.logged_day,
+          generatedAt: response.generated_at,
         });
       })
       .catch(() => {
         // A background failure is intentionally silent. The reader did not
         // ask for advice, and the rest of the card is already complete.
-      })
-      .finally(() => {
-        if (!cancelled) setAdviceLoading(false);
       });
 
     return () => {
@@ -471,31 +472,70 @@ export default function LoggingGapCard({
 
   const visibleAdvice = adviceRequest && advice?.signature === adviceRequest.signature ? advice : null;
 
-  async function refreshAdvice() {
-    if (!adviceRequest || adviceLoading) return;
-    setAdviceLoading(true);
-    setAdviceRefreshError(false);
+  useEffect(() => {
+    const element = adviceElementRef.current;
+    if (!element || !visibleAdvice) return;
+
+    const markerKey = `hcw:foodAdviceQualifiedView:${visibleAdvice.loggedDay}:${visibleAdvice.generatedAt}`;
+    let alreadyRecorded = false;
     try {
-      const response = await api.getNutritionAdvice({ ...adviceRequest.request, refresh: true });
-      if (!response.available) {
-        if (response.reason === 'unavailable') setAdviceRefreshError(true);
-        else setAdvice(null);
-        return;
-      }
-      if (response.lines.length === 0) {
-        setAdviceRefreshError(true);
-        return;
-      }
-      setAdvice({
-        lines: response.lines,
-        signature: nutritionAdviceSignature(adviceRequest.request, response.context),
-      });
+      alreadyRecorded = sessionStorage.getItem(markerKey) === '1';
     } catch {
-      setAdviceRefreshError(true);
-    } finally {
-      setAdviceLoading(false);
+      // Storage denial merely permits another count; measurement cannot
+      // interfere with advice rendering.
     }
-  }
+    if (alreadyRecorded) return;
+
+    let fullyVisible = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let sent = false;
+    let disposed = false;
+
+    const stopTimer = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    };
+    const updateTimer = () => {
+      stopTimer();
+      if (disposed || sent || !fullyVisible || document.visibilityState !== 'visible') return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (disposed || !fullyVisible || document.visibilityState !== 'visible' || sent) return;
+        sent = true;
+        try {
+          sessionStorage.setItem(markerKey, '1');
+        } catch {
+          // Best-effort deduplication; still send the qualified signal.
+        }
+        void api.recordFoodAdviceEngagement({
+          event: 'qualified_view',
+          logged_day: visibleAdvice.loggedDay,
+          generated_at: visibleAdvice.generatedAt,
+        }).catch(() => {
+          // Engagement must never become a user-facing advice failure.
+        });
+      }, 2000);
+    };
+
+    const observer = new IntersectionObserver(entries => {
+      const entry = entries[entries.length - 1];
+      fullyVisible = Boolean(entry?.isIntersecting && entry.intersectionRatio >= 1);
+      updateTimer();
+    }, { threshold: 1 });
+    const onVisibilityChange = () => updateTimer();
+    observer.observe(element);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      // disconnect() stops future observations but does not discard entries
+      // already queued for delivery. Keep a late callback from restarting a
+      // timer for advice that has since changed or unmounted.
+      disposed = true;
+      stopTimer();
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [visibleAdvice?.loggedDay, visibleAdvice?.generatedAt]);
 
   const dim = editing && hidden ? ' opacity-40' : '';
 
@@ -656,7 +696,7 @@ export default function LoggingGapCard({
           {reasons.length > 0 ? ` — ${reasons.join(', ')}` : ''}
         </span>
         {visibleAdvice && (
-          <div className="mt-2 space-y-1.5" data-testid="nutrition-advice">
+          <div ref={adviceElementRef} className="mt-2 space-y-1.5" data-testid="nutrition-advice">
             <div className="space-y-1 text-sm text-text">
               {visibleAdvice.lines.map((line, index) => (
                 <p key={`${index}:${line}`} data-testid="nutrition-advice-line">{line}</p>
@@ -664,19 +704,26 @@ export default function LoggingGapCard({
             </div>
             <TapTarget
               compactOnMouse
-              onClick={() => void refreshAdvice()}
-              disabled={adviceLoading}
-              data-testid="nutrition-advice-refresh"
-              className="text-xs text-accent underline disabled:opacity-50 disabled:cursor-not-allowed"
+              ref={chatOpenerRef}
+              onClick={() => setChatOpen(true)}
+              data-testid="nutrition-advice-discuss"
+              className="text-xs text-accent underline"
             >
-              {t(adviceLoading ? 'loggingGap.adviceRefreshing' : 'loggingGap.adviceRefresh')}
+              {t('nutritionChat.open')}
             </TapTarget>
-            {adviceRefreshError && (
-              <p className="text-xs text-text-muted" data-testid="nutrition-advice-error">
-                {t('loggingGap.adviceUnavailable')}
-              </p>
-            )}
           </div>
+        )}
+        {chatOpen && adviceRequest && (
+          <NutritionChatSheet
+            healthiness={healthiness}
+            window={adviceRequest.request.window}
+            onClose={() => {
+              setChatOpen(false);
+              // Focus goes back to the control that opened the sheet, the way
+              // AuthenticatedShell restores it for the More sheet.
+              chatOpenerRef.current?.focus();
+            }}
+          />
         )}
       </div>
     );

@@ -3,6 +3,14 @@
 ## Status
 Accepted
 
+> **Update (`docs/specs/remove-advice-refresh.md`, 2026-09-11):** the user-triggered refresh
+> named in the Decision Outcome below has been removed, along with the request flag and the
+> engagement counters that measured it. The advice is a deterministic judgment turned into prose,
+> so a refresh could only reword the same finding. The chat affordance the same outcome named has
+> shipped instead (`docs/specs/nutrition-chat.md`), alongside the measured basis of every flagged
+> signal. Nothing about the label itself changes: it is still computed by heuristic, and the LLM is
+> still used only downstream of it.
+>
 > **Update (`docs/specs/healthvault-nutrition-card-middle-row-advice.md`, 2026-09-09):** the
 > cached LLM advice lines downstream of the deterministic label have shipped, including lazy
 > daily generation and a user-triggered refresh. The nutrition chat remains deferred until use of

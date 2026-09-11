@@ -376,3 +376,82 @@ describe('computeHealthinessLabel — reason ordering and cap', () => {
     expect(result?.reasons).toEqual(['protein_high', 'fat_high']);
   });
 });
+
+describe('computeHealthinessLabel — reported workings', () => {
+  it('reports all five signals in the fixed tie-break order', () => {
+    const result = computeHealthinessLabel(poolOf(5, GOOD_DAY), WINDOW)!;
+    expect(result.signals.map(s => s.code)).toEqual(['protein', 'sugar', 'sodium', 'fat', 'carbs']);
+  });
+
+  it('counts only eligible days', () => {
+    const perDayData = poolOf(5, GOOD_DAY);
+    perDayData[5] = day({ ...GOOD_DAY, state: 'incomplete' });
+    perDayData[6] = day({ ...GOOD_DAY, unconfirmedMeals: 1 });
+    expect(computeHealthinessLabel(perDayData, WINDOW)!.eligibleDays).toBe(5);
+  });
+
+  it('carries the measured value and unit each verdict was reached from', () => {
+    // 4*110 + 4*195 + 9*86.667 = 2000 kcal of macro energy, so protein's share is 4*110/2000.
+    const result = computeHealthinessLabel(poolOf(4, GOOD_DAY), WINDOW)!;
+    const protein = result.signals.find(s => s.code === 'protein')!;
+    expect(protein.unit).toBe('share');
+    expect(protein.value).toBeCloseTo((4 * 110) / 2000, 6);
+
+    const sodium = result.signals.find(s => s.code === 'sodium')!;
+    expect(sodium.unit).toBe('gramsPerDay');
+    expect(sodium.value).toBeCloseTo(1.5, 6);
+  });
+
+  it('reports no reason code for a signal that is ok, and the flagged code for one that is not', () => {
+    const result = computeHealthinessLabel(poolOf(4, { ...GOOD_DAY, sodiumGrams: 4 }), WINDOW)!;
+    const sodium = result.signals.find(s => s.code === 'sodium')!;
+    expect(sodium.verdict).toBe('far');
+    expect(sodium.reason).toBe('sodium_high');
+
+    const protein = result.signals.find(s => s.code === 'protein')!;
+    expect(protein.verdict).toBe('ok');
+    expect(protein.reason).toBeNull();
+  });
+
+  it('reports the boundary pair on the side an upper-only signal crossed', () => {
+    const result = computeHealthinessLabel(poolOf(4, { ...GOOD_DAY, sodiumGrams: 4 }), WINDOW)!;
+    const sodium = result.signals.find(s => s.code === 'sodium')!;
+    expect(sodium.offBoundary).toBe(HEALTHINESS_THRESHOLDS.sodiumGramsPerDay.offLow);
+    expect(sodium.farBoundary).toBe(HEALTHINESS_THRESHOLDS.sodiumGramsPerDay.farLow);
+  });
+
+  it('reports the low boundary pair for a two-sided signal that fell below its band', () => {
+    // 4*30 + 4*275 + 9*86.667 = 2000 kcal, so protein's share is 0.06 — below farLow.
+    const result = computeHealthinessLabel(
+      poolOf(4, { ...GOOD_DAY, proteinGrams: 30, carbsGrams: 275 }),
+      WINDOW
+    )!;
+    const protein = result.signals.find(s => s.code === 'protein')!;
+    expect(protein.verdict).toBe('far');
+    expect(protein.reason).toBe('protein_low');
+    expect(protein.offBoundary).toBe(HEALTHINESS_THRESHOLDS.proteinShare.offLow);
+    expect(protein.farBoundary).toBe(HEALTHINESS_THRESHOLDS.proteinShare.farLow);
+  });
+
+  it('reports the high boundary pair for a two-sided signal that rose above its band', () => {
+    // 4*250 + 4*55 + 9*86.667 = 2000 kcal, so protein's share is 0.5 — above farHigh.
+    const result = computeHealthinessLabel(
+      poolOf(4, { ...GOOD_DAY, proteinGrams: 250, carbsGrams: 55 }),
+      WINDOW
+    )!;
+    const protein = result.signals.find(s => s.code === 'protein')!;
+    expect(protein.verdict).toBe('far');
+    expect(protein.reason).toBe('protein_high');
+    expect(protein.offBoundary).toBe(HEALTHINESS_THRESHOLDS.proteinShare.offHigh);
+    expect(protein.farBoundary).toBe(HEALTHINESS_THRESHOLDS.proteinShare.farHigh);
+  });
+
+  it('agrees with the chosen reasons about which signals were flagged', () => {
+    const result = computeHealthinessLabel(
+      poolOf(4, { ...GOOD_DAY, sodiumGrams: 4, sugarGrams: 130 }),
+      WINDOW
+    )!;
+    const flagged = result.signals.filter(s => s.reason !== null).map(s => s.reason);
+    for (const reason of result.reasons) expect(flagged).toContain(reason);
+  });
+});
