@@ -147,6 +147,22 @@ timestamps. It never stores advice text, health measurements, browser or session
 user-agent data, IP addresses, or future chat content in the engagement aggregate.
 _Avoid_: Read, impression (both claim more attention than the signal establishes)
 
+**Advice Basis**:
+The measured workings behind a flagged Healthiness Label signal, shown to the user as evidence: the
+signal's own mean over the label's 7-day window, the boundary it crossed, and how many of those
+days were eligible. It is rendered from `computeHealthinessLabel`'s own output, never recomputed
+and never generated, so what the user reads is the arithmetic the label actually used.
+_Avoid_: Explanation, reasoning (both suggest generated prose rather than reported measurements)
+
+**Nutrition Chat**:
+A question-and-answer conversation about the advice currently on screen, opened from the nutrition
+card and answered from the Advice Basis, the window means, and the Nutrition Target. It is
+**ephemeral**: turns live in the browser tab's component state alone and are discarded when the
+sheet closes, the page navigates, or the tab reloads. No chat table, no browser storage, no raw
+prompt log, no cross-day thread. The model is told the label is final and may not dispute it, and
+is given no activity, sleep, or weight data, because the label never measured those.
+_Avoid_: Assistant, coach (both imply a standing relationship this surface does not have)
+
 ### Weight chart
 
 **Bucket Start**:

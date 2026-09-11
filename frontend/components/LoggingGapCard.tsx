@@ -33,6 +33,7 @@ import { evaluateSustainability, SustainabilityWarning } from '@/lib/sustainabil
 import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
+import NutritionChatSheet from './NutritionChatSheet';
 import { EyeIcon, EyeOffIcon, InfoIcon } from './icons';
 
 // Today's intake beside the target it is measured against — the card's top
@@ -170,6 +171,10 @@ export default function LoggingGapCard({
   const [todayHintOpen, setTodayHintOpen] = useState(false);
   const todayHintId = useId();
   const [advice, setAdvice] = useState<DisplayedAdvice | null>(null);
+  // The chat sheet is mounted only while open, so its controls stay out of
+  // the accessibility tree and out of test locators while the card is idle.
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatOpenerRef = useRef<HTMLButtonElement>(null);
   const [adviceLoading, setAdviceLoading] = useState(false);
   const [adviceRefreshError, setAdviceRefreshError] = useState(false);
   const adviceElementRef = useRef<HTMLDivElement | null>(null);
@@ -743,12 +748,33 @@ export default function LoggingGapCard({
             >
               {t(adviceLoading ? 'loggingGap.adviceRefreshing' : 'loggingGap.adviceRefresh')}
             </TapTarget>
+            <TapTarget
+              compactOnMouse
+              ref={chatOpenerRef}
+              onClick={() => setChatOpen(true)}
+              data-testid="nutrition-advice-discuss"
+              className="text-xs text-accent underline"
+            >
+              {t('nutritionChat.open')}
+            </TapTarget>
             {adviceRefreshError && (
               <p className="text-xs text-text-muted" data-testid="nutrition-advice-error">
                 {t('loggingGap.adviceUnavailable')}
               </p>
             )}
           </div>
+        )}
+        {chatOpen && adviceRequest && (
+          <NutritionChatSheet
+            healthiness={healthiness}
+            window={adviceRequest.request.window}
+            onClose={() => {
+              setChatOpen(false);
+              // Focus goes back to the control that opened the sheet, the way
+              // AuthenticatedShell restores it for the More sheet.
+              chatOpenerRef.current?.focus();
+            }}
+          />
         )}
       </div>
     );

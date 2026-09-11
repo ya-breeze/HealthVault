@@ -636,6 +636,39 @@ export type NutritionAdviceResponse =
       context: NutritionAdviceContext;
     };
 
+export interface NutritionChatSignal {
+  code: string;
+  value: number;
+  unit: 'share' | 'gramsPerDay';
+  verdict: 'ok' | 'off' | 'far';
+  /** Absent for an `ok` signal, which contributed no reason code. */
+  reason?: string;
+  off_boundary: number;
+  far_boundary: number;
+}
+
+export interface NutritionChatTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface NutritionChatRequest {
+  label: 'good' | 'fair' | 'needs_attention';
+  reasons: string[];
+  window: NutritionAdviceWindow;
+  signals: NutritionChatSignal[];
+  eligible_days: number;
+  /** The conversation already on screen, oldest first. Replayed every call. */
+  turns: NutritionChatTurn[];
+  question: string;
+}
+
+// Discriminated the way NutritionAdviceResponse is, so the answer is
+// inaccessible until the caller has proved the response carries one.
+export type NutritionChatResponse =
+  | { available: false; reason: 'unconfigured' | 'unavailable' }
+  | { available: true; answer: string };
+
 export interface FoodAdviceEngagementRequest {
   event: 'qualified_view';
   logged_day: string;
@@ -734,6 +767,14 @@ export const api = {
 
   getNutritionAdvice: (input: NutritionAdviceRequest) =>
     apiFetch<NutritionAdviceResponse>('/food/advice', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // Stateless: the conversation is replayed on every call because nothing on
+  // either side keeps a thread. See docs/specs/nutrition-chat.md.
+  postNutritionChat: (input: NutritionChatRequest) =>
+    apiFetch<NutritionChatResponse>('/food/advice/chat', {
       method: 'POST',
       body: JSON.stringify(input),
     }),

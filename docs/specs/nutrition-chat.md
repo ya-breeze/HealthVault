@@ -89,95 +89,95 @@ should be specified as one.
 - `make test-e2e`
 
 ### Task 1: Report the Healthiness Label's workings
-- [ ] Extend `HealthinessResult` in `frontend/lib/healthiness.ts` with `eligibleDays` and a
+- [x] Extend `HealthinessResult` in `frontend/lib/healthiness.ts` with `eligibleDays` and a
       `signals` array whose entries carry the signal's measured value, its unit, its verdict, the
       reason code when flagged, and the boundaries it was judged against
-- [ ] Populate `signals` from the existing five evaluations without changing any threshold,
+- [x] Populate `signals` from the existing five evaluations without changing any threshold,
       verdict, label, or reason-selection rule
-- [ ] Keep the evaluation order the spec's fixed tie-break order, so the reported signals and the
+- [x] Keep the evaluation order the spec's fixed tie-break order, so the reported signals and the
       chosen reasons can never disagree about precedence
-- [ ] Cover the new fields in `frontend/lib/healthiness.test.ts`, including a case where a signal
+- [x] Cover the new fields in `frontend/lib/healthiness.test.ts`, including a case where a signal
       is `ok` and therefore contributes no reason code, and assert the existing label and reason
       expectations still hold unchanged
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Add the nutrition-chat model call
-- [ ] Add `NutritionChatInput`, `NutritionChatTurn` and `NutritionChatResult` to
+- [x] Add `NutritionChatInput`, `NutritionChatTurn` and `NutritionChatResult` to
       `backend/pkg/vision/vision.go`, carrying label, reason codes, means, signal evaluations,
       eligible days, Nutrition Target, Display Language and the prior turns
-- [ ] Add `NutritionChat` to the `vision.Client` interface, documented as text-only, bounded, and
+- [x] Add `NutritionChat` to the `vision.Client` interface, documented as text-only, bounded, and
       replaying the turns because the client keeps no thread
-- [ ] Implement it in `backend/pkg/vision/openai.go` with `store:false`, a bounded output, a
+- [x] Implement it in `backend/pkg/vision/openai.go` with `store:false`, a bounded output, a
       response schema carrying a single answer string, and a system prompt that forbids disputing
       the label, forbids diagnosis, requires estimates and missing data to be named, and requires
       the answer in the Display Language
-- [ ] Implement it in `backend/pkg/vision/fake.go` deterministically and in
+- [x] Implement it in `backend/pkg/vision/fake.go` deterministically and in
       `backend/pkg/vision/unconfigured.go` as the established unconfigured error
-- [ ] Cover request shape, `store:false`, and response parsing in `backend/pkg/vision/openai_test.go`
-- [ ] Mark completed
+- [x] Cover request shape, `store:false`, and response parsing in `backend/pkg/vision/openai_test.go`
+- [x] Mark completed
 
 ### Task 3: Serve the chat behind an authenticated self-only endpoint
-- [ ] Add `backend/pkg/server/food_advice_chat.go` with `foodHandlers.PostFoodAdviceChat`,
+- [x] Add `backend/pkg/server/food_advice_chat.go` with `foodHandlers.PostFoodAdviceChat`,
       accepting the label, reason codes, window means, signal evaluations, the question, and the
       prior turns, and accepting no caller-supplied user identity
-- [ ] Enforce `isSameOriginRequest`, require `ClaimsFromCtx`, reject unknown fields and trailing
+- [x] Enforce `isSameOriginRequest`, require `ClaimsFromCtx`, reject unknown fields and trailing
       JSON, and reuse the existing advice validation for label, reason codes and window
-- [ ] Resolve the Nutrition Target and Display Language server-side from the caller's own profile,
+- [x] Resolve the Nutrition Target and Display Language server-side from the caller's own profile,
       and return the established unavailable response when the target cannot be computed
-- [ ] Enforce a 16 KiB body, a question of at most 500 characters after trimming, and at most 8
+- [x] Enforce a 16 KiB body, a question of at most 500 characters after trimming, and at most 8
       prior turns, rejecting anything past a limit rather than truncating it
-- [ ] Register `POST /api/food/advice/chat` beside the protected food routes in
+- [x] Register `POST /api/food/advice/chat` beside the protected food routes in
       `backend/pkg/server/server.go`
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Cover the endpoint's contract
-- [ ] Cover authentication, same-origin enforcement, unknown fields, trailing JSON, a malformed
+- [x] Cover authentication, same-origin enforcement, unknown fields, trailing JSON, a malformed
       window, an invalid reason code, an over-long question, too many turns, and an over-sized body
       in `backend/pkg/server/food_advice_chat_test.go`
-- [ ] Prove a caller cannot name another user and cannot reach another user's data through the
+- [x] Prove a caller cannot name another user and cannot reach another user's data through the
       endpoint
-- [ ] Prove a model failure returns the unavailable response rather than a 500 leaking the error,
+- [x] Prove a model failure returns the unavailable response rather than a 500 leaking the error,
       and that an unconfigured vision client is reported as unavailable
-- [ ] Prove a successful call returns the fake client's answer and that the prior turns reached
+- [x] Prove a successful call returns the fake client's answer and that the prior turns reached
       the client in order
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 5: Build the sheet
-- [ ] Add `frontend/components/NutritionChatSheet.tsx` modelled on `MoreSheet`'s Escape handling,
+- [x] Add `frontend/components/NutritionChatSheet.tsx` modelled on `MoreSheet`'s Escape handling,
       focus confinement, and press-and-release backdrop dismissal
-- [ ] Render the basis rows from the `signals` the card already holds: per flagged signal the
+- [x] Render the basis rows from the `signals` the card already holds: per flagged signal the
       measured value, its threshold and its verdict, plus the eligible-day count
-- [ ] Render the conversation, an input, a send control, a pending state, and a failure line that
+- [x] Render the conversation, an input, a send control, a pending state, and a failure line that
       leaves the conversation usable
-- [ ] Keep every turn in component state only, with no `localStorage`, no `sessionStorage`, and no
+- [x] Keep every turn in component state only, with no `localStorage`, no `sessionStorage`, and no
       persistence call, so closing the sheet discards the conversation
-- [ ] Add `NutritionChatRequest`, `NutritionChatResponse` and `api.postNutritionChat` to
+- [x] Add `NutritionChatRequest`, `NutritionChatResponse` and `api.postNutritionChat` to
       `frontend/lib/api.ts` using the existing authenticated JSON helpers
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 6: Open the sheet from the card
-- [ ] Add a discuss control beside the advice lines in `frontend/components/LoggingGapCard.tsx`,
+- [x] Add a discuss control beside the advice lines in `frontend/components/LoggingGapCard.tsx`,
       shown only when advice is visible, meeting the repository's 48px mobile tap-target minimum
-- [ ] Mount the sheet only while open, the way `MoreSheet` is mounted, and return focus to the
+- [x] Mount the sheet only while open, the way `MoreSheet` is mounted, and return focus to the
       control on close
-- [ ] Leave the card's existing label, advice, refresh, engagement measurement and precedence
+- [x] Leave the card's existing label, advice, refresh, engagement measurement and precedence
       rendering unchanged
-- [ ] Add the English and Russian strings for the control, the basis rows, the units, the
+- [x] Add the English and Russian strings for the control, the basis rows, the units, the
       verdicts, the input, the send control and the failure line
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 7: Cover the browser behaviour
-- [ ] Extend `e2e/tests/logging-gap.spec.ts` to open the sheet, assert the basis rows match the
+- [x] Extend `e2e/tests/logging-gap.spec.ts` to open the sheet, assert the basis rows match the
       seeded measurements, ask a question, and assert the answer renders
-- [ ] Prove the conversation is discarded when the sheet closes and after a reload
-- [ ] Prove a failing chat request leaves the sheet, the advice and the refresh control usable
-- [ ] Prove the discuss control is absent when no advice is visible
-- [ ] Mark completed
+- [x] Prove the conversation is discarded when the sheet closes and after a reload
+- [x] Prove a failing chat request leaves the sheet, the advice and the refresh control usable
+- [x] Prove the discuss control is absent when no advice is visible
+- [x] Mark completed
 
 ### Task 8: Record the decision and verify the result
-- [ ] Update `CONTEXT.md` with the chat's ephemeral boundary and the basis rows' meaning
-- [ ] Update `todo.md` to record that the owner lifted the evidence gate on 2026-09-11 and why
-- [ ] Run every command in `## Validation Commands` against the deployed `hcw-wip` stack on the
+- [x] Update `CONTEXT.md` with the chat's ephemeral boundary and the basis rows' meaning
+- [x] Update `todo.md` to record that the owner lifted the evidence gate on 2026-09-11 and why
+- [x] Run every command in `## Validation Commands` against the deployed `hcw-wip` stack on the
       final head
-- [ ] Run the Review Gate and resolve every valid finding before handoff
-- [ ] Mark completed
+- [x] Run the Review Gate and resolve every valid finding before handoff
+- [x] Mark completed

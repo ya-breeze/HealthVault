@@ -100,19 +100,23 @@ the `nutrition-card-today-and-on-track` change built two of its three rows on th
   the label now come from a cached, refreshable LLM call downstream of that judgment. Qualified
   views (the whole advice visible in an active document for two continuous seconds) and refresh
   requests/successes are now recorded as privacy-minimized per-user, per-Logged-Day aggregates.
-  A qualified view remains a visibility proxy, not proof that the advice was read. **Still to
-  build:** the nutrition chat, and only after the evidence gate below is met.
+  A qualified view remains a visibility proxy, not proof that the advice was read.
 - ~~The logging-gap line~~ — **shipped**, as the card's bottom row, and it now distinguishes "the
   log agrees with the weight trend" from "not enough data" instead of showing the latter for both.
 
 LLM involvement stays downstream of the label, not the label itself. The automatic daily-cached
-advice call, user-triggered refresh, and aggregate engagement measurement are shipped. The **one
-remaining middle-row part** is a small, ephemeral nutrition chat affordance for follow-up or
-clarifying questions. It remains deliberately unbuilt until the owner observes real qualified
-views and refresh requests from the deployed advice lines over a representative period. Production
-inspection and the resulting go/no-go decision belong to the owner: unattended implementation has
-no access to the `dogfood` or `prod` stack or either stack's data. If the aggregates do not show
-actual use, improve or remove the advice affordance instead of adding chat.
+advice call, user-triggered refresh, and aggregate engagement measurement are shipped.
+
+**The evidence gate was lifted by the owner on 2026-09-11**, before any production aggregates
+existed, and the ephemeral nutrition chat was built instead — see `docs/specs/nutrition-chat.md`.
+The gate had said to build chat only after observing real qualified views and refresh requests.
+The owner's reason was that the gate answered the wrong question: an advice line that looks wrong
+is unarguable today, because the measurements behind it never reach the screen, so low engagement
+would have been evidence of an unexplained affordance rather than an unwanted one. The same change
+shows each flagged signal's measured value and threshold beside the conversation.
+
+The engagement aggregates keep accumulating and are still worth reading; they are simply no longer
+a precondition for anything.
 
 ## Idea #10 — Logging Gap Card (was "adaptive TDEE from energy balance")
 
