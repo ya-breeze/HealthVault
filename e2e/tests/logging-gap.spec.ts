@@ -1421,12 +1421,26 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
 
       const advice = page.getByTestId('nutrition-advice');
       await expect(advice).toBeVisible({ timeout: 15_000 });
-      // Leave the dashboard well inside the observer's 1000 ms delay, so the
-      // queued callback is delivered to an effect that has already been torn
-      // down. The `disposed` guard is the only thing stopping it reporting.
-      await page.goto('/settings/');
+
+      // Leave the dashboard through the header's own client-side link, so the
+      // card unmounts while the observer's pending callback survives. A full
+      // `page.goto` would tear down the JS realm and take that callback with
+      // it, and this test would then pass with the `disposed` guard deleted.
+      await page.evaluate(() => {
+        (window as unknown as { __realmMarker?: string }).__realmMarker = 'alive';
+      });
+      await page.locator('[data-nav-control="settings"]').click();
       await expect(page.getByTestId('nutrition-advice')).toHaveCount(0);
-      await page.waitForTimeout(1500);
+      // Proves the navigation really was client-side. Without this the
+      // assertion below is vacuous, which is exactly how the first version of
+      // this test passed for the wrong reason.
+      expect(
+        await page.evaluate(() => (window as unknown as { __realmMarker?: string }).__realmMarker),
+      ).toBe('alive');
+
+      // The observer's callback lands at 1000 ms; ungated it would then start
+      // the two-second qualified-view timer. Wait past both.
+      await page.waitForTimeout(3500);
       expect(engagementBodies).toEqual([]);
     } finally {
       await putSettings(request, cookies, original);
