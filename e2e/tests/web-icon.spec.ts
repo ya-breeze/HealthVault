@@ -59,9 +59,26 @@ test.describe('web icon and manifest', () => {
   test('the retired scaffold assets are gone', async ({ page }) => {
     // These shipped with create-next-app and nothing referenced them. Asserting their absence
     // keeps a future copy-paste from quietly restoring the "this is still a scaffold" look.
+    //
+    // Not a 404 check: nginx serves this app with `try_files $uri $uri/ /index.html`, so every
+    // unknown path answers 200 with the SPA document. What proves the file is gone is that the
+    // response is a document rather than an image.
     for (const name of ['next.svg', 'vercel.svg', 'window.svg', 'globe.svg', 'file.svg']) {
       const asset = await page.request.get(new URL(`/${name}`, BASE_URL).toString());
-      expect(asset.status(), `/${name} is still served`).toBe(404);
+      expect(
+        asset.headers()['content-type'] ?? '',
+        `/${name} is still served as an image`,
+      ).not.toContain('image/');
     }
+  });
+
+  test('the manifest is served as a manifest', async ({ page }) => {
+    // nginx's bundled mime.types has no .webmanifest entry, so without the explicit
+    // default_type in nginx/nginx.conf this arrives as application/octet-stream and Chrome
+    // declines to install the shortcut. The build emits a valid manifest either way, which is
+    // why only a request against the deployed stack can catch this.
+    const response = await page.request.get(new URL('/manifest.webmanifest', BASE_URL).toString());
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toContain('application/manifest+json');
   });
 });
