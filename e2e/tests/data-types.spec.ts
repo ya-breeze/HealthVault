@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
@@ -758,4 +758,579 @@ test.describe('Webhook endpoint', () => {
     });
     expect(resp.status()).toBe(400);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Data-detail chart localization
+// (docs/specs/complete-the-owner-selected-english-and.md)
+//
+// Every chart series name, tick/tooltip format, and summary/projection
+// string on this route now depends on the selected Display Language — see
+// DataTypeClient.tsx and lib/i18n/{en,ru}.ts's dataDetail.* catalog. These
+// tests cover four chart shapes (heart_rate as the ordinary point page,
+// blood_pressure, nutrition, weight) in both languages, using deterministic
+// mocked responses rather than the shared seeded account's real health
+// data, which this file's other suites already depend on staying stable.
+// ---------------------------------------------------------------------------
+
+function hoursAgo(hours: number): string {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
+// UTC-midnight bucket_start, matching bucketLabel's read-back convention
+// (DataTypeClient.tsx's comment on bucketLabel) — the same helper as
+// chart-touch-readout.spec.ts's isoDateDaysAgo.
+function daysAgoUTC(daysAgo: number): string {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - daysAgo);
+  return d.toISOString();
+}
+
+type DataDetailMockRow = Record<string, unknown>;
+
+// One type's fixtures for every request shape DataTypeClient can issue for
+// it. `raw` backs the zoom-window fetch (record table, plus the Day-zoom
+// chart); `bucketDay`/`bucketMonth` back the active zoom's own bucketed
+// chart fetch. Weight adds two more: `allTimeRaw` backs the all-time weight
+// fetch that feeds the BMI readout and the projection's lifetime-history
+// gate, and `projectionBucket` backs the dedicated 60-day daily-bucketed
+// fetch that feeds the trend regression — both fire only for
+// dataType === 'weight' and, per the spec's task 5.1, must never be
+// satisfiable by the chart's own zoom-window or bucketed requests (or vice
+// versa). `weightContextStatus`, when set, fails only those two
+// weight-context fetches with the given HTTP status — never the ordinary
+// raw/bucketDay fetches, whose own failure already redirects to /login.
+interface DataDetailMock {
+  raw?: DataDetailMockRow[];
+  bucketDay?: DataDetailMockRow[];
+  bucketMonth?: DataDetailMockRow[];
+  allTimeRaw?: DataDetailMockRow[];
+  projectionBucket?: DataDetailMockRow[];
+  weightContextStatus?: number;
+}
+
+// Routes every `/api/data/<type>` request the data-detail page can issue,
+// branching on the type, the `bucket` query param, and — for weight alone,
+// the only type with two distinct un-bucketed fetches and two distinct
+// bucket=day fetches — the requested `from` date.
+async function mockDataDetail(page: Page, mocks: Record<string, DataDetailMock>) {
+  await page.route('**/api/data/**', route => {
+    const url = new URL(route.request().url());
+    const type = url.pathname.split('/').filter(Boolean).pop() ?? '';
+    const mock = mocks[type];
+    if (!mock) return route.fulfill({ json: [] });
+
+    const bucket = url.searchParams.get('bucket');
+    if (bucket === 'month') return route.fulfill({ json: mock.bucketMonth ?? [] });
+
+    if (bucket === 'day') {
+      // The projection's own bucket=day fetch is a fixed 60-day lookback
+      // (DataTypeClient.tsx), well past the chart's own bucket=day span at
+      // every zoom that requests one — Week's ~14 widened days, Month's 30
+      // unwidened days — see this file's "widens to >= 14 days"/"is not
+      // widened" tests above, which this threshold mirrors.
+      if (type === 'weight' && (mock.projectionBucket || mock.weightContextStatus !== undefined)) {
+        const from = new Date(url.searchParams.get('from')!).getTime();
+        const to = new Date(url.searchParams.get('to')!).getTime();
+        const spanDays = (to - from) / (1000 * 60 * 60 * 24);
+        if (spanDays > 45) {
+          if (mock.weightContextStatus !== undefined) {
+            return route.fulfill({ status: mock.weightContextStatus, contentType: 'text/plain', body: 'mock weight-context failure' });
+          }
+          return route.fulfill({ json: mock.projectionBucket ?? [] });
+        }
+      }
+      return route.fulfill({ json: mock.bucketDay ?? [] });
+    }
+
+    // No bucket: either the zoom-window raw fetch (record table, Day-zoom
+    // chart) or, for weight only, the separate all-time fetch — ALL_TIME_FROM
+    // is the Unix epoch, which no zoom window's `from` is ever close to.
+    if (type === 'weight' && (mock.allTimeRaw || mock.weightContextStatus !== undefined)) {
+      const fromYear = new Date(url.searchParams.get('from')!).getUTCFullYear();
+      if (fromYear < 2000) {
+        if (mock.weightContextStatus !== undefined) {
+          return route.fulfill({ status: mock.weightContextStatus, contentType: 'text/plain', body: 'mock weight-context failure' });
+        }
+        return route.fulfill({ json: mock.allTimeRaw ?? [] });
+      }
+    }
+    return route.fulfill({ json: mock.raw ?? [] });
+  });
+}
+
+function dataDetailChartSurface(page: Page): Locator {
+  return page.getByTestId('chart-surface');
+}
+
+function dataDetailTooltip(page: Page): Locator {
+  return page.locator('.recharts-tooltip-wrapper');
+}
+
+async function dataDetailPlotPoint(page: Page, fractionX: number, fractionY = 0.5): Promise<{ x: number; y: number }> {
+  const grid = await page.locator('.recharts-cartesian-grid').first().boundingBox();
+  expect(grid, 'the plot area should have a bounding box').not.toBeNull();
+  return { x: grid!.x + grid!.width * fractionX, y: grid!.y + grid!.height * fractionY };
+}
+
+// Opens the tooltip with a real mouse hover — this suite runs on the default
+// desktop Chrome project (no touch), so the simpler mouse path from
+// chart-touch-readout.spec.ts's "mouse regression" describe block applies
+// here, without that file's touch-isolation machinery.
+async function hoverDataDetailChart(page: Page, fractionX: number, fractionY = 0.5) {
+  await expect(dataDetailChartSurface(page)).toBeVisible();
+  const { x, y } = await dataDetailPlotPoint(page, fractionX, fractionY);
+  await page.mouse.move(x, y);
+  await expect(dataDetailTooltip(page)).toBeVisible();
+}
+
+async function dataDetailXAxisTickTexts(page: Page): Promise<string[]> {
+  return page.locator('.recharts-xAxis-tick-labels text').allTextContents();
+}
+
+async function selectRussianDisplayLanguage(page: Page) {
+  await page.goto('/settings');
+  const saved = await withSettingsSave(page, () =>
+    page.locator('#display-language').selectOption('ru')
+  );
+  expect(saved).toBe(true);
+  await expect(page.locator('#display-language')).toHaveValue('ru');
+}
+
+async function restoreEnglishDisplayLanguage(page: Page) {
+  await page.goto('/settings').catch(() => {});
+  await withSettingsSave(page, () =>
+    page.locator('#display-language').selectOption('en')
+  );
+  await expect(page.locator('#display-language')).toHaveValue('en').catch(() => {});
+}
+
+function heartRateDataDetailMocks(): Record<string, DataDetailMock> {
+  return {
+    heart_rate: {
+      raw: [
+        { id: 'hr1', bpm: 62, time: hoursAgo(20) },
+        { id: 'hr2', bpm: 71, time: hoursAgo(2) },
+      ],
+      bucketDay: [2, 1, 0].map((daysAgo, i) => ({
+        bucket_start: daysAgoUTC(daysAgo), avg: 64 + i * 3, min: 60 + i * 3, max: 70 + i * 3,
+      })),
+    },
+  };
+}
+
+function bloodPressureDataDetailMocks(): Record<string, DataDetailMock> {
+  return {
+    blood_pressure: {
+      raw: [
+        { id: 'bp1', systolic: 112, diastolic: 70, time: hoursAgo(20) },
+        { id: 'bp2', systolic: 124, diastolic: 80, time: hoursAgo(2) },
+      ],
+      bucketDay: [2, 1, 0].map((daysAgo, i) => ({
+        bucket_start: daysAgoUTC(daysAgo),
+        systolic_avg: 114 + i * 4, systolic_min: 110 + i * 4, systolic_max: 118 + i * 4,
+        diastolic_avg: 72 + i * 2, diastolic_min: 68 + i * 2, diastolic_max: 76 + i * 2,
+      })),
+    },
+  };
+}
+
+function nutritionDataDetailMocks(): Record<string, DataDetailMock> {
+  return {
+    nutrition: {
+      raw: [
+        {
+          id: 'n1', time: hoursAgo(20),
+          calories: 900, protein_grams: 30, carbs_grams: 90, fat_grams: 25,
+          sugar_grams: 10, sodium_grams: 1.0, dietary_fiber_grams: 8,
+        },
+        {
+          id: 'n2', time: hoursAgo(2),
+          calories: 1234, protein_grams: 45, carbs_grams: 120, fat_grams: 38,
+          sugar_grams: 20, sodium_grams: 1.8, dietary_fiber_grams: 12,
+        },
+      ],
+      bucketDay: [2, 1, 0].map((daysAgo, i) => ({
+        bucket_start: daysAgoUTC(daysAgo),
+        sum_calories: 1800 + i * 200, sum_protein_grams: 80 + i * 5,
+        sum_carbs_grams: 180 + i * 10, sum_fat_grams: 60 + i * 3,
+        sum_sugar_grams: 40 + i * 2, sum_sodium_grams: 2.2 + i * 0.1,
+        sum_dietary_fiber_grams: 22 + i,
+      })),
+    },
+  };
+}
+
+const WEIGHT_HEIGHT_METERS = 1.78;
+const WEIGHT_LATEST_KG = 85; // bmi = 85 / 1.78^2 ≈ 26.83 → 'overweight'
+const WEIGHT_WEEK_AVG_KG = 79.2;
+
+function weightGoalDataDetailMock(kg: number): DataDetailMockRow[] {
+  return [{ id: 'goal1', kilograms: kg, time: daysAgoUTC(200) }];
+}
+
+// The chart's own Week/Month-zoom bucketed fetch — independent of the
+// projection's dedicated fetch below, so this can stay a small, easy-to-read
+// series without needing to double as regression input.
+function weightChartBucketDayMock(): DataDetailMockRow[] {
+  return [4, 3, 2, 1, 0].map((daysAgo, i) => ({
+    bucket_start: daysAgoUTC(daysAgo), avg: 80.0 - i * 0.4, min: 79.0 - i * 0.4, max: 81.0 - i * 0.4,
+  }));
+}
+
+// Main weight-page fixture set: a height and a goal are on file, and the
+// projection lands 'on-track' with an ETA — reusing the same declining
+// 60-daily-bucket shape chart-touch-readout.spec.ts's Month-zoom projection
+// test already verified against computeProjection (dataTypeMeta.ts).
+function weightMainDataDetailMocks(): Record<string, DataDetailMock> {
+  const days = 60;
+  const projectionBucket: DataDetailMockRow[] = Array.from({ length: days }, (_, i) => {
+    const daysAgo = days - 1 - i;
+    return { bucket_start: daysAgoUTC(daysAgo), avg: 100 - i * 0.3 };
+  });
+  return {
+    weight: {
+      raw: [],
+      bucketDay: weightChartBucketDayMock(),
+      allTimeRaw: [
+        { id: 'atw0', kilograms: 92, time: daysAgoUTC(59) },
+        { id: 'atw1', kilograms: 90, time: daysAgoUTC(45) },
+        { id: 'atw2', kilograms: 88, time: daysAgoUTC(30) },
+        { id: 'atw3', kilograms: 86, time: daysAgoUTC(15) },
+        { id: 'atw4', kilograms: WEIGHT_LATEST_KG, time: daysAgoUTC(0) },
+      ],
+      projectionBucket,
+    },
+    height: { raw: [{ id: 'h1', meters: WEIGHT_HEIGHT_METERS, time: daysAgoUTC(200) }] },
+    weight_goal: { raw: weightGoalDataDetailMock(70) },
+  };
+}
+
+type WeightProjectionScenario = 'reached' | 'not-on-track' | 'insufficient-data' | 'load-failure';
+
+// The other four projection outcomes the main fixture set above doesn't
+// exercise — each isolates exactly the condition computeProjection or
+// hasEnoughDataForProjection (dataTypeMeta.ts) gates on, independent of the
+// chart's own bucketDay rendering fixture.
+function weightProjectionScenarioMocks(scenario: WeightProjectionScenario): Record<string, DataDetailMock> {
+  switch (scenario) {
+    case 'reached': {
+      // windowStartEma === latestEma === goal — computeProjection's
+      // direction===0-and-at-goal branch.
+      const flat: DataDetailMockRow[] = Array.from({ length: 20 }, (_, i) => ({
+        bucket_start: daysAgoUTC(19 - i), avg: 70,
+      }));
+      return {
+        weight: {
+          raw: [], bucketDay: [],
+          allTimeRaw: [0, 1, 2, 3, 4].map(i => ({ id: `r${i}`, kilograms: 70, time: daysAgoUTC(19 - i * 5) })),
+          projectionBucket: flat,
+        },
+        height: { raw: [] },
+        weight_goal: { raw: weightGoalDataDetailMock(70) },
+      };
+    }
+    case 'not-on-track': {
+      // A flat trend (slope 0) far from the goal — computeProjection's
+      // "slope === 0" branch, after the reached check falls through.
+      const flat: DataDetailMockRow[] = Array.from({ length: 20 }, (_, i) => ({
+        bucket_start: daysAgoUTC(19 - i), avg: 85,
+      }));
+      return {
+        weight: {
+          raw: [], bucketDay: [],
+          allTimeRaw: [0, 1, 2, 3, 4].map(i => ({ id: `n${i}`, kilograms: 85, time: daysAgoUTC(19 - i * 5) })),
+          projectionBucket: flat,
+        },
+        height: { raw: [] },
+        weight_goal: { raw: weightGoalDataDetailMock(50) },
+      };
+    }
+    case 'insufficient-data': {
+      // Below PROJECTION_MIN_RECORDS (5) — hasEnoughDataForProjection gates
+      // the projection off regardless of the regression window.
+      return {
+        weight: {
+          raw: [], bucketDay: [],
+          allTimeRaw: [
+            { id: 'i0', kilograms: 85, time: daysAgoUTC(10) },
+            { id: 'i1', kilograms: 84, time: daysAgoUTC(0) },
+          ],
+          projectionBucket: [],
+        },
+        height: { raw: [] },
+        weight_goal: { raw: weightGoalDataDetailMock(75) },
+      };
+    }
+    case 'load-failure': {
+      return {
+        weight: { raw: [], bucketDay: [], weightContextStatus: 500 },
+        height: { raw: [] },
+        weight_goal: { raw: [] },
+      };
+    }
+  }
+}
+
+test.describe('Data-detail chart localization — English', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('heart_rate: Day and Week views translate controls, series names, and summary headings', async ({ page }) => {
+    await mockDataDetail(page, heartRateDataDetailMocks());
+    await page.goto('/data/heart_rate/');
+    await expect(page.getByRole('heading', { name: 'Heart Rate' })).toBeVisible();
+
+    for (const label of ['Day', 'Week', 'Month', 'Year']) {
+      await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
+    }
+
+    // Week is the default zoom — no click needed to reach it.
+    await expect(page.getByText('Avg', { exact: true })).toBeVisible();
+    await expect(page.getByText('Max', { exact: true })).toBeVisible();
+
+    const expectedTick = await page.evaluate(
+      iso => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+      daysAgoUTC(0),
+    );
+    expect(await dataDetailXAxisTickTexts(page)).toContain(expectedTick);
+
+    await hoverDataDetailChart(page, 0.9);
+    await expect(dataDetailTooltip(page).getByText('Avg', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Day', exact: true }).click();
+    await hoverDataDetailChart(page, 0.9);
+    await expect(dataDetailTooltip(page).getByText('Heart Rate', { exact: true })).toBeVisible();
+    await expect(dataDetailTooltip(page).getByText('71', { exact: true })).toBeVisible();
+  });
+
+  test('blood_pressure: Day and Week views translate legend and range names', async ({ page }) => {
+    await mockDataDetail(page, bloodPressureDataDetailMocks());
+    await page.goto('/data/blood_pressure/');
+    await expect(page.getByRole('heading', { name: 'Blood Pressure' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Day', exact: true }).click();
+    await expect(page.getByText('Systolic', { exact: true })).toBeVisible();
+    await expect(page.getByText('Diastolic', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Week', exact: true }).click();
+    await expect(page.getByText('Systolic', { exact: true })).toBeVisible();
+    await expect(page.getByText('Diastolic', { exact: true })).toBeVisible();
+    await hoverDataDetailChart(page, 0.9);
+    await expect(dataDetailTooltip(page).getByText('Systolic range', { exact: true })).toBeVisible();
+    await expect(dataDetailTooltip(page).getByText('Diastolic range', { exact: true })).toBeVisible();
+  });
+
+  test('nutrition: Day and Week views translate the macro selector and follow the selected macro', async ({ page }) => {
+    await mockDataDetail(page, nutritionDataDetailMocks());
+    await page.goto('/data/nutrition/');
+    await expect(page.getByRole('heading', { name: 'Nutrition' })).toBeVisible();
+    for (const macro of ['Calories', 'Protein', 'Carbs', 'Fat', 'Sugar', 'Sodium', 'Fiber']) {
+      await expect(page.getByRole('button', { name: macro, exact: true })).toBeVisible();
+    }
+
+    // Week (default zoom): Calories macro, bar chart.
+    await hoverDataDetailChart(page, 0.9);
+    await expect(dataDetailTooltip(page).getByText('Calories', { exact: true })).toBeVisible();
+    await expect(dataDetailTooltip(page).getByText('2,200', { exact: true })).toBeVisible();
+
+    // Switching macro changes the bar's name and value together.
+    await page.getByRole('button', { name: 'Protein', exact: true }).click();
+    await hoverDataDetailChart(page, 0.9);
+    await expect(dataDetailTooltip(page).getByText('Protein', { exact: true })).toBeVisible();
+    await expect(dataDetailTooltip(page).getByText('90', { exact: true })).toBeVisible();
+
+    // Day zoom: line chart, still following the selected macro (Protein).
+    await page.getByRole('button', { name: 'Day', exact: true }).click();
+    await hoverDataDetailChart(page, 0.9);
+    await expect(dataDetailTooltip(page).getByText('Protein', { exact: true })).toBeVisible();
+    await expect(dataDetailTooltip(page).getByText('45', { exact: true })).toBeVisible();
+  });
+
+  test('weight: Week and Month views show Goal/Trend, Avg/Max/BMI, and the on-track projection ETA', async ({ page }) => {
+    await mockDataDetail(page, weightMainDataDetailMocks());
+    await page.goto('/data/weight/');
+    await expect(page.getByRole('heading', { name: 'Weight' })).toBeVisible();
+
+    // 'Avg' names both the summary heading and the chart's Legend entry —
+    // translated in both, so it appears twice rather than once.
+    await expect(page.getByText('Avg', { exact: true })).toHaveCount(2);
+    await expect(page.getByText('Max', { exact: true })).toBeVisible();
+    await expect(page.getByText('BMI', { exact: true })).toBeVisible();
+    await expect(page.getByText('Overweight')).toBeVisible();
+    await expect(page.getByText('Goal', { exact: true })).toBeVisible();
+    await expect(page.getByText('Trend', { exact: true })).toBeVisible();
+
+    const message = page.getByTestId('projection-message');
+    await expect(message).toContainText('On track to reach your goal around');
+
+    await hoverDataDetailChart(page, 0.5);
+    await expect(dataDetailTooltip(page).getByText('Avg', { exact: true })).toBeVisible();
+    const expectedAvg = await page.evaluate(
+      v => v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+      WEIGHT_WEEK_AVG_KG,
+    );
+    await expect(dataDetailTooltip(page).getByText(expectedAvg, { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Month', exact: true }).click();
+    await expect(message).toContainText('On track to reach your goal around');
+  });
+});
+
+test.describe('Data-detail chart localization — Russian', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('heart_rate: Day and Week views translate controls, series names, and summary headings', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      await mockDataDetail(page, heartRateDataDetailMocks());
+      await page.goto('/data/heart_rate/');
+      await expect(page.getByRole('heading', { name: 'Пульс' })).toBeVisible();
+
+      for (const label of ['День', 'Неделя', 'Месяц', 'Год']) {
+        await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
+      }
+      await expect(page.getByText('Среднее', { exact: true })).toBeVisible();
+      await expect(page.getByText('Макс.', { exact: true })).toBeVisible();
+
+      const expectedTick = await page.evaluate(
+        iso => new Date(iso).toLocaleDateString('ru', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+        daysAgoUTC(0),
+      );
+      expect(await dataDetailXAxisTickTexts(page)).toContain(expectedTick);
+
+      await hoverDataDetailChart(page, 0.9);
+      await expect(dataDetailTooltip(page).getByText('Среднее', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'День', exact: true }).click();
+      await hoverDataDetailChart(page, 0.9);
+      await expect(dataDetailTooltip(page).getByText('Пульс', { exact: true })).toBeVisible();
+      await expect(dataDetailTooltip(page).getByText('71', { exact: true })).toBeVisible();
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
+  });
+
+  test('blood_pressure: Day and Week views translate legend and range names', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      await mockDataDetail(page, bloodPressureDataDetailMocks());
+      await page.goto('/data/blood_pressure/');
+      await expect(page.getByRole('heading', { name: 'Давление' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'День', exact: true }).click();
+      await expect(page.getByText('Систолическое', { exact: true })).toBeVisible();
+      await expect(page.getByText('Диастолическое', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Неделя', exact: true }).click();
+      await expect(page.getByText('Систолическое', { exact: true })).toBeVisible();
+      await expect(page.getByText('Диастолическое', { exact: true })).toBeVisible();
+      await hoverDataDetailChart(page, 0.9);
+      await expect(dataDetailTooltip(page).getByText('Диапазон систолического давления', { exact: true })).toBeVisible();
+      await expect(dataDetailTooltip(page).getByText('Диапазон диастолического давления', { exact: true })).toBeVisible();
+
+      const expectedTick = await page.evaluate(
+        iso => new Date(iso).toLocaleDateString('ru', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+        daysAgoUTC(0),
+      );
+      expect(await dataDetailXAxisTickTexts(page)).toContain(expectedTick);
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
+  });
+
+  test('nutrition: Day and Week views translate the macro selector and follow the selected macro', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      await mockDataDetail(page, nutritionDataDetailMocks());
+      await page.goto('/data/nutrition/');
+      await expect(page.getByRole('heading', { name: 'Питание' })).toBeVisible();
+      for (const macro of ['Калории', 'Белки', 'Углеводы', 'Жиры', 'Сахар', 'Натрий', 'Клетчатка']) {
+        await expect(page.getByRole('button', { name: macro, exact: true })).toBeVisible();
+      }
+
+      await hoverDataDetailChart(page, 0.9);
+      await expect(dataDetailTooltip(page).getByText('Калории', { exact: true })).toBeVisible();
+      const expectedCalories = await page.evaluate(
+        v => v.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+        2200,
+      );
+      await expect(dataDetailTooltip(page).getByText(expectedCalories, { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Белки', exact: true }).click();
+      await hoverDataDetailChart(page, 0.9);
+      await expect(dataDetailTooltip(page).getByText('Белки', { exact: true })).toBeVisible();
+      await expect(dataDetailTooltip(page).getByText('90', { exact: true })).toBeVisible();
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
+  });
+
+  test('weight: Week and Month views translate BMI, Goal/Trend, Avg/Max, and the on-track projection ETA', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      await mockDataDetail(page, weightMainDataDetailMocks());
+      await page.goto('/data/weight/');
+      await expect(page.getByRole('heading', { name: 'Вес' })).toBeVisible();
+
+      await expect(page.getByText('Среднее', { exact: true })).toHaveCount(2);
+      await expect(page.getByText('Макс.', { exact: true })).toBeVisible();
+      await expect(page.getByText('ИМТ', { exact: true })).toBeVisible();
+      await expect(page.getByText('Избыточный вес')).toBeVisible();
+      await expect(page.getByText('Цель', { exact: true })).toBeVisible();
+      await expect(page.getByText('Тренд', { exact: true })).toBeVisible();
+
+      const message = page.getByTestId('projection-message');
+      await expect(message).toContainText('При текущей динамике вы достигнете цели примерно');
+
+      await hoverDataDetailChart(page, 0.5);
+      await expect(dataDetailTooltip(page).getByText('Среднее', { exact: true })).toBeVisible();
+      // ru-RU number formatting — computed in-browser rather than hardcoding
+      // the platform's exact non-breaking-space/comma rendering.
+      const expectedAvg = await page.evaluate(
+        v => v.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+        WEIGHT_WEEK_AVG_KG,
+      );
+      await expect(dataDetailTooltip(page).getByText(expectedAvg, { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Месяц', exact: true }).click();
+      await expect(message).toContainText('При текущей динамике вы достигнете цели примерно');
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
+  });
+});
+
+test.describe('Weight trend-projection states — Russian', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  const cases: { scenario: WeightProjectionScenario; expected: string }[] = [
+    { scenario: 'reached', expected: 'Вы достигли целевого веса' },
+    { scenario: 'not-on-track', expected: 'С текущей динамикой цель не будет достигнута' },
+    { scenario: 'insufficient-data', expected: 'Пока недостаточно данных для прогноза' },
+    { scenario: 'load-failure', expected: 'Не удалось загрузить историю веса' },
+  ];
+
+  // The fifth outcome, on-track with an ETA, is covered by the "translate
+  // BMI, Goal/Trend, Avg/Max, and the on-track projection ETA" test above —
+  // together these five cover every branch of computeProjection plus the
+  // insufficient-data and load-failure gates around it (dataTypeMeta.ts).
+  for (const { scenario, expected } of cases) {
+    test(`${scenario} renders the matching Russian projection message`, async ({ page }) => {
+      try {
+        await selectRussianDisplayLanguage(page);
+        await mockDataDetail(page, weightProjectionScenarioMocks(scenario));
+        await page.goto('/data/weight/');
+        await expect(page.getByTestId('projection-message')).toHaveText(expected);
+      } finally {
+        await restoreEnglishDisplayLanguage(page);
+      }
+    });
+  }
 });
