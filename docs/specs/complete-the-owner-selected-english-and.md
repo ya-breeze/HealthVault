@@ -63,9 +63,9 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 4: Localize the Suspense fallback
 
-- [ ] Add `frontend/app/data/[type]/DataTypeLoading.tsx` as a client component that reads `dataDetail.loading` from `useLanguage` and preserves the current fallback spacing and muted styling.
-- [ ] Use `DataTypeLoading` as the `<Suspense>` fallback in `frontend/app/data/[type]/page.tsx`, leaving `generateStaticParams`, async params unwrapping, and `DataTypeClient` mounting unchanged.
-- [ ] Mark completed
+- [x] Add `frontend/app/data/[type]/DataTypeLoading.tsx` as a client component that reads `dataDetail.loading` from `useLanguage` and preserves the current fallback spacing and muted styling.
+- [x] Use `DataTypeLoading` as the `<Suspense>` fallback in `frontend/app/data/[type]/page.tsx`, leaving `generateStaticParams`, async params unwrapping, and `DataTypeClient` mounting unchanged.
+- [x] Mark completed
 
 ### Task 5: Cover both languages across every chart family
 
