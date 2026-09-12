@@ -337,3 +337,146 @@ describe('api.cfAccessLogin', () => {
     await expect(api.cfAccessLogin()).resolves.toBeUndefined();
   });
 });
+
+// Dedup for the two parameterless bootstrap reads AuthenticatedShell,
+// LanguageProvider and the dashboard's settings effect each call
+// independently on mount. This is in-flight deduplication, not a value
+// cache: the slot only ever satisfies callers that overlap with a request
+// already running, and clears the moment that request settles either way.
+describe('bootstrap read coalescing', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shares one /users/me request between two overlapping callers', async () => {
+    let calls = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => { release = r; });
+
+    installFetch(async path => {
+      if (path.endsWith('/users/me')) {
+        calls++;
+        await gate;
+        // A fresh Response per settled call: a shared coalesced promise would
+        // still only mean one of these bodies is ever read, but returning the
+        // same Response instance from two independent requests would break
+        // even the correct implementation, since a body can only be read once.
+        return json({ id: '1', username: 'alice', family_id: 'f1' });
+      }
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    const first = api.me();
+    const second = api.me();
+    release();
+
+    await expect(first).resolves.toMatchObject({ id: '1' });
+    await expect(second).resolves.toMatchObject({ id: '1' });
+    expect(calls, 'two overlapping calls share one request').toBe(1);
+  });
+
+  it('issues a new /users/me request once the in-flight one has settled', async () => {
+    let calls = 0;
+    installFetch(async path => {
+      if (path.endsWith('/users/me')) {
+        calls++;
+        return json({ id: String(calls), username: 'alice', family_id: 'f1' });
+      }
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await expect(api.me()).resolves.toMatchObject({ id: '1' });
+    await expect(api.me()).resolves.toMatchObject({ id: '2' });
+    expect(calls, 'a later, non-overlapping call is not served from a stale slot').toBe(2);
+  });
+
+  it('shares one /users/me/settings request between two overlapping callers', async () => {
+    let calls = 0;
+    installFetch(async path => {
+      if (path.endsWith('/users/me/settings')) {
+        calls++;
+        return json({ timezone: 'America/Los_Angeles' });
+      }
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    const [first, second] = await Promise.all([api.getSettings(), api.getSettings()]);
+    expect(first).toEqual(second);
+    expect(calls, 'two overlapping calls share one request').toBe(1);
+  });
+
+  it('clears the settings slot on success so a later sequential call performs a new GET', async () => {
+    let calls = 0;
+    installFetch(async path => {
+      if (path.endsWith('/users/me/settings')) {
+        calls++;
+        return json({ timezone: 'UTC' });
+      }
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await api.getSettings();
+    await api.getSettings();
+    expect(calls, 'a settled request is not retained as cached data').toBe(2);
+  });
+
+  it('clears the settings slot on rejection too, so a later sequential call performs a new GET', async () => {
+    let calls = 0;
+    installFetch(async path => {
+      if (path.endsWith('/auth/refresh')) return unauthorized();
+      if (path.endsWith('/auth/cf-access')) return new Response('not enabled', { status: 404 });
+      if (path.endsWith('/users/me/settings')) {
+        calls++;
+        return calls === 1 ? unauthorized() : json({ timezone: 'UTC' });
+      }
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    await expect(api.getSettings()).rejects.toMatchObject({ status: 401 });
+    await expect(api.getSettings()).resolves.toMatchObject({ timezone: 'UTC' });
+    expect(calls).toBe(2);
+  });
+
+  // The write path's whole-document GET-merge-PUT protection must never reuse
+  // a UI bootstrap read started for an unrelated purpose (it could be reading
+  // a snapshot from before a concurrent write this call needs to see), and
+  // must never itself be reused as one (a caller awaiting the bootstrap GET
+  // must not silently receive settings a write already changed further).
+  it('updateSettings issues its own fresh GET even while a bootstrap settings read is in flight', async () => {
+    let getCount = 0;
+    let releaseBootstrap: () => void = () => {};
+    const bootstrapGate = new Promise<void>(r => { releaseBootstrap = r; });
+
+    const calls = installFetch(async (path, init) => {
+      const method = init?.method ?? 'GET';
+      if (path.endsWith('/users/me/settings') && method === 'GET') {
+        getCount++;
+        if (getCount === 1) await bootstrapGate;
+        return json({ timezone: 'UTC', display_language: 'en' });
+      }
+      if (path.endsWith('/users/me/settings') && method === 'PUT') {
+        return json(JSON.parse(String(init?.body)));
+      }
+      throw new Error(`unexpected request: ${path} ${method}`);
+    });
+
+    const api = await freshApi();
+    const bootstrap = api.getSettings();
+    // If this reused the bootstrap read's coalesced promise, it would hang
+    // here until releaseBootstrap() below runs — proving the two paths are
+    // independent requires observing this resolve first.
+    const updated = await api.updateSettings({ display_language: 'ru' });
+
+    expect(updated).toMatchObject({ timezone: 'UTC', display_language: 'ru' });
+    expect(getCount, 'the write path performs its own GET rather than waiting on the bootstrap read').toBe(2);
+    expect(calls.filter(c => c === 'PUT /api/users/me/settings')).toHaveLength(1);
+
+    releaseBootstrap();
+    await expect(bootstrap).resolves.toMatchObject({ timezone: 'UTC', display_language: 'en' });
+  });
+});
