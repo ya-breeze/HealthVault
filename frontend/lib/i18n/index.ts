@@ -33,6 +33,18 @@ export function dateLocaleFor(language: LanguageCode): string | undefined {
   return language === 'ru' ? 'ru' : undefined;
 }
 
+// The locale to format numbers for, given a Display Language — passed to
+// formatMetricValue (lib/dataTypeMeta.ts) by the data-detail charts. Unlike
+// dateLocaleFor, English maps to a concrete locale ('en-US') rather than
+// `undefined`: formatMetricValue's default parameter is already 'en-US', so
+// every pre-existing caller (vitals-grid, dashboard) keeps its exact output,
+// and English data-detail charts must match that same output rather than
+// drifting to the browser's own locale, which the "chart display precision"
+// requirement never intended to make locale-dependent for English.
+export function numberLocaleFor(language: LanguageCode): string {
+  return language === 'ru' ? 'ru-RU' : 'en-US';
+}
+
 // Selects among a counted noun's plural forms using the Display Language's own
 // plural categories.
 //
