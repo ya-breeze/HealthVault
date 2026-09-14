@@ -33,7 +33,9 @@ AI estimate from reference or manual data.
 The model chooses whether to call a tool. The OpenAI adapter implements the documented Chat
 Completions function-tool loop: send the available tool definitions, execute validated calls on the
 server, append the assistant tool call and matching tool result, then ask for the final structured
-answer. Bound each user question to three tool calls. Keep `store:false` on every provider request.
+answer. Set `reasoning_effort:none` on this tool-enabled Chat Completions path because the configured
+reasoning model rejects function tools while reasoning effort is active. Bound each user question
+to three tool calls. Keep `store:false` on every provider request.
 Reject unknown tools and invalid arguments without exposing database or provider errors.
 
 The current advice basis remains in the initial prompt. History is additional context, not a new

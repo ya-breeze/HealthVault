@@ -34,8 +34,10 @@ the model responsible for deciding which data is relevant before it has seen the
 
 Chosen: expose three purpose-shaped function tools through one server-owned execution interface:
 nutrition-signal explanation, bounded health trends, and recent Logged Day details. The OpenAI
-adapter runs a bounded tool-calling loop. Tool arguments contain no user identity; the server
-adapter captures it from the authenticated request.
+adapter runs a bounded Chat Completions tool-calling loop with reasoning effort disabled, as the
+configured reasoning model does not support function tools on that endpoint while reasoning effort
+is active. Tool arguments contain no user identity; the server adapter captures it from the
+authenticated request.
 
 History augments the explanation but never changes the deterministic Healthiness Label. The model
 must distinguish estimates from measurements and must not present cross-metric correlation as

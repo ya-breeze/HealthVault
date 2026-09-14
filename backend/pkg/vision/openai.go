@@ -220,12 +220,13 @@ type chatMessage struct {
 }
 
 type chatCompletionRequest struct {
-	Model          string         `json:"model"`
-	Messages       []chatMessage  `json:"messages"`
-	ResponseFormat responseFormat `json:"response_format"`
-	Store          bool           `json:"store"`
-	Tools          []chatTool     `json:"tools,omitempty"`
-	ToolChoice     string         `json:"tool_choice,omitempty"`
+	Model           string         `json:"model"`
+	Messages        []chatMessage  `json:"messages"`
+	ResponseFormat  responseFormat `json:"response_format"`
+	Store           bool           `json:"store"`
+	Tools           []chatTool     `json:"tools,omitempty"`
+	ToolChoice      string         `json:"tool_choice,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
 }
 
 type chatTool struct {
@@ -978,9 +979,14 @@ func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput)
 
 	tools := []chatTool(nil)
 	toolChoice := ""
+	reasoningEffort := ""
 	if in.HistoryTools != nil {
 		tools = nutritionChatTools
 		toolChoice = "auto"
+		// Chat Completions rejects function tools for reasoning models when
+		// reasoning_effort is active. Keep this compatibility setting scoped
+		// to the tool-enabled chat path; the other vision calls stay unchanged.
+		reasoningEffort = "none"
 	}
 	totalPromptTokens := 0
 	totalCompletionTokens := 0
@@ -995,7 +1001,7 @@ func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput)
 			ResponseFormat: responseFormat{Type: "json_schema", JSONSchema: jsonSchema{
 				Name: "nutrition_chat", Strict: true, Schema: nutritionChatJSONSchema,
 			}},
-			Store: false, Tools: tools, ToolChoice: toolChoice,
+			Store: false, Tools: tools, ToolChoice: toolChoice, ReasoningEffort: reasoningEffort,
 		})
 		if err != nil {
 			return nil, err

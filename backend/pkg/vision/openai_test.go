@@ -768,6 +768,9 @@ func TestOpenAIClient_NutritionChat_ExecutesAndReplaysHistoryToolCalls(t *testin
 		if body["store"] != false {
 			t.Errorf("request %d did not keep store:false", requestNumber)
 		}
+		if body["reasoning_effort"] != "none" {
+			t.Errorf("request %d did not disable reasoning for Chat Completions tools: %+v", requestNumber, body)
+		}
 		if requestNumber == 1 {
 			tools, _ := body["tools"].([]any)
 			if len(tools) != 3 || body["tool_choice"] != "auto" {
