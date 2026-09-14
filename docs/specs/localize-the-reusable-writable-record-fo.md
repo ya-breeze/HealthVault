@@ -47,12 +47,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 2: Localize AddRecordForm without changing its write contract
 
-- [ ] Update `WRITE_UNITS` in `frontend/components/AddRecordForm.tsx` to carry typed `unit.*` dictionary keys and the unchanged 20–500 kg and 0.5–2.5 m bounds, following the repository’s typed dictionary-key and partial `DataType` metadata conventions.
-- [ ] Read `t` through `useLanguage`, resolve each unit key once, and translate the plain Value fallback, interpolated unit-bearing Value label, Time (optional), Add, Saving…, and conditional Cancel UI.
-- [ ] Replace stringly validation state with semantic error states resolved through `t` and `interpolate`, preserving the positive-number check before the per-type range check and rendering the correct localized bounds and unit.
-- [ ] Replace `ApiError`/`Error.message` rendering with the localized operation-level save failure and remove the unused `ApiError` import so no server response body can appear in either language.
-- [ ] Preserve request construction, blank-time omission, local-datetime ISO conversion, `maxLocalDateTime`, input constraints, success reset and callback order, failed-input retention, saving cleanup, cancellation behavior, and every `DataTypeClient` ownership/opening gate.
-- [ ] Mark completed
+- [x] Update `WRITE_UNITS` in `frontend/components/AddRecordForm.tsx` to carry typed `unit.*` dictionary keys and the unchanged 20–500 kg and 0.5–2.5 m bounds, following the repository’s typed dictionary-key and partial `DataType` metadata conventions.
+- [x] Read `t` through `useLanguage`, resolve each unit key once, and translate the plain Value fallback, interpolated unit-bearing Value label, Time (optional), Add, Saving…, and conditional Cancel UI.
+- [x] Replace stringly validation state with semantic error states resolved through `t` and `interpolate`, preserving the positive-number check before the per-type range check and rendering the correct localized bounds and unit.
+- [x] Replace `ApiError`/`Error.message` rendering with the localized operation-level save failure and remove the unused `ApiError` import so no server response body can appear in either language.
+- [x] Preserve request construction, blank-time omission, local-datetime ISO conversion, `maxLocalDateTime`, input constraints, success reset and callback order, failed-input retention, saving cleanup, cancellation behavior, and every `DataTypeClient` ownership/opening gate.
+- [x] Mark completed
 
 ### Task 3: Add deterministic English writable-form coverage
 

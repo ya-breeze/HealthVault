@@ -1,7 +1,9 @@
 'use client';
 import { FormEvent, useState } from 'react';
-import { api, ApiError, DataType } from '@/lib/api';
+import { api, DataType } from '@/lib/api';
 import TapTarget from '@/components/ui/TapTarget';
+import { useLanguage } from '@/components/LanguageContext';
+import { interpolate, type Dictionary } from '@/lib/i18n';
 
 interface Props {
   type: DataType;
@@ -24,11 +26,18 @@ interface Props {
 // writeBounds. One generic form serves units of very different magnitude, so
 // without a visible unit the natural "178" for a height is a 178-metre record
 // that the old `> 0` check happily accepted.
-const WRITE_UNITS: Record<string, { unit: string; min: number; max: number }> = {
-  weight: { unit: 'kg', min: 20, max: 500 },
-  weight_goal: { unit: 'kg', min: 20, max: 500 },
-  height: { unit: 'm', min: 0.5, max: 2.5 },
+type UnitKey = Extract<keyof Dictionary, `unit.${string}`>;
+
+const WRITE_UNITS: Partial<Record<DataType, { unitKey: UnitKey; min: number; max: number }>> = {
+  weight: { unitKey: 'unit.kg', min: 20, max: 500 },
+  weight_goal: { unitKey: 'unit.kg', min: 20, max: 500 },
+  height: { unitKey: 'unit.m', min: 0.5, max: 2.5 },
 };
+
+type FormError =
+  | { kind: 'positive' }
+  | { kind: 'range' }
+  | { kind: 'saveFailed' };
 
 // `datetime-local` wants a local-time "YYYY-MM-DDTHH:mm" string, not an ISO
 // UTC one — toISOString() here would set the ceiling to the wrong instant for
@@ -40,21 +49,23 @@ function maxLocalDateTime(): string {
 }
 
 export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
+  const { t } = useLanguage();
   const spec = WRITE_UNITS[type];
+  const unit = spec ? t(spec.unitKey) : undefined;
   const [value, setValue] = useState('');
   const [time, setTime] = useState('');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const numeric = Number(value);
     if (!value.trim() || !Number.isFinite(numeric) || numeric <= 0) {
-      setError('Enter a positive number');
+      setError({ kind: 'positive' });
       return;
     }
     if (spec && (numeric < spec.min || numeric > spec.max)) {
-      setError(`Enter a value between ${spec.min} and ${spec.max} ${spec.unit}`);
+      setError({ kind: 'range' });
       return;
     }
     setSaving(true);
@@ -67,8 +78,8 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
       setValue('');
       setTime('');
       onSuccess();
-    } catch (err) {
-      setError(err instanceof ApiError || err instanceof Error ? err.message : 'Save failed');
+    } catch {
+      setError({ kind: 'saveFailed' });
     } finally {
       setSaving(false);
     }
@@ -84,7 +95,11 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
       className="flex flex-wrap items-end gap-3 bg-bg-elevated rounded-[12px] border border-border p-4 mb-4"
     >
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-text-muted">{spec ? `Value (${spec.unit})` : 'Value'}</span>
+        <span className="text-xs text-text-muted">
+          {spec && unit
+            ? interpolate(t('addRecord.valueWithUnit'), { unit })
+            : t('addRecord.value')}
+        </span>
         <input
           type="number"
           step="any"
@@ -97,7 +112,7 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
         />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-text-muted">Time (optional)</span>
+        <span className="text-xs text-text-muted">{t('addRecord.time')}</span>
         <input
           type="datetime-local"
           value={time}
@@ -115,7 +130,7 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
         disabled={saving}
         className="rounded-md text-sm font-medium bg-accent text-bg-elevated px-4 py-1.5 disabled:opacity-50"
       >
-        {saving ? 'Saving…' : 'Add'}
+        {saving ? t('addRecord.saving') : t('addRecord.add')}
       </TapTarget>
       {onCancel && (
         <TapTarget
@@ -123,10 +138,22 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
           onClick={onCancel}
           className="rounded-md text-sm font-medium bg-border text-text px-4 py-1.5"
         >
-          Cancel
+          {t('addRecord.cancel')}
         </TapTarget>
       )}
-      {error && <p className="w-full text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && (
+        <p className="w-full text-sm text-red-600 dark:text-red-400">
+          {error.kind === 'positive'
+            ? t('addRecord.positiveNumber')
+            : error.kind === 'range' && spec && unit
+              ? interpolate(t('addRecord.range'), {
+                  min: spec.min,
+                  max: spec.max,
+                  unit,
+                })
+              : t('addRecord.saveFailed')}
+        </p>
+      )}
     </form>
   );
 }
