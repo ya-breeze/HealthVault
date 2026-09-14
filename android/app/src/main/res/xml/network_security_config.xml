@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Release baseline: no cleartext traffic anywhere. src/debug/res/xml/network_security_config.xml
+  overrides this for debug builds only, so a LAN stack like http://192.168.1.54:8892 stays
+  testable without weakening the release build's HTTPS-only policy.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
