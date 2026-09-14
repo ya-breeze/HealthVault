@@ -51,37 +51,37 @@ https://www.efsa.europa.eu/en/press/news/nda100326.
 
 ### Task 1: Add dietary fiber to the deterministic judgment
 
-- [ ] Extend daily inputs, pooled means, signal types and thresholds with dietary fiber
-- [ ] Preserve the existing five-signal order and evaluate fiber as lower-only against 25 g/day
-- [ ] Cover the boundary, low-fiber result, combination rule and unchanged existing reason precedence
-- [ ] Mark completed
+- [x] Extend daily inputs, pooled means, signal types and thresholds with dietary fiber
+- [x] Preserve the existing five-signal order and evaluate fiber as lower-only against 25 g/day
+- [x] Cover the boundary, low-fiber result, combination rule and unchanged existing reason precedence
+- [x] Mark completed
 
 ### Task 2: Carry fiber through advice and chat
 
-- [ ] Add the fiber mean to advice and chat request shapes, normalized inputs, prompts and cache hash
-- [ ] Let `explain_nutrition_signal` return fiber days and contributors under the existing bounds
-- [ ] Cover validation, provider request shape, fakes and server-owned history access
-- [ ] Mark completed
+- [x] Add the fiber mean to advice and chat request shapes, normalized inputs, prompts and cache hash
+- [x] Let `explain_nutrition_signal` return fiber days and contributors under the existing bounds
+- [x] Cover validation, provider request shape, fakes and server-owned history access
+- [x] Mark completed
 
 ### Task 3: Return server-owned actionable sources
 
-- [ ] Collect at most five contributor sources inside the authenticated request-scoped history adapter
-- [ ] Keep meal identifiers out of model-visible tool results and return sources beside the final answer
-- [ ] Cover source ordering, bounds, caller isolation, empty-source answers and non-persistence
-- [ ] Mark completed
+- [x] Collect at most five contributor sources inside the authenticated request-scoped history adapter
+- [x] Keep meal identifiers out of model-visible tool results and return sources beside the final answer
+- [x] Cover source ordering, bounds, caller isolation, empty-source answers and non-persistence
+- [x] Mark completed
 
 ### Task 4: Render sources on mobile
 
-- [ ] Keep display-only source metadata on its assistant turn and omit it from replayed chat turns
-- [ ] Render localized full-width source links with date, contribution, Macro Source and confidence
-- [ ] Navigate each source to its caller-owned meal review screen with a 48px minimum tap target
-- [ ] Cover narrow-screen layout, source navigation and a response without sources in Playwright
-- [ ] Mark completed
+- [x] Keep display-only source metadata on its assistant turn and omit it from replayed chat turns
+- [x] Render localized full-width source links with date, contribution, Macro Source and confidence
+- [x] Navigate each source to its caller-owned meal review screen with a 48px minimum tap target
+- [x] Cover narrow-screen layout, source navigation and a response without sources in Playwright
+- [x] Mark completed
 
 ### Task 5: Record and validate the result
 
-- [ ] Update ADR-004 and CONTEXT.md without rewriting any merged spec
-- [ ] Run every validation command against the final branch and deployed WIP stack
-- [ ] Run the Review Gate and resolve every valid finding
-- [ ] Confirm that no task box remains unticked
-- [ ] Mark completed
+- [x] Update ADR-004 and CONTEXT.md without rewriting any merged spec
+- [x] Run every validation command against the final branch and deployed WIP stack
+- [x] Run the Review Gate and resolve every valid finding
+- [x] Confirm that no task box remains unticked
+- [x] Mark completed
