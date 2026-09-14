@@ -68,40 +68,40 @@ existing question redaction and must not add tool arguments or tool results.
 
 ### Task 1: Define the read-only history seam
 
-- [ ] Add a bounded Nutrition Chat tool executor interface to the vision module
-- [ ] Implement the authenticated server adapter for nutrition-signal evidence, health trends and
+- [x] Add a bounded Nutrition Chat tool executor interface to the vision module
+- [x] Implement the authenticated server adapter for nutrition-signal evidence, health trends and
       Logged Day details
-- [ ] Preserve the Healthiness Label's exact eligibility rules without calling a write-capable read
+- [x] Preserve the Healthiness Label's exact eligibility rules without calling a write-capable read
       path
-- [ ] Expose Macro Source and confidence while excluding private implementation fields
-- [ ] Cover caller isolation, date/range limits, incomplete days and estimated Food Item evidence
-- [ ] Mark completed
+- [x] Expose Macro Source and confidence while excluding private implementation fields
+- [x] Cover caller isolation, date/range limits, incomplete days and estimated Food Item evidence
+- [x] Mark completed
 
 ### Task 2: Let the model request history
 
-- [ ] Add strict function-tool definitions for the three history tools
-- [ ] Implement a bounded Chat Completions tool loop with matching tool-call IDs and `store:false`
+- [x] Add strict function-tool definitions for the three history tools
+- [x] Implement a bounded Chat Completions tool loop with matching tool-call IDs and `store:false`
       on every request
-- [ ] Require history questions to use the tools and constrain cross-signal claims in the prompt
-- [ ] Cover tool selection, result replay, multiple calls, invalid calls, call limits and final
+- [x] Require history questions to use the tools and constrain cross-signal claims in the prompt
+- [x] Cover tool selection, result replay, multiple calls, invalid calls, call limits and final
       structured-answer parsing
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: Wire and validate the complete chat path
 
-- [ ] Bind the tool executor to the authenticated caller in `POST /api/food/advice/chat`
-- [ ] Keep the public endpoint and ephemeral frontend conversation contract unchanged
-- [ ] Prove through the handler seam that the model can inspect only the caller's history
-- [ ] Run the repository validation commands and validate the deployed WIP chat path
-- [ ] Update the domain context and the architectural decision record
-- [ ] Mark completed
+- [x] Bind the tool executor to the authenticated caller in `POST /api/food/advice/chat`
+- [x] Keep the public endpoint and ephemeral frontend conversation contract unchanged
+- [x] Prove through the handler seam that the model can inspect only the caller's history
+- [x] Run the repository validation commands and validate the deployed WIP chat path
+- [x] Update the domain context and the architectural decision record
+- [x] Mark completed
 
 ### Task 4: Contextualize the generated advice lines
 
-- [ ] Build a bounded 28-day steps, sleep and weight summary ending yesterday
-- [ ] Reuse the established step-data eligibility rules and require minimum sleep and weight
+- [x] Build a bounded 28-day steps, sleep and weight summary ending yesterday
+- [x] Reuse the established step-data eligibility rules and require minimum sleep and weight
       coverage
-- [ ] Add Activity Level provenance and optional health context to the complete advice input hash
-- [ ] Constrain the prompt to relevance without causal or calorie-target claims
-- [ ] Cover complete, sparse, changed and caller-isolated context
-- [ ] Mark completed
+- [x] Add Activity Level provenance and optional health context to the complete advice input hash
+- [x] Constrain the prompt to relevance without causal or calorie-target claims
+- [x] Cover complete, sparse, changed and caller-isolated context
+- [x] Mark completed

@@ -1,6 +1,6 @@
 # ADR-013: Nutrition advice uses bounded health history
 
-**Status: Proposed**
+**Status: Accepted**
 
 ## Context and Problem Statement
 
