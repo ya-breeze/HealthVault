@@ -44,7 +44,7 @@ BASE_URL=http://192.168.1.54:8892 make test-e2e E2E_ARGS="tests/food.spec.ts --r
 
 ### Task 4: Validate and review
 
-- [ ] Run the validation commands against the feature branch and deployed WIP stack.
-- [ ] Run the Review Gate and resolve every valid finding.
-- [ ] Confirm that no task box remains unticked.
-- [ ] Mark completed.
+- [x] Run the validation commands against the feature branch and deployed WIP stack.
+- [x] Run the Review Gate and resolve every valid finding.
+- [x] Confirm that no task box remains unticked.
+- [x] Mark completed.
