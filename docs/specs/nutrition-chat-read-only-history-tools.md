@@ -1,4 +1,4 @@
-# Give Nutrition Chat read-only access to the user's history
+# Let nutrition advice and chat use relevant health history
 
 ## Why
 
@@ -10,9 +10,10 @@ say which values were estimated. The same limitation prevents it from answering 
 questions about activity, sleep or weight trends.
 
 The user decided on 2026-09-14 that a useful Nutrition Chat must be able to inspect relevant
-history. This supersedes `docs/specs/nutrition-chat.md`'s deliberate exclusion of steps, sleep and
-weight. The conversation remains ephemeral; only the read-only evidence available during one
-request becomes broader.
+history, and that the advice lines should take the same broader health context into account when
+it materially changes a useful recommendation. This supersedes `docs/specs/nutrition-chat.md`'s
+deliberate exclusion of steps, sleep and weight. The conversation remains ephemeral; only the
+read-only evidence available during one request becomes broader.
 
 ## How
 
@@ -39,6 +40,20 @@ The current advice basis remains in the initial prompt. History is additional co
 input to the deterministic Healthiness Label. The prompt must distinguish correlation from
 causation, must identify estimated Food Item values as estimates, and must not claim that steps,
 sleep or weight caused a nutrition finding.
+
+Give the generated advice lines a compact 28-day health context ending yesterday. Reuse the
+existing overlap-collapsed and incomplete-edge-trimmed step average. Include average sleep only
+with at least seven recorded daily buckets. Include the first and latest daily weight averages
+only with at least three recorded daily buckets. Also tell the model which Activity Level and
+source already fed the Nutrition Target. Missing optional metrics do not block advice. A genuine
+history read failure does, so HealthVault never caches a degraded result as if it were complete.
+
+The advice prompt may use this context only to tailor an otherwise supported recommendation or
+acknowledge a measured trend. It may not change the Healthiness Label, recalculate calorie needs,
+claim causation, or invent a recommendation from a sparse metric. The supplied Nutrition Target
+already incorporates Activity Level. Add this normalized context to `AdviceInput`, so any material
+change invalidates the existing one-row-per-user advice cache through its current complete-input
+hash.
 
 No chat content or retrieved history is persisted by HealthVault. Provider error logs retain the
 existing question redaction and must not add tool arguments or tool results.
@@ -77,4 +92,14 @@ existing question redaction and must not add tool arguments or tool results.
 - [ ] Prove through the handler seam that the model can inspect only the caller's history
 - [ ] Run the repository validation commands and validate the deployed WIP chat path
 - [ ] Update the domain context and the architectural decision record
+- [ ] Mark completed
+
+### Task 4: Contextualize the generated advice lines
+
+- [ ] Build a bounded 28-day steps, sleep and weight summary ending yesterday
+- [ ] Reuse the established step-data eligibility rules and require minimum sleep and weight
+      coverage
+- [ ] Add Activity Level provenance and optional health context to the complete advice input hash
+- [ ] Constrain the prompt to relevance without causal or calorie-target claims
+- [ ] Cover complete, sparse, changed and caller-isolated context
 - [ ] Mark completed
