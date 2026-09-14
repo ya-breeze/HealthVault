@@ -1,0 +1,80 @@
+# Give Nutrition Chat read-only access to the user's history
+
+## Why
+
+Nutrition Chat can currently explain only the aggregate figures posted by the nutrition card.
+It receives the Healthiness Label, its signal values, pooled means and Nutrition Target, but no
+Food Meals, Food Items, steps, sleep or weight history. When the user asks where a sodium finding
+came from, the model can only repeat the mean. It cannot name the foods that contributed to it or
+say which values were estimated. The same limitation prevents it from answering useful follow-up
+questions about activity, sleep or weight trends.
+
+The user decided on 2026-09-14 that a useful Nutrition Chat must be able to inspect relevant
+history. This supersedes `docs/specs/nutrition-chat.md`'s deliberate exclusion of steps, sleep and
+weight. The conversation remains ephemeral; only the read-only evidence available during one
+request becomes broader.
+
+## How
+
+Give the model three purpose-shaped tools instead of database access. `explain_nutrition_signal`
+returns the exact seven-day Healthiness Label window, each day's eligibility, and the Food Items
+that contributed to a requested protein, carbohydrate, fat, sugar or sodium signal.
+`get_health_trend` returns daily steps, sleep or weight values over a bounded 7-, 28- or 90-day
+window. `get_day_details` returns the caller's Food Meals and Food Items for one recent Logged Day.
+
+The tool executor is a deep server-owned module behind one interface. It captures the authenticated
+user, their timezone and the request time. Tool arguments never accept a user or family identifier.
+It performs only scoped reads and returns normalized JSON. It exposes no photo path, raw model
+response, clarification history, Meal Description or database identifier. Food Items report their
+Display Name, nutrition contribution, Macro Source and confidence so the model can distinguish an
+AI estimate from reference or manual data.
+
+The model chooses whether to call a tool. The OpenAI adapter implements the documented Chat
+Completions function-tool loop: send the available tool definitions, execute validated calls on the
+server, append the assistant tool call and matching tool result, then ask for the final structured
+answer. Bound each user question to three tool calls. Keep `store:false` on every provider request.
+Reject unknown tools and invalid arguments without exposing database or provider errors.
+
+The current advice basis remains in the initial prompt. History is additional context, not a new
+input to the deterministic Healthiness Label. The prompt must distinguish correlation from
+causation, must identify estimated Food Item values as estimates, and must not claim that steps,
+sleep or weight caused a nutrition finding.
+
+No chat content or retrieved history is persisted by HealthVault. Provider error logs retain the
+existing question redaction and must not add tool arguments or tool results.
+
+## Validation Commands
+
+- `make lint`
+- `make test`
+- `make test-e2e`
+
+### Task 1: Define the read-only history seam
+
+- [ ] Add a bounded Nutrition Chat tool executor interface to the vision module
+- [ ] Implement the authenticated server adapter for nutrition-signal evidence, health trends and
+      Logged Day details
+- [ ] Preserve the Healthiness Label's exact eligibility rules without calling a write-capable read
+      path
+- [ ] Expose Macro Source and confidence while excluding private implementation fields
+- [ ] Cover caller isolation, date/range limits, incomplete days and estimated Food Item evidence
+- [ ] Mark completed
+
+### Task 2: Let the model request history
+
+- [ ] Add strict function-tool definitions for the three history tools
+- [ ] Implement a bounded Chat Completions tool loop with matching tool-call IDs and `store:false`
+      on every request
+- [ ] Require history questions to use the tools and constrain cross-signal claims in the prompt
+- [ ] Cover tool selection, result replay, multiple calls, invalid calls, call limits and final
+      structured-answer parsing
+- [ ] Mark completed
+
+### Task 3: Wire and validate the complete chat path
+
+- [ ] Bind the tool executor to the authenticated caller in `POST /api/food/advice/chat`
+- [ ] Keep the public endpoint and ephemeral frontend conversation contract unchanged
+- [ ] Prove through the handler seam that the model can inspect only the caller's history
+- [ ] Run the repository validation commands and validate the deployed WIP chat path
+- [ ] Update the domain context and the architectural decision record
+- [ ] Mark completed
