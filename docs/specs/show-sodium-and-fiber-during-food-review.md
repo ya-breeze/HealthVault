@@ -24,23 +24,23 @@ BASE_URL=http://192.168.1.54:8892 make test-e2e E2E_ARGS="tests/food.spec.ts --r
 
 ### Task 1: Expose the stored values
 
-- [ ] Add localized Sodium and Fiber labels to every resolved or estimated Food Item row on the review screen.
-- [ ] Keep the values visible for both pending-review and confirmed meals without changing meal or item totals.
-- [ ] Mark completed.
+- [x] Add localized Sodium and Fiber labels to every resolved or estimated Food Item row on the review screen.
+- [x] Keep the values visible for both pending-review and confirmed meals without changing meal or item totals.
+- [x] Mark completed.
 
 ### Task 2: Open a safe prefilled correction form
 
-- [ ] Add an Edit nutrients action that opens ItemResolver in manual mode.
-- [ ] Initialize the manual form with the item name and all seven current nutrient values rather than zeros.
-- [ ] Preserve the existing search/rebind, reusable-food, serialized-update, and success/error behavior.
-- [ ] Mark completed.
+- [x] Add an Edit nutrients action that opens ItemResolver in manual mode.
+- [x] Initialize the manual form with the item name and all seven current nutrient values rather than zeros.
+- [x] Preserve the existing search/rebind, reusable-food, serialized-update, and success/error behavior.
+- [x] Mark completed.
 
 ### Task 3: Cover the review workflow
 
-- [ ] Add deterministic Playwright coverage that sees sodium and fiber before editing.
-- [ ] Assert the editor opens in manual mode with every nutrient prefilled and sends the corrected sodium and fiber together with the unchanged values.
-- [ ] Assert the returned meal immediately updates the displayed nutrient values.
-- [ ] Mark completed.
+- [x] Add deterministic Playwright coverage that sees sodium and fiber before editing.
+- [x] Assert the editor opens in manual mode with every nutrient prefilled and sends the corrected sodium and fiber together with the unchanged values.
+- [x] Assert the returned meal immediately updates the displayed nutrient values.
+- [x] Mark completed.
 
 ### Task 4: Validate and review
 

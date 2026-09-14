@@ -27,6 +27,14 @@ interface Props {
   // though the backend was already sending canonical_name on the wire.
   // Found in code review.
   expertMode?: boolean;
+  // MealItemRow uses the same resolver for two distinct actions. Changing a
+  // food starts with reference search; correcting the values already on the
+  // row starts with the manual form and must not replace them with zeros.
+  initialMode?: 'search' | 'manual';
+  initialMacros?: {
+    calories: number; protein_grams: number; carbs_grams: number; fat_grams: number;
+    sugar_grams: number; sodium_grams: number; dietary_fiber_grams: number;
+  };
 }
 
 // The review UI for correcting an item's food match: search for a reference
@@ -34,9 +42,17 @@ interface Props {
 // or fall back to entering a name and macros directly (e.g. from a package
 // label). Reachable for any item, matched or not, until the meal is
 // confirmed — not just ones the vision model left unresolved.
-export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCustomFood, expertMode = false }: Props) {
+export default function ItemResolver({
+  itemName,
+  onBind,
+  onManual,
+  allowSaveAsCustomFood,
+  expertMode = false,
+  initialMode = 'search',
+  initialMacros,
+}: Props) {
   const { t } = useLanguage();
-  const [mode, setMode] = useState<'search' | 'manual'>('search');
+  const [mode, setMode] = useState<'search' | 'manual'>(initialMode);
   const [query, setQuery] = useState(itemName);
   const [results, setResults] = useState<FoodSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -53,10 +69,10 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualName, setManualName] = useState(itemName);
-  const [macros, setMacros] = useState({
+  const [macros, setMacros] = useState(() => initialMacros ?? ({
     calories: 0, protein_grams: 0, carbs_grams: 0, fat_grams: 0,
     sugar_grams: 0, sodium_grams: 0, dietary_fiber_grams: 0,
-  });
+  }));
   const [saveAsCustomFood, setSaveAsCustomFood] = useState(false);
   // search and refresh both write to the shared results/translatedQuery
   // state below, so a slower, older response (e.g. a refresh outlived by a

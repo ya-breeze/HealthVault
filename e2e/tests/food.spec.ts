@@ -838,6 +838,73 @@ test.describe('Editing a confirmed meal', () => {
 });
 
 test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)', () => {
+  test('shows sodium and fiber before confirmation and edits them from prefilled values', async ({ page }) => {
+    await login(page);
+    const initialItem = {
+      ...mockFoodMeal().items[0],
+      calories: 312,
+      protein_grams: 14,
+      carbs_grams: 27,
+      fat_grams: 9,
+      sugar_grams: 6,
+      sodium_grams: 0.42,
+      dietary_fiber_grams: 8.5,
+    };
+    const initial = mockFoodMeal({
+      status: 'pending_review',
+      items: [initialItem],
+    });
+    const updated = mockFoodMeal({
+      status: 'pending_review',
+      items: [{ ...initialItem, sodium_grams: 0.18, dietary_fiber_grams: 9.5 }],
+    });
+    let patchBody: Record<string, unknown> | undefined;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', route => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      patchBody = route.request().postDataJSON();
+      return route.fulfill({ json: updated });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    const nutrientLine = page.getByTestId('item-nutrients-item-1');
+    await expect(nutrientLine).toContainText('Sodium 0.42g');
+    await expect(nutrientLine).toContainText('Fiber 8.5g');
+
+    await page.getByRole('button', { name: 'Edit nutrients' }).click();
+    await expect(page.getByRole('tab', { name: 'Enter macros' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('label:has-text("Name") input')).toHaveValue('Old Item');
+    await expect(page.locator('label:has-text("Calories") input')).toHaveValue('312');
+    await expect(page.locator('label:has-text("Protein (g)") input')).toHaveValue('14');
+    await expect(page.locator('label:has-text("Carbs (g)") input')).toHaveValue('27');
+    await expect(page.locator('label:has-text("Fat (g)") input')).toHaveValue('9');
+    await expect(page.locator('label:has-text("Sugar (g)") input')).toHaveValue('6');
+    await expect(page.locator('label:has-text("Sodium (g)") input')).toHaveValue('0.42');
+    await expect(page.locator('label:has-text("Fiber (g)") input')).toHaveValue('8.5');
+
+    await page.locator('label:has-text("Sodium (g)") input').fill('0.18');
+    await page.locator('label:has-text("Fiber (g)") input').fill('9.5');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+    await expect.poll(() => patchBody).toEqual({
+      manual: true,
+      name: 'Old Item',
+      save_as_custom_food: false,
+      calories: 312,
+      protein_grams: 14,
+      carbs_grams: 27,
+      fat_grams: 9,
+      sugar_grams: 6,
+      sodium_grams: 0.18,
+      dietary_fiber_grams: 9.5,
+    });
+    await expect(nutrientLine).toContainText('Sodium 0.18g');
+    await expect(nutrientLine).toContainText('Fiber 9.5g');
+  });
+
   // Regression (round 8): MealMetaEditor always sent logged_at back on save,
   // even for a name-only edit — and the datetime-local input truncates to
   // minute granularity, so that silently dropped the meal's real
