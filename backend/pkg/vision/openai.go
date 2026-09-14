@@ -924,7 +924,7 @@ var nutritionChatTools = []chatTool{
 				"type": "object",
 				"properties": map[string]any{
 					"signal": map[string]any{
-						"type": "string", "enum": []string{"protein", "carbs", "fat", "sugar", "sodium"},
+						"type": "string", "enum": []string{"protein", "carbs", "fat", "sugar", "sodium", "fiber"},
 					},
 				},
 				"required": []string{"signal"}, "additionalProperties": false,

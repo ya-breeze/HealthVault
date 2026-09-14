@@ -24,23 +24,46 @@ const (
 	nutritionChatMaxContributors   = 20
 	nutritionChatMaxDayMeals       = 30
 	nutritionChatMaxDayItems       = 50
+	nutritionChatMaxSources        = 5
 )
 
+// nutritionChatSource is navigation evidence produced by the authenticated
+// server adapter, never by the model. MealID is intentionally absent from the
+// JSON tool result sent to the provider; it is returned only to the caller who
+// already owns the meal so the UI can open the correction screen.
+type nutritionChatSource struct {
+	Date          string  `json:"date"`
+	MealID        string  `json:"meal_id"`
+	Food          string  `json:"food"`
+	Signal        string  `json:"signal"`
+	NutrientGrams float64 `json:"nutrient_grams"`
+	MacroSource   string  `json:"macro_source"`
+	Confidence    float64 `json:"confidence"`
+}
+
 type nutritionChatHistoryTools struct {
-	storage   database.Storage
-	userID    uuid.UUID
-	loc       *time.Location
-	threshold int
-	now       time.Time
+	storage    database.Storage
+	userID     uuid.UUID
+	loc        *time.Location
+	threshold  int
+	now        time.Time
+	sources    []nutritionChatSource
+	sourceKeys map[string]struct{}
 }
 
 func newNutritionChatHistoryTools(
 	storage database.Storage, userID uuid.UUID, loc *time.Location, settingsJSON string, now time.Time,
-) vision.NutritionChatToolExecutor {
+) *nutritionChatHistoryTools {
 	return &nutritionChatHistoryTools{
 		storage: storage, userID: userID, loc: loc,
 		threshold: database.ResolveUsualMealsPerDay(settingsJSON), now: now,
+		sources:    make([]nutritionChatSource, 0, nutritionChatMaxSources),
+		sourceKeys: make(map[string]struct{}, nutritionChatMaxSources),
 	}
+}
+
+func (t *nutritionChatHistoryTools) Sources() []nutritionChatSource {
+	return append([]nutritionChatSource(nil), t.sources...)
 }
 
 func (t *nutritionChatHistoryTools) Execute(
@@ -89,7 +112,7 @@ func (t *nutritionChatHistoryTools) Execute(
 }
 
 var nutritionHistorySignals = map[string]bool{
-	"protein": true, "carbs": true, "fat": true, "sugar": true, "sodium": true,
+	"protein": true, "carbs": true, "fat": true, "sugar": true, "sodium": true, "fiber": true,
 }
 
 var nutritionHistoryMetrics = map[string]bool{"steps": true, "sleep": true, "weight": true}
@@ -177,12 +200,14 @@ type nutritionSignalDayResult struct {
 }
 
 type nutritionSignalContributor struct {
-	Date                  string  `json:"date"`
-	Food                  string  `json:"food"`
-	NutrientGrams         float64 `json:"nutrient_grams"`
-	ShareOfEligibleWindow float64 `json:"share_of_eligible_window"`
-	MacroSource           string  `json:"macro_source"`
-	Confidence            float64 `json:"confidence"`
+	Date                  string    `json:"date"`
+	Food                  string    `json:"food"`
+	NutrientGrams         float64   `json:"nutrient_grams"`
+	ShareOfEligibleWindow float64   `json:"share_of_eligible_window"`
+	MacroSource           string    `json:"macro_source"`
+	Confidence            float64   `json:"confidence"`
+	MealID                uuid.UUID `json:"-"`
+	ItemID                uuid.UUID `json:"-"`
 }
 
 type nutritionSignalHistoryResult struct {
@@ -211,6 +236,8 @@ func nutritionSignalMealValue(meal database.FoodMeal, signal string) float64 {
 		return meal.SugarGrams
 	case "sodium":
 		return meal.SodiumGrams
+	case "fiber":
+		return meal.DietaryFiberGrams
 	default:
 		return 0
 	}
@@ -228,6 +255,8 @@ func nutritionSignalItemValue(item database.FoodItem, signal string) float64 {
 		return item.SugarGrams
 	case "sodium":
 		return item.SodiumGrams
+	case "fiber":
+		return item.DietaryFiberGrams
 	default:
 		return 0
 	}
@@ -286,6 +315,7 @@ func (t *nutritionChatHistoryTools) explainNutritionSignal(
 				result.Contributors = append(result.Contributors, nutritionSignalContributor{
 					Date: day.Date, Food: name, NutrientGrams: value,
 					MacroSource: item.MacroSource, Confidence: item.Confidence,
+					MealID: meal.ID, ItemID: item.ID,
 				})
 			}
 		}
@@ -307,7 +337,31 @@ func (t *nutritionChatHistoryTools) explainNutritionSignal(
 		result.Contributors = result.Contributors[:nutritionChatMaxContributors]
 		result.ContributorsTruncated = true
 	}
+	t.recordContributorSources(signal, result.Contributors)
 	return result, nil
+}
+
+func (t *nutritionChatHistoryTools) recordContributorSources(
+	signal string, contributors []nutritionSignalContributor,
+) {
+	for _, contributor := range contributors {
+		if len(t.sources) >= nutritionChatMaxSources {
+			return
+		}
+		if contributor.MealID == uuid.Nil {
+			continue
+		}
+		key := signal + "\x00" + contributor.ItemID.String()
+		if _, exists := t.sourceKeys[key]; exists {
+			continue
+		}
+		t.sourceKeys[key] = struct{}{}
+		t.sources = append(t.sources, nutritionChatSource{
+			Date: contributor.Date, MealID: contributor.MealID.String(), Food: contributor.Food,
+			Signal: signal, NutrientGrams: contributor.NutrientGrams,
+			MacroSource: contributor.MacroSource, Confidence: contributor.Confidence,
+		})
+	}
 }
 
 type nutritionTrendPoint struct {

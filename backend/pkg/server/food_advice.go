@@ -25,12 +25,13 @@ import (
 var adviceReasonCode = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
 
 type foodAdviceWindow struct {
-	MeanCalories     *float64 `json:"mean_calories"`
-	MeanProteinGrams *float64 `json:"mean_protein_grams"`
-	MeanCarbsGrams   *float64 `json:"mean_carbs_grams"`
-	MeanFatGrams     *float64 `json:"mean_fat_grams"`
-	MeanSugarGrams   *float64 `json:"mean_sugar_grams"`
-	MeanSodiumGrams  *float64 `json:"mean_sodium_grams"`
+	MeanCalories          *float64 `json:"mean_calories"`
+	MeanProteinGrams      *float64 `json:"mean_protein_grams"`
+	MeanCarbsGrams        *float64 `json:"mean_carbs_grams"`
+	MeanFatGrams          *float64 `json:"mean_fat_grams"`
+	MeanSugarGrams        *float64 `json:"mean_sugar_grams"`
+	MeanSodiumGrams       *float64 `json:"mean_sodium_grams"`
+	MeanDietaryFiberGrams *float64 `json:"mean_dietary_fiber_grams"`
 }
 
 type foodAdviceRequest struct {
@@ -125,7 +126,8 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		MeanCalories: *req.Window.MeanCalories, MeanProteinGrams: *req.Window.MeanProteinGrams,
 		MeanCarbsGrams: *req.Window.MeanCarbsGrams, MeanFatGrams: *req.Window.MeanFatGrams,
 		MeanSugarGrams: *req.Window.MeanSugarGrams, MeanSodiumGrams: *req.Window.MeanSodiumGrams,
-		TargetCalories: target.Calories, TargetProteinGrams: target.ProteinGrams,
+		MeanDietaryFiberGrams: *req.Window.MeanDietaryFiberGrams,
+		TargetCalories:        target.Calories, TargetProteinGrams: target.ProteinGrams,
 		TargetCarbsGrams: target.CarbsGrams, TargetFatGrams: target.FatGrams,
 		DisplayLanguage: language, HealthContext: healthContext,
 	}
@@ -233,6 +235,7 @@ func normalizeAdviceRequest(req *foodAdviceRequest) ([]string, bool) {
 	figures := [...]*float64{
 		req.Window.MeanCalories, req.Window.MeanProteinGrams, req.Window.MeanCarbsGrams,
 		req.Window.MeanFatGrams, req.Window.MeanSugarGrams, req.Window.MeanSodiumGrams,
+		req.Window.MeanDietaryFiberGrams,
 	}
 	for _, figure := range figures {
 		if figure == nil || math.IsNaN(*figure) || math.IsInf(*figure, 0) || *figure < 0 || *figure > 100000 {

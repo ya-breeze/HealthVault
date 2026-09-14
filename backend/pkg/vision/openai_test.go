@@ -346,19 +346,20 @@ func TestOpenAIClient_Advise_SendsCompleteTextOnlyInputAndBoundsLines(t *testing
 	})
 
 	lines, err := c.Advise(context.Background(), vision.AdviceInput{
-		Label:              "fair",
-		Reasons:            []string{"protein_far", "sugar_off"},
-		MeanCalories:       1820.5,
-		MeanProteinGrams:   74.25,
-		MeanCarbsGrams:     210,
-		MeanFatGrams:       62,
-		MeanSugarGrams:     88,
-		MeanSodiumGrams:    3.1,
-		TargetCalories:     2500,
-		TargetProteinGrams: 110,
-		TargetCarbsGrams:   278,
-		TargetFatGrams:     105,
-		DisplayLanguage:    "ru",
+		Label:                 "fair",
+		Reasons:               []string{"protein_far", "sugar_off"},
+		MeanCalories:          1820.5,
+		MeanProteinGrams:      74.25,
+		MeanCarbsGrams:        210,
+		MeanFatGrams:          62,
+		MeanSugarGrams:        88,
+		MeanSodiumGrams:       3.1,
+		MeanDietaryFiberGrams: 24.5,
+		TargetCalories:        2500,
+		TargetProteinGrams:    110,
+		TargetCarbsGrams:      278,
+		TargetFatGrams:        105,
+		DisplayLanguage:       "ru",
 		HealthContext: vision.AdviceHealthContext{
 			WindowDays: 28, WindowEnds: "2026-09-13", ActivityTier: "Moderately active",
 			ActivitySource: "inferred_from_steps",
@@ -391,6 +392,7 @@ func TestOpenAIClient_Advise_SendsCompleteTextOnlyInputAndBoundsLines(t *testing
 		`\"target_calories\":2500`, `\"target_protein_grams\":110`,
 		`\"target_carbs_grams\":278`, `\"target_fat_grams\":105`,
 		`\"display_language\":\"ru\"`,
+		`\"mean_dietary_fiber_grams\":24.5`,
 		`\"activity_source\":\"inferred_from_steps\"`, `\"value\":7200`, `\"recorded_days\":20`,
 	} {
 		if !strings.Contains(body, want) {
@@ -688,6 +690,7 @@ func mustMarshal(t *testing.T, v any) []byte {
 func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *testing.T) {
 	var capturedBody map[string]any
 	longAnswer := strings.Repeat("я", 1000)
+	farBoundary := 3.5
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
@@ -701,16 +704,17 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 		Reasons: []string{"sodium_high"},
 		Signals: []vision.NutritionChatSignal{{
 			Code: "sodium", Value: 4.1, Unit: "gramsPerDay", Verdict: "far",
-			Reason: "sodium_high", OffBoundary: 2.3, FarBoundary: 3.5,
+			Reason: "sodium_high", OffBoundary: 2.3, FarBoundary: &farBoundary,
 		}},
-		EligibleDays:       5,
-		WindowDays:         7,
-		MeanCalories:       1820.5,
-		MeanSodiumGrams:    4.1,
-		TargetCalories:     2500,
-		TargetProteinGrams: 110,
-		DisplayLanguage:    "ru",
-		CurrentLoggedDay:   "2026-09-14",
+		EligibleDays:          5,
+		WindowDays:            7,
+		MeanCalories:          1820.5,
+		MeanSodiumGrams:       4.1,
+		MeanDietaryFiberGrams: 12.5,
+		TargetCalories:        2500,
+		TargetProteinGrams:    110,
+		DisplayLanguage:       "ru",
+		CurrentLoggedDay:      "2026-09-14",
 		Turns: []vision.NutritionChatTurn{
 			{Role: "user", Text: "я уже уменьшил соль"},
 			{Role: "assistant", Text: "за какие дни?"},
@@ -741,6 +745,7 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 		`\"question\":\"за какие дни это считается?\"`,
 		`\"role\":\"user\"`, `\"role\":\"assistant\"`,
 		`\"display_language\":\"ru\"`, `\"current_logged_day\":\"2026-09-14\"`,
+		`\"mean_dietary_fiber_grams\":12.5`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("expected %s in the chat request: %s", want, body)
@@ -775,6 +780,9 @@ func TestOpenAIClient_NutritionChat_ExecutesAndReplaysHistoryToolCalls(t *testin
 			tools, _ := body["tools"].([]any)
 			if len(tools) != 3 || body["tool_choice"] != "auto" {
 				t.Fatalf("history tools were not offered: %+v", body)
+			}
+			if encodedTools := string(mustMarshal(t, tools)); !strings.Contains(encodedTools, `"fiber"`) {
+				t.Fatalf("fiber was not offered as a nutrition-signal tool argument: %s", encodedTools)
 			}
 			response, err := json.Marshal(map[string]any{
 				"model": "gpt-5.6-luna-tools",
