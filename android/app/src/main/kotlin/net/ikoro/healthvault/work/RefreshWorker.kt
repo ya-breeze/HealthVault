@@ -24,6 +24,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
     override suspend fun doWork(): Result {
         val app = applicationContext as HealthVaultApp
+        var workResult = Result.success()
 
         if (app.secureStore.hasSession()) {
             when (val result = app.api.summaryToday()) {
@@ -47,7 +48,12 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                     app.cookieJar.clear()
                     app.secureStore.clearSession()
                 }
-                is ApiResult.NetworkFailure,
+                is ApiResult.NetworkFailure -> {
+                    // Ask WorkManager to use the exponential backoff configured
+                    // by RefreshScheduler instead of silently waiting for the
+                    // next 30-minute periodic run.
+                    workResult = Result.retry()
+                }
                 is ApiResult.AccessChallenge,
                 is ApiResult.ServerError,
                 -> {
@@ -57,6 +63,6 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         }
 
         WidgetUpdater.updateAll(applicationContext)
-        return Result.success()
+        return workResult
     }
 }

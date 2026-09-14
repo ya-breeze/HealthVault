@@ -2,6 +2,19 @@
 <resources>
     <string name="app_name">HealthVault</string>
     <string name="widget_label">Сводка HealthVault</string>
+    <string name="widget_sign_in">Войти</string>
+    <string name="widget_open_to_sign_in">Откройте HealthVault, чтобы войти</string>
+    <string name="widget_no_data">Данных пока нет — откройте HealthVault</string>
+    <string name="widget_stale">Данные давно не обновлялись</string>
+    <string name="widget_log_food">Добавить еду</string>
+    <string name="widget_refresh">Обновить</string>
+    <string name="widget_calories_of_target">%1$d / %2$d ккал</string>
+    <string name="widget_calories_consumed">%1$d ккал</string>
+    <string name="widget_protein_short">Б</string>
+    <string name="widget_carbs_short">У</string>
+    <string name="widget_fat_short">Ж</string>
+    <string name="widget_macro_of_target">%1$s %2$dг/%3$dг</string>
+    <string name="widget_macro_consumed">%1$s %2$dг</string>
 
     <!-- Setup / sign-in -->
     <string name="setup_title">Подключение к HealthVault</string>

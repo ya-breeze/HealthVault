@@ -20,6 +20,18 @@ class ResponseClassifierTest {
     }
 
     @Test
+    fun `a lookalike hostname is not treated as a Cloudflare Access host`() {
+        val outcome = classifyRawResponse(
+            code = 401,
+            contentType = "application/json",
+            body = "unauthorized",
+            finalUrlHost = "notcloudflareaccess.com",
+            retryAfterHeader = null,
+        )
+        assertEquals(RawOutcome.Unauthenticated, outcome)
+    }
+
+    @Test
     fun `an HTML body where JSON was expected is an Access challenge`() {
         val outcome = classifyRawResponse(
             code = 200,
@@ -29,6 +41,18 @@ class ResponseClassifierTest {
             retryAfterHeader = null,
         )
         assertTrue(outcome is RawOutcome.AccessChallenge)
+    }
+
+    @Test
+    fun `a 5xx HTML error page is a server error, not an Access challenge`() {
+        val outcome = classifyRawResponse(
+            code = 502,
+            contentType = "text/html; charset=utf-8",
+            body = "<html><body>Bad Gateway</body></html>",
+            finalUrlHost = "hcw.example.com",
+            retryAfterHeader = null,
+        )
+        assertEquals(RawOutcome.ServerError(502, "<html><body>Bad Gateway</body></html>"), outcome)
     }
 
     @Test

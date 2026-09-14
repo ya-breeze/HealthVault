@@ -28,6 +28,7 @@ import net.ikoro.healthvault.R
 import net.ikoro.healthvault.api.ApiResult
 import net.ikoro.healthvault.api.HealthVaultApi
 import net.ikoro.healthvault.store.SecureStore
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * Normalizes a user-entered server address to an origin: adds `https://` if
@@ -40,10 +41,16 @@ internal fun normalizeServerUrl(input: String): String? {
     val trimmed = input.trim()
     if (trimmed.isEmpty()) return null
     val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
-    val uri = runCatching { java.net.URI(withScheme) }.getOrNull() ?: return null
-    if (uri.host.isNullOrEmpty()) return null
-    val port = if (uri.port == -1) "" else ":${uri.port}"
-    return "${uri.scheme}://${uri.host}$port"
+    val url = withScheme.toHttpUrlOrNull() ?: return null
+    return url.newBuilder()
+        .username("")
+        .password("")
+        .encodedPath("/")
+        .query(null)
+        .fragment(null)
+        .build()
+        .toString()
+        .trimEnd('/')
 }
 
 private sealed class SetupError {

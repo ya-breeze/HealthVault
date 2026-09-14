@@ -21,8 +21,7 @@ private val VALID_SUMMARY_JSON = """
       "date": "2026-09-02", "calories_consumed": 500, "protein_grams_consumed": 30,
       "carbs_grams_consumed": 50, "fat_grams_consumed": 20, "meal_count": 1,
       "last_logged_at": null, "display_language": "en",
-      "target": {"available": true, "calories": 2000, "protein_grams": 150, "carbs_grams": 200, "fat_grams": 70},
-      "recommendation": null
+      "target": {"available": true, "calories": 2000, "protein_grams": 150, "carbs_grams": 200, "fat_grams": 70}
     }
 """.trimIndent()
 
@@ -90,6 +89,7 @@ class HealthVaultApiRefreshTest {
         var summaryCallCount = 0
         val committedBeforeRetry = AtomicBoolean(false)
         lateinit var secureStore: SecureStore
+        val prefs = FakeSharedPreferences()
 
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
@@ -110,15 +110,18 @@ class HealthVaultApiRefreshTest {
         }
         server.start()
 
-        secureStore = SecureStore(FakeSharedPreferences()).apply {
+        secureStore = SecureStore(prefs).apply {
             serverUrl = server.url("/").toString().trimEnd('/')
         }
+        prefs.resetWriteCounts()
         val api = HealthVaultApi(secureStore, SessionCookieJar(secureStore))
 
         val result = api.summaryToday()
 
         assertTrue(result is ApiResult.Success)
         assertTrue("rotated cookie must be persisted before the retried request is sent", committedBeforeRetry.get())
+        assertTrue("the rotated cookie must use a synchronous commit", prefs.commitCount > 0)
+        assertEquals("cookie persistence must not use apply", 0, prefs.applyCount)
     }
 
     /**

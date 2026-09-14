@@ -17,9 +17,10 @@ internal sealed class RawOutcome {
  * unit test, in particular the Cloudflare Access redirect case, which would
  * otherwise require actually following a redirect to a real external host.
  *
- * Checked in this order: an Access challenge can arrive with any status code
- * (including 200, for its own login page), so it is checked first, ahead of
- * 401/429/success.
+ * Checked in this order: a redirect followed to an Access host is decisive,
+ * and an Access login page can arrive with a successful or auth-related
+ * status. HTML 5xx pages remain server errors: proxies and tunnels commonly
+ * render outages as HTML too, and those are not evidence of an Access policy.
  */
 internal fun classifyRawResponse(
     code: Int,
@@ -28,8 +29,12 @@ internal fun classifyRawResponse(
     finalUrlHost: String,
     retryAfterHeader: String?,
 ): RawOutcome {
-    val looksLikeAccessChallenge = finalUrlHost.endsWith("cloudflareaccess.com") ||
-        (contentType?.contains("text/html", ignoreCase = true) == true && body.contains("<html", ignoreCase = true))
+    val htmlCanBeAnAccessChallenge = code in 200..399 || code == 401 || code == 403
+    val isAccessHost = finalUrlHost == "cloudflareaccess.com" || finalUrlHost.endsWith(".cloudflareaccess.com")
+    val looksLikeAccessChallenge = isAccessHost ||
+        (htmlCanBeAnAccessChallenge &&
+            contentType?.contains("text/html", ignoreCase = true) == true &&
+            body.contains("<html", ignoreCase = true))
     if (looksLikeAccessChallenge) return RawOutcome.AccessChallenge
 
     return when {

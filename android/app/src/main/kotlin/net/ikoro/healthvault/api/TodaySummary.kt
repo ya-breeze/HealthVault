@@ -23,9 +23,8 @@ data class TodaySummaryTarget(
 
 /**
  * Mirrors backend/pkg/server/summary_today.go's summaryTodayResponse field
- * for field. `lastLoggedAt` and `recommendation` are nullable because the
- * backend serializes them as JSON `null` (a day with no logged meals yet, and
- * every response today, respectively) — see SummaryTodayHandler.
+ * for the fields this client consumes. `lastLoggedAt` is nullable because the
+ * backend serializes it as JSON `null` on a day with no logged meals yet.
  */
 @Serializable
 data class TodaySummary(
@@ -38,5 +37,4 @@ data class TodaySummary(
     @SerialName("last_logged_at") val lastLoggedAt: String? = null,
     @SerialName("display_language") val displayLanguage: String,
     val target: TodaySummaryTarget,
-    val recommendation: String? = null,
 )

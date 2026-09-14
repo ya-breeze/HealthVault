@@ -41,11 +41,6 @@ test.describe('GET /api/summary/today — Android widget contract', () => {
     expect(typeof body.meal_count).toBe('number');
     expect(typeof body.display_language).toBe('string');
 
-    // Always null today (SummaryTodayHandler's Phase 4 non-goal) — the
-    // widget's reserved recommendation slot depends on that staying true
-    // until the field is actually populated.
-    expect(body.recommendation).toBeNull();
-
     // last_logged_at: null, or a string TodaySummary.kt's lastLoggedAt (a
     // nullable String, not parsed on the Kotlin side) can hold as-is —
     // still checked for being a genuinely parseable timestamp, since the

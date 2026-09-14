@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
@@ -123,7 +125,13 @@ fun TodayScreen(
         }
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(Unit) {
+        // A background widget refresh may have cached a newer Display
+        // Language while the activity was not running. Apply that cached
+        // value even if this foreground refresh is currently offline.
+        snapshot?.summary?.displayLanguage?.let(::applyDisplayLanguage)
+        refresh()
+    }
 
     val now = System.currentTimeMillis()
     val current = snapshot
@@ -138,6 +146,7 @@ fun TodayScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
                     .padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -209,6 +218,9 @@ private fun TodayContent(summary: TodaySummary) {
                 style = MaterialTheme.typography.headlineMedium,
             )
             Text(text = unmetReasonMessage(target.reason))
+            MacroBar(stringResource(R.string.today_macro_protein), summary.proteinGramsConsumed, 0)
+            MacroBar(stringResource(R.string.today_macro_carbs), summary.carbsGramsConsumed, 0)
+            MacroBar(stringResource(R.string.today_macro_fat), summary.fatGramsConsumed, 0)
         }
     }
 }

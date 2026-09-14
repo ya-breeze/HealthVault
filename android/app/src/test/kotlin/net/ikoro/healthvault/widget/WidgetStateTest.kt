@@ -16,7 +16,6 @@ private val SAMPLE_SUMMARY = TodaySummary(
     lastLoggedAt = "2026-09-02T12:00:00Z",
     displayLanguage = "en",
     target = TodaySummaryTarget(available = true, calories = 2000, proteinGrams = 150, carbsGrams = 200, fatGrams = 70),
-    recommendation = null,
 )
 
 class WidgetStateTest {

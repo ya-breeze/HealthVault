@@ -11,6 +11,15 @@ import android.content.SharedPreferences
 class FakeSharedPreferences : SharedPreferences {
 
     private val map = mutableMapOf<String, Any?>()
+    var commitCount: Int = 0
+        private set
+    var applyCount: Int = 0
+        private set
+
+    fun resetWriteCounts() {
+        commitCount = 0
+        applyCount = 0
+    }
 
     override fun getAll(): MutableMap<String, *> = map.toMutableMap()
 
@@ -52,11 +61,17 @@ class FakeSharedPreferences : SharedPreferences {
         override fun clear() = apply { doClear = true }
 
         override fun commit(): Boolean {
-            apply()
+            commitCount++
+            writePending()
             return true
         }
 
         override fun apply() {
+            applyCount++
+            writePending()
+        }
+
+        private fun writePending() {
             if (doClear) map.clear()
             toRemove.forEach { map.remove(it) }
             map.putAll(pending)

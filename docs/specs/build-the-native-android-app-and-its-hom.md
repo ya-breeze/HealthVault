@@ -22,7 +22,7 @@ Two consequences drive the design. First, `authdb.RotateRefreshToken` **consumes
 
 When refresh fails outright the client re-logs in once from stored credentials. That is why the password is stored at all: a home-screen widget that silently stops updating until the owner happens to open the app is worse than a widget that recovers itself. **Only a 401 on that re-login means the session actually ended.** A 429, an unreachable server or a Cloudflare Access challenge says nothing about the session, so each is reported as itself rather than collapsed into "signed out": the today screen names the cause — held off by the rate limiter, server unreachable, Access bypass missing, server error — and the widget keeps rendering its snapshot. A real sign-out is the one case that clears the stored session, from the background worker as well as from the app, so the widget falls back to its sign-in prompt instead of a card that can never update again. Credentials, cookies and the last summary snapshot sit in one Keystore-backed AES-GCM encrypted store. The residual risk — an attacker holding the unlocked, rooted device — is accepted and recorded in ADR-013.
 
-**The widget** is a single Glance `AppWidgetProvider` with `SizeMode.Responsive`, not two separate widgets: the owner places one widget and resizes it, rather than choosing a size in the picker and having to delete and re-add to change it. The compact layout (about 110x110dp, a 2x2 cell) shows consumed calories against target calories and nothing else. The wide layout (about 250x110dp, a 4x2 cell) adds four macro bars and a **Log food** button. The wide layout reserves a single-line slot below the bars for the recommendation `GET /api/summary/today` already models and always returns as null; the slot renders only when the field is non-null, so shipping the recommendation later needs no re-layout and today's widget wastes no space on it.
+**The widget** is a single Glance `AppWidgetProvider` with `SizeMode.Responsive`, not two separate widgets: the owner places one widget and resizes it, rather than choosing a size in the picker and having to delete and re-add to change it. The compact layout (about 110x110dp, a 2x2 cell) shows consumed calories against target calories and nothing else. The wide layout (about 250x110dp, a 4x2 cell) adds four macro bars and a **Log food** button. The originally planned recommendation slot was cut during integration: newer work on `main` retired `summaryTodayResponse.recommendation` and moved nutrition advice to `POST /api/food/advice`, whose client-computed input and model latency do not belong in this cheap summary read.
 
 Refresh is one call per update. WorkManager runs a 30-minute periodic worker (the platform floor is 15 minutes) only while at least one widget is placed, plus one-off updates on widget placement, on manual refresh, and when the app resumes. A 429 is honoured through `Retry-After` — `writeTooManyAttempts` sends both the header and `retry_after_seconds`, and the header is the one an unattended client should read. On any failure the widget keeps rendering the last snapshot with a staleness marker rather than blanking; a snapshot older than 6 hours is marked stale, and a signed-out session renders a sign-in prompt.
 
@@ -58,7 +58,7 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 2: API client, session storage, and single-flight refresh
 
-- [x] Add `api/TodaySummary.kt`: kotlinx.serialization models mirroring `summaryTodayResponse` and `summaryTargetPayload` field for field, with `last_logged_at` and `recommendation` nullable and the four target numbers non-optional
+- [x] Add `api/TodaySummary.kt`: kotlinx.serialization models mirroring the summary fields the client consumes, with `last_logged_at` nullable and the four target numbers non-optional
 - [x] Add `store/SecureStore.kt`: a Keystore-backed AES-GCM encrypted store holding server URL, username, password, serialized cookies, and the last summary snapshot with its fetch time
 - [x] Add `api/SessionCookieJar.kt`: a persistent `CookieJar` that honours domain, path and expiry, so `kin_refresh` is sent only to `/api/auth/refresh`, and that writes through to `SecureStore` synchronously on every change
 - [x] Add `api/RefreshInterceptor.kt`: record each request's dispatch time, and on a 401 for a non-exempt path run a mutex-guarded refresh that returns early when a refresh completed at or after that dispatch time, then retry the request once
@@ -89,7 +89,6 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 - [x] Add `widget/SummaryWidget.kt` as a Glance widget using `SizeMode.Responsive` with a compact (about 110x110dp) and a wide (about 250x110dp) layout, plus `widget/SummaryWidgetReceiver.kt` and the widget provider XML
 - [x] Render calories consumed against target in the compact layout, and calories plus four macro bars plus a **Log food** button in the wide layout
-- [x] Reserve a single-line recommendation slot in the wide layout that renders only when `recommendation` is non-null
 - [x] Add a pure `widgetState(snapshot, fetchedAt, now, session)` mapping to loaded, stale (snapshot older than 6 hours), signed-out, or error states, kept free of Android types so it is JVM-testable
 - [x] Wire widget taps: the body opens the today screen, **Log food** opens the Custom Tab, and a refresh affordance enqueues an immediate update
 - [x] Set `updatePeriodMillis` to 0 in the provider XML so all updates come from WorkManager
@@ -118,7 +117,7 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 ### Task 8: Summary contract test in the existing e2e suite
 
 - [x] Add `e2e/tests/summary-today.spec.ts` signing in through the UI the way `e2e/tests/auth.spec.ts` does, then reading `/api/summary/today` through the authenticated request context
-- [x] Assert every field the Android client parses is present with the expected type, including `target.available`, the four target numbers, and a null `recommendation`
+- [x] Assert every field the Android client parses is present with the expected type, including `target.available` and the four target numbers
 - [x] Assert `last_logged_at` is either null or a parseable timestamp
 - [x] Assert the endpoint stays self-only by passing `?user=` and getting the caller's own data
 - [x] Mark completed

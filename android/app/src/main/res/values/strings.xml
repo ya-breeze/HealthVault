@@ -2,6 +2,19 @@
 <resources>
     <string name="app_name">HealthVault</string>
     <string name="widget_label">HealthVault Summary</string>
+    <string name="widget_sign_in">Sign in</string>
+    <string name="widget_open_to_sign_in">Open HealthVault to sign in</string>
+    <string name="widget_no_data">No data yet — tap to open HealthVault</string>
+    <string name="widget_stale">Last updated a while ago</string>
+    <string name="widget_log_food">Log food</string>
+    <string name="widget_refresh">Refresh</string>
+    <string name="widget_calories_of_target">%1$d / %2$d kcal</string>
+    <string name="widget_calories_consumed">%1$d kcal</string>
+    <string name="widget_protein_short">P</string>
+    <string name="widget_carbs_short">C</string>
+    <string name="widget_fat_short">F</string>
+    <string name="widget_macro_of_target">%1$s %2$dg/%3$dg</string>
+    <string name="widget_macro_consumed">%1$s %2$dg</string>
 
     <!-- Setup / sign-in -->
     <string name="setup_title">Connect to HealthVault</string>

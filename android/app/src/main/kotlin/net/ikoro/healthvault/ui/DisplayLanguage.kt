@@ -11,17 +11,21 @@ import androidx.core.os.LocaleListCompat
  */
 private val shippedUILanguages = setOf("en", "ru")
 
+internal fun shippedDisplayLanguage(displayLanguage: String): String? {
+    val primary = displayLanguage.substringBefore('-').substringBefore('_').lowercase()
+    return primary.takeIf { it in shippedUILanguages }
+}
+
 /**
  * Applies a TodaySummary.displayLanguage value as the app's per-app locale
  * when it names a language this app ships strings for, judged by primary
  * subtag alone (matching isShippedUILanguage server-side). Falls back to the
- * device locale — via an empty override — for anything else, including the
- * backend's own "en" default.
+ * device locale — via an empty override — for anything else.
  */
 fun applyDisplayLanguage(displayLanguage: String) {
-    val primary = displayLanguage.substringBefore('-').substringBefore('_').lowercase()
-    val locales = if (primary in shippedUILanguages) {
-        LocaleListCompat.forLanguageTags(primary)
+    val language = shippedDisplayLanguage(displayLanguage)
+    val locales = if (language != null) {
+        LocaleListCompat.forLanguageTags(language)
     } else {
         LocaleListCompat.getEmptyLocaleList()
     }
