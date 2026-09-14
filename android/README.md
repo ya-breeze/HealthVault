@@ -2,8 +2,8 @@
 
 A thin, read-only native client (`net.ikoro.healthvault`) plus a home-screen widget, both reading
 `GET /api/summary/today`. See `docs/specs/build-the-native-android-app-and-its-hom.md` for the
-full design, and `docs/adr/ADR-012-android-client-in-repo.md` /
-`docs/adr/ADR-013-android-cookie-session-auth.md` for why it's built the way it is.
+full design, and `docs/adr/ADR-014-android-client-in-repo.md` /
+`docs/adr/ADR-015-android-cookie-session-auth.md` for why it's built the way it is.
 
 There is no Play Store release and no release signing configuration — the only deliverable is a
 debug APK, built and sideloaded by hand.
@@ -14,9 +14,9 @@ debug APK, built and sideloaded by hand.
 - **Android SDK Platform 34**, plus build-tools matching `compileSdk = 34` in
   `app/build.gradle.kts`.
 - No emulator is required to build the debug APK or run the unit tests — this project has no
-  instrumented (device/emulator) tests, and none are planned (see ADR-012).
+  instrumented (device/emulator) tests, and none are planned (see ADR-014).
 
-This repository's own build environment (`/data/CLAUDE.md`) has none of the above. `make
+This repository's own build environment (`/data/AGENTS.md`) has none of the above. `make
 test`/`make lint` detect that and print a skip notice for the Android targets rather than failing —
 see the Makefile's `test-android`/`lint-android` targets. Building the app for real requires a
 machine that does have the SDK, i.e. not this one.
@@ -56,7 +56,7 @@ cd android
 
 These are plain JVM tests (no emulator) over the parts worth testing in isolation — cookie jar
 path/expiry matching, single-flight refresh under concurrent 401s, response parsing, 429 handling,
-and the widget's pure state mapping. See ADR-012 for what they do and don't cover.
+and the widget's pure state mapping. See ADR-014 for what they do and don't cover.
 
 ## Pointing the app at a stack
 
@@ -66,13 +66,11 @@ real login call.
 - **A LAN stack, e.g. `http://192.168.1.54:8892`:** works out of the box in a **debug** build only
   — `app/src/debug/res/xml/network_security_config.xml` permits cleartext HTTP there. A release
   build enforces HTTPS everywhere (`app/src/main/res/xml/network_security_config.xml`).
-- **A public hostname behind Cloudflare Access (e.g. `https://healthvault.ikoro.in`):** requires a
-  path-scoped Cloudflare Access **Bypass** policy on `/api/*`. That policy is zone configuration
-  outside this repository and is the owner's own step to create (`cloudflare-access` skill, in the
-  environment this app was built from) — until it exists, every API call gets an Access login
-  challenge instead of JSON, which the app reports distinctly ("this server needs an Access bypass
-  on `/api/*`") rather than as invalid credentials. **Until that policy exists, this app only works
-  on the LAN.**
+- **A public hostname behind Cloudflare Access (e.g. `https://healthvault.ikoro.in`):** is not a
+  supported target for this version of the app. Cloudflare Access must continue to gate every
+  public `ikoro.in` route, while this cookie-only client has no Access service-token flow. An Access
+  challenge is reported distinctly rather than as invalid credentials. **Use the LAN address; do
+  not add a Bypass policy for `/api/*`.**
 
 ## What this app deliberately does not do
 

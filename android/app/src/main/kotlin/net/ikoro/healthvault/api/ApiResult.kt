@@ -20,8 +20,8 @@ sealed class ApiResult<out T> {
     /**
      * The response was a Cloudflare Access challenge, not the API: a redirect
      * to *.cloudflareaccess.com, or an HTML body where JSON was expected.
-     * Reported distinctly so the UI says "this server needs an Access bypass
-     * on /api/*" rather than "invalid credentials".
+     * Reported distinctly so the UI directs the owner to the LAN address
+     * rather than suggesting invalid credentials or weakening Access.
      */
     data object AccessChallenge : ApiResult<Nothing>()
 

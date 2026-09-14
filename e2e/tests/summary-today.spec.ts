@@ -16,6 +16,12 @@ async function cookieHeader(page: Page): Promise<string> {
   return cookies.map(c => `${c.name}=${c.value}`).join('; ');
 }
 
+function expectKotlinInt(value: unknown) {
+  expect(Number.isInteger(value)).toBe(true);
+  expect(value as number).toBeGreaterThanOrEqual(-2_147_483_648);
+  expect(value as number).toBeLessThanOrEqual(2_147_483_647);
+}
+
 // This test exists to pin the one contract android/ compiles against without
 // ever compiling it: android/app/src/main/kotlin/net/ikoro/healthvault/api/TodaySummary.kt
 // mirrors backend/pkg/server/summary_today.go's summaryTodayResponse field
@@ -38,7 +44,7 @@ test.describe('GET /api/summary/today — Android widget contract', () => {
     expect(typeof body.protein_grams_consumed).toBe('number');
     expect(typeof body.carbs_grams_consumed).toBe('number');
     expect(typeof body.fat_grams_consumed).toBe('number');
-    expect(typeof body.meal_count).toBe('number');
+    expectKotlinInt(body.meal_count);
     expect(typeof body.display_language).toBe('string');
 
     // last_logged_at: null, or a string TodaySummary.kt's lastLoggedAt (a
@@ -47,6 +53,9 @@ test.describe('GET /api/summary/today — Android widget contract', () => {
     // today screen and widget both format it.
     if (body.last_logged_at !== null) {
       expect(typeof body.last_logged_at).toBe('string');
+      expect(body.last_logged_at).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+      );
       expect(Number.isNaN(Date.parse(body.last_logged_at))).toBe(false);
     }
 
@@ -57,10 +66,10 @@ test.describe('GET /api/summary/today — Android widget contract', () => {
     // partial), and `reason` is present only when unavailable.
     expect(typeof body.target).toBe('object');
     expect(typeof body.target.available).toBe('boolean');
-    expect(typeof body.target.calories).toBe('number');
-    expect(typeof body.target.protein_grams).toBe('number');
-    expect(typeof body.target.carbs_grams).toBe('number');
-    expect(typeof body.target.fat_grams).toBe('number');
+    expectKotlinInt(body.target.calories);
+    expectKotlinInt(body.target.protein_grams);
+    expectKotlinInt(body.target.carbs_grams);
+    expectKotlinInt(body.target.fat_grams);
     if (!body.target.available) {
       expect(typeof body.target.reason).toBe('string');
     }
@@ -69,22 +78,21 @@ test.describe('GET /api/summary/today — Android widget contract', () => {
   test('stays self-only: ?user= is ignored, the caller always gets their own data', async ({ page }) => {
     await login(page);
     const cookies = await cookieHeader(page);
+    const otherUser = USER.toLowerCase() === 'bob' ? 'alice' : 'bob';
 
-    const own = await page.request.get('/api/summary/today', { headers: { Cookie: cookies } });
+    // Fetch concurrently so a local-midnight boundary cannot make two
+    // otherwise identical self-only responses differ just because their
+    // `date` fields were computed on opposite sides of the boundary.
+    const [own, withUserParam] = await Promise.all([
+      page.request.get('/api/summary/today', { headers: { Cookie: cookies } }),
+      page.request.get(`/api/summary/today?user=${encodeURIComponent(otherUser)}`, {
+        headers: { Cookie: cookies },
+      }),
+    ]);
     expect(own.status()).toBe(200);
-    const ownBody = await own.json();
-
-    // No ?user= support (unlike most /data endpoints) — passing one must
-    // not 400/404/error, and must not change whose data comes back. There's
-    // no other real user id available to this suite's seeded account to
-    // target, so the meaningful assertion is that an arbitrary value is
-    // silently ignored rather than honoured.
-    const withUserParam = await page.request.get('/api/summary/today?user=someone-else', {
-      headers: { Cookie: cookies },
-    });
     expect(withUserParam.status()).toBe(200);
+    const ownBody = await own.json();
     const withUserParamBody = await withUserParam.json();
-    expect(withUserParamBody.date).toBe(ownBody.date);
-    expect(withUserParamBody.display_language).toBe(ownBody.display_language);
+    expect(withUserParamBody).toEqual(ownBody);
   });
 });

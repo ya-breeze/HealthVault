@@ -25,7 +25,7 @@
     <string name="setup_sign_in">Sign in</string>
     <string name="setup_error_invalid_credentials">Wrong username or password.</string>
     <string name="setup_error_locked_out">Too many attempts. Try again in %1$ds.</string>
-    <string name="setup_error_access_challenge">This server needs an Access bypass on /api/*.</string>
+    <string name="setup_error_access_challenge">Cloudflare Access blocked the API. Use the LAN server address.</string>
     <string name="setup_error_unreachable">Couldn\'t reach that server. Check the URL and your connection.</string>
     <string name="setup_error_server">Server error (%1$d). Try again.</string>
 
@@ -39,7 +39,7 @@
          need three different reactions, and none of them means "signed out" —
          that case signs the app out instead of showing a message here. -->
     <string name="today_refresh_locked_out">Too many requests. Try again in %1$ds.</string>
-    <string name="today_refresh_access_challenge">This server needs an Access bypass on /api/*.</string>
+    <string name="today_refresh_access_challenge">Cloudflare Access blocked the API. Use the LAN server address.</string>
     <string name="today_refresh_unreachable">Couldn\'t reach the server. Check your connection.</string>
     <string name="today_refresh_server">Server error (%1$d). Couldn\'t refresh.</string>
     <string name="today_meal_count">%1$d meals logged</string>
@@ -49,6 +49,8 @@
     <string name="today_macro_protein">Protein</string>
     <string name="today_macro_carbs">Carbs</string>
     <string name="today_macro_fat">Fat</string>
+    <string name="today_macro_of_target">%1$s: %2$dg / %3$dg</string>
+    <string name="today_macro_consumed">%1$s: %2$dg</string>
     <string name="today_no_meals_logged">No meals logged yet</string>
     <string name="today_last_logged_just_now">Just now</string>
     <string name="today_last_logged_minutes_ago">%1$d min ago</string>

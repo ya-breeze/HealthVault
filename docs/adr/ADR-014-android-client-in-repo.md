@@ -1,4 +1,4 @@
-# ADR-012: The Android Client Lives In This Repository, With a Build That Skips Without an SDK
+# ADR-014: The Android Client Lives In This Repository, With a Build That Skips Without an SDK
 
 ## Status
 Accepted
@@ -9,11 +9,13 @@ Accepted
 `backend/pkg/server/login_limiter.go` (ADR-009) both exist for a native Android client — idea #12 —
 that was never built. ADR-009 names it directly: "the Android Widget (idea #12) needs a Bypass
 policy on `/api/*`... Login hardening must land before that Bypass policy is safe to create." That
-prerequisite shipped; the client did not, until this change.
+prerequisite shipped; the client did not, until this change. The current environment invariant is
+stricter: every public `ikoro.in` route remains Access-gated, so this client stays LAN-only rather
+than enacting ADR-009's historical Bypass proposal.
 
 The earlier spec for this idea called the client "other-repo work" and named a
 `healthvault-android` repository. That repository does not exist, and this environment
-(`/data/CLAUDE.md`) has no Android SDK, no `java`, and no `gradle` — this container cannot compile,
+(`/data/AGENTS.md`) has no Android SDK, no `java`, and no `gradle` — this container cannot compile,
 lint, or test a Kotlin/Gradle project regardless of which repository it lives in.
 
 ## Decision Drivers
@@ -22,7 +24,7 @@ lint, or test a Kotlin/Gradle project regardless of which repository it lives in
   `android/app/src/main/kotlin/net/ikoro/healthvault/api/TodaySummary.kt`, with no shared schema
   between them. A breaking change to that struct should be visible in the same pull request as the
   client code it breaks.
-- This is a personal, single-user deployment (`/data/CLAUDE.md`'s scale guidance) — a second
+- This is a personal, single-user deployment (`/data/AGENTS.md`'s scale guidance) — a second
   repository, its own CI, and its own release process is overhead nothing here asks for.
 - No environment available to this pipeline has an Android SDK today, and none is expected to
   gain one. A gate that silently no-ops when the SDK is absent is only honest if that absence is
@@ -74,7 +76,7 @@ will not be one.**
   *contract* between the backend and the client's models, and broken *pure logic* the JVM tests
   exercise directly. Neither one exercises Compose UI, the Glance widget's rendering, WorkManager
   scheduling, or the Keystore-backed encrypted store's production path
-  (`androidx.security.crypto.EncryptedSharedPreferences`) — see ADR-013 for why the store's tests
+  (`androidx.security.crypto.EncryptedSharedPreferences`) — see ADR-015 for why the store's tests
   use a fake `SharedPreferences` instead.
 - If this environment ever gains an Android SDK, `test-android`/`lint-android` start running for
   real with no further change — the skip condition is the SDK's absence, not a flag someone has to

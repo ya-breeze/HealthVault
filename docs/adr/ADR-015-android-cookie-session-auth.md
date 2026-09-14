@@ -1,4 +1,4 @@
-# ADR-013: The Android Client Authenticates With a Persistent Cookie Jar, Not a Bearer Token
+# ADR-015: The Android Client Authenticates With a Persistent Cookie Jar, Not a Bearer Token
 
 ## Status
 Accepted
@@ -80,7 +80,7 @@ specifically so unit tests can inject a plain in-memory fake
 `android.content.SharedPreferences` is only an interface at compile time and needs no Android
 runtime to implement, while `EncryptedSharedPreferences` itself does. That is also this decision's
 sharpest limit — the tests exercise `SecureStore`'s logic, not the real Keystore-backed encryption
-path, which has no automated coverage at all (see ADR-012's "no automated device coverage").
+path, which has no automated coverage at all (see ADR-014's "no automated device coverage").
 
 ### Consequences
 

@@ -1,9 +1,11 @@
 package net.ikoro.healthvault.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.runBlocking
 import net.ikoro.healthvault.work.RefreshScheduler
 
@@ -19,6 +21,12 @@ class SummaryWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         RefreshScheduler.ensurePeriodic(context)
+    }
+
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        // onEnabled runs only for the first instance. onUpdate also runs when
+        // each later instance is placed, so every placement gets fresh data.
         RefreshScheduler.enqueueOneOff(context)
     }
 

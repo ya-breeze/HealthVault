@@ -27,7 +27,7 @@ test-frontend:
 # android/README.md has the SDK setup this needs. Both android/local.properties
 # and $ANDROID_HOME are absent in this environment, so this prints a visible
 # skip notice rather than failing — `make test` stays green, but green here
-# proves nothing about android/; see docs/adr/ADR-012.
+# proves nothing about android/; see docs/adr/ADR-014.
 test-android:
 	@if [ -z "$$ANDROID_HOME" ] && [ ! -f "$(ROOT_DIR)android/local.properties" ]; then \
 		echo "SKIP test-android: no Android SDK found (ANDROID_HOME unset, android/local.properties absent)"; \

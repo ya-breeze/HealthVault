@@ -25,7 +25,7 @@
     <string name="setup_sign_in">Войти</string>
     <string name="setup_error_invalid_credentials">Неверное имя пользователя или пароль.</string>
     <string name="setup_error_locked_out">Слишком много попыток. Повторите через %1$d с.</string>
-    <string name="setup_error_access_challenge">Серверу нужен обход Access для /api/*.</string>
+    <string name="setup_error_access_challenge">Cloudflare Access заблокировал API. Используйте адрес сервера в локальной сети.</string>
     <string name="setup_error_unreachable">Не удалось подключиться к серверу. Проверьте адрес и соединение.</string>
     <string name="setup_error_server">Ошибка сервера (%1$d). Попробуйте снова.</string>
 
@@ -36,7 +36,7 @@
 
     <!-- Причины неудачного обновления — см. комментарий в values/strings.xml. -->
     <string name="today_refresh_locked_out">Слишком много запросов. Повторите через %1$d с.</string>
-    <string name="today_refresh_access_challenge">Серверу нужен обход Access для /api/*.</string>
+    <string name="today_refresh_access_challenge">Cloudflare Access заблокировал API. Используйте адрес сервера в локальной сети.</string>
     <string name="today_refresh_unreachable">Не удалось подключиться к серверу. Проверьте соединение.</string>
     <string name="today_refresh_server">Ошибка сервера (%1$d). Не удалось обновить.</string>
     <string name="today_meal_count">Приёмов пищи: %1$d</string>
@@ -46,6 +46,8 @@
     <string name="today_macro_protein">Белки</string>
     <string name="today_macro_carbs">Углеводы</string>
     <string name="today_macro_fat">Жиры</string>
+    <string name="today_macro_of_target">%1$s: %2$dг / %3$dг</string>
+    <string name="today_macro_consumed">%1$s: %2$dг</string>
     <string name="today_no_meals_logged">Пока нет записей о еде</string>
     <string name="today_last_logged_just_now">Только что</string>
     <string name="today_last_logged_minutes_ago">%1$d мин назад</string>

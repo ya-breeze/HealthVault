@@ -5,6 +5,7 @@ import net.ikoro.healthvault.store.SecureStore
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.Interceptor
 
 /**
  * A plain-data mirror of the fields of okhttp3.Cookie that matter for
@@ -66,14 +67,18 @@ fun PersistedCookie.toCookie(): Cookie {
 class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
 
     private val lock = Any()
+    private val requestGeneration = ThreadLocal<Long>()
     private val cookies: MutableList<Cookie> =
         secureStore.loadCookies().map { it.toCookie() }.toMutableList()
 
     override fun saveFromResponse(url: HttpUrl, newCookies: List<Cookie>) {
         if (newCookies.isEmpty()) return
         synchronized(lock) {
+            val generation = requestGeneration.get()
+            if (generation != null && !secureStore.isCurrentSession(generation)) return
+            val updated = cookies.toMutableList()
             for (cookie in newCookies) {
-                cookies.removeAll { existing ->
+                updated.removeAll { existing ->
                     existing.name == cookie.name && existing.domain == cookie.domain && existing.path == cookie.path
                 }
                 // expiresAt <= now is okhttp's own convention for "delete
@@ -81,18 +86,23 @@ class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
                 // Expires), so honour it as a removal rather than storing an
                 // already-dead cookie.
                 if (cookie.expiresAt > System.currentTimeMillis()) {
-                    cookies.add(cookie)
+                    updated.add(cookie)
                 }
             }
-            persistLocked()
+            if (secureStore.saveCookies(updated.map { it.toPersisted() }, generation)) {
+                cookies.clear()
+                cookies.addAll(updated)
+            }
         }
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         synchronized(lock) {
+            val generation = requestGeneration.get()
+            if (generation != null && !secureStore.isCurrentSession(generation)) return emptyList()
             val now = System.currentTimeMillis()
             val hadExpired = cookies.removeAll { it.expiresAt <= now }
-            if (hadExpired) persistLocked()
+            if (hadExpired) persistLocked(generation)
             return cookies.filter { it.matches(url) }
         }
     }
@@ -105,7 +115,41 @@ class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
         }
     }
 
-    private fun persistLocked() {
-        secureStore.saveCookies(cookies.map { it.toPersisted() })
+    /**
+     * Drops the process-local copy after SecureStore.clearSession() has
+     * already removed the durable jar atomically with the credentials.
+     * Persisting an empty jar again would split sign-out back into two disk
+     * commits and recreate the process-death window that atomic clear avoids.
+     */
+    fun clearInMemory() {
+        synchronized(lock) {
+            cookies.clear()
+        }
+    }
+
+    /**
+     * Pins every cookie read/write made by one OkHttp call to the session that
+     * started it. Application interceptors wrap redirects and nested refresh
+     * calls, so a late response from an old account cannot overwrite the new
+     * account's tokens after sign-out/sign-in.
+     */
+    fun sessionGenerationInterceptor(): Interceptor = Interceptor { chain ->
+        val inherited = requestGeneration.get()
+        val generation = inherited ?: secureStore.currentSessionGeneration
+        withSessionGeneration(generation) { chain.proceed(chain.request()) }
+    }
+
+    internal fun <T> withSessionGeneration(generation: Long, block: () -> T): T {
+        val previous = requestGeneration.get()
+        requestGeneration.set(generation)
+        return try {
+            block()
+        } finally {
+            if (previous == null) requestGeneration.remove() else requestGeneration.set(previous)
+        }
+    }
+
+    private fun persistLocked(expectedSessionGeneration: Long? = null) {
+        secureStore.saveCookies(cookies.map { it.toPersisted() }, expectedSessionGeneration)
     }
 }

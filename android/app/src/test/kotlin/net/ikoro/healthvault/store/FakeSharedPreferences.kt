@@ -15,6 +15,9 @@ class FakeSharedPreferences : SharedPreferences {
         private set
     var applyCount: Int = 0
         private set
+    var commitSucceeds: Boolean = true
+    var beforeGetLong: ((String) -> Unit)? = null
+    var afterGetString: ((String) -> Unit)? = null
 
     fun resetWriteCounts() {
         commitCount = 0
@@ -23,15 +26,21 @@ class FakeSharedPreferences : SharedPreferences {
 
     override fun getAll(): MutableMap<String, *> = map.toMutableMap()
 
-    override fun getString(key: String?, defValue: String?): String? =
-        map[key] as? String ?: defValue
+    override fun getString(key: String?, defValue: String?): String? {
+        val value = map[key] as? String ?: defValue
+        key?.let { afterGetString?.invoke(it) }
+        return value
+    }
 
     @Suppress("UNCHECKED_CAST")
     override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? =
         (map[key] as? Set<String>)?.toMutableSet() ?: defValues
 
     override fun getInt(key: String?, defValue: Int): Int = map[key] as? Int ?: defValue
-    override fun getLong(key: String?, defValue: Long): Long = map[key] as? Long ?: defValue
+    override fun getLong(key: String?, defValue: Long): Long {
+        key?.let { beforeGetLong?.invoke(it) }
+        return map[key] as? Long ?: defValue
+    }
     override fun getFloat(key: String?, defValue: Float): Float = map[key] as? Float ?: defValue
     override fun getBoolean(key: String?, defValue: Boolean): Boolean = map[key] as? Boolean ?: defValue
     override fun contains(key: String?): Boolean = map.containsKey(key)
@@ -62,8 +71,8 @@ class FakeSharedPreferences : SharedPreferences {
 
         override fun commit(): Boolean {
             commitCount++
-            writePending()
-            return true
+            if (commitSucceeds) writePending()
+            return commitSucceeds
         }
 
         override fun apply() {

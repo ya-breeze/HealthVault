@@ -36,10 +36,13 @@ private data class LoginRequest(val username: String, val password: String)
  */
 class HealthVaultApi(
     private val secureStore: SecureStore,
-    cookieJar: SessionCookieJar,
+    private val cookieJar: SessionCookieJar,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-    private val plainClient = OkHttpClient.Builder().cookieJar(cookieJar).build()
+    private val plainClient = OkHttpClient.Builder()
+        .addInterceptor(cookieJar.sessionGenerationInterceptor())
+        .cookieJar(cookieJar)
+        .build()
 
     private val client = plainClient.newBuilder()
         .addInterceptor(RefreshInterceptor { doRefresh() })
@@ -88,7 +91,13 @@ class HealthVaultApi(
      * make a network blip look like an account problem — and, worse, invite
      * the caller to discard a session that is still perfectly valid.
      */
-    fun summaryToday(): ApiResult<TodaySummary> {
+    fun summaryToday(): ApiResult<TodaySummary> = cookieJar.withSessionGeneration(
+        secureStore.currentSessionGeneration,
+    ) {
+        summaryTodayForPinnedSession()
+    }
+
+    private fun summaryTodayForPinnedSession(): ApiResult<TodaySummary> {
         val serverUrl = secureStore.serverUrl ?: return ApiResult.Unauthenticated
         val request = Request.Builder().url(serverUrl.trimEnd('/') + "/api/summary/today").get().build()
 

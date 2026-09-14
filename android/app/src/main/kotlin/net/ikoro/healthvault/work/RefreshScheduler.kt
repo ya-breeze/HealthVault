@@ -2,10 +2,8 @@ package net.ikoro.healthvault.work
 
 import android.content.Context
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -16,7 +14,6 @@ import kotlin.time.toJavaDuration
 
 private const val PERIODIC_WORK_NAME = "healthvault-refresh-periodic"
 private const val ONE_OFF_WORK_NAME = "healthvault-refresh-one-off"
-private val NETWORK_CONSTRAINTS = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
 /**
  * Owns every trigger for RefreshWorker. The periodic job runs only while at
@@ -27,12 +24,15 @@ private val NETWORK_CONSTRAINTS = Constraints.Builder().setRequiredNetworkType(N
  * catch-up (see RefreshWorker) — all go through the same unique work name, so
  * a later trigger (e.g. the owner opening the app right after a 429) simply
  * replaces an earlier, still-delayed one rather than stacking attempts.
+ * Work intentionally has no CONNECTED constraint: even while offline the
+ * periodic worker must wake up to redraw a snapshot when it crosses the
+ * six-hour stale boundary. RefreshWorker records the network failure and
+ * returns Result.retry(), so the actual request still backs off.
  */
 object RefreshScheduler {
 
     fun ensurePeriodic(context: Context) {
         val request = PeriodicWorkRequestBuilder<RefreshWorker>(30, TimeUnit.MINUTES)
-            .setConstraints(NETWORK_CONSTRAINTS)
             .build()
         WorkManager.getInstance(context)
             .enqueueUniquePeriodicWork(PERIODIC_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
@@ -44,7 +44,6 @@ object RefreshScheduler {
 
     fun enqueueOneOff(context: Context, initialDelay: Duration = ZERO) {
         val request = OneTimeWorkRequestBuilder<RefreshWorker>()
-            .setConstraints(NETWORK_CONSTRAINTS)
             .setInitialDelay(initialDelay.toJavaDuration())
             // Backs off retries WorkManager itself schedules on Result.retry()
             // (e.g. a transient network error inside doWork before this

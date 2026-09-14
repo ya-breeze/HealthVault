@@ -33,6 +33,7 @@ import androidx.browser.customtabs.CustomTabsIntent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 import net.ikoro.healthvault.R
 import net.ikoro.healthvault.api.ApiResult
 import net.ikoro.healthvault.api.HealthVaultApi
@@ -40,12 +41,13 @@ import net.ikoro.healthvault.api.TodaySummary
 import net.ikoro.healthvault.store.SecureStore
 import net.ikoro.healthvault.store.SummarySnapshot
 import net.ikoro.healthvault.widget.WIDGET_STALE_AFTER_MILLIS
+import net.ikoro.healthvault.widget.WidgetUpdater
 
 /**
  * Why the last refresh failed. Mirrors SetupScreen's SetupError: every
  * recoverable outcome names its own cause, because "we couldn't reach the
  * server", "the rate limiter is holding us off" and "Access is challenging
- * /api/*" call for three different reactions from the owner. A dead session is
+ * the public API" call for three different reactions from the owner. A dead session is
  * deliberately absent — [ApiResult.Unauthenticated] routes to `onSignedOut()`
  * instead, and after HealthVaultApi.summaryToday's re-login fallback that is
  * the only outcome that really means the session ended.
@@ -105,23 +107,85 @@ fun TodayScreen(
 
     suspend fun refresh() {
         refreshing = true
-        val result = withContext(Dispatchers.IO) { api.summaryToday() }
+        val (result, sessionGeneration) = withContext(Dispatchers.IO) {
+            val generation = secureStore.currentSessionGeneration
+            val now = System.currentTimeMillis()
+            val heldUntil = secureStore.nextRefreshAtMillis
+            val isHeld = heldUntil > now
+            val outcome = if (isHeld) {
+                ApiResult.RateLimited((heldUntil - now).milliseconds)
+            } else {
+                api.summaryToday()
+            }
+
+            when (outcome) {
+                is ApiResult.Success -> {
+                    secureStore.saveRefreshState(
+                        failed = false,
+                        nextAttemptAtMillis = 0L,
+                        expectedSessionGeneration = generation,
+                    )
+                }
+                is ApiResult.RateLimited -> {
+                    val receivedAt = System.currentTimeMillis()
+                    val delayMillis = outcome.retryAfter.inWholeMilliseconds.coerceAtLeast(0L)
+                    val nextAttemptAt = if (isHeld) {
+                        heldUntil
+                    } else if (delayMillis > Long.MAX_VALUE - receivedAt) {
+                        Long.MAX_VALUE
+                    } else {
+                        receivedAt + delayMillis
+                    }
+                    secureStore.saveRefreshState(
+                        failed = true,
+                        nextAttemptAtMillis = nextAttemptAt,
+                        expectedSessionGeneration = generation,
+                    )
+                }
+                is ApiResult.NetworkFailure,
+                is ApiResult.AccessChallenge,
+                is ApiResult.ServerError,
+                -> {
+                    secureStore.saveRefreshState(
+                        failed = true,
+                        nextAttemptAtMillis = 0L,
+                        expectedSessionGeneration = generation,
+                    )
+                }
+                is ApiResult.Unauthenticated -> Unit
+            }
+            outcome to generation
+        }
         refreshing = false
+        if (!secureStore.isCurrentSession(sessionGeneration)) return
         when (result) {
             is ApiResult.Success -> {
                 problem = null
                 val fresh = SummarySnapshot(result.value, System.currentTimeMillis())
-                secureStore.saveSnapshot(fresh)
+                secureStore.saveSnapshot(fresh, sessionGeneration)
                 snapshot = fresh
                 applyDisplayLanguage(result.value.displayLanguage)
+                WidgetUpdater.updateAll(context.applicationContext)
             }
             // Only a 401 that survived both the refresh and the re-login
             // fallback means the session is really gone.
             is ApiResult.Unauthenticated -> onSignedOut()
-            is ApiResult.RateLimited -> problem = RefreshProblem.LockedOut(result.retryAfter.inWholeSeconds)
-            is ApiResult.AccessChallenge -> problem = RefreshProblem.AccessChallenge
-            is ApiResult.NetworkFailure -> problem = RefreshProblem.Unreachable
-            is ApiResult.ServerError -> problem = RefreshProblem.Server(result.code)
+            is ApiResult.RateLimited -> {
+                problem = RefreshProblem.LockedOut(result.retryAfter.inWholeSeconds)
+                WidgetUpdater.updateAll(context.applicationContext)
+            }
+            is ApiResult.AccessChallenge -> {
+                problem = RefreshProblem.AccessChallenge
+                WidgetUpdater.updateAll(context.applicationContext)
+            }
+            is ApiResult.NetworkFailure -> {
+                problem = RefreshProblem.Unreachable
+                WidgetUpdater.updateAll(context.applicationContext)
+            }
+            is ApiResult.ServerError -> {
+                problem = RefreshProblem.Server(result.code)
+                WidgetUpdater.updateAll(context.applicationContext)
+            }
         }
     }
 
@@ -228,7 +292,12 @@ private fun TodayContent(summary: TodaySummary) {
 @Composable
 private fun MacroBar(label: String, consumedGrams: Double, targetGrams: Int) {
     Column {
-        Text(text = "$label: ${consumedGrams.toInt()}g" + if (targetGrams > 0) " / ${targetGrams}g" else "")
+        val text = if (targetGrams > 0) {
+            stringResource(R.string.today_macro_of_target, label, consumedGrams.toInt(), targetGrams)
+        } else {
+            stringResource(R.string.today_macro_consumed, label, consumedGrams.toInt())
+        }
+        Text(text = text)
         if (targetGrams > 0) {
             LinearProgressIndicator(
                 progress = { (consumedGrams / targetGrams).toFloat().coerceIn(0f, 1f) },

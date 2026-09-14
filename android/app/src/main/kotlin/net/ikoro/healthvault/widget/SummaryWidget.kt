@@ -65,6 +65,7 @@ class SummaryWidget : GlanceAppWidget() {
             fetchedAtMillis = snapshot?.fetchedAtMillis,
             nowMillis = System.currentTimeMillis(),
             hasSession = app.secureStore.hasSession(),
+            refreshFailed = app.secureStore.refreshFailed,
         )
 
         provideContent {

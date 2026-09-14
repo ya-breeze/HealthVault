@@ -139,11 +139,9 @@ fun SetupScreen(
                                 // Persisted here, inside the IO block and only
                                 // on success: SecureStore commits credentials
                                 // synchronously (see its class doc), so these
-                                // three writes must not run on the UI thread.
+                                // session write must not run on the UI thread.
                                 if (outcome is ApiResult.Success) {
-                                    secureStore.serverUrl = target
-                                    secureStore.username = username
-                                    secureStore.password = password
+                                    secureStore.saveSession(target, username, password)
                                 }
                                 outcome
                             }

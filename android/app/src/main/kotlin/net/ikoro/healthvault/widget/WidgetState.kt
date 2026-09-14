@@ -17,17 +17,20 @@ sealed class WidgetState {
  * widget renders. Kept free of Android types (Context, Glance, WorkManager)
  * on purpose, so it's a plain-JVM unit test target (Task 7) — the widget
  * itself (SummaryWidget.kt) is the only caller and does nothing but read
- * SecureStore and hand the result here.
+ * SecureStore and hand the result here. A failed refresh marks the retained
+ * snapshot stale immediately; age independently marks it stale after six
+ * hours even if no failure was recorded.
  */
 fun widgetState(
     summary: TodaySummary?,
     fetchedAtMillis: Long?,
     nowMillis: Long,
     hasSession: Boolean,
+    refreshFailed: Boolean = false,
 ): WidgetState {
     if (!hasSession) return WidgetState.SignedOut
     if (summary == null || fetchedAtMillis == null) return WidgetState.Error
-    return if (nowMillis - fetchedAtMillis > WIDGET_STALE_AFTER_MILLIS) {
+    return if (refreshFailed || nowMillis - fetchedAtMillis > WIDGET_STALE_AFTER_MILLIS) {
         WidgetState.Stale(summary, fetchedAtMillis)
     } else {
         WidgetState.Loaded(summary, fetchedAtMillis)

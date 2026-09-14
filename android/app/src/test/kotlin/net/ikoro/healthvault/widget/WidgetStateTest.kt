@@ -42,6 +42,20 @@ class WidgetStateTest {
     }
 
     @Test
+    fun `a failed refresh marks even a recent snapshot stale`() {
+        val now = 10 * 60 * 60 * 1000L
+        val state = widgetState(
+            SAMPLE_SUMMARY,
+            fetchedAtMillis = now - 60_000,
+            nowMillis = now,
+            hasSession = true,
+            refreshFailed = true,
+        )
+
+        assertTrue(state is WidgetState.Stale)
+    }
+
+    @Test
     fun `a snapshot exactly at the 6-hour boundary is not yet stale`() {
         val fetchedAt = 0L
         val now = WIDGET_STALE_AFTER_MILLIS

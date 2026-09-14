@@ -11,9 +11,9 @@ import org.junit.Test
 
 private const val HOST = "hcw.example.com"
 
-private fun accessCookie(expiresAtMillis: Long = Long.MAX_VALUE) = Cookie.Builder()
+private fun accessCookie(expiresAtMillis: Long = Long.MAX_VALUE, value: String = "access-token") = Cookie.Builder()
     .name("kin_access")
-    .value("access-token")
+    .value(value)
     .hostOnlyDomain(HOST)
     .path("/api")
     .expiresAt(expiresAtMillis)
@@ -45,11 +45,16 @@ class SessionCookieJarTest {
 
     @Test
     fun `expired cookies are dropped on load`() {
-        val jar = SessionCookieJar(SecureStore(FakeSharedPreferences()))
+        val store = SecureStore(FakeSharedPreferences())
         val past = System.currentTimeMillis() - 1_000
-        jar.saveFromResponse(url("/api/auth/login"), listOf(accessCookie(expiresAtMillis = past)))
+        // Seed persistence directly: saveFromResponse deliberately discards an
+        // already-expired cookie, which would never exercise loadForRequest's
+        // expiry-removal branch.
+        store.saveCookies(listOf(accessCookie(expiresAtMillis = past).toPersisted()))
+        val jar = SessionCookieJar(store)
 
         assertTrue(jar.loadForRequest(url("/api/summary/today")).isEmpty())
+        assertTrue("expired cookie must also be removed from persistence", store.loadCookies().isEmpty())
     }
 
     @Test
@@ -100,5 +105,46 @@ class SessionCookieJarTest {
         jar.clear()
 
         assertFalse(jar.loadForRequest(url("/api/auth/refresh")).isNotEmpty())
+    }
+
+    @Test
+    fun `atomic session clear followed by in-memory clear cannot restore the cookie jar`() {
+        val prefs = FakeSharedPreferences()
+        val store = SecureStore(prefs).apply {
+            username = "alice"
+            password = "secret"
+        }
+        val jar = SessionCookieJar(store)
+        jar.saveFromResponse(url("/api/auth/login"), listOf(accessCookie(), refreshCookie()))
+
+        store.clearSession()
+        jar.clearInMemory()
+
+        assertFalse(store.hasSession())
+        assertTrue(store.loadCookies().isEmpty())
+        assertTrue(jar.loadForRequest(url("/api/auth/refresh")).isEmpty())
+    }
+
+    @Test
+    fun `a late response from an old session cannot replace the new session cookies`() {
+        val store = SecureStore(FakeSharedPreferences())
+        val jar = SessionCookieJar(store)
+        store.saveSession("https://$HOST", "alice", "old-secret")
+        val aliceGeneration = store.currentSessionGeneration
+
+        store.clearSession()
+        jar.clearInMemory()
+        store.saveSession("https://$HOST", "bob", "new-secret")
+        val bobGeneration = store.currentSessionGeneration
+        jar.withSessionGeneration(bobGeneration) {
+            jar.saveFromResponse(url("/api/auth/login"), listOf(accessCookie(value = "bob-token")))
+        }
+
+        jar.withSessionGeneration(aliceGeneration) {
+            jar.saveFromResponse(url("/api/auth/refresh"), listOf(accessCookie(value = "late-alice-token")))
+        }
+
+        assertEquals(listOf("bob-token"), jar.loadForRequest(url("/api/summary/today")).map { it.value })
+        assertEquals(listOf("bob-token"), store.loadCookies().map { it.value })
     }
 }

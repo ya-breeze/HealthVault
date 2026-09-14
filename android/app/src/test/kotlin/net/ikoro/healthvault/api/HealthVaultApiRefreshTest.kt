@@ -96,12 +96,21 @@ class HealthVaultApiRefreshTest {
                 "/api/auth/refresh" -> MockResponse()
                     .setResponseCode(200)
                     .addHeader("Set-Cookie", "kin_access=rotated-access; Path=/api")
+                    .addHeader("Set-Cookie", "kin_refresh=rotated-refresh; Path=/api/auth/refresh")
                 "/api/summary/today" -> {
                     summaryCallCount++
                     if (summaryCallCount == 1) {
                         MockResponse().setResponseCode(401)
                     } else {
-                        committedBeforeRetry.set(secureStore.loadCookies().any { it.value == "rotated-access" })
+                        val persisted = secureStore.loadCookies()
+                        committedBeforeRetry.set(
+                            persisted.any { it.name == "kin_access" && it.value == "rotated-access" } &&
+                                persisted.any {
+                                    it.name == "kin_refresh" &&
+                                        it.value == "rotated-refresh" &&
+                                        it.path == "/api/auth/refresh"
+                                },
+                        )
                         MockResponse().setResponseCode(200).setBody(VALID_SUMMARY_JSON)
                     }
                 }
@@ -122,6 +131,110 @@ class HealthVaultApiRefreshTest {
         assertTrue("rotated cookie must be persisted before the retried request is sent", committedBeforeRetry.get())
         assertTrue("the rotated cookie must use a synchronous commit", prefs.commitCount > 0)
         assertEquals("cookie persistence must not use apply", 0, prefs.applyCount)
+    }
+
+    @Test
+    fun `fallback login cannot install old account cookies after the session changes`() {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                "/api/summary/today", "/api/auth/refresh" -> MockResponse().setResponseCode(401)
+                "/api/auth/login" -> MockResponse()
+                    .setResponseCode(200)
+                    .addHeader("Set-Cookie", "kin_access=late-alice-token; Path=/api")
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        server.start()
+
+        val prefs = FakeSharedPreferences()
+        val secureStore = SecureStore(prefs)
+        val jar = SessionCookieJar(secureStore)
+        val baseUrl = server.url("/").toString().trimEnd('/')
+        secureStore.saveSession(baseUrl, "alice", "old-secret")
+        val switched = AtomicBoolean(false)
+        prefs.afterGetString = { key ->
+            if (key == "password" && switched.compareAndSet(false, true)) {
+                secureStore.clearSession()
+                jar.clearInMemory()
+                secureStore.saveSession(baseUrl, "bob", "new-secret")
+                jar.withSessionGeneration(secureStore.currentSessionGeneration) {
+                    jar.saveFromResponse(
+                        server.url("/api/auth/login"),
+                        listOf(
+                            okhttp3.Cookie.Builder()
+                                .name("kin_access")
+                                .value("bob-token")
+                                .hostOnlyDomain(server.url("/").host)
+                                .path("/api")
+                                .expiresAt(Long.MAX_VALUE)
+                                .build(),
+                        ),
+                    )
+                }
+            }
+        }
+        val api = HealthVaultApi(secureStore, jar)
+
+        api.summaryToday()
+
+        assertTrue(switched.get())
+        assertEquals(
+            listOf("bob-token"),
+            jar.loadForRequest(server.url("/api/summary/today")).map { it.value },
+        )
+        assertEquals(listOf("bob-token"), secureStore.loadCookies().map { it.value })
+    }
+
+    @Test
+    fun `standalone login response is pinned to the session that started it`() {
+        val requestArrived = CountDownLatch(1)
+        val releaseResponse = CountDownLatch(1)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                requestArrived.countDown()
+                assertTrue(releaseResponse.await(5, TimeUnit.SECONDS))
+                return MockResponse()
+                    .setResponseCode(200)
+                    .addHeader("Set-Cookie", "kin_access=late-alice-token; Path=/api")
+            }
+        }
+        server.start()
+
+        val secureStore = SecureStore(FakeSharedPreferences())
+        val jar = SessionCookieJar(secureStore)
+        val baseUrl = server.url("/").toString().trimEnd('/')
+        secureStore.saveSession(baseUrl, "alice", "old-secret")
+        val api = HealthVaultApi(secureStore, jar)
+        val executor = Executors.newSingleThreadExecutor()
+        val login = executor.submit<ApiResult<Unit>> { api.login(baseUrl, "alice", "old-secret") }
+        assertTrue(requestArrived.await(5, TimeUnit.SECONDS))
+
+        secureStore.clearSession()
+        jar.clearInMemory()
+        secureStore.saveSession(baseUrl, "bob", "new-secret")
+        jar.withSessionGeneration(secureStore.currentSessionGeneration) {
+            jar.saveFromResponse(
+                server.url("/api/auth/login"),
+                listOf(
+                    okhttp3.Cookie.Builder()
+                        .name("kin_access")
+                        .value("bob-token")
+                        .hostOnlyDomain(server.url("/").host)
+                        .path("/api")
+                        .expiresAt(Long.MAX_VALUE)
+                        .build(),
+                ),
+            )
+        }
+        releaseResponse.countDown()
+        assertTrue(login.get(5, TimeUnit.SECONDS) is ApiResult.Success)
+        executor.shutdown()
+
+        assertEquals(
+            listOf("bob-token"),
+            jar.loadForRequest(server.url("/api/summary/today")).map { it.value },
+        )
+        assertEquals(listOf("bob-token"), secureStore.loadCookies().map { it.value })
     }
 
     /**
