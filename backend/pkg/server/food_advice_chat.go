@@ -161,9 +161,11 @@ func (h *foodHandlers) PostFoodAdviceChat(w http.ResponseWriter, r *http.Request
 		MeanSugarGrams: *req.Window.MeanSugarGrams, MeanSodiumGrams: *req.Window.MeanSodiumGrams,
 		TargetCalories: target.Calories, TargetProteinGrams: target.ProteinGrams,
 		TargetCarbsGrams: target.CarbsGrams, TargetFatGrams: target.FatGrams,
-		DisplayLanguage: language,
-		Turns:           turns,
-		Question:        question,
+		DisplayLanguage:  language,
+		CurrentLoggedDay: database.LocalDate(now, loc),
+		HistoryTools:     newNutritionChatHistoryTools(h.storage, claims.UserID, loc, settingsJSON, now),
+		Turns:            turns,
+		Question:         question,
 	}
 
 	tctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)

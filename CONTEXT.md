@@ -156,13 +156,17 @@ and never generated, so what the user reads is the arithmetic the label actually
 _Avoid_: Explanation, reasoning (both suggest generated prose rather than reported measurements)
 
 **Nutrition Chat**:
-A question-and-answer conversation about the advice currently on screen, opened from the nutrition
-card and answered from the Advice Basis, the window means, and the Nutrition Target. It is
-**ephemeral**: turns live in the browser tab's component state alone and are discarded when the
-sheet closes, the page navigates, or the tab reloads. No chat table, no browser storage, no raw
-prompt log, no cross-day thread. The model is told the label is final and may not dispute it, and
-is given no activity, sleep, or weight data, because the label never measured those.
+A question-and-answer conversation about the advice currently on screen, answered from the Advice
+Basis and purpose-limited reads of the user's recent food and health history. It is **ephemeral**:
+closing the sheet, navigating, or reloading discards every turn; broader history may explain or
+contextualize the label but never becomes part of the label's calculation.
 _Avoid_: Assistant, coach (both imply a standing relationship this surface does not have)
+
+**Advice Health Context**:
+A sufficiently covered 28-day summary of completed-day steps, sleep and weight that may tailor a
+generated nutrition recommendation. It does not change the Healthiness Label or recalculate the
+Nutrition Target, whose Activity Level already accounts for applicable step history.
+_Avoid_: Advice Basis (that is the label's own arithmetic), health score
 
 ### Weight chart
 

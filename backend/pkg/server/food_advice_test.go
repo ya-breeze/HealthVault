@@ -100,6 +100,10 @@ func TestFoodAdvice_CacheHitSkipsAdviseAndCarriesServerContext(t *testing.T) {
 	if generated.LoggedDay == "" {
 		t.Fatalf("generated response missing Logged Day: %+v", generated)
 	}
+	if got := generatedFake.AdviseCalls[0].HealthContext; got.ActivitySource != "profile_override" ||
+		got.MeanDailySteps != nil || got.MeanSleepHours != nil || got.WeightTrend != nil {
+		t.Fatalf("sparse health context was not safely omitted: %+v", got)
+	}
 
 	hitFake := &vision.Fake{AdviseErr: errors.New("Advise must not be called on a cache hit")}
 	hitHandler := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(hitFake, 10<<20, time.Second)
@@ -112,6 +116,134 @@ func TestFoodAdvice_CacheHitSkipsAdviseAndCarriesServerContext(t *testing.T) {
 	}
 	if cached.LoggedDay != generated.LoggedDay {
 		t.Errorf("cached Logged Day = %q, want %q", cached.LoggedDay, generated.LoggedDay)
+	}
+}
+
+func createAdviceHealthDay(
+	t *testing.T, st database.Storage, userID, familyID uuid.UUID, day time.Time,
+	steps, sleepSeconds int, weightKg *float64,
+) {
+	t.Helper()
+	payloadID := uuid.New()
+	step := database.Steps{
+		UserID: userID, SourcePayloadID: payloadID,
+		StartTime: day.Add(7 * time.Hour), EndTime: day.Add(8 * time.Hour), Count: steps,
+	}
+	step.ID, step.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&step).Error; err != nil {
+		t.Fatalf("create advice steps: %v", err)
+	}
+	sleep := database.Sleep{
+		UserID: userID, SourcePayloadID: payloadID,
+		StartTime: day, SessionEndTime: day.Add(time.Duration(sleepSeconds) * time.Second),
+		DurationSeconds: sleepSeconds,
+	}
+	sleep.ID, sleep.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&sleep).Error; err != nil {
+		t.Fatalf("create advice sleep: %v", err)
+	}
+	if weightKg == nil {
+		return
+	}
+	weight := database.Weight{
+		UserID: userID, SourcePayloadID: &payloadID,
+		Time: day.Add(9 * time.Hour), Kilograms: *weightKg,
+	}
+	weight.ID, weight.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&weight).Error; err != nil {
+		t.Fatalf("create advice weight: %v", err)
+	}
+}
+
+func TestFoodAdvice_UsesCoveredCallerHealthContextAndHashesChanges(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	otherUserID, otherFamilyID := seedSecondFoodUser(t, st)
+	configureAdviceTarget(t, st, userID, "en")
+
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	weights := map[int]float64{3: 78, 2: 79, 1: 80}
+	for i := 7; i >= 1; i-- {
+		var weight *float64
+		if value, ok := weights[i]; ok {
+			valueCopy := value
+			weight = &valueCopy
+		}
+		createAdviceHealthDay(t, st, userID, familyID, today.AddDate(0, 0, -i), 7000, 8*3600, weight)
+	}
+	otherWeight := 190.0
+	createAdviceHealthDay(
+		t, st, otherUserID, otherFamilyID, today.AddDate(0, 0, -1), 99000, 2*3600, &otherWeight,
+	)
+
+	fake := &vision.Fake{AdviseResult: []string{"Keep the adjustment practical."}}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+	body := adviceBody("fair", []string{"sodium_far"}, 70)
+	w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, body))
+	if w.Code != http.StatusOK || !response.Available || len(fake.AdviseCalls) != 1 {
+		t.Fatalf("generate contextual advice: status=%d calls=%d body=%s", w.Code, len(fake.AdviseCalls), w.Body.String())
+	}
+	context := fake.AdviseCalls[0].HealthContext
+	if context.WindowDays != 28 || context.WindowEnds != today.AddDate(0, 0, -1).Format("2006-01-02") {
+		t.Errorf("health context window = %+v", context)
+	}
+	if context.ActivitySource != "profile_override" || context.ActivityTier != "Moderately active" {
+		t.Errorf("activity provenance = %+v", context)
+	}
+	if context.MeanDailySteps == nil || context.MeanDailySteps.Value != 7000 || context.MeanDailySteps.RecordedDays != 7 {
+		t.Errorf("step context = %+v", context.MeanDailySteps)
+	}
+	if context.MeanSleepHours == nil || context.MeanSleepHours.Value != 8 || context.MeanSleepHours.RecordedDays != 7 {
+		t.Errorf("sleep context = %+v", context.MeanSleepHours)
+	}
+	if context.WeightTrend == nil || context.WeightTrend.FirstDailyAverageKg != 78 ||
+		context.WeightTrend.LatestDailyAverageKg != 80 || context.WeightTrend.RecordedDays != 3 {
+		t.Errorf("weight context = %+v", context.WeightTrend)
+	}
+
+	// A newly synced caller-owned day changes AdviceInput and therefore the
+	// cache hash. The other user's extreme records above do not enter it.
+	createAdviceHealthDay(t, st, userID, familyID, today.AddDate(0, 0, -8), 7000, 8*3600, nil)
+	w, response = callAdvice(t, h, newAdviceRequest(t, userID, familyID, body))
+	if w.Code != http.StatusOK || !response.Available || len(fake.AdviseCalls) != 2 {
+		t.Fatalf("changed health context did not regenerate: status=%d calls=%d body=%s", w.Code, len(fake.AdviseCalls), w.Body.String())
+	}
+	if got := fake.AdviseCalls[1].HealthContext.MeanSleepHours; got == nil || got.RecordedDays != 8 || got.Value != 8 {
+		t.Errorf("updated sleep context = %+v", got)
+	}
+
+	setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male","display_language":"en"}`)
+	w, response = callAdvice(t, h, newAdviceRequest(t, userID, familyID, body))
+	if w.Code != http.StatusOK || !response.Available || len(fake.AdviseCalls) != 3 {
+		t.Fatalf("inferred activity did not regenerate: status=%d calls=%d body=%s", w.Code, len(fake.AdviseCalls), w.Body.String())
+	}
+	inferred := fake.AdviseCalls[2].HealthContext
+	if inferred.ActivitySource != "inferred_from_steps" || inferred.ActivityTier != "Lightly active" {
+		t.Errorf("inferred activity provenance = %+v", inferred)
+	}
+}
+
+func TestFoodAdvice_HealthContextReadFailureDoesNotGenerateOrCache(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	configureAdviceTarget(t, st, userID, "en")
+	if err := st.DB().Exec("DROP TABLE sleeps").Error; err != nil {
+		t.Fatalf("drop sleeps table: %v", err)
+	}
+	fake := &vision.Fake{AdviseResult: []string{"Must not be generated."}}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w, response := callAdvice(t, h, newAdviceRequest(t, userID, familyID, adviceBody("fair", nil, 70)))
+	if w.Code != http.StatusOK || response.Available || response.Reason != "unavailable" {
+		t.Fatalf("health read failure: status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(fake.AdviseCalls) != 0 {
+		t.Fatalf("health read failure made %d model calls", len(fake.AdviseCalls))
+	}
+	var count int64
+	if err := st.DB().Model(&database.FoodAdvice{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("health read failure cached %d rows (err=%v)", count, err)
 	}
 }
 
