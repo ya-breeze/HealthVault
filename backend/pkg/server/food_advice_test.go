@@ -39,6 +39,7 @@ func adviceBody(label string, reasons []string, protein float64) map[string]any 
 			"mean_calories": 1820.5, "mean_protein_grams": protein,
 			"mean_carbs_grams": 210.25, "mean_fat_grams": 62.5,
 			"mean_sugar_grams": 88.75, "mean_sodium_grams": 3.1,
+			"mean_dietary_fiber_grams": 24.5,
 		},
 	}
 }
@@ -103,6 +104,9 @@ func TestFoodAdvice_CacheHitSkipsAdviseAndCarriesServerContext(t *testing.T) {
 	if got := generatedFake.AdviseCalls[0].HealthContext; got.ActivitySource != "profile_override" ||
 		got.MeanDailySteps != nil || got.MeanSleepHours != nil || got.WeightTrend != nil {
 		t.Fatalf("sparse health context was not safely omitted: %+v", got)
+	}
+	if generatedFake.AdviseCalls[0].MeanDietaryFiberGrams != 24.5 {
+		t.Fatalf("fiber mean did not reach advice input: %+v", generatedFake.AdviseCalls[0])
 	}
 
 	hitFake := &vision.Fake{AdviseErr: errors.New("Advise must not be called on a cache hit")}
@@ -442,9 +446,14 @@ func TestFoodAdvice_FailureValidationOriginAndAuthStates(t *testing.T) {
 	}{
 		{"rejected label", adviceBody("excellent", nil, 70)},
 		{"malformed reason", adviceBody("fair", []string{"Protein-Low"}, 70)},
-		{"missing window figure", func() map[string]any {
+		{"missing existing window figure", func() map[string]any {
 			body := adviceBody("fair", nil, 70)
 			delete(body["window"].(map[string]any), "mean_sodium_grams")
+			return body
+		}()},
+		{"missing fiber window figure", func() map[string]any {
+			body := adviceBody("fair", nil, 70)
+			delete(body["window"].(map[string]any), "mean_dietary_fiber_grams")
 			return body
 		}()},
 	} {

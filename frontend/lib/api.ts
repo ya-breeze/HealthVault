@@ -463,17 +463,19 @@ export interface DayCompleteness {
 export interface DailyTotal {
   date: string;
   calories: number;
-  // protein_grams, carbs_grams, fat_grams, sugar_grams and sodium_grams mirror
+  // protein_grams, carbs_grams, fat_grams, sugar_grams, sodium_grams and
+  // dietary_fiber_grams mirror
   // database.DailyTotal (food_daily_totals.go) — required, not optional. The
-  // backend serializes all five with no `omitempty`, so a zero sum always
+  // backend serializes all six with no `omitempty`, so a zero sum always
   // arrives as the number 0, never an absent key.
   protein_grams: number;
   carbs_grams: number;
   fat_grams: number;
   sugar_grams: number;
   sodium_grams: number;
+  dietary_fiber_grams: number;
   // How many of that day's meals are in a status other than `confirmed`, and
-  // so contributed nothing to `calories` or the five fields above. Non-zero
+  // so contributed nothing to `calories` or the six fields above. Non-zero
   // means the day's total is under-counted by an unknown amount, which is
   // not the same thing as a low total — see database.DailyTotal's own
   // comment.
@@ -607,6 +609,7 @@ export interface NutritionAdviceWindow {
   mean_fat_grams: number;
   mean_sugar_grams: number;
   mean_sodium_grams: number;
+  mean_dietary_fiber_grams: number;
 }
 
 export interface NutritionAdviceRequest {
@@ -643,12 +646,23 @@ export interface NutritionChatSignal {
   /** Absent for an `ok` signal, which contributed no reason code. */
   reason?: string;
   off_boundary: number;
-  far_boundary: number;
+  /** Absent when the evidence defines no separate `far` verdict. */
+  far_boundary?: number;
 }
 
 export interface NutritionChatTurn {
   role: 'user' | 'assistant';
   text: string;
+}
+
+export interface NutritionChatSource {
+  date: string;
+  meal_id: string;
+  food: string;
+  signal: string;
+  nutrient_grams: number;
+  macro_source: string;
+  confidence: number;
 }
 
 export interface NutritionChatRequest {
@@ -666,7 +680,7 @@ export interface NutritionChatRequest {
 // inaccessible until the caller has proved the response carries one.
 export type NutritionChatResponse =
   | { available: false; reason: 'unconfigured' | 'unavailable' }
-  | { available: true; answer: string };
+  | { available: true; answer: string; sources?: NutritionChatSource[] };
 
 export interface FoodAdviceEngagementRequest {
   event: 'qualified_view';

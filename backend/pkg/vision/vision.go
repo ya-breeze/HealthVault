@@ -153,20 +153,21 @@ type ClarifyTurn struct {
 // not a judgment for the model to revisit. Target figures are supplied by the
 // server from the user's Nutrition Target.
 type AdviceInput struct {
-	Label              string              `json:"label"`
-	Reasons            []string            `json:"reasons"`
-	MeanCalories       float64             `json:"mean_calories"`
-	MeanProteinGrams   float64             `json:"mean_protein_grams"`
-	MeanCarbsGrams     float64             `json:"mean_carbs_grams"`
-	MeanFatGrams       float64             `json:"mean_fat_grams"`
-	MeanSugarGrams     float64             `json:"mean_sugar_grams"`
-	MeanSodiumGrams    float64             `json:"mean_sodium_grams"`
-	TargetCalories     int                 `json:"target_calories"`
-	TargetProteinGrams int                 `json:"target_protein_grams"`
-	TargetCarbsGrams   int                 `json:"target_carbs_grams"`
-	TargetFatGrams     int                 `json:"target_fat_grams"`
-	DisplayLanguage    string              `json:"display_language"`
-	HealthContext      AdviceHealthContext `json:"health_context"`
+	Label                 string              `json:"label"`
+	Reasons               []string            `json:"reasons"`
+	MeanCalories          float64             `json:"mean_calories"`
+	MeanProteinGrams      float64             `json:"mean_protein_grams"`
+	MeanCarbsGrams        float64             `json:"mean_carbs_grams"`
+	MeanFatGrams          float64             `json:"mean_fat_grams"`
+	MeanSugarGrams        float64             `json:"mean_sugar_grams"`
+	MeanSodiumGrams       float64             `json:"mean_sodium_grams"`
+	MeanDietaryFiberGrams float64             `json:"mean_dietary_fiber_grams"`
+	TargetCalories        int                 `json:"target_calories"`
+	TargetProteinGrams    int                 `json:"target_protein_grams"`
+	TargetCarbsGrams      int                 `json:"target_carbs_grams"`
+	TargetFatGrams        int                 `json:"target_fat_grams"`
+	DisplayLanguage       string              `json:"display_language"`
+	HealthContext         AdviceHealthContext `json:"health_context"`
 }
 
 // AdviceMetricAverage is a sufficiently covered average of one daily health
@@ -205,13 +206,13 @@ type AdviceHealthContext struct {
 // line from the same arithmetic the user is looking at on screen, rather than
 // inventing a threshold of its own.
 type NutritionChatSignal struct {
-	Code        string  `json:"code"`
-	Value       float64 `json:"value"`
-	Unit        string  `json:"unit"`
-	Verdict     string  `json:"verdict"`
-	Reason      string  `json:"reason,omitempty"`
-	OffBoundary float64 `json:"off_boundary"`
-	FarBoundary float64 `json:"far_boundary"`
+	Code        string   `json:"code"`
+	Value       float64  `json:"value"`
+	Unit        string   `json:"unit"`
+	Verdict     string   `json:"verdict"`
+	Reason      string   `json:"reason,omitempty"`
+	OffBoundary float64  `json:"off_boundary"`
+	FarBoundary *float64 `json:"far_boundary,omitempty"`
 }
 
 // NutritionChatTurn is one exchange already on screen. Role is "user" or
@@ -235,23 +236,24 @@ type NutritionChatToolExecutor interface {
 // Broader history stays behind HistoryTools so only the relevant records are
 // disclosed for a question.
 type NutritionChatInput struct {
-	Label              string                `json:"label"`
-	Reasons            []string              `json:"reasons"`
-	Signals            []NutritionChatSignal `json:"signals"`
-	EligibleDays       int                   `json:"eligible_days"`
-	WindowDays         int                   `json:"window_days"`
-	MeanCalories       float64               `json:"mean_calories"`
-	MeanProteinGrams   float64               `json:"mean_protein_grams"`
-	MeanCarbsGrams     float64               `json:"mean_carbs_grams"`
-	MeanFatGrams       float64               `json:"mean_fat_grams"`
-	MeanSugarGrams     float64               `json:"mean_sugar_grams"`
-	MeanSodiumGrams    float64               `json:"mean_sodium_grams"`
-	TargetCalories     int                   `json:"target_calories"`
-	TargetProteinGrams int                   `json:"target_protein_grams"`
-	TargetCarbsGrams   int                   `json:"target_carbs_grams"`
-	TargetFatGrams     int                   `json:"target_fat_grams"`
-	DisplayLanguage    string                `json:"display_language"`
-	CurrentLoggedDay   string                `json:"current_logged_day"`
+	Label                 string                `json:"label"`
+	Reasons               []string              `json:"reasons"`
+	Signals               []NutritionChatSignal `json:"signals"`
+	EligibleDays          int                   `json:"eligible_days"`
+	WindowDays            int                   `json:"window_days"`
+	MeanCalories          float64               `json:"mean_calories"`
+	MeanProteinGrams      float64               `json:"mean_protein_grams"`
+	MeanCarbsGrams        float64               `json:"mean_carbs_grams"`
+	MeanFatGrams          float64               `json:"mean_fat_grams"`
+	MeanSugarGrams        float64               `json:"mean_sugar_grams"`
+	MeanSodiumGrams       float64               `json:"mean_sodium_grams"`
+	MeanDietaryFiberGrams float64               `json:"mean_dietary_fiber_grams"`
+	TargetCalories        int                   `json:"target_calories"`
+	TargetProteinGrams    int                   `json:"target_protein_grams"`
+	TargetCarbsGrams      int                   `json:"target_carbs_grams"`
+	TargetFatGrams        int                   `json:"target_fat_grams"`
+	DisplayLanguage       string                `json:"display_language"`
+	CurrentLoggedDay      string                `json:"current_logged_day"`
 	// HistoryTools is server-owned and deliberately absent from the serialized
 	// prompt. OpenAIClient exposes its fixed tool definitions and invokes this
 	// executor only when the model requests one.

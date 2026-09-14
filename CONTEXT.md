@@ -133,7 +133,7 @@ Nutrition Target uncomputable (`insufficient_activity_data`). See ADR-006.
 _Avoid_: Activity multiplier alone (that's the numeric output, not the tier), exercise level
 
 **Healthiness Label**:
-A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment (ADR-004). The window is the 7 Logged Days ending yesterday — the last 7 days of the 28-day Logging Gap window the nutrition card already resolves, so it costs no extra fetch. A day counts only if it passes the Logging Gap's own `isValidDay` test (Day Completeness Complete/Confirmed Complete, and every one of that day's meals `confirmed`) — imported from `loggingGap.ts` rather than reimplemented, so the two rows can never disagree about what "logged" means. Below the ADR-007 3-of-7 floor, or with zero pooled macro energy, there is no label at all. The five signals, computed from *pooled* (not per-day-averaged) totals — three macro-energy shares (protein, carbs, fat, of `4P + 4C + 9F`), total-sugars share, and mean elemental sodium — each land on `ok`/`off`/`far`; any `far`, or 3+ `off`, is Needs attention, 1-2 `off` is Fair, all `ok` is Good.
+A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged nutrition fields, not an LLM judgment (ADR-004). The window is the 7 Logged Days ending yesterday — the last 7 days of the 28-day Logging Gap window the nutrition card already resolves, so it costs no extra fetch. A day counts only if it passes the Logging Gap's own `isValidDay` test (Day Completeness Complete/Confirmed Complete, and every one of that day's meals `confirmed`) — imported from `loggingGap.ts` rather than reimplemented, so the two rows can never disagree about what "logged" means. Below the ADR-007 3-of-7 floor, or with zero pooled macro energy, there is no label at all. Six signals are computed from *pooled* (not per-day-averaged) totals: three macro-energy shares (protein, carbs, fat, of `4P + 4C + 9F`), total-sugars share, mean elemental sodium, and mean dietary fiber. The original five land on `ok`/`off`/`far`; fiber uses EFSA's adult adequate intake of 25 g/day as one lower boundary and lands only on `ok` or `off`. Any `far`, or 3+ `off`, is Needs attention, 1-2 `off` is Fair, all `ok` is Good. Fiber is last in reason precedence and cannot produce Needs attention by itself.
 _Avoid_: Health score, nutrition score
 
 **Qualified Advice View**:
@@ -159,8 +159,19 @@ _Avoid_: Explanation, reasoning (both suggest generated prose rather than report
 A question-and-answer conversation about the advice currently on screen, answered from the Advice
 Basis and purpose-limited reads of the user's recent food and health history. It is **ephemeral**:
 closing the sheet, navigating, or reloading discards every turn; broader history may explain or
-contextualize the label but never becomes part of the label's calculation.
+contextualize the label but never becomes part of the label's calculation. When a nutrition-signal
+lookup reads Food Item contributors, the authenticated server may attach up to five Actionable
+Sources to that assistant turn. Each source names the Logged Day, Food Item, contribution, Macro
+Source and confidence and links to its Food Meal review screen. The server owns those links: meal
+identifiers never enter the model prompt or tool result, and sources are not replayed in later turns.
 _Avoid_: Assistant, coach (both imply a standing relationship this surface does not have)
+
+**Actionable Source**:
+A server-owned evidence row attached to one Nutrition Chat answer after the model asks to inspect a
+nutrition signal's Food Item contributors. It links the named contribution to the caller-owned Food
+Meal correction screen. It is request-scoped display metadata, not model prose, conversation
+history, or a persisted citation.
+_Avoid_: Citation (the row is application data, not a published reference), model source
 
 **Advice Health Context**:
 A sufficiently covered 28-day summary of completed-day steps, sleep and weight that may tailor a

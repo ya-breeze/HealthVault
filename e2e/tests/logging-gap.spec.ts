@@ -125,7 +125,9 @@ interface LoggingGapFixture {
   // numbers they don't care about.
   today?: { calories: number; protein: number; carbs: number; fat: number };
   completeness?: { date: string; state: string }[];
-  // The five Healthiness Label fields are optional and default to zero
+  // The six Healthiness Label fields are optional. Macros/sugar/sodium default
+  // to zero; fiber defaults to its 25 g adequate boundary so fixtures that
+  // predate this signal do not acquire an unrelated low-fiber verdict.
   // (filled in by mockLoggingGapApis below) — every fixture that predates
   // the label leaves them unset, which pools to zero macro energy and so,
   // correctly, produces no label at all.
@@ -138,6 +140,7 @@ interface LoggingGapFixture {
     fat_grams?: number;
     sugar_grams?: number;
     sodium_grams?: number;
+    dietary_fiber_grams?: number;
   }[];
 }
 
@@ -215,6 +218,7 @@ async function mockLoggingGapApis(
           fat_grams: d.fat_grams ?? 0,
           sugar_grams: d.sugar_grams ?? 0,
           sodium_grams: d.sodium_grams ?? 0,
+          dietary_fiber_grams: d.dietary_fiber_grams ?? 25,
           unconfirmed_meals: d.unconfirmed_meals,
         })),
       })
@@ -282,8 +286,15 @@ function onTrackFixture(): LoggingGapFixture {
 
 // This app's own Nutrition Target split (~22% protein / 39% carbs / 39% fat,
 // see healthiness.test.ts), applied to a 2000 kcal day. Low sugar and sodium
-// keep every one of the five signals on the `ok` side.
-const HEALTHY_MACROS = { protein_grams: 110, carbs_grams: 195, fat_grams: 86.667, sugar_grams: 20, sodium_grams: 1.5 };
+// keep every one of the six signals on the `ok` side.
+const HEALTHY_MACROS = {
+  protein_grams: 110,
+  carbs_grams: 195,
+  fat_grams: 86.667,
+  sugar_grams: 20,
+  sodium_grams: 1.5,
+  dietary_fiber_grams: 25,
+};
 
 // A weight series the sustainability check leaves alone: -0.1 kg/day from
 // 100 kg is ~0.7%/week at the window's end, inside
@@ -327,7 +338,7 @@ function healthinessGoodFixture(): LoggingGapFixture {
 
 // Sodium alone pushed past the far threshold (>3.5 g/day, healthiness.ts's
 // HEALTHINESS_THRESHOLDS.sodiumGramsPerDay.farLow) — any single `far` signal
-// is enough for `needs_attention` regardless of the other four.
+// is enough for `needs_attention` regardless of the other five.
 function healthinessNeedsAttentionFixture(): LoggingGapFixture {
   const base = healthinessBase();
   const { windowStart, windowEnd } = loggingGapWindow();
@@ -336,6 +347,21 @@ function healthinessNeedsAttentionFixture(): LoggingGapFixture {
     ...base,
     dailyTotals: base.dailyTotals!.map(d =>
       last7.has(d.date) ? { ...d, ...HEALTHY_MACROS, sodium_grams: 4.0 } : d
+    ),
+  };
+}
+
+// Fiber has one adult adequate-intake line rather than a manufactured severe
+// band. A 10 g/day mean is therefore Fair and names low fiber, never Needs
+// attention on its own.
+function healthinessLowFiberFixture(): LoggingGapFixture {
+  const base = healthinessBase();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d =>
+      last7.has(d.date) ? { ...d, ...HEALTHY_MACROS, dietary_fiber_grams: 10 } : d
     ),
   };
 }
@@ -656,6 +682,7 @@ test.describe('Logging Gap Card', () => {
         expect(typeof entry.fat_grams).toBe('number');
         expect(typeof entry.sugar_grams).toBe('number');
         expect(typeof entry.sodium_grams).toBe('number');
+        expect(typeof entry.dietary_fiber_grams).toBe('number');
         expect(typeof entry.unconfirmed_meals).toBe('number');
       }
 
@@ -939,7 +966,7 @@ test.describe('Healthiness Label (nutrition card middle row)', () => {
       await expect(hint).toBeHidden();
       await card.getByTestId('logging-gap-hint-toggle').click();
       await expect(hint).toBeVisible();
-      await expect(hint).toContainText('The label covers macro balance, total sugars and sodium');
+      await expect(hint).toContainText('The label covers macro balance, total sugars, sodium and fiber');
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -960,6 +987,25 @@ test.describe('Healthiness Label (nutrition card middle row)', () => {
       await expect(label).toBeVisible({ timeout: 15_000 });
       await expect(label).toContainText('Last 7 days: Needs attention');
       await expect(label).toContainText('sodium is high');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('low fiber alone renders as Fair and names the measured reason', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, healthinessLowFiberFixture());
+      await page.goto('/');
+
+      const label = page.getByTestId('logging-gap-card').getByTestId('nutrition-healthiness-label');
+      await expect(label).toBeVisible({ timeout: 15_000 });
+      await expect(label).toContainText('Last 7 days: Fair');
+      await expect(label).toContainText('fiber is low');
     } finally {
       await putSettings(request, cookies, original);
     }
@@ -1627,12 +1673,19 @@ test.describe('Nutrition advice chat', () => {
       await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveText('It is the seven-day mean.');
 
       expect(chatBodies).toHaveLength(1);
-      const body = chatBodies[0] as { question: string; turns: unknown[]; eligible_days: number; signals: Array<{ code: string; verdict: string }> };
+      const body = chatBodies[0] as {
+        question: string;
+        turns: unknown[];
+        eligible_days: number;
+        signals: Array<{ code: string; verdict: string; far_boundary?: number }>;
+      };
       expect(body.question).toBe('why do you say that?');
       // The first question carries no prior turns: the conversation starts empty.
       expect(body.turns).toEqual([]);
       expect(body.eligible_days).toBe(7);
       expect(body.signals.find(s => s.code === 'sodium')?.verdict).toBe('far');
+      expect(body.signals.find(s => s.code === 'fiber')?.verdict).toBe('ok');
+      expect(body.signals.find(s => s.code === 'fiber')?.far_boundary).toBeUndefined();
 
       // The second question replays the first exchange, because neither side
       // keeps a thread.
@@ -1644,6 +1697,66 @@ test.describe('Nutrition advice chat', () => {
         'user',
         'assistant',
       ]);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('shows server-owned contributor sources, keeps them out of replay, and opens the meal', async ({ page, request }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      const mealID = '123e4567-e89b-12d3-a456-426614174000';
+      const chatBodies: Array<Record<string, unknown>> = [];
+      await page.route('**/api/food/advice/chat', route => {
+        chatBodies.push(route.request().postDataJSON());
+        return route.fulfill({
+          json: chatBodies.length === 1
+            ? {
+                available: true,
+                answer: 'Soup contributed the most sodium.',
+                sources: [{
+                  date: '2026-09-13',
+                  meal_id: mealID,
+                  food: 'Homemade soup',
+                  signal: 'sodium',
+                  nutrient_grams: 1.24,
+                  macro_source: 'estimated',
+                  confidence: 0.72,
+                }],
+              }
+            : { available: true, answer: 'The source stays on the prior answer.' },
+        });
+      });
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      await sheet.getByTestId('nutrition-chat-input').fill('Which food caused it?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+
+      const source = sheet.getByTestId('nutrition-chat-source');
+      await expect(source).toContainText('Homemade soup');
+      await expect(source).toContainText('Sodium');
+      await expect(source).toContainText('1.24 g');
+      await expect(source).toContainText('AI estimate');
+      await expect(source).toContainText('72% confidence');
+      await expect(source).toHaveAccessibleName(/Open the meal containing Homemade soup from .+/);
+      expect((await source.boundingBox())?.height).toBeGreaterThanOrEqual(48);
+      expect(await sheet.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+      await sheet.getByTestId('nutrition-chat-input').fill('And why?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-sources')).toHaveCount(1);
+      const replayed = chatBodies[1] as { turns: Array<Record<string, unknown>> };
+      expect(replayed.turns).toHaveLength(2);
+      expect(replayed.turns[1]).toEqual({ role: 'assistant', text: 'Soup contributed the most sodium.' });
+
+      await source.click();
+      await expect(page).toHaveURL(new RegExp(`/food/review/\\?meal=${mealID}`));
     } finally {
       await putSettings(request, cookies, original);
     }
