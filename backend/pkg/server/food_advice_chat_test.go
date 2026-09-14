@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
 	"github.com/ya-breeze/healthvault/pkg/vision"
 )
@@ -79,6 +81,33 @@ func callChat(t *testing.T, h interface {
 	return w, response
 }
 
+func createNutritionChatHistoryMeal(
+	t *testing.T, st database.Storage, userID, familyID uuid.UUID, loggedAt time.Time,
+	food string, sodium float64, source string,
+) {
+	t.Helper()
+	meal := database.FoodMeal{
+		UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: loggedAt,
+		Calories: 300, ProteinGrams: 20, CarbsGrams: 30, FatGrams: 10,
+		SugarGrams: 5, SodiumGrams: sodium, DietaryFiberGrams: 3,
+	}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create history meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: food, WeightGrams: 250, Confidence: 0.72,
+		MacroSource: source, Calories: 300, ProteinGrams: 20, CarbsGrams: 30,
+		FatGrams: 10, SugarGrams: 5, SodiumGrams: sodium, DietaryFiberGrams: 3,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create history item: %v", err)
+	}
+}
+
 func TestFoodAdviceChat_AnswersFromTheCallersOwnEvidence(t *testing.T) {
 	st := newFileFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
@@ -124,8 +153,151 @@ func TestFoodAdviceChat_AnswersFromTheCallersOwnEvidence(t *testing.T) {
 	if in.TargetCalories == 0 || in.DisplayLanguage != "ru" {
 		t.Errorf("expected a server-resolved target and language, got %d / %q", in.TargetCalories, in.DisplayLanguage)
 	}
+	if in.CurrentLoggedDay == "" {
+		t.Error("expected the caller's current Logged Day for relative-date tool questions")
+	}
 	if in.MeanSodiumGrams != 4.1 {
 		t.Errorf("expected the posted window means, got %v", in.MeanSodiumGrams)
+	}
+}
+
+func TestFoodAdviceChat_HistoryToolsReadOnlyTheCallersData(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	otherUserID, otherFamilyID := seedSecondFoodUser(t, st)
+	configureAdviceTarget(t, st, userID, "ru-RU")
+
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	yesterday := today.AddDate(0, 0, -1)
+	for i, hour := range []int{8, 13, 19} {
+		name := []string{"Домашний суп", "Хлеб", "Индейка"}[i]
+		sodium := []float64{1.2, 0.3, 0.8}[i]
+		createNutritionChatHistoryMeal(
+			t, st, userID, familyID, yesterday.Add(time.Duration(hour)*time.Hour),
+			name, sodium, database.MacroSourceEstimated,
+		)
+	}
+	createNutritionChatHistoryMeal(
+		t, st, otherUserID, otherFamilyID, yesterday.Add(9*time.Hour),
+		"Чужая еда", 99, database.MacroSourceManual,
+	)
+	createNutritionChatHistoryMeal(
+		t, st, userID, familyID, yesterday.AddDate(0, 0, -1).Add(12*time.Hour),
+		"Неполный солёный день", 50, database.MacroSourceManual,
+	)
+
+	payloadID := uuid.New()
+	step := database.Steps{
+		UserID: userID, SourcePayloadID: payloadID,
+		StartTime: yesterday.Add(7 * time.Hour), EndTime: yesterday.Add(8 * time.Hour), Count: 4321,
+	}
+	step.ID, step.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&step).Error; err != nil {
+		t.Fatalf("create steps: %v", err)
+	}
+	sleep := database.Sleep{
+		UserID: userID, SourcePayloadID: payloadID,
+		StartTime: yesterday, SessionEndTime: yesterday.Add(8 * time.Hour), DurationSeconds: 8 * 3600,
+	}
+	sleep.ID, sleep.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&sleep).Error; err != nil {
+		t.Fatalf("create sleep: %v", err)
+	}
+	weightPayloadID := payloadID
+	weight := database.Weight{
+		UserID: userID, SourcePayloadID: &weightPayloadID,
+		Time: yesterday.Add(9 * time.Hour), Kilograms: 80.5,
+	}
+	weight.ID, weight.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&weight).Error; err != nil {
+		t.Fatalf("create weight: %v", err)
+	}
+
+	fake := &vision.Fake{}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+	w, response := callChat(t, h, newChatRequest(t, userID, familyID, chatBody("откуда натрий?", nil)))
+	if w.Code != http.StatusOK || !response.Available || len(fake.NutritionChatCalls) != 1 {
+		t.Fatalf("chat did not reach the model with tools: %d: %s", w.Code, w.Body.String())
+	}
+	tools := fake.NutritionChatCalls[0].HistoryTools
+	if tools == nil {
+		t.Fatal("authenticated history tools were not attached")
+	}
+
+	explanation, err := tools.Execute(
+		context.Background(), "explain_nutrition_signal", json.RawMessage(`{"signal":"sodium"}`),
+	)
+	if err != nil {
+		t.Fatalf("explain nutrition signal: %v", err)
+	}
+	explanationText := string(explanation)
+	for _, want := range []string{"Домашний суп", `"macro_source":"estimated"`, `"eligible_days":1`} {
+		if !strings.Contains(explanationText, want) {
+			t.Errorf("explanation missing %q: %s", want, explanationText)
+		}
+	}
+	if strings.Contains(explanationText, "Чужая еда") || strings.Contains(explanationText, "99") {
+		t.Fatalf("another user's food reached the tool result: %s", explanationText)
+	}
+	if strings.Contains(explanationText, "Неполный солёный день") {
+		t.Fatalf("an ineligible day reached the contributor list: %s", explanationText)
+	}
+
+	date := yesterday.Format("2006-01-02")
+	details, err := tools.Execute(
+		context.Background(), "get_day_details", json.RawMessage(`{"date":"`+date+`"}`),
+	)
+	if err != nil {
+		t.Fatalf("get day details: %v", err)
+	}
+	detailText := string(details)
+	if !strings.Contains(detailText, "Домашний суп") || strings.Contains(detailText, "Чужая еда") {
+		t.Fatalf("day details were not caller-scoped: %s", detailText)
+	}
+	for _, forbidden := range []string{"photo_path", "raw_response", "clarify_log", "description", "meal_id", "user_id"} {
+		if strings.Contains(detailText, forbidden) {
+			t.Errorf("day details exposed %q: %s", forbidden, detailText)
+		}
+	}
+
+	for _, tc := range []struct {
+		metric string
+		want   string
+	}{
+		{metric: "steps", want: "4321"},
+		{metric: "sleep", want: `"value":8`},
+		{metric: "weight", want: "80.5"},
+	} {
+		trend, err := tools.Execute(
+			context.Background(), "get_health_trend",
+			json.RawMessage(`{"metric":"`+tc.metric+`","days":7}`),
+		)
+		if err != nil {
+			t.Fatalf("get %s trend: %v", tc.metric, err)
+		}
+		if !strings.Contains(string(trend), tc.want) {
+			t.Errorf("%s trend missing %q: %s", tc.metric, tc.want, trend)
+		}
+	}
+
+	_, err = tools.Execute(
+		context.Background(), "get_day_details", json.RawMessage(`{"date":"1900-01-01"}`),
+	)
+	if !errors.Is(err, vision.ErrInvalidNutritionChatToolCall) {
+		t.Fatalf("old day should be rejected as an invalid tool call, got %v", err)
+	}
+	for _, call := range []struct {
+		name string
+		args string
+	}{
+		{name: "get_health_trend", args: `{"metric":"steps","days":8}`},
+		{name: "get_health_trend", args: `{"metric":"steps","days":7,"user_id":"other"}`},
+		{name: "unknown", args: `{}`},
+	} {
+		if _, err := tools.Execute(context.Background(), call.name, json.RawMessage(call.args)); !errors.Is(err, vision.ErrInvalidNutritionChatToolCall) {
+			t.Errorf("%s %s should be rejected, got %v", call.name, call.args, err)
+		}
 	}
 }
 

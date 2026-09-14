@@ -100,8 +100,9 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	loc := database.ResolveTimezone(settingsJSON)
 	language := primaryAdviceLanguage(displayLanguageFromSettings(settingsJSON))
+	profile := parseUserProfile(settingsJSON)
 	target, unavailableReason, err := computeNutritionTargetForProfile(
-		h.storage, claims.UserID, now, loc, parseUserProfile(settingsJSON))
+		h.storage, claims.UserID, now, loc, profile)
 	if err != nil {
 		slog.Warn("nutrition advice target computation failed", "err", err, "user_id", claims.UserID)
 		writeFoodAdviceUnavailable(w, "unavailable")
@@ -109,6 +110,12 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 	}
 	if unavailableReason != "" {
 		slog.Warn("nutrition advice target unavailable", "reason", unavailableReason, "user_id", claims.UserID)
+		writeFoodAdviceUnavailable(w, "unavailable")
+		return
+	}
+	healthContext, err := buildAdviceHealthContext(h.storage, claims.UserID, loc, now, profile, target)
+	if err != nil {
+		slog.Warn("nutrition advice health context failed", "err", err, "user_id", claims.UserID)
 		writeFoodAdviceUnavailable(w, "unavailable")
 		return
 	}
@@ -120,7 +127,7 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		MeanSugarGrams: *req.Window.MeanSugarGrams, MeanSodiumGrams: *req.Window.MeanSodiumGrams,
 		TargetCalories: target.Calories, TargetProteinGrams: target.ProteinGrams,
 		TargetCarbsGrams: target.CarbsGrams, TargetFatGrams: target.FatGrams,
-		DisplayLanguage: language,
+		DisplayLanguage: language, HealthContext: healthContext,
 	}
 	encodedInput, err := json.Marshal(in)
 	if err != nil {

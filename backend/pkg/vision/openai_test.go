@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -33,6 +34,30 @@ func chatResponse(t *testing.T, content string) string {
 		t.Fatalf("marshal chat response: %v", err)
 	}
 	return string(b)
+}
+
+type recordingNutritionChatTools struct {
+	calls []struct {
+		name      string
+		arguments string
+	}
+}
+
+func (r *recordingNutritionChatTools) Execute(
+	_ context.Context, name string, arguments json.RawMessage,
+) (json.RawMessage, error) {
+	r.calls = append(r.calls, struct {
+		name      string
+		arguments string
+	}{name: name, arguments: string(arguments)})
+	switch name {
+	case "explain_nutrition_signal":
+		return json.RawMessage(`{"signal":"sodium","contributors":[{"food":"Soup","nutrient_grams":1.2,"macro_source":"estimated"}]}`), nil
+	case "get_health_trend":
+		return json.RawMessage(`{"metric":"steps","unit":"steps","points":[{"date":"2026-09-13","value":8000}]}`), nil
+	default:
+		return nil, vision.ErrInvalidNutritionChatToolCall
+	}
 }
 
 func TestOpenAIClient_Recognize_SetsStoreFalseAndSendsImage(t *testing.T) {
@@ -334,6 +359,11 @@ func TestOpenAIClient_Advise_SendsCompleteTextOnlyInputAndBoundsLines(t *testing
 		TargetCarbsGrams:   278,
 		TargetFatGrams:     105,
 		DisplayLanguage:    "ru",
+		HealthContext: vision.AdviceHealthContext{
+			WindowDays: 28, WindowEnds: "2026-09-13", ActivityTier: "Moderately active",
+			ActivitySource: "inferred_from_steps",
+			MeanDailySteps: &vision.AdviceMetricAverage{Value: 7200, RecordedDays: 20},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Advise: %v", err)
@@ -361,6 +391,7 @@ func TestOpenAIClient_Advise_SendsCompleteTextOnlyInputAndBoundsLines(t *testing
 		`\"target_calories\":2500`, `\"target_protein_grams\":110`,
 		`\"target_carbs_grams\":278`, `\"target_fat_grams\":105`,
 		`\"display_language\":\"ru\"`,
+		`\"activity_source\":\"inferred_from_steps\"`, `\"value\":7200`, `\"recorded_days\":20`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("expected %s in advice request: %s", want, body)
@@ -679,6 +710,7 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 		TargetCalories:     2500,
 		TargetProteinGrams: 110,
 		DisplayLanguage:    "ru",
+		CurrentLoggedDay:   "2026-09-14",
 		Turns: []vision.NutritionChatTurn{
 			{Role: "user", Text: "я уже уменьшил соль"},
 			{Role: "assistant", Text: "за какие дни?"},
@@ -708,7 +740,7 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 		`\"off_boundary\":2.3`, `\"far_boundary\":3.5`,
 		`\"question\":\"за какие дни это считается?\"`,
 		`\"role\":\"user\"`, `\"role\":\"assistant\"`,
-		`\"display_language\":\"ru\"`,
+		`\"display_language\":\"ru\"`, `\"current_logged_day\":\"2026-09-14\"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("expected %s in the chat request: %s", want, body)
@@ -721,6 +753,198 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 	jsonSchema := responseFormat["json_schema"].(map[string]any)
 	if jsonSchema["name"] != "nutrition_chat" {
 		t.Errorf("expected nutrition_chat schema name, got %#v", jsonSchema["name"])
+	}
+}
+
+func TestOpenAIClient_NutritionChat_ExecutesAndReplaysHistoryToolCalls(t *testing.T) {
+	requestNumber := 0
+	var secondRequest map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requestNumber++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request %d: %v", requestNumber, err)
+		}
+		if body["store"] != false {
+			t.Errorf("request %d did not keep store:false", requestNumber)
+		}
+		if body["reasoning_effort"] != "none" {
+			t.Errorf("request %d did not disable reasoning for Chat Completions tools: %+v", requestNumber, body)
+		}
+		if requestNumber == 1 {
+			tools, _ := body["tools"].([]any)
+			if len(tools) != 3 || body["tool_choice"] != "auto" {
+				t.Fatalf("history tools were not offered: %+v", body)
+			}
+			response, err := json.Marshal(map[string]any{
+				"model": "gpt-5.6-luna-tools",
+				"choices": []map[string]any{{"message": map[string]any{
+					"content": nil,
+					"tool_calls": []map[string]any{
+						{"id": "call-sodium", "type": "function", "function": map[string]any{
+							"name": "explain_nutrition_signal", "arguments": `{"signal":"sodium"}`,
+						}},
+						{"id": "call-steps", "type": "function", "function": map[string]any{
+							"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
+						}},
+					},
+				}}},
+				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 2},
+			})
+			if err != nil {
+				t.Fatalf("marshal tool response: %v", err)
+			}
+			w.Write(response) //nolint:errcheck
+			return
+		}
+		secondRequest = body
+		w.Write([]byte(chatResponse(t, `{"answer":"Основной вклад дал Soup; это AI-оценка."}`))) //nolint:errcheck
+	})
+
+	executor := &recordingNutritionChatTools{}
+	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Label: "needs_attention", Reasons: []string{"sodium_high"}, DisplayLanguage: "ru",
+		Question: "Откуда столько соли?", HistoryTools: executor,
+	})
+	if err != nil {
+		t.Fatalf("NutritionChat: %v", err)
+	}
+	if result.Answer != "Основной вклад дал Soup; это AI-оценка." {
+		t.Fatalf("unexpected answer: %q", result.Answer)
+	}
+	if result.PromptTokens != 110 || result.CompletionTokens != 22 {
+		t.Errorf("usage was not accumulated across tool rounds: %+v", result)
+	}
+	if len(executor.calls) != 2 || executor.calls[0].name != "explain_nutrition_signal" ||
+		executor.calls[1].name != "get_health_trend" {
+		t.Fatalf("unexpected executed calls: %#v", executor.calls)
+	}
+	messages, _ := secondRequest["messages"].([]any)
+	if len(messages) != 5 {
+		t.Fatalf("second request has %d messages, want system, user, assistant and two tool results", len(messages))
+	}
+	assistant := messages[2].(map[string]any)
+	if calls, _ := assistant["tool_calls"].([]any); len(calls) != 2 {
+		t.Fatalf("assistant tool calls were not replayed: %+v", assistant)
+	}
+	for i, wantID := range []string{"call-sodium", "call-steps"} {
+		toolMessage := messages[3+i].(map[string]any)
+		if toolMessage["role"] != "tool" || toolMessage["tool_call_id"] != wantID {
+			t.Errorf("tool result %d does not match its call: %+v", i, toolMessage)
+		}
+	}
+	if !strings.Contains(messages[3].(map[string]any)["content"].(string), `"macro_source":"estimated"`) {
+		t.Errorf("source provenance did not reach the model: %+v", messages[3])
+	}
+}
+
+func TestOpenAIClient_NutritionChat_BoundsHistoryToolCalls(t *testing.T) {
+	requestNumber := 0
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		requestNumber++
+		response, err := json.Marshal(map[string]any{
+			"model": "gpt-5.6-luna-tools",
+			"choices": []map[string]any{{"message": map[string]any{
+				"content": nil,
+				"tool_calls": []map[string]any{{
+					"id": "call-" + strconv.Itoa(requestNumber), "type": "function", "function": map[string]any{
+						"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
+					},
+				}},
+			}}},
+			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+		})
+		if err != nil {
+			t.Fatalf("marshal tool response: %v", err)
+		}
+		w.Write(response) //nolint:errcheck
+	})
+
+	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Question: "steps?", HistoryTools: &recordingNutritionChatTools{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "tool call limit") {
+		t.Fatalf("expected a tool-call limit error, got %v", err)
+	}
+	if requestNumber != 4 {
+		t.Errorf("made %d provider requests before stopping, want 4", requestNumber)
+	}
+}
+
+func TestOpenAIClient_NutritionChat_ReplaysInvalidToolRequestWithoutDetail(t *testing.T) {
+	requestNumber := 0
+	var replay map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requestNumber++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request %d: %v", requestNumber, err)
+		}
+		if requestNumber == 1 {
+			response, err := json.Marshal(map[string]any{
+				"model": "gpt-5.6-luna-tools",
+				"choices": []map[string]any{{"message": map[string]any{
+					"content": nil,
+					"tool_calls": []map[string]any{{
+						"id": "bad-call", "type": "function", "function": map[string]any{
+							"name": "read_any_table", "arguments": `{"table":"users"}`,
+						},
+					}},
+				}}},
+				"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Write(response) //nolint:errcheck
+			return
+		}
+		replay = body
+		w.Write([]byte(chatResponse(t, `{"answer":"Недоступный запрос не использован."}`))) //nolint:errcheck
+	})
+
+	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Question: "show internals", HistoryTools: &recordingNutritionChatTools{},
+	})
+	if err != nil || result.Answer == "" {
+		t.Fatalf("invalid tool request should recover safely: result=%+v err=%v", result, err)
+	}
+	messages := replay["messages"].([]any)
+	toolResult := messages[len(messages)-1].(map[string]any)
+	if toolResult["tool_call_id"] != "bad-call" ||
+		toolResult["content"] != `{"available":false,"reason":"invalid_request"}` {
+		t.Fatalf("invalid request detail leaked or call id was lost: %+v", toolResult)
+	}
+}
+
+func TestOpenAIClient_NutritionChat_RejectsDuplicateToolCallIDs(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		response, err := json.Marshal(map[string]any{
+			"model": "gpt-5.6-luna-tools",
+			"choices": []map[string]any{{"message": map[string]any{
+				"content": nil,
+				"tool_calls": []map[string]any{
+					{"id": "duplicate", "type": "function", "function": map[string]any{
+						"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
+					}},
+					{"id": "duplicate", "type": "function", "function": map[string]any{
+						"name": "get_health_trend", "arguments": `{"metric":"sleep","days":7}`,
+					}},
+				},
+			}}},
+			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write(response) //nolint:errcheck
+	})
+
+	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Question: "trends?", HistoryTools: &recordingNutritionChatTools{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid tool call") {
+		t.Fatalf("duplicate tool call IDs should fail, got %v", err)
 	}
 }
 
