@@ -206,7 +206,7 @@ func TestResolveActivityTier_OverrideValues(t *testing.T) {
 	}
 	for _, tt := range tests {
 		profile := userProfile{HasActivityOverride: true, ActivityOverride: tt.override}
-		name, mult, ok, err := resolveActivityTier(nil, uuid.Nil, profile, referenceToday)
+		name, mult, ok, err := resolveActivityTier(nil, uuid.Nil, time.UTC, profile, referenceToday)
 		if err != nil {
 			t.Fatalf("override %q: unexpected error: %v", tt.override, err)
 		}

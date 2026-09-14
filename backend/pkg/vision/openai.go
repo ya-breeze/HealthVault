@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -212,15 +213,41 @@ func (c *OpenAIClient) url() string {
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Role       string         `json:"role"`
+	Content    any            `json:"content,omitempty"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
 }
 
 type chatCompletionRequest struct {
-	Model          string         `json:"model"`
-	Messages       []chatMessage  `json:"messages"`
-	ResponseFormat responseFormat `json:"response_format"`
-	Store          bool           `json:"store"`
+	Model           string         `json:"model"`
+	Messages        []chatMessage  `json:"messages"`
+	ResponseFormat  responseFormat `json:"response_format"`
+	Store           bool           `json:"store"`
+	Tools           []chatTool     `json:"tools,omitempty"`
+	ToolChoice      string         `json:"tool_choice,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+}
+
+type chatTool struct {
+	Type     string           `json:"type"`
+	Function chatToolFunction `json:"function"`
+}
+
+type chatToolFunction struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"`
+	Strict      bool   `json:"strict"`
+}
+
+type chatToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 type responseFormat struct {
@@ -238,7 +265,8 @@ type chatCompletionResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content   string         `json:"content"`
+			ToolCalls []chatToolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Usage struct {
@@ -367,7 +395,7 @@ func unknownToEmpty(s string) string {
 }
 
 func (c *OpenAIClient) call(ctx context.Context, messages []chatMessage, schemaName string, schema any) (*chatCompletionResponse, time.Duration, error) {
-	reqBody := chatCompletionRequest{
+	return c.callRequest(ctx, chatCompletionRequest{
 		Model:    c.Model,
 		Messages: messages,
 		ResponseFormat: responseFormat{
@@ -379,7 +407,12 @@ func (c *OpenAIClient) call(ctx context.Context, messages []chatMessage, schemaN
 			},
 		},
 		Store: false,
-	}
+	})
+}
+
+func (c *OpenAIClient) callRequest(
+	ctx context.Context, reqBody chatCompletionRequest,
+) (*chatCompletionResponse, time.Duration, error) {
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, 0, fmt.Errorf("marshal request: %w", err)
@@ -737,6 +770,304 @@ func (c *OpenAIClient) Translate(ctx context.Context, query string) (string, err
 		return "", fmt.Errorf("unmarshal structured content: %w", err)
 	}
 	return strings.TrimSpace(schemaResp.TranslatedQuery), nil
+}
+
+var adviceJSONSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"lines": map[string]any{
+			"type":  "array",
+			"items": map[string]any{"type": "string"},
+		},
+	},
+	"required":             []string{"lines"},
+	"additionalProperties": false,
+}
+
+type adviceSchemaResponse struct {
+	Lines []string `json:"lines"`
+}
+
+const adviceSystemPrompt = `You write brief nutrition advice from an already-computed deterministic Healthiness Label.
+
+The supplied label and reason codes are correct and final. Never restate,
+dispute, upgrade, or downgrade the label. Key the tone to the supplied label:
+- good: confirm what is working and offer at most one small refinement;
+- fair: suggest one concrete adjustment in a neutral register;
+- needs_attention: be direct and specific but calm, with no alarm words or prognosis.
+
+Make no medical claims or diagnosis. Do not recommend supplements, fasting,
+or cleanses. Do not prescribe calories below the supplied target. Use no
+measurements, thresholds, or quantities except values supplied in the input
+or simple differences derived directly from them. Return one or two lines,
+each with at most one clause and about 90 characters. Write in the supplied
+display_language.
+
+health_context is a 28-day summary ending yesterday. Optional metrics are
+present only when the server found enough recorded days. Use them only when
+they materially tailor an action already supported by the nutrition finding,
+or to acknowledge a measured weight direction. Never claim one metric caused
+another. Never infer or recalculate calorie needs from steps, sleep, or weight:
+the supplied target already incorporates activity_level and is final. Do not
+mention a missing optional metric.`
+
+// Advise is text-only: it sends the complete normalized input as JSON and no
+// image. The model's lines are bounded again after structured-output parsing.
+func (c *OpenAIClient) Advise(ctx context.Context, in AdviceInput) ([]string, error) {
+	payload, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("marshal nutrition advice input: %w", err)
+	}
+	messages := []chatMessage{
+		{Role: "system", Content: adviceSystemPrompt},
+		{Role: "user", Content: string(payload)},
+	}
+	resp, _, err := c.call(ctx, messages, "nutrition_advice", adviceJSONSchema)
+	if err != nil {
+		return nil, err
+	}
+	var schemaResp adviceSchemaResponse
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &schemaResp); err != nil {
+		return nil, fmt.Errorf("unmarshal structured content: %w", err)
+	}
+	lines := make([]string, 0, 2)
+	for _, raw := range schemaResp.Lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		runes := []rune(line)
+		if len(runes) > 120 {
+			line = string(runes[:120])
+		}
+		lines = append(lines, line)
+		if len(lines) == 2 {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("nutrition advice response contained no usable lines")
+	}
+	return lines, nil
+}
+
+var nutritionChatJSONSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"answer": map[string]any{"type": "string"},
+	},
+	"required":             []string{"answer"},
+	"additionalProperties": false,
+}
+
+type nutritionChatSchemaResponse struct {
+	Answer string `json:"answer"`
+}
+
+// NutritionChatAnswerMaxRunes bounds the answer after parsing, the way Advise
+// bounds its lines. The prompt asks for brevity; this is what holds when the
+// model ignores it. Runes, not bytes, so a Russian answer is not cut mid-
+// character.
+//
+// Exported because an assistant turn is replayed verbatim on the next
+// question, so the server's own limit on a replayed turn has to be this exact
+// number. Two independent constants would drift, and the symptom would be a
+// conversation that rejects its own second question.
+const NutritionChatAnswerMaxRunes = 900
+
+const nutritionChatSystemPrompt = `You answer one question about nutrition advice the user is already looking at.
+
+The supplied label, reason codes, and signal values are an already-computed
+deterministic judgment. Never dispute, restate, upgrade, or downgrade the
+label, and never contradict a supplied measurement or boundary.
+
+Answer only from the supplied input and the read-only history tools. Use no
+measurement, threshold, or quantity that is not in those sources or a simple
+difference derived directly from them. When the user asks which foods or days
+produced a nutrition signal, call explain_nutrition_signal. Use get_day_details
+when a particular Logged Day needs more detail. Use get_health_trend for a
+question about steps, sleep, or weight. If a relevant tool returns no data,
+say plainly that the history does not contain it, and do not estimate it.
+
+Every supplied nutrition figure comes from logged food, much of which was
+itself estimated — from a photo, from a written description, or from a
+reference row for a similar food. Say so when the user asks how exact a
+number is, or when the answer turns on its precision: report the figure as
+supplied, and identify it as an estimate rather than a measurement.
+
+The means are per eligible day over the supplied window, and eligible_days
+says how many days they rest on. Say so when it matters to the answer: a
+mean over three days is weaker evidence than one over seven, and the user
+cannot see that unless you tell them.
+
+Make no medical claim, diagnosis, or prognosis. Do not recommend
+supplements, fasting, or cleanses. Do not prescribe calories below the
+supplied target. Do not reassure beyond what the input supports.
+
+History is additional context, not part of the deterministic Healthiness
+Label unless the tool explicitly says a Food Item or Logged Day was eligible.
+Never claim that steps, sleep, or weight caused a nutrition finding. Describe
+cross-metric patterns as coincidences in the available history, not causes.
+
+Answer in at most four short sentences, in the supplied display_language.`
+
+const nutritionChatMaxToolCalls = 3
+
+var nutritionChatTools = []chatTool{
+	{
+		Type: "function",
+		Function: chatToolFunction{
+			Name:        "explain_nutrition_signal",
+			Description: "Read the seven-day food-history evidence and Food Item contributors for one Healthiness Label signal.",
+			Strict:      true,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"signal": map[string]any{
+						"type": "string", "enum": []string{"protein", "carbs", "fat", "sugar", "sodium", "fiber"},
+					},
+				},
+				"required": []string{"signal"}, "additionalProperties": false,
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: chatToolFunction{
+			Name:        "get_health_trend",
+			Description: "Read the authenticated user's daily steps, sleep, or weight trend over a bounded recent window.",
+			Strict:      true,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"metric": map[string]any{"type": "string", "enum": []string{"steps", "sleep", "weight"}},
+					"days":   map[string]any{"type": "integer", "enum": []int{7, 28, 90}},
+				},
+				"required": []string{"metric", "days"}, "additionalProperties": false,
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: chatToolFunction{
+			Name:        "get_day_details",
+			Description: "Read Food Meals and Food Items for one recent Logged Day in YYYY-MM-DD form.",
+			Strict:      true,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"date": map[string]any{"type": "string", "description": "Logged Day in YYYY-MM-DD form"},
+				},
+				"required": []string{"date"}, "additionalProperties": false,
+			},
+		},
+	},
+}
+
+// NutritionChat is text-only: it sends the evidence and the conversation so far
+// as JSON and no image. The conversation is replayed in full on every call
+// because nothing here keeps a thread.
+func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput) (*NutritionChatResult, error) {
+	payload, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("marshal nutrition chat input: %w", err)
+	}
+	messages := []chatMessage{
+		{Role: "system", Content: nutritionChatSystemPrompt},
+		{Role: "user", Content: string(payload)},
+	}
+
+	tools := []chatTool(nil)
+	toolChoice := ""
+	reasoningEffort := ""
+	if in.HistoryTools != nil {
+		tools = nutritionChatTools
+		toolChoice = "auto"
+		// Chat Completions rejects function tools for reasoning models when
+		// reasoning_effort is active. Keep this compatibility setting scoped
+		// to the tool-enabled chat path; the other vision calls stay unchanged.
+		reasoningEffort = "none"
+	}
+	totalPromptTokens := 0
+	totalCompletionTokens := 0
+	totalLatency := time.Duration(0)
+	toolCallsUsed := 0
+	toolCallIDs := make(map[string]bool, nutritionChatMaxToolCalls)
+	lastModel := ""
+
+	for {
+		resp, latency, err := c.callRequest(ctx, chatCompletionRequest{
+			Model: c.Model, Messages: messages,
+			ResponseFormat: responseFormat{Type: "json_schema", JSONSchema: jsonSchema{
+				Name: "nutrition_chat", Strict: true, Schema: nutritionChatJSONSchema,
+			}},
+			Store: false, Tools: tools, ToolChoice: toolChoice, ReasoningEffort: reasoningEffort,
+		})
+		if err != nil {
+			return nil, err
+		}
+		totalLatency += latency
+		totalPromptTokens += resp.Usage.PromptTokens
+		totalCompletionTokens += resp.Usage.CompletionTokens
+		lastModel = resp.Model
+		message := resp.Choices[0].Message
+		if len(message.ToolCalls) == 0 {
+			return parseNutritionChatAnswer(
+				message.Content, lastModel, totalPromptTokens, totalCompletionTokens, totalLatency,
+			)
+		}
+		if in.HistoryTools == nil || toolCallsUsed+len(message.ToolCalls) > nutritionChatMaxToolCalls {
+			return nil, fmt.Errorf("nutrition chat exceeded tool call limit")
+		}
+
+		assistantMessage := chatMessage{Role: "assistant", ToolCalls: message.ToolCalls}
+		if message.Content != "" {
+			assistantMessage.Content = message.Content
+		}
+		messages = append(messages, assistantMessage)
+		for _, call := range message.ToolCalls {
+			if call.ID == "" || toolCallIDs[call.ID] || call.Type != "function" || call.Function.Name == "" {
+				return nil, fmt.Errorf("nutrition chat returned an invalid tool call")
+			}
+			toolCallIDs[call.ID] = true
+			result, execErr := in.HistoryTools.Execute(
+				ctx, call.Function.Name, json.RawMessage(call.Function.Arguments),
+			)
+			if execErr != nil {
+				if !errors.Is(execErr, ErrInvalidNutritionChatToolCall) {
+					return nil, fmt.Errorf("nutrition chat history tool failed: %w", execErr)
+				}
+				result = json.RawMessage(`{"available":false,"reason":"invalid_request"}`)
+			}
+			if !json.Valid(result) {
+				return nil, fmt.Errorf("nutrition chat history tool returned invalid JSON")
+			}
+			messages = append(messages, chatMessage{
+				Role: "tool", ToolCallID: call.ID, Content: string(result),
+			})
+			toolCallsUsed++
+		}
+	}
+}
+
+func parseNutritionChatAnswer(
+	content, model string, promptTokens, completionTokens int, latency time.Duration,
+) (*NutritionChatResult, error) {
+	var schemaResp nutritionChatSchemaResponse
+	if err := json.Unmarshal([]byte(content), &schemaResp); err != nil {
+		return nil, fmt.Errorf("unmarshal structured content: %w", err)
+	}
+	answer := strings.TrimSpace(schemaResp.Answer)
+	if answer == "" {
+		return nil, fmt.Errorf("nutrition chat response contained no answer")
+	}
+	if runes := []rune(answer); len(runes) > NutritionChatAnswerMaxRunes {
+		answer = string(runes[:NutritionChatAnswerMaxRunes])
+	}
+	return &NutritionChatResult{
+		Answer: answer, Model: model, PromptTokens: promptTokens,
+		CompletionTokens: completionTokens, Latency: latency,
+	}, nil
 }
 
 var _ Client = (*OpenAIClient)(nil)

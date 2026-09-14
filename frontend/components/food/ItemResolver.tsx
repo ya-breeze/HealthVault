@@ -1,18 +1,35 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, FoodSearchResult } from '@/lib/api';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import CanonicalNameLabel from './CanonicalNameLabel';
 import { tabClass } from './tabClass';
 
+export interface NutrientValues {
+  calories: number;
+  protein_grams: number;
+  carbs_grams: number;
+  fat_grams: number;
+  sugar_grams: number;
+  sodium_grams: number;
+  dietary_fiber_grams: number;
+}
+
+const EMPTY_NUTRIENTS: NutrientValues = {
+  calories: 0,
+  protein_grams: 0,
+  carbs_grams: 0,
+  fat_grams: 0,
+  sugar_grams: 0,
+  sodium_grams: 0,
+  dietary_fiber_grams: 0,
+};
+
 interface Props {
   itemName: string;
   onBind: (result: FoodSearchResult) => Promise<void>;
-  onManual: (name: string, macros: {
-    calories: number; protein_grams: number; carbs_grams: number; fat_grams: number;
-    sugar_grams: number; sodium_grams: number; dietary_fiber_grams: number;
-  }, saveAsCustomFood: boolean) => Promise<void>;
+  onManual: (name: string, macros: NutrientValues, saveAsCustomFood: boolean) => Promise<void>;
   // Shows a "save as reusable food" checkbox alongside the manual-macros
   // form — only meaningful for a correction to an existing item (see
   // MealItemRow), not for adding a brand-new one (AddItemForm), which POSTs
@@ -27,6 +44,11 @@ interface Props {
   // though the backend was already sending canonical_name on the wire.
   // Found in code review.
   expertMode?: boolean;
+  // MealItemRow uses the same resolver for two distinct actions. Changing a
+  // food starts with reference search; correcting the values already on the
+  // row starts with the manual form and must not replace them with zeros.
+  initialMode?: 'search' | 'manual';
+  initialMacros?: NutrientValues;
 }
 
 // The review UI for correcting an item's food match: search for a reference
@@ -34,9 +56,17 @@ interface Props {
 // or fall back to entering a name and macros directly (e.g. from a package
 // label). Reachable for any item, matched or not, until the meal is
 // confirmed — not just ones the vision model left unresolved.
-export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCustomFood, expertMode = false }: Props) {
+export default function ItemResolver({
+  itemName,
+  onBind,
+  onManual,
+  allowSaveAsCustomFood,
+  expertMode = false,
+  initialMode = 'search',
+  initialMacros,
+}: Props) {
   const { t } = useLanguage();
-  const [mode, setMode] = useState<'search' | 'manual'>('search');
+  const [mode, setMode] = useState<'search' | 'manual'>(initialMode);
   const [query, setQuery] = useState(itemName);
   const [results, setResults] = useState<FoodSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -53,10 +83,8 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualName, setManualName] = useState(itemName);
-  const [macros, setMacros] = useState({
-    calories: 0, protein_grams: 0, carbs_grams: 0, fat_grams: 0,
-    sugar_grams: 0, sodium_grams: 0, dietary_fiber_grams: 0,
-  });
+  const [macros, setMacros] = useState<NutrientValues>(() => initialMacros ?? EMPTY_NUTRIENTS);
+  const dirtyMacroKeys = useRef(new Set<keyof NutrientValues>());
   const [saveAsCustomFood, setSaveAsCustomFood] = useState(false);
   // search and refresh both write to the shared results/translatedQuery
   // state below, so a slower, older response (e.g. a refresh outlived by a
@@ -66,6 +94,34 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
   // entirely, though searching/refreshing still clear on their own request's
   // completion regardless of staleness.
   const requestSeq = useRef(0);
+
+  // A weight edit can finish after this panel opens and rescale every value
+  // on a reference/estimated item. Keep untouched inputs aligned with that
+  // authoritative response while preserving fields the user has already
+  // changed in this draft. Without this, correcting sodium immediately after
+  // changing weight could submit the old calories and macros along with it.
+  useEffect(() => {
+    if (!initialMacros) return;
+    setMacros(current => {
+      const next = { ...current };
+      let changed = false;
+      for (const key of Object.keys(initialMacros) as (keyof NutrientValues)[]) {
+        if (!dirtyMacroKeys.current.has(key) && next[key] !== initialMacros[key]) {
+          next[key] = initialMacros[key];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [
+    initialMacros?.calories,
+    initialMacros?.protein_grams,
+    initialMacros?.carbs_grams,
+    initialMacros?.fat_grams,
+    initialMacros?.sugar_grams,
+    initialMacros?.sodium_grams,
+    initialMacros?.dietary_fiber_grams,
+  ]);
 
   const search = async () => {
     const seq = ++requestSeq.current;
@@ -261,7 +317,10 @@ export default function ItemResolver({ itemName, onBind, onManual, allowSaveAsCu
                 type="number"
                 step="any"
                 value={macros[key]}
-                onChange={e => setMacros({ ...macros, [key]: Number(e.target.value) })}
+                onChange={e => {
+                  dirtyMacroKeys.current.add(key);
+                  setMacros(current => ({ ...current, [key]: Number(e.target.value) }));
+                }}
                 className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
             </label>

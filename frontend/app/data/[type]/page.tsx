@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { use } from 'react';
 import { DATA_TYPES } from '@/lib/api';
 import DataTypeClient from './DataTypeClient';
+import DataTypeLoading from './DataTypeLoading';
 
 // Generate static routes for all 24 health data types
 export function generateStaticParams() {
@@ -15,7 +16,7 @@ export default function DataTypePage({
 }) {
   const { type } = use(params);
   return (
-    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+    <Suspense fallback={<DataTypeLoading />}>
       <DataTypeClient type={type} />
     </Suspense>
   );

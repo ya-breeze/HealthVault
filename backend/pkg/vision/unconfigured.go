@@ -35,6 +35,14 @@ func (Unconfigured) Translate(context.Context, string) (string, error) {
 	return "", ErrNotConfigured
 }
 
+func (Unconfigured) Advise(context.Context, AdviceInput) ([]string, error) {
+	return nil, ErrNotConfigured
+}
+
 func (Unconfigured) Describe(context.Context, string, string) (*RecognizeResult, error) {
+	return nil, ErrNotConfigured
+}
+
+func (Unconfigured) NutritionChat(context.Context, NutritionChatInput) (*NutritionChatResult, error) {
 	return nil, ErrNotConfigured
 }

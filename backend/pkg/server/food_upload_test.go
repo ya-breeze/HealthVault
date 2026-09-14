@@ -546,6 +546,11 @@ func (slowRecognizeClient) Translate(ctx context.Context, _ string) (string, err
 	return "", ctx.Err()
 }
 
+func (slowRecognizeClient) Advise(ctx context.Context, _ vision.AdviceInput) ([]string, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func (slowRecognizeClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
@@ -1348,4 +1353,8 @@ func TestCreateMeal_RankedCustomFoodAdditiveWithOFFCandidates(t *testing.T) {
 	if !sawOFF || !sawCustom {
 		t.Errorf("expected both OFF and custom-food candidates present, got %+v", fake.SelectCalls[0][0].Candidates)
 	}
+}
+
+func (slowRecognizeClient) NutritionChat(context.Context, vision.NutritionChatInput) (*vision.NutritionChatResult, error) {
+	return &vision.NutritionChatResult{}, nil
 }

@@ -1,43 +1,60 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   LineChart, Line, BarChart, Bar, ComposedChart, Area, ReferenceArea, ReferenceLine, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer, TooltipValueType,
 } from 'recharts';
-import { api, DataType, WRITABLE_TYPES } from '@/lib/api';
+import { api, DataType, WRITABLE_TYPES, StepsDiagnosticDay } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
 import {
   TYPE_META, NUTRITION_MACROS, Zoom, rangeForZoom, computeYDomain, emaSeries, formatMetricValue,
-  toDisplayUnit, bmiBandEdgesKg, classifyBmi, hasHeightRecord, toDayOffset, linearRegression,
+  toDisplayUnit, bmiBandEdgesKg, classifyBmi, BmiCategory, hasHeightRecord, toDayOffset, linearRegression,
   last30DayEmaWindow, hasEnoughDataForProjection, computeProjection, projectionPoints,
   ProjectionResult,
 } from '@/lib/dataTypeMeta';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import AddRecordForm from '@/components/AddRecordForm';
 import TapTarget from '@/components/ui/TapTarget';
+import { replayTouchAsMove } from '@/lib/chartTouch';
+import useCoarsePointer from '@/lib/useCoarsePointer';
+import { useLanguage } from '@/components/LanguageContext';
+import { InfoIcon } from '@/components/icons';
+import { dataColumnLabel } from '@/lib/dataColumnMeta';
+import { dateLocaleFor, Dictionary, interpolate, mealStatusLabel, metricLabel, numberLocaleFor } from '@/lib/i18n';
 
 interface Props {
   type: string;
 }
 
-const ZOOMS: { key: Zoom; label: string }[] = [
-  { key: 'day', label: 'Day' },
-  { key: 'week', label: 'Week' },
-  { key: 'month', label: 'Month' },
-  { key: 'year', label: 'Year' },
+// `label` names a dataDetail.* dictionary key, resolved through `t` at
+// render time, rather than an English display string — see NUTRITION_MACROS
+// in lib/dataTypeMeta.ts for the same pattern.
+const ZOOMS: { key: Zoom; label: keyof Dictionary }[] = [
+  { key: 'day', label: 'dataDetail.zoomDay' },
+  { key: 'week', label: 'dataDetail.zoomWeek' },
+  { key: 'month', label: 'dataDetail.zoomMonth' },
+  { key: 'year', label: 'dataDetail.zoomYear' },
 ];
 
 function num(v: unknown): number {
   return typeof v === 'number' ? v : Number(v ?? 0);
 }
 
-function bucketLabel(bucketStart: unknown, zoom: Zoom): string {
+// bucket_start (and any date derived from a day offset, e.g. the trend
+// projection's crossingDate) is a local calendar date carried at UTC
+// midnight (backend/pkg/database/bucket_regroup.go's LocalBucketKey), not
+// the instant local midnight occurred. Formatting it in the browser's own
+// zone — the default toLocaleDateString behavior — re-interprets that
+// UTC-midnight instant as if it were local, which shifts the label by a
+// day for any viewer behind UTC. timeZone: 'UTC' reads the label back the
+// same way it was written.
+function bucketLabel(bucketStart: unknown, zoom: Zoom, dateLocale: string | undefined): string {
   const d = new Date(String(bucketStart));
   if (isNaN(d.getTime())) return String(bucketStart ?? '');
   return zoom === 'year'
-    ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    ? d.toLocaleDateString(dateLocale, { month: 'short', year: '2-digit', timeZone: 'UTC' })
+    : d.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function mean(values: number[]): number {
@@ -75,6 +92,20 @@ const ALL_TIME_FROM = new Date(0).toISOString();
 // plotted weight line/area stays the focal element.
 const BMI_BAND_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444'];
 
+// classifyBmi (lib/dataTypeMeta.ts) returns a stable lower-case identifier,
+// not a display string — this is the one place that resolves it to a
+// dataDetail.bmi* dictionary key.
+const BMI_CATEGORY_KEYS: Record<BmiCategory, keyof Dictionary> = {
+  underweight: 'dataDetail.bmiUnderweight',
+  normal: 'dataDetail.bmiNormal',
+  overweight: 'dataDetail.bmiOverweight',
+  obese: 'dataDetail.bmiObese',
+};
+
+const RECORD_TIMESTAMP_COLUMNS = new Set([
+  'created_at', 'updated_at', 'time', 'start_time', 'end_time', 'session_end_time', 'logged_at',
+]);
+
 export default function DataTypeClient({ type }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -107,11 +138,21 @@ export default function DataTypeClient({ type }: Props) {
   ): [string, string | number] => {
     if (value === undefined) return ['', name ?? ''];
     if (Array.isArray(value)) {
-      return [value.map(v => formatMetricValue(dataType, Number(v))).join(' – '), name ?? ''];
+      return [value.map(v => formatMetricValue(dataType, Number(v), numberLocale)).join(' – '), name ?? ''];
     }
-    return [formatMetricValue(dataType, Number(value)), name ?? ''];
+    return [formatMetricValue(dataType, Number(value), numberLocale), name ?? ''];
   };
-  const yAxisTickFormatter = (v: number) => formatMetricValue(dataType, v);
+  const yAxisTickFormatter = (v: number) => formatMetricValue(dataType, v, numberLocale);
+
+  // Pins the tooltip to the top of the plot area on a coarse pointer, so the
+  // readout isn't hidden under the thumb that's producing it. Extracted into
+  // one object so a sixth `<Tooltip>` can't be added without it. Keyed off
+  // `useCoarsePointer` (pointer media query), not viewport width — see that
+  // hook's own comment. No `trigger` prop is added anywhere: `trigger="click"`
+  // switches `combineTooltipInteractionState` from `axisInteraction.hover` to
+  // `axisInteraction.click`, which would turn off the tooltip on mouse hover.
+  const isCoarsePointer = useCoarsePointer();
+  const coarsePointerTooltipProps = isCoarsePointer ? { position: { y: 0 } } : {};
 
   const [zoom, setZoom] = useState<Zoom>('week');
   const [macro, setMacro] = useState<string>('calories');
@@ -120,7 +161,7 @@ export default function DataTypeClient({ type }: Props) {
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<'operation' | null>(null);
   // Bumped by AddRecordForm's onSuccess to force the fetch effect below to
   // re-run — the effect otherwise only depends on the range/zoom, so a
   // successful write would never appear in `records`/`chartRows` without
@@ -164,6 +205,24 @@ export default function DataTypeClient({ type }: Props) {
   const [weightContextStatus, setWeightContextStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showHeightForm, setShowHeightForm] = useState(false);
+  // steps-only diagnostic (check-the-health-data spec). null covers both
+  // "not this type" and "the fetch failed" — either way the disclosure below
+  // stays hidden; an empty array (fetch succeeded, no records in range) still
+  // renders it, just with no rows. Never reset by a failure alone: the fetch
+  // effect below only writes null before a steps fetch starts or when one
+  // rejects, so a stale successful result never lingers past a type change.
+  const [stepsDiagnostics, setStepsDiagnostics] = useState<StepsDiagnosticDay[] | null>(null);
+  // Collapsed by default — same rationale as LoggingGapCard's hintOpen: a
+  // diagnostic table is worth reading once, not on every visit.
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const diagnosticsId = useId();
+  const { t, language } = useLanguage();
+  const numberLocale = numberLocaleFor(language);
+  const dateLocale = dateLocaleFor(language);
+  // The selected macro's own dataDetail.* label key, resolved through `t` —
+  // shared by the macro selector, the nutrition Day Line's name and the
+  // nutrition bucketed Bar's name, so all three always agree.
+  const macroLabelText = t(NUTRITION_MACROS.find(m => m.key === macro)?.label ?? 'dataDetail.macroCalories');
 
   // refreshKey is in the dep list too: rangeForZoom's `to` is `now()` at the
   // time this memo runs, so a record just created via AddRecordForm (timed
@@ -217,6 +276,20 @@ export default function DataTypeClient({ type }: Props) {
         .catch(() => setChartRows([]));
     } else {
       setChartRows([]);
+    }
+
+    // Steps-only, and only for the caller's own data — the backend endpoint
+    // is self-only, and a family member's ?user= view has no delete/write
+    // controls either, so a diagnostic aimed at "which layer of *your* data
+    // is wrong" doesn't belong there. Isolated from the raw/chart fetches
+    // above: a failure here must not touch either, matching how this effect
+    // already treats the weight-context fetches as their own failure domain.
+    if (dataType === 'steps' && !userParam) {
+      api.stepsDiagnostics(from, to)
+        .then(setStepsDiagnostics)
+        .catch(() => setStepsDiagnostics(null));
+    } else {
+      setStepsDiagnostics(null);
     }
 
     if (dataType === 'weight') {
@@ -305,7 +378,7 @@ export default function DataTypeClient({ type }: Props) {
   const visibleTrend = trendFull.filter((_, i) => visibleMask[i]);
 
   const bucketBarData = visibleChartRows.map(r => ({
-    label: bucketLabel(r.bucket_start, zoom),
+    label: bucketLabel(r.bucket_start, zoom, dateLocale),
     value: isNutrition ? num(r[`sum_${macro}`]) : numDisplay(r.sum),
   }));
 
@@ -316,14 +389,14 @@ export default function DataTypeClient({ type }: Props) {
   // baseline at the stack's absolute value origin (0), which silently pulls
   // the Y-axis back toward zero regardless of the `domain` prop below.
   const bucketBandData: BandRow[] = visibleChartRows.map((r, i) => ({
-    label: bucketLabel(r.bucket_start, zoom),
+    label: bucketLabel(r.bucket_start, zoom, dateLocale),
     avg: num(r.avg),
     range: [num(r.min), num(r.max)] as [number, number],
     ...(dataType === 'weight' ? { trend: visibleTrend[i] } : {}),
   }));
 
   const bucketBPData = visibleChartRows.map(r => ({
-    label: bucketLabel(r.bucket_start, zoom),
+    label: bucketLabel(r.bucket_start, zoom, dateLocale),
     sysAvg: num(r.systolic_avg), sysRange: [num(r.systolic_min), num(r.systolic_max)] as [number, number],
     diaAvg: num(r.diastolic_avg), diaRange: [num(r.diastolic_min), num(r.diastolic_max)] as [number, number],
   }));
@@ -450,7 +523,7 @@ export default function DataTypeClient({ type }: Props) {
   // branches below, same as the BMI bands. Unlike the bands, its value is
   // already folded into dayDomain/bandDomain above, so it's never clipped.
   const goalLine = latestGoalKg !== undefined
-    ? <ReferenceLine y={latestGoalKg} stroke="var(--accent)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: 'Goal', position: 'insideTopRight', fill: 'var(--accent)', fontSize: 11 }} />
+    ? <ReferenceLine y={latestGoalKg} stroke="var(--accent)" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: t('dataDetail.goal'), position: 'insideTopRight', fill: 'var(--accent)', fontSize: 11 }} />
     : null;
 
   // Trend projection (task 7) — `undefined` (no line, no text) whenever no
@@ -501,22 +574,27 @@ export default function DataTypeClient({ type }: Props) {
   }, [dataType, latestGoalKg, allTimeWeightRecords, projectionBucketRows]);
 
   const projectionMessage = !projection ? null : (
-    projection.status === 'reached' ? "You've reached your goal weight" :
-    projection.status === 'not-on-track' ? 'Not on track at your current trend' :
-    `On track to reach your goal around ${projection.crossingDate!.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+    projection.status === 'reached' ? t('dataDetail.projectionReached') :
+    projection.status === 'not-on-track' ? t('dataDetail.projectionNotOnTrack') :
+    // timeZone: 'UTC' — see bucketLabel's comment: crossingDate is built from
+    // a day offset (toDayOffset), the same UTC-midnight-label convention as
+    // bucket_start, so it needs the same read-back-in-UTC formatting.
+    interpolate(t('dataDetail.projectionOnTrack'), {
+      date: projection.crossingDate!.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }),
+    })
   );
   // Only claim "not enough data" once we actually know. While loading, say
   // nothing; on failure, say the history could not be loaded rather than
   // stating a false fact about the user's records.
   const noDataMessage = dataType === 'weight' && latestGoalKg !== undefined
     && projection === undefined && weightContextStatus === 'ready'
-    ? 'Not enough data to project yet'
+    ? t('dataDetail.projectionInsufficientData')
     : null;
   // Deliberately NOT gated on latestGoalKg: the goal is one of the fetches
   // that just failed, so on error it is always undefined and gating on it
   // would suppress the very message the failure needs to produce.
   const projectionErrorMessage = dataType === 'weight' && weightContextStatus === 'error'
-    ? "Couldn't load your weight history"
+    ? t('dataDetail.projectionLoadFailed')
     : null;
 
   // Dashed projection line (task 7.5) renders only at Month/Year zoom; the
@@ -536,7 +614,7 @@ export default function DataTypeClient({ type }: Props) {
       projection.intercept, projection.slope, projection.lastDayOffset, projection.crossingDayOffset, projectionGranularity
     );
     const syntheticRows: BandRow[] = pts.map(p => ({
-      label: bucketLabel(new Date(p.dayOffset * 24 * 60 * 60 * 1000).toISOString(), zoom),
+      label: bucketLabel(new Date(p.dayOffset * 24 * 60 * 60 * 1000).toISOString(), zoom, dateLocale),
       projection: p.value,
     }));
     if (bucketBandData.length === 0) return syntheticRows;
@@ -555,14 +633,25 @@ export default function DataTypeClient({ type }: Props) {
     return [...joined, ...syntheticRows];
   }, [showProjectionLine, projection, bucketBandData, projectionGranularity, zoom]);
 
+  // Evaluated across every returned day, not per-row: the spec's "plain-
+  // language reading" sits once beneath the whole table, and more than one
+  // of these can be true at once (they're independent layers, not mutually
+  // exclusive causes), so each true condition gets its own line rather than
+  // picking a single "most likely" one.
+  const diagnosticsHasDuplicates = !!stepsDiagnostics?.some(d => d.raw_sum > d.collapsed_sum);
+  const diagnosticsHasMultipleSyncs = !!stepsDiagnostics?.some(d => d.payload_count > 1);
+  const diagnosticsHasDayBoundaryDiff = !!stepsDiagnostics?.some(d => d.local_day_sum !== d.collapsed_sum);
+  const diagnosticsNothingToReport = !!stepsDiagnostics
+    && !diagnosticsHasDuplicates && !diagnosticsHasMultipleSyncs && !diagnosticsHasDayBoundaryDiff;
+
   const handleConfirmDelete = async (id: string) => {
     setDeleting(true);
     setDeleteError(null);
     try {
       await api.deleteRecord(type, id);
       setRecords(prev => prev.filter(r => r.id !== id));
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Delete failed');
+    } catch {
+      setDeleteError('operation');
     } finally {
       setDeleting(false);
       setPendingDeleteId(prev => prev === id ? null : prev);
@@ -573,9 +662,9 @@ export default function DataTypeClient({ type }: Props) {
     <AuthenticatedShell className="min-h-screen bg-bg">
       <main className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-          <h1 className="text-xl font-bold capitalize text-text flex items-center gap-2">
+          <h1 className="text-xl font-bold text-text flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-            {type.replace(/_/g, ' ')}
+            {metricLabel(t, dataType)}
           </h1>
           {!userParam && dataType === 'weight' && !showGoalForm && (
             <TapTarget
@@ -583,7 +672,7 @@ export default function DataTypeClient({ type }: Props) {
               onClick={() => setShowGoalForm(true)}
               className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
             >
-              Set goal
+              {t('dataDetail.setGoal')}
             </TapTarget>
           )}
           {/*
@@ -608,7 +697,7 @@ export default function DataTypeClient({ type }: Props) {
               data-testid="set-height"
               className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
             >
-              Set height
+              {t('dataDetail.setHeight')}
             </TapTarget>
           )}
           <div className="flex gap-1 bg-bg-elevated border border-border rounded-lg p-1">
@@ -625,7 +714,7 @@ export default function DataTypeClient({ type }: Props) {
                   zoom === z.key ? 'bg-border text-accent' : 'text-text-muted hover:text-text'
                 }`}
               >
-                {z.label}
+                {t(z.label)}
               </TapTarget>
             ))}
           </div>
@@ -660,7 +749,7 @@ export default function DataTypeClient({ type }: Props) {
                   macro === m.key ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text'
                 }`}
               >
-                {m.label}
+                {t(m.label)}
               </TapTarget>
             ))}
           </div>
@@ -668,12 +757,19 @@ export default function DataTypeClient({ type }: Props) {
 
         {deleteError && (
           <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
-            Delete failed: {deleteError}
+            {t('dataTable.deleteFailed')}
           </div>
         )}
 
         {hasChart && (
         <div className="bg-bg-elevated rounded-[12px] border border-border p-4 mb-4">
+          {/* touch-pan-y is the deliberate split: a vertical drag still scrolls
+              the page (browser-native panning is preserved on that axis), while
+              a horizontal drag belongs to the chart and its touch events are no
+              longer cancelled by the page's own scroll gesture. onTouchStart
+              re-dispatches first contact as a touchmove so the tooltip shows a
+              value immediately instead of only once the finger has moved. */}
+          <div data-testid="chart-surface" className="touch-pan-y" onTouchStart={replayTouchAsMove}>
           <ResponsiveContainer width="100%" height={280}>
             {isDay ? (
               isBloodPressure ? (
@@ -684,14 +780,14 @@ export default function DataTypeClient({ type }: Props) {
                     type="number"
                     scale="time"
                     domain={[fromMs, toMs]}
-                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
+                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(dateLocale, { hour: 'numeric' })}
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString(dateLocale)} formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="systolic" stroke={color} dot strokeWidth={2} name="Systolic" />
-                  <Line type="monotone" dataKey="diastolic" stroke={color} strokeDasharray="4 3" dot strokeWidth={2} name="Diastolic" />
+                  <Line type="monotone" dataKey="systolic" stroke={color} dot strokeWidth={2} name={t('dataDetail.systolic')} />
+                  <Line type="monotone" dataKey="diastolic" stroke={color} strokeDasharray="4 3" dot strokeWidth={2} name={t('dataDetail.diastolic')} />
                 </LineChart>
               ) : (
                 <LineChart data={dayLineData}>
@@ -701,11 +797,11 @@ export default function DataTypeClient({ type }: Props) {
                     type="number"
                     scale="time"
                     domain={[fromMs, toMs]}
-                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(undefined, { hour: 'numeric' })}
+                    tickFormatter={(v: number) => new Date(v).toLocaleTimeString(dateLocale, { hour: 'numeric' })}
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   />
                   <YAxis domain={dayDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString()} formatter={formatTooltipValue} />
+                  <Tooltip labelFormatter={(v: unknown) => new Date(v as number).toLocaleString(dateLocale)} formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                   {bmiBandAreas}
                   {goalLine}
                   <Line
@@ -714,6 +810,7 @@ export default function DataTypeClient({ type }: Props) {
                     stroke={color}
                     dot
                     strokeWidth={2}
+                    name={isNutrition ? macroLabelText : metricLabel(t, dataType)}
                   />
                 </LineChart>
               )
@@ -722,32 +819,32 @@ export default function DataTypeClient({ type }: Props) {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                <Tooltip formatter={formatTooltipValue} />
+                <Tooltip formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" name="Systolic range" />
-                <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" name="Diastolic range" />
-                <Line type="monotone" dataKey="sysAvg" stroke={color} strokeWidth={2} dot={false} name="Systolic" />
-                <Line type="monotone" dataKey="diaAvg" stroke={color} strokeDasharray="4 3" strokeWidth={2} dot={false} name="Diastolic" />
+                <Area dataKey="sysRange" stroke="none" fill={color} fillOpacity={0.15} legendType="none" name={t('dataDetail.systolicRange')} />
+                <Area dataKey="diaRange" stroke="none" fill={color} fillOpacity={0.08} legendType="none" name={t('dataDetail.diastolicRange')} />
+                <Line type="monotone" dataKey="sysAvg" stroke={color} strokeWidth={2} dot={false} name={t('dataDetail.systolic')} />
+                <Line type="monotone" dataKey="diaAvg" stroke={color} strokeDasharray="4 3" strokeWidth={2} dot={false} name={t('dataDetail.diastolic')} />
               </ComposedChart>
             ) : meta?.family === 'cumulative' ? (
               <BarChart data={bucketBarData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                <Tooltip formatter={formatTooltipValue} />
-                <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} />
+                <Tooltip formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
+                <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} name={isNutrition ? macroLabelText : metricLabel(t, dataType)} />
               </BarChart>
             ) : (
               <ComposedChart data={dataType === 'weight' ? extendedBucketBandData : bucketBandData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
                 <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                 <YAxis domain={bandDomain} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} tickFormatter={yAxisTickFormatter} />
-                <Tooltip formatter={formatTooltipValue} />
+                <Tooltip formatter={formatTooltipValue} {...coarsePointerTooltipProps} />
                 {dataType === 'weight' && <Legend wrapperStyle={{ fontSize: 12 }} />}
                 {bmiBandAreas}
                 {goalLine}
-                <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" name="Range" />
-                <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name="Avg" />
+                <Area dataKey="range" stroke="none" fill={color} fillOpacity={0.18} legendType="none" name={t('dataDetail.range')} />
+                <Line type="monotone" dataKey="avg" stroke={color} strokeWidth={2} dot={false} name={t('dataDetail.avg')} />
                 {dataType === 'weight' && (
                   <Line
                     type="monotone"
@@ -756,7 +853,7 @@ export default function DataTypeClient({ type }: Props) {
                     strokeWidth={2}
                     strokeDasharray="5 4"
                     dot={false}
-                    name="Trend"
+                    name={t('dataDetail.trend')}
                   />
                 )}
                 {showProjectionLine && (
@@ -767,12 +864,13 @@ export default function DataTypeClient({ type }: Props) {
                     strokeWidth={1.5}
                     strokeDasharray="2 4"
                     dot={false}
-                    name="Projection"
+                    name={t('dataDetail.projection')}
                   />
                 )}
               </ComposedChart>
             )}
           </ResponsiveContainer>
+          </div>
 
           {dataType === 'weight' && (projectionMessage || noDataMessage || projectionErrorMessage) && (
             <p className="mt-3 text-xs text-text-muted" data-testid="projection-message">
@@ -782,44 +880,101 @@ export default function DataTypeClient({ type }: Props) {
 
           <div className="flex gap-6 mt-3 pt-3 border-t border-border">
             <div>
-              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Avg</p>
-              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.avg)}</p>
+              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.avg')}</p>
+              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.avg, numberLocale)}</p>
             </div>
             <div>
-              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Max</p>
-              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.max)}</p>
+              <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.max')}</p>
+              <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.max, numberLocale)}</p>
             </div>
             {showTotal && (
               <div>
-                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">Total</p>
-                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.total)}</p>
+                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.total')}</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.total, numberLocale)}</p>
               </div>
             )}
             {bmi !== undefined && (
               <div>
-                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">BMI</p>
-                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{bmi.toFixed(1)} · {classifyBmi(bmi)}</p>
+                <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.bmi')}</p>
+                <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">
+                  {bmi.toLocaleString(numberLocale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} · {t(BMI_CATEGORY_KEYS[classifyBmi(bmi)])}
+                </p>
               </div>
             )}
           </div>
         </div>
         )}
 
+        {stepsDiagnostics !== null && (
+          <div className="bg-bg-elevated rounded-[12px] border border-border p-4 mb-4">
+            {/* Same hint-then-detail shape as LoggingGapCard's footnote
+                disclosure: the whole row toggles, aria-expanded carries the
+                open state, and the content region is rendered (hidden, not
+                unmounted) so aria-controls always names a real element. */}
+            <TapTarget
+              compactOnMouse
+              onClick={() => setDiagnosticsOpen(open => !open)}
+              aria-expanded={diagnosticsOpen}
+              aria-controls={diagnosticsId}
+              data-testid="steps-diagnostics-toggle"
+              className="flex w-full items-center justify-between gap-2 text-left text-xs text-text-muted"
+            >
+              <span>{t('stepsDiagnostics.title')}</span>
+              <span className="sr-only">{t('stepsDiagnostics.hintToggle')}</span>
+              <InfoIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            </TapTarget>
+            <div id={diagnosticsId} hidden={!diagnosticsOpen} data-testid="steps-diagnostics-detail" className="mt-3">
+              <div className="overflow-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnDay')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnRaw')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnCollapsed')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnDropped')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnPayloads')}</th>
+                      <th className="px-2 py-2 text-left font-medium text-text-muted uppercase tracking-wider">{t('stepsDiagnostics.columnLocalDay')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {stepsDiagnostics.map(d => (
+                      <tr key={d.bucket_start}>
+                        <td className="px-2 py-2 text-text">{new Date(d.bucket_start).toLocaleDateString(dateLocale)}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.raw_sum}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.collapsed_sum}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.dropped_records}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.payload_count}</td>
+                        <td className="px-2 py-2 text-text tabular-nums">{d.local_day_sum}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-xs text-text-muted mt-2 space-y-1" data-testid="steps-diagnostics-reading">
+                {diagnosticsHasDuplicates && <p>{t('stepsDiagnostics.readingDuplicates')}</p>}
+                {diagnosticsHasMultipleSyncs && <p>{t('stepsDiagnostics.readingMultipleSyncs')}</p>}
+                {diagnosticsHasDayBoundaryDiff && <p>{t('stepsDiagnostics.readingDayBoundary')}</p>}
+                {diagnosticsNothingToReport && <p>{t('stepsDiagnostics.readingNothing')}</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-bg-elevated rounded-[12px] border border-border overflow-auto">
           {loading ? (
-            <p className="p-6 text-text-muted text-center text-sm">Loading...</p>
+            <p className="p-6 text-text-muted text-center text-sm">{t('dataTable.loading')}</p>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-bg border-b border-border">
                 <tr>
                   {displayColumns.map(k => (
                     <th key={k} className="px-4 py-3 text-left font-medium text-text-muted text-xs uppercase tracking-wider">
-                      {k}
+                      {dataColumnLabel(t, dataType, k)}
                     </th>
                   ))}
                   {!userParam && (
                     <th className="px-4 py-3 text-left font-medium text-text-muted text-xs uppercase tracking-wider">
-                      Actions
+                      {t('dataTable.actions')}
                     </th>
                   )}
                 </tr>
@@ -835,9 +990,11 @@ export default function DataTypeClient({ type }: Props) {
                     >
                       {displayColumns.map(k => (
                         <td key={k} className="px-4 py-3 text-text">
-                          {typeof r[k] === 'string' && (r[k] as string).includes('T')
-                            ? new Date(r[k] as string).toLocaleString()
-                            : String(r[k] ?? '')}
+                          {dataType === 'food_meal' && k === 'status' && typeof r[k] === 'string'
+                            ? mealStatusLabel(t, r[k])
+                            : RECORD_TIMESTAMP_COLUMNS.has(k) && typeof r[k] === 'string'
+                              ? new Date(r[k]).toLocaleString(dateLocaleFor(language))
+                              : String(r[k] ?? '')}
                         </td>
                       ))}
                       {!userParam && (
@@ -849,20 +1006,20 @@ export default function DataTypeClient({ type }: Props) {
                                 disabled={deleting}
                                 className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                {deleting ? '…' : 'Confirm'}
+                                {deleting ? '…' : t('dataTable.confirmDelete')}
                               </TapTarget>
                               <TapTarget
                                 onClick={() => setPendingDeleteId(null)}
                                 disabled={deleting}
                                 className="text-xs px-2 py-1 rounded bg-border text-text hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                Cancel
+                                {t('dataTable.cancelDelete')}
                               </TapTarget>
                             </span>
                           ) : (
                             <TapTarget
                               onClick={() => { setDeleteError(null); setPendingDeleteId(id); }}
-                              aria-label="Delete record"
+                              aria-label={t('dataTable.deleteRecord')}
                               className="text-text-muted hover:text-red-500 transition-colors"
                             >
                               🗑
@@ -877,7 +1034,7 @@ export default function DataTypeClient({ type }: Props) {
             </table>
           )}
           {!loading && records.length === 0 && (
-            <p className="p-6 text-text-muted text-center text-sm">No data in this range.</p>
+            <p className="p-6 text-text-muted text-center text-sm">{t('dataTable.empty')}</p>
           )}
         </div>
       </main>

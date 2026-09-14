@@ -597,6 +597,9 @@ func (c slowClarifyClient) Select(context.Context, []vision.ItemCandidates) (*vi
 func (c slowClarifyClient) Translate(context.Context, string) (string, error) {
 	return "", nil
 }
+func (c slowClarifyClient) Advise(context.Context, vision.AdviceInput) ([]string, error) {
+	return nil, nil
+}
 func (c slowClarifyClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
@@ -765,4 +768,8 @@ func TestClarifyMeal_EnglishDoesNotCarryForwardCanonicalName(t *testing.T) {
 	if got.Items[0].CanonicalName != "" {
 		t.Errorf("CanonicalName = %q, want empty for an English Display Language", got.Items[0].CanonicalName)
 	}
+}
+
+func (c slowClarifyClient) NutritionChat(context.Context, vision.NutritionChatInput) (*vision.NutritionChatResult, error) {
+	return &vision.NutritionChatResult{}, nil
 }

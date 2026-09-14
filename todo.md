@@ -81,28 +81,47 @@ the `nutrition-card-today-and-on-track` change built two of its three rows on th
 
 - ~~**Card A** — today's calories/macros vs. the Phase-3 Nutrition Target.~~ **Shipped** as the
   card's top row, fed by `GET /api/summary/today`.
-- **Middle row — still to build**, tracked as
-  [idea-forge#177](https://github.com/ya-breeze/idea-forge/issues/177). A **Healthiness Label**
-  (Good / Fair / Needs attention, rolling 7-day window) plus 1-2 short recommendation lines under
-  it. The label itself is a **deterministic heuristic** over already-logged `FoodMeal`
-  macro/sugar/sodium fields — explicitly *not* LLM-judged (ADR-004), so it stays free, fast, and
-  reproducible on every dashboard load regardless of entry source (photo/manual/barcode).
-  That idea also carries a capability with no ADR yet: a **sustainability warning** for eating
-  below BMR or losing weight faster than ~1%/week, on the grounds that an over-aggressive deficit
-  predicts a relapse. Its subtlety is that the under-eating half must be gated on the gap line
-  resolving to `on_track` — otherwise it fires a starvation warning at everyone who merely
-  under-logs.
+- **Middle row — sustainability warning, label, and advice lines shipped; only chat remains.**
+  Tracked as [idea-forge#177](https://github.com/ya-breeze/idea-forge/issues/177). The row
+  is a four-way split. The **sustainability warning** shipped first — see
+  `docs/specs/healthvault-nutrition-card-middle-row-he.md` and ADR-012 (`Accepted`). It reports two
+  independent, measured findings, `loss_too_fast` (weight-loss rate past ~1%/week, gated on the
+  trend alone) and `intake_below_bmr` (logged intake under BMR, gated on the logging gap resolving
+  to `on_track` so it never fires on a food log that merely under-reports). The **Healthiness
+  Label** (Good / Fair / Needs attention, rolling 7-day window) shipped next, as its own idea,
+  [idea-forge#205](https://github.com/ya-breeze/idea-forge/issues/205) (see
+  `docs/specs/healthvault-nutrition-card-middle-row-th.md`) — a **deterministic heuristic** over
+  already-logged `FoodMeal` macro/sugar/sodium fields (pooled over the daily-totals endpoint's five
+  new sums), explicitly *not* LLM-judged (ADR-004, now `Accepted`), so it stays free, fast, and
+  reproducible on every dashboard load regardless of entry source (photo/manual/barcode). Exact
+  thresholds live as exported constants in `frontend/lib/healthiness.ts`. The two honour the
+  precedence order settled by the sustainability change: the warning outranks the label, so the
+  label renders only when `evaluateSustainability` returns `[]`. The 1-2 short advice lines under
+  the label now come from a cached LLM call downstream of that judgment. Qualified views (the whole
+  advice visible in an active document for two continuous seconds) are recorded as a
+  privacy-minimized per-user, per-Logged-Day aggregate.
+  A qualified view remains a visibility proxy, not proof that the advice was read.
+- ~~The "Get new advice" link~~ — **removed** 2026-09-11 at the owner's request, along with the
+  `refresh` request flag and the two refresh engagement counters that existed to measure it. The
+  advice is a deterministic judgment turned into prose, so a refresh could only reword the same
+  finding; the surface that answers "why does it say that" is the advice basis and the chat, which
+  shipped the same day.
 - ~~The logging-gap line~~ — **shipped**, as the card's bottom row, and it now distinguishes "the
   log agrees with the weight trend" from "not enough data" instead of showing the latter for both.
 
-LLM involvement is downstream of the label, not the label itself: (1) an
-automatic once-daily cached call that generates/refines the recommendation
-text, (2) a user-triggered "get advice" button for an on-demand refresh, and
-(3) a small chat affordance for follow-up/clarifying questions about the
-user's nutrition. Still undecided: exact heuristic thresholds (macro-share
-ranges, sugar/sodium cutoffs), and the chat's persistence model (ongoing
-thread vs. ephemeral per session) — both deferred to this phase's own
-`opsx:propose`. Depends on Phase 3's Nutrition Target existing.
+LLM involvement stays downstream of the label, not the label itself. The automatic daily-cached
+advice call, user-triggered refresh, and aggregate engagement measurement are shipped.
+
+**The evidence gate was lifted by the owner on 2026-09-11**, before any production aggregates
+existed, and the ephemeral nutrition chat was built instead — see `docs/specs/nutrition-chat.md`.
+The gate had said to build chat only after observing real qualified views and refresh requests.
+The owner's reason was that the gate answered the wrong question: an advice line that looks wrong
+is unarguable today, because the measurements behind it never reach the screen, so low engagement
+would have been evidence of an unexplained affordance rather than an unwanted one. The same change
+shows each flagged signal's measured value and threshold beside the conversation.
+
+The engagement aggregates keep accumulating and are still worth reading; they are simply no longer
+a precondition for anything.
 
 ## Idea #10 — Logging Gap Card (was "adaptive TDEE from energy balance")
 

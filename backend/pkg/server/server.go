@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/ya-breeze/healthvault/pkg/cfaccess"
 	"github.com/ya-breeze/healthvault/pkg/config"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/mcpserver"
@@ -40,11 +41,25 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	jwtSecret := []byte(cfg.JWTSecret)
 	cookieCfg := cookies.Config{Secure: cfg.CookieSecure}
 
+	cfEmailMap, err := parseCFAccessEmailMap(cfg.CFAccessEmailMap)
+	if err != nil {
+		return fmt.Errorf("parse HCW_CF_ACCESS_EMAIL_MAP: %w", err)
+	}
+	// Both the team domain and the AUD tag are required before the exchange
+	// endpoint verifies anything — see CFAccess's 404-while-unconfigured
+	// comment (auth_cf_access.go).
+	var cfVerifier *cfaccess.Verifier
+	if cfg.CFAccessTeamDomain != "" && cfg.CFAccessAUD != "" {
+		cfVerifier = cfaccess.New(cfg.CFAccessTeamDomain, cfg.CFAccessAUD)
+	}
+
 	ah := &authHandlers{
-		storage:   storage,
-		db:        storage.DB(),
-		jwtSecret: jwtSecret,
-		cookieCfg: cookieCfg,
+		storage:    storage,
+		db:         storage.DB(),
+		jwtSecret:  jwtSecret,
+		cookieCfg:  cookieCfg,
+		cfVerifier: cfVerifier,
+		cfEmailMap: cfEmailMap,
 	}
 
 	// USDA index is optional at startup: no import has necessarily run yet,
@@ -82,6 +97,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	r.HandleFunc("/api/auth/login", ah.Login).Methods("POST")
 	r.HandleFunc("/api/auth/logout", ah.Logout).Methods("POST")
 	r.HandleFunc("/api/auth/refresh", ah.Refresh).Methods("POST")
+	r.HandleFunc("/api/auth/cf-access", ah.CFAccess).Methods("POST")
 
 	// Protected API — data routes implemented in Task 6
 	api := r.PathPrefix("/api").Subrouter()
@@ -94,6 +110,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	// Note: /data/summary must be registered before /data/{type} to avoid
 	// gorilla/mux routing "summary" as the {type} variable.
 	api.HandleFunc("/data/summary", summaryHandler(storage)).Methods("GET")
+	// Also registered ahead of /data/{type}, for the same reason.
+	api.HandleFunc("/data/steps/diagnostics", StepsDiagnosticsHandler(storage)).Methods("GET")
 	api.HandleFunc("/data/{type}", CreateRecordHandler(storage)).Methods("POST")
 	api.HandleFunc("/data/{type}", DataHandler(storage)).Methods("GET")
 	api.HandleFunc("/data/{type}/{id}", DeleteRecordHandler(storage, fh.photos)).Methods("DELETE")
@@ -101,6 +119,9 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/import/health-connect", importHealthConnectHandler(storage)).Methods("POST")
 	api.HandleFunc("/import/libra", importLibraHandler(storage)).Methods("POST")
 	api.HandleFunc("/food/search", fh.Search).Methods("GET")
+	api.HandleFunc("/food/advice", fh.PostFoodAdvice).Methods("POST")
+	api.HandleFunc("/food/advice/engagement", fh.RecordFoodAdviceEngagement).Methods("POST")
+	api.HandleFunc("/food/advice/chat", fh.PostFoodAdviceChat).Methods("POST")
 	api.HandleFunc("/food/custom", fh.CreateCustomFood).Methods("POST")
 	api.HandleFunc("/food/custom", fh.ListCustomFoods).Methods("GET")
 	api.HandleFunc("/food/custom/{id}", fh.UpdateCustomFood).Methods("PUT")

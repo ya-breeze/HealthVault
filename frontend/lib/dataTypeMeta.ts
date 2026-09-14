@@ -1,4 +1,5 @@
 import type { DataType } from './api';
+import type { Dictionary } from './i18n';
 
 export type AggFamily = 'cumulative' | 'point';
 
@@ -96,28 +97,30 @@ export function toDisplayUnit(type: DataType, raw: number): number {
  * matching toFixed's rounding for everything else — this is what lets the
  * vitals-grid refactor (see extractVital in vitals.ts) reuse this helper
  * without changing steps' previously-hardcoded `.toLocaleString()` output.
- * Pinned to the 'en-US' locale rather than the browser's — design.md's
- * "Locale-aware number formatting ... out of scope, matches current
- * behavior" non-goal means this must not introduce a locale-dependent
- * decimal separator (e.g. ',' instead of '.') for the many types that
- * previously used a fixed-locale toFixed(1); a code-review pass caught this
- * regressing on the initial `toLocaleString(undefined, ...)` draft.
+ * `locale` defaults to 'en-US', so every caller that predates the data-detail
+ * localization (vitals-grid, dashboard) keeps its exact prior output; the
+ * data-detail charts are the only caller that passes `numberLocaleFor(language)`
+ * (see lib/i18n/index.ts) to get 'ru-RU' grouping and decimal separators.
  * Callers are responsible for passing an already-display-unit value (see
  * toDisplayUnit above) — this function only rounds, it never converts units.
  */
-export function formatMetricValue(type: DataType, value: number): string {
+export function formatMetricValue(type: DataType, value: number, locale: string = 'en-US'): string {
   const decimals = TYPE_META[type]?.decimals ?? 0;
-  return value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return value.toLocaleString(locale, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
-export const NUTRITION_MACROS = [
-  { key: 'calories', label: 'Calories' },
-  { key: 'protein_grams', label: 'Protein' },
-  { key: 'carbs_grams', label: 'Carbs' },
-  { key: 'fat_grams', label: 'Fat' },
-  { key: 'sugar_grams', label: 'Sugar' },
-  { key: 'sodium_grams', label: 'Sodium' },
-  { key: 'dietary_fiber_grams', label: 'Fiber' },
+// `label` names a dataDetail.* dictionary key rather than carrying an English
+// display string directly — DataTypeClient (the sole consumer) resolves it
+// through `t` so the macro selector and every Day/bucketed nutrition series
+// name render in the selected Display Language.
+export const NUTRITION_MACROS: { key: string; label: keyof Dictionary }[] = [
+  { key: 'calories', label: 'dataDetail.macroCalories' },
+  { key: 'protein_grams', label: 'dataDetail.macroProtein' },
+  { key: 'carbs_grams', label: 'dataDetail.macroCarbs' },
+  { key: 'fat_grams', label: 'dataDetail.macroFat' },
+  { key: 'sugar_grams', label: 'dataDetail.macroSugar' },
+  { key: 'sodium_grams', label: 'dataDetail.macroSodium' },
+  { key: 'dietary_fiber_grams', label: 'dataDetail.macroFiber' },
 ] as const;
 
 /**
@@ -169,7 +172,11 @@ export function bmiBandEdgesKg(heightMeters: number): number[] {
   return BMI_BAND_EDGES.map(bmi => bmi * heightMeters * heightMeters);
 }
 
-export type BmiCategory = 'Underweight' | 'Normal' | 'Overweight' | 'Obese';
+// Stable identifiers, not display strings — DataTypeClient (the sole
+// consumer, along with this file's own test) resolves each id through a
+// dataDetail.bmi* dictionary key so the readout renders in the selected
+// Display Language instead of carrying English text into a Russian page.
+export type BmiCategory = 'underweight' | 'normal' | 'overweight' | 'obese';
 
 /**
  * WHO BMI category lookup with lower-inclusive boundaries — a BMI of
@@ -178,10 +185,10 @@ export type BmiCategory = 'Underweight' | 'Normal' | 'Overweight' | 'Obese';
  * disagree at a boundary value.
  */
 export function classifyBmi(bmi: number): BmiCategory {
-  if (bmi < BMI_BAND_EDGES[0]) return 'Underweight';
-  if (bmi < BMI_BAND_EDGES[1]) return 'Normal';
-  if (bmi < BMI_BAND_EDGES[2]) return 'Overweight';
-  return 'Obese';
+  if (bmi < BMI_BAND_EDGES[0]) return 'underweight';
+  if (bmi < BMI_BAND_EDGES[1]) return 'normal';
+  if (bmi < BMI_BAND_EDGES[2]) return 'overweight';
+  return 'obese';
 }
 
 /**

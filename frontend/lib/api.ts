@@ -1,3 +1,5 @@
+import { accessSignInSuppressed } from './session';
+
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
 // Coordination keys for transparent-refresh-on-401 (see openspec authentication
@@ -10,7 +12,7 @@ const AUTH_REFRESH_LOCK = 'hcw-auth-refresh';
 const LAST_REFRESH_KEY = 'hcw:lastAuthRefreshAt';
 
 function isAuthExemptPath(path: string): boolean {
-  return path === '/auth/login' || path === '/auth/refresh';
+  return path === '/auth/login' || path === '/auth/refresh' || path === '/auth/cf-access';
 }
 
 // Completion time of the last successful refresh in *this* tab. The
@@ -34,13 +36,15 @@ function lastRefreshAt(): number {
   return Math.max(stored, lastRefreshAtInTab);
 }
 
-// POSTs /auth/refresh directly (no retry wrapping — this IS the refresh call).
-// Records the completion time so a later caller — in this tab, or in another
-// one waiting on the Web Lock — can see a refresh already happened at/after
-// its request was dispatched.
-async function refreshAccessToken(): Promise<boolean> {
-  const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
-  if (!res.ok) return false;
+// Records the completion time of a session renewal in both channels
+// lastRefreshAt reads, so a later caller — in this tab, or in another one
+// waiting on the Web Lock — can see the token its 401 complained about has
+// already been replaced. Both ways a session gets renewed call this: the
+// ordinary refresh below and the Cf-Access exchange further down. The
+// exchange mints the same pair of cookies Login does, so a concurrent 401
+// that predates it should retry rather than spend the brand-new refresh
+// token on a redundant rotation.
+function recordSessionRenewed(): void {
   lastRefreshAtInTab = Date.now();
   try {
     localStorage.setItem(LAST_REFRESH_KEY, String(lastRefreshAtInTab));
@@ -48,6 +52,13 @@ async function refreshAccessToken(): Promise<boolean> {
     // localStorage may be unavailable (e.g. private browsing); same-tab dedup
     // still applies through lastRefreshAtInTab, cross-tab dedup just degrades.
   }
+}
+
+// POSTs /auth/refresh directly (no retry wrapping — this IS the refresh call).
+async function refreshAccessToken(): Promise<boolean> {
+  const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
+  if (!res.ok) return false;
+  recordSessionRenewed();
   return true;
 }
 
@@ -93,16 +104,76 @@ function coordinatedRefresh(dispatchedAt: number): Promise<boolean> {
   return refreshPromise;
 }
 
+// The outcome of one exchange attempt, read out of the Response rather than
+// handed back as one. Concurrent callers share a single in-flight attempt (see
+// accessExchange) and a Response body can only be read once, so the status and
+// the body both have to be captured before the result can be shared. Callers
+// distinguish 404 (feature off) from 401/403 (feature on, this attempt didn't
+// get in) from 200/204 (exchanged).
+interface AccessExchangeResult {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  body: string;
+}
+
+// Same-tab dedup for the exchange, mirroring refreshPromise above. Without it
+// every concurrent 401 that refresh could not fix runs its own exchange, and
+// each one mints its own year-long refresh token row server-side — the
+// dashboard's several-calls-at-once shape makes that the normal case, not a
+// rare race.
+let accessExchangePromise: Promise<AccessExchangeResult> | null = null;
+
+// The single entry point for the Cf-Access exchange. Both callers come through
+// here — fetchWithAuthRetry's 401 fallback below and the login page through
+// api.cfAccessLogin — so neither the suppression flag nor the dedup can be
+// bypassed by a future caller that forgets they exist. No retry wrapping:
+// this IS the recovery step, and /auth/cf-access is auth-exempt anyway.
+//
+// Returns null when the exchange is suppressed, which is a different answer
+// from "the server refused": no request was sent at all. The flag is set by
+// useLogout and cleared only by the login page's explicit sign-in button — see
+// lib/session.ts's doc comment. Honouring it here rather than only on the
+// login page is what makes logout stick: any 401 anywhere else in the app —
+// the settings poll in LanguageContext, say — would otherwise re-run the
+// exchange in the background and silently restore the session the user had
+// just ended.
+async function accessExchange(): Promise<AccessExchangeResult | null> {
+  if (accessSignInSuppressed()) return null;
+  if (accessExchangePromise) return accessExchangePromise;
+
+  const run = async (): Promise<AccessExchangeResult> => {
+    const res = await fetch(`${BASE}/auth/cf-access`, { method: 'POST', credentials: 'include' });
+    if (res.ok) recordSessionRenewed();
+    return { ok: res.ok, status: res.status, statusText: res.statusText, body: await res.text() };
+  };
+
+  accessExchangePromise = run().finally(() => {
+    accessExchangePromise = null;
+  });
+  return accessExchangePromise;
+}
+
 // The one place that calls fetch() and reacts to a 401 by transparently
 // refreshing and retrying — apiRawFetch, apiFetchNoBody, and apiFetchForm all
 // delegate here so the retry logic exists exactly once.
+//
+// A 401 that refresh could not fix (no refresh token, or a dead one) gets a
+// second recovery step: the Cf-Access exchange, once. It costs nothing on a
+// deployment with no Cloudflare in front — accessExchange there just 404s and
+// this falls through to returning the original 401, same as today. A null
+// result means the exchange was suppressed by a logout, and falls through the
+// same way: after logging out, a background 401 must not sign the user back in.
 async function fetchWithAuthRetry(path: string, options: RequestInit): Promise<Response> {
   const dispatchedAt = Date.now();
   const res = await fetch(`${BASE}${path}`, options);
   if (res.status !== 401 || isAuthExemptPath(path)) return res;
 
   const refreshed = await coordinatedRefresh(dispatchedAt);
-  if (!refreshed) return res;
+  if (refreshed) return fetch(`${BASE}${path}`, options);
+
+  const exchanged = await accessExchange();
+  if (!exchanged?.ok) return res;
 
   return fetch(`${BASE}${path}`, options);
 }
@@ -392,11 +463,39 @@ export interface DayCompleteness {
 export interface DailyTotal {
   date: string;
   calories: number;
+  // protein_grams, carbs_grams, fat_grams, sugar_grams, sodium_grams and
+  // dietary_fiber_grams mirror
+  // database.DailyTotal (food_daily_totals.go) — required, not optional. The
+  // backend serializes all six with no `omitempty`, so a zero sum always
+  // arrives as the number 0, never an absent key.
+  protein_grams: number;
+  carbs_grams: number;
+  fat_grams: number;
+  sugar_grams: number;
+  sodium_grams: number;
+  dietary_fiber_grams: number;
   // How many of that day's meals are in a status other than `confirmed`, and
-  // so contributed nothing to `calories`. Non-zero means the day's total is
-  // under-counted by an unknown amount, which is not the same thing as a low
-  // total — see database.DailyTotal's own comment.
+  // so contributed nothing to `calories` or the six fields above. Non-zero
+  // means the day's total is under-counted by an unknown amount, which is
+  // not the same thing as a low total — see database.DailyTotal's own
+  // comment.
   unconfirmed_meals: number;
+}
+
+// One UTC day's row from GET /api/data/steps/diagnostics — mirrors the
+// backend's stepsDiagnosticDay (steps_diagnostics.go). See
+// check-the-health-data spec: raw_sum > collapsed_sum means duplicate
+// intervals in the database, payload_count > 1 means more than one sync
+// wrote the day, and local_day_sum != collapsed_sum means the chart's UTC
+// day boundary isn't the caller's day boundary.
+export interface StepsDiagnosticDay {
+  bucket_start: string;
+  raw_count: number;
+  raw_sum: number;
+  collapsed_sum: number;
+  dropped_records: number;
+  payload_count: number;
+  local_day_sum: number;
 }
 
 // Both error classes below set `.name` explicitly and restore the prototype
@@ -463,6 +562,7 @@ export interface NutritionTarget {
   protein_grams: number;
   carbs_grams: number;
   fat_grams: number;
+  bmr: number;
   measured_weight_kg: number;
   goal_weight_kg: number;
   height_m: number;
@@ -492,7 +592,101 @@ export type TodaySummaryTarget =
       protein_grams: number;
       carbs_grams: number;
       fat_grams: number;
+      bmr: number;
+      measured_weight_kg: number;
+      goal_weight_kg: number;
+      height_m: number;
+      age_years: number;
+      sex: 'male' | 'female';
+      activity_multiplier: number;
+      activity_tier: string;
     };
+
+export interface NutritionAdviceWindow {
+  mean_calories: number;
+  mean_protein_grams: number;
+  mean_carbs_grams: number;
+  mean_fat_grams: number;
+  mean_sugar_grams: number;
+  mean_sodium_grams: number;
+  mean_dietary_fiber_grams: number;
+}
+
+export interface NutritionAdviceRequest {
+  label: 'good' | 'fair' | 'needs_attention';
+  reasons: string[];
+  window: NutritionAdviceWindow;
+}
+
+export interface NutritionAdviceContext {
+  target_calories: number;
+  target_protein_grams: number;
+  target_carbs_grams: number;
+  target_fat_grams: number;
+  display_language: 'en' | 'ru';
+}
+
+// Discriminated so lines and the server-effective context are inaccessible
+// until the caller has proved this response is available.
+export type NutritionAdviceResponse =
+  | { available: false; reason: 'unconfigured' | 'unavailable' }
+  | {
+      available: true;
+      lines: string[];
+      logged_day: string;
+      generated_at: string;
+      context: NutritionAdviceContext;
+    };
+
+export interface NutritionChatSignal {
+  code: string;
+  value: number;
+  unit: 'share' | 'gramsPerDay';
+  verdict: 'ok' | 'off' | 'far';
+  /** Absent for an `ok` signal, which contributed no reason code. */
+  reason?: string;
+  off_boundary: number;
+  /** Absent when the evidence defines no separate `far` verdict. */
+  far_boundary?: number;
+}
+
+export interface NutritionChatTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface NutritionChatSource {
+  date: string;
+  meal_id: string;
+  food: string;
+  signal: string;
+  nutrient_grams: number;
+  macro_source: string;
+  confidence: number;
+}
+
+export interface NutritionChatRequest {
+  label: 'good' | 'fair' | 'needs_attention';
+  reasons: string[];
+  window: NutritionAdviceWindow;
+  signals: NutritionChatSignal[];
+  eligible_days: number;
+  /** The conversation already on screen, oldest first. Replayed every call. */
+  turns: NutritionChatTurn[];
+  question: string;
+}
+
+// Discriminated the way NutritionAdviceResponse is, so the answer is
+// inaccessible until the caller has proved the response carries one.
+export type NutritionChatResponse =
+  | { available: false; reason: 'unconfigured' | 'unavailable' }
+  | { available: true; answer: string; sources?: NutritionChatSource[] };
+
+export interface FoodAdviceEngagementRequest {
+  event: 'qualified_view';
+  logged_day: string;
+  generated_at: string;
+}
 
 /**
  * GET /api/summary/today — the caller's Logged Day so far, plus their
@@ -516,8 +710,6 @@ export type TodaySummaryTarget =
  * it rather than re-deriving "today" locally, so the two cannot disagree across
  * a local midnight.
  *
- * `recommendation` is always `null` today — it is the reserved home for Phase
- * 4's advice lines (see todo.md), not something any caller can rely on yet.
  */
 export interface TodaySummary {
   date: string;
@@ -529,7 +721,6 @@ export interface TodaySummary {
   last_logged_at: string | null;
   display_language: string;
   target: TodaySummaryTarget;
-  recommendation: null;
 }
 
 // Named rather than left inline on `api.me` below: AuthenticatedShell holds
@@ -541,12 +732,56 @@ export interface Me {
   family_id: string;
 }
 
+// In-flight dedup for the two parameterless bootstrap reads that
+// AuthenticatedShell, LanguageProvider and the dashboard's settings effect
+// each call independently on mount: concurrent callers share the one promise
+// below rather than each issuing their own GET. This is deduplication of
+// calls that overlap in time, not a value cache — the slot is cleared the
+// moment the shared request settles (success or failure, see the `finally`
+// on each), so a later, non-overlapping caller always gets a fresh GET. The
+// identity check inside each `finally` guards against an old settled promise
+// clearing a slot a newer call has since occupied; since both the request and
+// the slot assignment happen synchronously up to their first `await`, no
+// other caller can interleave between them today, but the check costs
+// nothing and keeps that invariant explicit rather than incidental.
+let mePromise: Promise<Me> | null = null;
+let settingsPromise: Promise<UserSettings> | null = null;
+
+// The uncached read behind api.getSettings() below and api.updateSettings()'s
+// own pre-write fetch. Kept as a private function, not part of the coalescing
+// slot, precisely because updateSettings must never share a promise with a
+// bootstrap read: see updateSettings's doc comment for why reusing either
+// direction is wrong.
+function fetchSettingsFresh(): Promise<UserSettings> {
+  return apiFetch<UserSettings>('/users/me/settings');
+}
+
 export const api = {
   login: (username: string, password: string) =>
     apiFetch('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+
+  // Exchanges a Cloudflare Access Assertion (carried by the browser, not by
+  // this call) for a session, the same way login() exchanges a password.
+  // Goes through accessExchange rather than apiFetchNoBody so the login page's
+  // attempt obeys the same suppression flag and shares the same in-flight
+  // attempt as the 401 fallback — one exchange per moment, not one per caller.
+  // Callers still branch on ApiError.status (404 feature-off, 401/403 this
+  // attempt didn't get in) rather than reading a response body.
+  cfAccessLogin: async (): Promise<void> => {
+    const exchanged = await accessExchange();
+    // null means the suppression flag is still set. The login page's sign-in
+    // button clears it before calling, so getting here means a caller did not
+    // — and reporting that as a failed sign-in is the honest answer. Resolving
+    // as if the exchange had succeeded would route the caller to a page its
+    // session cannot load.
+    if (!exchanged) throw new ApiError(401, 'Access sign-in is suppressed after logout');
+    if (!exchanged.ok) {
+      throw new ApiError(exchanged.status, exchanged.body || `${exchanged.status} ${exchanged.statusText}`);
+    }
+  },
 
   // `apiFetchNoBody`, not `apiFetch`: the endpoint answers 204 with an empty
   // body, so parsing it as JSON throws — and every caller awaits this before
@@ -556,9 +791,23 @@ export const api = {
   // to assert on what happens after the click rather than on the control.
   logout: () => apiFetchNoBody('/auth/logout', { method: 'POST' }),
 
-  me: () => apiFetch<Me>('/users/me'),
+  me: () => {
+    if (mePromise) return mePromise;
+    const p: Promise<Me> = apiFetch<Me>('/users/me').finally(() => {
+      if (mePromise === p) mePromise = null;
+    });
+    mePromise = p;
+    return p;
+  },
 
-  getSettings: () => apiFetch<UserSettings>('/users/me/settings'),
+  getSettings: () => {
+    if (settingsPromise) return settingsPromise;
+    const p = fetchSettingsFresh().finally(() => {
+      if (settingsPromise === p) settingsPromise = null;
+    });
+    settingsPromise = p;
+    return p;
+  },
   putSettings: (settings: UserSettings) =>
     apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
 
@@ -567,17 +816,36 @@ export const api = {
   // should reach for this instead of getNutritionTarget.
   getTodaySummary: () => apiFetch<TodaySummary>('/summary/today'),
 
+  getNutritionAdvice: (input: NutritionAdviceRequest) =>
+    apiFetch<NutritionAdviceResponse>('/food/advice', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // Stateless: the conversation is replayed on every call because nothing on
+  // either side keeps a thread. See docs/specs/nutrition-chat.md.
+  postNutritionChat: (input: NutritionChatRequest) =>
+    apiFetch<NutritionChatResponse>('/food/advice/chat', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  recordFoodAdviceEngagement: (input: FoodAdviceEngagementRequest) =>
+    apiFetchNoBody('/food/advice/engagement', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
   // Self-only: no ?user= support, unlike most /data endpoints — see
   // design.md's "Self-only" decision. Throws NutritionTargetUnmetError on
   // 422 so callers can branch on the specific unmet reason.
   //
   // No caller in the app today: LoggingGapCard, the only one there was, moved
-  // to getTodaySummary above when it grew a row needing today's intake too.
-  // Kept as the client for a route the backend still serves
-  // (server.go's /users/me/nutrition-target), and because it returns the full
-  // derivation — measured weight, goal weight, height, age, activity tier —
-  // that the summary's target payload deliberately does not carry. Delete both
-  // this and NutritionTargetUnmetError if that route ever goes.
+  // to getTodaySummary above when it grew a row needing today's intake too,
+  // and TodaySummaryTarget's available branch now carries the same
+  // derivation fields this route returns. Kept as the client only because the
+  // backend still serves the route (server.go's /users/me/nutrition-target);
+  // delete both this and NutritionTargetUnmetError if that route ever goes.
   getNutritionTarget: async (): Promise<NutritionTarget> => {
     const res = await apiRawFetch('/users/me/nutrition-target');
     if (res.status === 422) {
@@ -602,6 +870,15 @@ export const api = {
   // refetch is the only read that matters before a write, so a second,
   // longer-lived copy in a component would only be another way to go stale.
   //
+  // Calls fetchSettingsFresh(), not api.getSettings(), deliberately bypassing
+  // the bootstrap coalescing slot: a UI mount read in flight for an unrelated
+  // purpose (e.g. the dashboard's own settings effect) may be reading a
+  // snapshot from before whatever concurrent change this write needs to see,
+  // so this read-modify-write must always issue its own GET. The reverse
+  // matters too — a bootstrap caller awaiting the coalesced slot must never
+  // be handed a response this write already changed further, which is
+  // exactly what would happen if this shared that promise.
+  //
   // A failed refetch aborts the write rather than falling back to a cached
   // copy. PUT /users/me/settings is a whole-document upsert, not a merge, so
   // proceeding from a stale or empty snapshot is exactly the clobbering this
@@ -612,7 +889,7 @@ export const api = {
   // other key in the blob. Rejecting instead surfaces a toast at the call
   // site and leaves the stored document untouched. Found in code review.
   updateSettings: async (patch: Partial<UserSettings>): Promise<UserSettings> => {
-    const current = await api.getSettings();
+    const current = await fetchSettingsFresh();
     const next: UserSettings = { ...current, ...patch };
     await api.putSettings(next);
     return next;
@@ -625,6 +902,18 @@ export const api = {
     if (user) params.set('user', user);
     if (bucket) params.set('bucket', bucket);
     return apiFetch<Record<string, unknown>[]>(`/data/${type}?${params}`);
+  },
+
+  // Self-only diagnostic backing the steps page's disclosure (see
+  // DataTypeClient.tsx): per-UTC-day raw vs. collapsed step totals, the
+  // number the collapse dropped, how many distinct syncs contributed, and
+  // the same day's total under the caller's stored timezone. Mirrors
+  // GET /api/data/steps/diagnostics — see steps_diagnostics.go.
+  stepsDiagnostics: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return apiFetch<StepsDiagnosticDay[]>(`/data/steps/diagnostics?${params}`);
   },
 
   summary: (from?: string, to?: string, user?: string) => {

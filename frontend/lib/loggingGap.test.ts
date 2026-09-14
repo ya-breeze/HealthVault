@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   bucketByDay,
   checkHardFloor,
+  checkWeightFloor,
   computeLoggingGap,
   excludedOutlierCount,
   LOGGING_GAP_WINDOW_DAYS,
+  meanLoggedIntake,
   rejectOutliers,
   resolveLoggingGapWindow,
   slopeStandardError,
@@ -568,6 +570,105 @@ describe('checkHardFloor', () => {
       smallWindowLast
     );
     expect(result).toBe(false);
+  });
+});
+
+describe('checkWeightFloor', () => {
+  const windowLastDayOffset = 127;
+  const safeKept: DayValueRecord[] = [
+    { day: 120, value: 80 },
+    { day: 123, value: 80.2 },
+  ];
+  const safeRejected: DayValueRecord[] = [];
+  const safeMostRecentKeptDayOffset = 125;
+
+  it('is false while checkHardFloor is true on a sparse food log with plenty of weigh-ins', () => {
+    // The whole reason the two floors are split: a user who weighs in daily but logs food fewer
+    // than 3 days out of 28 must still get the weight-only rate-of-loss check, even though the
+    // fuller hard floor (which also requires 3 valid food days) is unmet.
+    const windowStartDayOffset = 100;
+    const sparseFoodLog: Record<number, DayWindowData> = {
+      [windowStartDayOffset]: { state: 'complete', calories: 2000, unconfirmedMeals: 0 },
+    };
+
+    expect(
+      checkWeightFloor(safeKept, safeRejected, false, safeMostRecentKeptDayOffset, windowLastDayOffset)
+    ).toBe(false);
+    expect(
+      checkHardFloor(
+        safeKept,
+        safeRejected,
+        false,
+        windowStartDayOffset,
+        sparseFoodLog,
+        safeMostRecentKeptDayOffset,
+        windowLastDayOffset
+      )
+    ).toBe(true);
+  });
+
+  it('fires when fewer than 2 raw weigh-ins survive', () => {
+    expect(
+      checkWeightFloor([{ day: 120, value: 80 }], safeRejected, false, 120, windowLastDayOffset)
+    ).toBe(true);
+  });
+
+  it('fires when more than 3 weigh-ins are rejected', () => {
+    const rejected: DayValueRecord[] = [
+      { day: 105, value: 75 },
+      { day: 108, value: 75.1 },
+      { day: 111, value: 75.2 },
+      { day: 114, value: 75.3 },
+    ];
+    expect(
+      checkWeightFloor(safeKept, rejected, false, safeMostRecentKeptDayOffset, windowLastDayOffset)
+    ).toBe(true);
+  });
+
+  it('fires on the same-day-sibling suppression flag alone', () => {
+    expect(
+      checkWeightFloor(safeKept, safeRejected, true, safeMostRecentKeptDayOffset, windowLastDayOffset)
+    ).toBe(true);
+  });
+
+  it('fires when the most recent kept weigh-in is 8 days stale', () => {
+    expect(
+      checkWeightFloor(safeKept, safeRejected, false, windowLastDayOffset - 8, windowLastDayOffset)
+    ).toBe(true);
+  });
+
+  it('does not fire when every weight-only condition passes', () => {
+    expect(
+      checkWeightFloor(safeKept, safeRejected, false, safeMostRecentKeptDayOffset, windowLastDayOffset)
+    ).toBe(false);
+  });
+});
+
+describe('meanLoggedIntake', () => {
+  it('returns null when no day in the window is valid', () => {
+    const data: Record<number, DayWindowData> = {
+      0: { state: 'unconfirmed', calories: 0, unconfirmedMeals: 0 },
+      1: { state: 'incomplete', calories: 0, unconfirmedMeals: 0 },
+    };
+    expect(meanLoggedIntake(data, 0, 1)).toBeNull();
+  });
+
+  it('averages only the valid days inside the window bounds', () => {
+    const data: Record<number, DayWindowData> = {
+      0: { state: 'complete', calories: 1000, unconfirmedMeals: 0 }, // out of window
+      1: { state: 'complete', calories: 2000, unconfirmedMeals: 0 },
+      2: { state: 'complete', calories: 3000, unconfirmedMeals: 0 },
+      3: { state: 'complete', calories: 5000, unconfirmedMeals: 0 }, // out of window
+    };
+    expect(meanLoggedIntake(data, 1, 2)).toBeCloseTo(2500, 6);
+  });
+
+  it('excludes a Complete day disqualified by an unconfirmed meal', () => {
+    const data: Record<number, DayWindowData> = {
+      0: { state: 'complete', calories: 2000, unconfirmedMeals: 0 },
+      1: { state: 'complete', calories: 0, unconfirmedMeals: 2 },
+    };
+    expect(meanLoggedIntake(data, 0, 1)).toBeCloseTo(2000, 6);
   });
 });
 

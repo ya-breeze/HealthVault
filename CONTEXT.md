@@ -27,8 +27,7 @@ A group of a Logged Day's Food Meals collapsed by proximity — a new occasion s
 _Avoid_: Meal count, session (too generic)
 
 **Logged Day**:
-The calendar date (`YYYY-MM-DD`) a Food Meal's `LoggedAt` falls on, computed in the user's stored `timezone` setting (absent/invalid → UTC) — not the browser's local zone, and not the same UTC bucketing the general `/api/data/{type}` charts use. "Today" in the user's zone is always excluded from Day Completeness.
-_Avoid_: Day (ambiguous with the unrelated UTC day-bucketing used elsewhere)
+The calendar date (`YYYY-MM-DD`) a Food Meal's `LoggedAt` falls on, computed in the user's stored `timezone` setting (absent/invalid → UTC) — not the browser's local zone. "Today" in the user's zone is always excluded from Day Completeness.
 
 **Usual Meals Per Day**:
 The per-user `usual_meals_per_day` setting (positive integer, default 3): the Eating Occasion count a Logged Day must reach to be classified automatically Complete. Read fresh on every Day Completeness computation, not snapshotted, so changing it re-evaluates past days too.
@@ -77,6 +76,12 @@ _Avoid_: Nutrition widget, food widget
 **Presence**:
 Whether the resolved user has ever recorded at least one row of a given data type, computed over all time — the `GET /api/data-types/presence` signal used to hide a type everywhere on the dashboard (vitals grid and More Data) when the user has no data for it at all. Distinct from a Dashboard Card's `hidden` flag (a user preference, only meaningful for types that do have presence) and from the vitals grid's 7-day recency window (a metric with presence but no data in the last 7 days still renders its card, just with the "no data" sparkline placeholder).
 _Avoid_: "Has data" (ambiguous with the recency window), "visible" (conflates with the `hidden` preference)
+
+### Steps
+
+**Step Interval Collapse**:
+The read-time rule that removes double-counted steps: records sorted by `(start_time, end_time)` are walked with a watermark of the latest `end_time` counted so far, and any record whose `end_time` doesn't extend past it is dropped as fully covered by already-counted time, while every other record is kept whole. Runs on every steps read path (`SummarySteps`, `QueryAggregateSteps`, and `fetchDailySteps` via the latter) so Health Connect's per-origin duplicate copies of the same walk (phone sensor, watch, a fitness app, ...) aren't summed twice. Never apportions a count to a partial interval — a record either survives whole or is dropped whole. See ADR-012 and `GET /api/data/steps/diagnostics`, which reports the raw vs. collapsed totals this rule produces.
+_Avoid_: Deduplication (suggests matching exact-duplicate rows, which this isn't — two records with different `start_time`/`end_time` values collapse too, as long as their intervals overlap), step merging (suggests two records' counts get combined into one; a kept record's count is never modified, only kept or dropped whole)
 
 ### Nutrition targets
 
@@ -128,10 +133,57 @@ Nutrition Target uncomputable (`insufficient_activity_data`). See ADR-006.
 _Avoid_: Activity multiplier alone (that's the numeric output, not the tier), exercise level
 
 **Healthiness Label**:
-A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment.
+A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged nutrition fields, not an LLM judgment (ADR-004). The window is the 7 Logged Days ending yesterday — the last 7 days of the 28-day Logging Gap window the nutrition card already resolves, so it costs no extra fetch. A day counts only if it passes the Logging Gap's own `isValidDay` test (Day Completeness Complete/Confirmed Complete, and every one of that day's meals `confirmed`) — imported from `loggingGap.ts` rather than reimplemented, so the two rows can never disagree about what "logged" means. Below the ADR-007 3-of-7 floor, or with zero pooled macro energy, there is no label at all. Six signals are computed from *pooled* (not per-day-averaged) totals: three macro-energy shares (protein, carbs, fat, of `4P + 4C + 9F`), total-sugars share, mean elemental sodium, and mean dietary fiber. The original five land on `ok`/`off`/`far`; fiber uses EFSA's adult adequate intake of 25 g/day as one lower boundary and lands only on `ok` or `off`. Any `far`, or 3+ `off`, is Needs attention, 1-2 `off` is Fair, all `ok` is Good. Fiber is last in reason precedence and cannot produce Needs attention by itself.
 _Avoid_: Health score, nutrition score
 
+**Qualified Advice View**:
+A conservative engagement signal for the nutrition advice under a Healthiness Label: the complete
+rendered advice element remained inside the viewport while the document was visible for two
+continuous seconds. This is a visibility proxy, not proof that the user read, understood, or acted
+on the text. It is deduplicated per advice Logged Day and generation timestamp within one browser
+tab when `sessionStorage` is available. The server persists only a per-user, per-Logged-Day
+aggregate: the qualified-view count with its first and last timestamps. It never stores advice
+text, health measurements, browser or session identifiers, user-agent data, IP addresses, or chat
+content in the engagement aggregate. It counted advice refreshes too until the refresh control was
+removed on 2026-09-11.
+_Avoid_: Read, impression (both claim more attention than the signal establishes)
+
+**Advice Basis**:
+The measured workings behind a flagged Healthiness Label signal, shown to the user as evidence: the
+signal's own mean over the label's 7-day window, the boundary it crossed, and how many of those
+days were eligible. It is rendered from `computeHealthinessLabel`'s own output, never recomputed
+and never generated, so what the user reads is the arithmetic the label actually used.
+_Avoid_: Explanation, reasoning (both suggest generated prose rather than reported measurements)
+
+**Nutrition Chat**:
+A question-and-answer conversation about the advice currently on screen, answered from the Advice
+Basis and purpose-limited reads of the user's recent food and health history. It is **ephemeral**:
+closing the sheet, navigating, or reloading discards every turn; broader history may explain or
+contextualize the label but never becomes part of the label's calculation. When a nutrition-signal
+lookup reads Food Item contributors, the authenticated server may attach up to five Actionable
+Sources to that assistant turn. Each source names the Logged Day, Food Item, contribution, Macro
+Source and confidence and links to its Food Meal review screen. The server owns those links: meal
+identifiers never enter the model prompt or tool result, and sources are not replayed in later turns.
+_Avoid_: Assistant, coach (both imply a standing relationship this surface does not have)
+
+**Actionable Source**:
+A server-owned evidence row attached to one Nutrition Chat answer after the model asks to inspect a
+nutrition signal's Food Item contributors. It links the named contribution to the caller-owned Food
+Meal correction screen. It is request-scoped display metadata, not model prose, conversation
+history, or a persisted citation.
+_Avoid_: Citation (the row is application data, not a published reference), model source
+
+**Advice Health Context**:
+A sufficiently covered 28-day summary of completed-day steps, sleep and weight that may tailor a
+generated nutrition recommendation. It does not change the Healthiness Label or recalculate the
+Nutrition Target, whose Activity Level already accounts for applicable step history.
+_Avoid_: Advice Basis (that is the label's own arithmetic), health score
+
 ### Weight chart
+
+**Bucket Start**:
+The local calendar date (or, for a month bucket, the first of the local calendar month) a bucketed `GET /api/data/{type}?bucket=day|month` row covers, resolved in the user's stored `timezone` setting (absent/invalid → UTC — the same fallback Logged Day uses) and serialized as the `bucket_start` field, a `YYYY-MM-DDT00:00:00Z` string naming that calendar date at UTC midnight, not the instant local midnight occurred.
+_Avoid_: bucket date, bucket timestamp
 
 **Manual Record**:
 A metric-type record (`weight`, `height`, or `weight_goal` only — the write allowlist) created directly by the user through the Add-record form, via `POST /api/data/{type}`, rather than by ingestion (CSV import, MCP tool call, food-photo recognition). The distinction matters only at write time; a Manual Record reads back identically to an ingested one.
@@ -144,3 +196,13 @@ _Avoid_: BMI zone, weight range
 **Trend Projection**:
 A dashed line extrapolating the weight chart's existing EMA trend line forward, via least-squares regression over the last 30 calendar days of EMA values, to the calendar date it's projected to cross Goal Weight. Rendered only at Month/Year zoom; the plain-language ETA text it produces ("on track", "not on track", "already reached", "not enough data") renders at every zoom level and only appears at all when a Goal Weight is set.
 _Avoid_: Forecast, prediction line
+
+### Authentication
+
+**Access Assertion**:
+The signed JWT Cloudflare Access attaches as the `Cf-Access-Jwt-Assertion` header once its policy has approved a Google sign-in. Verified by `backend/pkg/cfaccess` against Cloudflare's own published JWKS (RS256, issuer/audience pinned, `exp`/`nbf` checked) — never trusted on the strength of the header's mere presence, since the backend is also reachable directly on the LAN, bypassing Cloudflare, where any header is attacker-set. See ADR-012.
+_Avoid_: Access token (ambiguous with HealthVault's own `kin_access` JWT), Cf-Access header
+
+**Access Identity Map**:
+The `HCW_CF_ACCESS_EMAIL_MAP` setting (`email:username`, comma-separated, shaped like `HCW_SEED_USERS`) that authorizes a verified Access Assertion's email to sign in as a specific HealthVault user. An email that verifies but is absent from the map is refused (403), rather than auto-provisioning an account — widening the Cloudflare Access policy, a different system, never silently creates a HealthVault user. See ADR-012.
+_Avoid_: Email map alone (ambiguous outside this context), user mapping

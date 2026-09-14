@@ -7,6 +7,7 @@ import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, hasCa
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
+import { loggedDayKey } from '@/lib/loggedDay';
 import { useLatest } from '@/lib/useLatest';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import VitalCard from '@/components/VitalCard';
@@ -15,6 +16,55 @@ import TapTarget from '@/components/ui/TapTarget';
 import { CameraIcon, PencilIcon, HistoryIcon, EyeIcon, EyeOffIcon } from '@/components/icons';
 
 const SECONDARY_TYPES = secondaryTypes(DATA_TYPES);
+
+// The primary-vitals request wave, extracted so the settings-load effect
+// below can invoke it once from a successful load instead of behind a
+// second effect keyed on `[ready, timezone]` — that second effect fired a
+// duplicate wave for any account with a saved timezone, since `timezone`
+// changed from undefined to its stored value on the very load that already
+// satisfied `ready`. `now` is captured once by the caller and threaded
+// through both the request's `to` bound and the seven-day cutoff so they
+// describe the same instant.
+async function fetchPrimaryVitals(
+  timezone: string | undefined,
+  now: Date
+): Promise<Record<string, VitalResult | null>> {
+  // Over-fetch by one extra day (8, not 7) and drop below. A UTC-midnight
+  // `from` clips the earliest local day for a viewer ahead of UTC — that
+  // day's local midnight falls before the UTC instant `from` names, so a
+  // plain 7-day-back cutoff would show an artificially low first point.
+  // Fetching one extra day and then dropping anything whose bucket_start
+  // sorts before the local date 6 days ago (via loggedDayKey, the same
+  // account-timezone-aware helper LoggingGapCard uses) keeps exactly the
+  // 7 local calendar days the sparkline is meant to cover.
+  const from = (() => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 8);
+    d.setUTCHours(0, 0, 0, 0);
+    return d.toISOString();
+  })();
+  const to = now.toISOString();
+  const cutoff = (() => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 6);
+    return loggedDayKey(d, timezone);
+  })();
+
+  // 'logging_gap' has no /api/data/{type} backing (design.md decision 8) —
+  // it fetches and computes its own state (task 5's LoggingGapCard), so it's
+  // excluded here rather than passed to api.data/extractVital, which are
+  // DataType-only.
+  const dataMetrics = PRIMARY_METRICS.filter((m): m is { type: DataType } => m.type !== 'logging_gap');
+  const results = await Promise.all(
+    dataMetrics.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
+  );
+  const next: Record<string, VitalResult | null> = {};
+  dataMetrics.forEach((m, i) => {
+    const rows = results[i].filter(r => String(r.bucket_start).slice(0, 10) >= cutoff);
+    next[m.type] = extractVital(m.type, rows);
+  });
+  return next;
+}
 
 export default function Dashboard() {
   const router = useRouter();
@@ -72,16 +122,37 @@ export default function Dashboard() {
   }, [router]);
 
   useEffect(() => {
-    if (!ready) return;
+    // No `ready` gate: this used to wait behind the page's own api.me() check,
+    // which meant it always started strictly after AuthenticatedShell's and
+    // LanguageProvider's independent api.me()/getSettings() calls had already
+    // resolved instead of overlapping — and coalescing with LanguageProvider's
+    // read needs the overlap to have anything to share. The existing session
+    // checks (the `ready` effect above, and each other authenticated
+    // component's own api.me()) still own authentication and redirection: a
+    // settings 401 here just fails this effect's own load and shows the
+    // retryable error state below, exactly as any other failure does.
+    let cancelled = false;
     setSettingsStatus('loading');
     api.getSettings()
       .then(s => {
+        if (cancelled) return;
         setOrder(reconcileMetricOrder(s.dashboard_order));
         setMoreDataHidden(s.more_data_hidden === true);
         setTimezone(s.timezone);
         setSettingsStatus('loaded');
+        // Kicked off from here, once, rather than from a second effect keyed
+        // on `[ready, timezone]` — see fetchPrimaryVitals's doc comment for
+        // why that shape issued the whole eight-request wave twice for any
+        // account with a saved timezone. `s.timezone` is passed directly
+        // rather than through the `timezone` state, since setTimezone above
+        // has not necessarily been applied to a render yet.
+        fetchPrimaryVitals(s.timezone, new Date()).then(next => {
+          if (cancelled) return;
+          setVitals(next);
+        });
       })
       .catch(() => {
+        if (cancelled) return;
         // Not 'loaded': editing/saving stays disabled rather than risking a
         // Done that overwrites real stored settings with a PUT built from the
         // (unknown) default order. The grid stays unrendered too — we cannot
@@ -90,39 +161,21 @@ export default function Dashboard() {
         setSettingsStatus('error');
         showToast(tRef.current('dashboard.orderLoadFailed'), 'error');
       });
+    // Guards both the settings result and the vitals wave it kicks off: a
+    // fast unmount (navigating away before either resolves) or a retry
+    // (settingsAttempt bumping while the previous attempt is still in
+    // flight) must not let a stale response overwrite state a newer run — or
+    // no run at all — now owns.
+    return () => {
+      cancelled = true;
+    };
     // tRef, not t: the language selector sits in this page's own Header, and
     // this effect overwrites `order` with the stored order. Depending on `t`
     // meant switching language while reordering cards threw away the
     // in-progress arrangement — and because `editing` stays true, a
     // subsequent Done would persist the reverted order as if the user had
     // chosen it. Found in code review. See lib/useLatest.
-  }, [ready, showToast, tRef, settingsAttempt]);
-
-  useEffect(() => {
-    if (!ready) return;
-    const from = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      d.setUTCHours(0, 0, 0, 0);
-      return d.toISOString();
-    })();
-    const to = new Date().toISOString();
-
-    // 'logging_gap' has no /api/data/{type} backing (design.md decision 8) —
-    // it fetches and computes its own state (task 5's LoggingGapCard), so it's
-    // excluded here rather than passed to api.data/extractVital, which are
-    // DataType-only.
-    const dataMetrics = PRIMARY_METRICS.filter((m): m is { type: DataType } => m.type !== 'logging_gap');
-    Promise.all(
-      dataMetrics.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
-    ).then(results => {
-      const next: Record<string, VitalResult | null> = {};
-      dataMetrics.forEach((m, i) => {
-        next[m.type] = extractVital(m.type, results[i]);
-      });
-      setVitals(next);
-    });
-  }, [ready]);
+  }, [showToast, tRef, settingsAttempt]);
 
   useEffect(() => {
     if (!ready) return;
@@ -319,31 +372,38 @@ export default function Dashboard() {
           </a>
         )}
 
-        <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
-          {t('dashboard.logFood')}
-        </p>
-        <div className="flex gap-2.5 mb-8">
-          <a
-            href="/food/upload/"
-            className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
-          >
-            <CameraIcon className="w-4 h-4 text-accent" />
-            {t('dashboard.photo')}
-          </a>
-          <a
-            href="/food/manual/"
-            className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
-          >
-            <PencilIcon className="w-4 h-4 text-accent" />
-            {t('dashboard.manual')}
-          </a>
-          <a
-            href="/food/history/"
-            className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
-          >
-            <HistoryIcon className="w-4 h-4 text-accent" />
-            {t('dashboard.history')}
-          </a>
+        {/* Mirror of BottomNav's `sm:hidden`: the bar carries these same
+            three destinations (photo, manual, history) below the `sm`
+            breakpoint and is hidden at and above it, while the desktop
+            header sheds no food route (frontend/components/nav.ts:38). So
+            exactly one of the two surfaces offers them at any width. */}
+        <div className="hidden sm:block" data-testid="log-food-links">
+          <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent mb-3">
+            {t('dashboard.logFood')}
+          </p>
+          <div className="flex gap-2.5 mb-8">
+            <a
+              href="/food/upload/"
+              className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
+            >
+              <CameraIcon className="w-4 h-4 text-accent" />
+              {t('dashboard.photo')}
+            </a>
+            <a
+              href="/food/manual/"
+              className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
+            >
+              <PencilIcon className="w-4 h-4 text-accent" />
+              {t('dashboard.manual')}
+            </a>
+            <a
+              href="/food/history/"
+              className="flex-1 bg-bg-elevated border border-border rounded-[10px] p-4 flex items-center justify-center gap-2 hover:border-accent transition-colors text-sm font-semibold text-text"
+            >
+              <HistoryIcon className="w-4 h-4 text-accent" />
+              {t('dashboard.history')}
+            </a>
+          </div>
         </div>
 
         {/* Read-only: hidden when the user chose to hide it. Edit mode: always

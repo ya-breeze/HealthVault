@@ -3,6 +3,7 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -164,6 +165,7 @@ func TestNutritionTarget_SuccessWithActivityOverride(t *testing.T) {
 		ProteinGrams       int     `json:"protein_grams"`
 		CarbsGrams         int     `json:"carbs_grams"`
 		FatGrams           int     `json:"fat_grams"`
+		BMR                int     `json:"bmr"`
 		MeasuredWeightKg   float64 `json:"measured_weight_kg"`
 		GoalWeightKg       float64 `json:"goal_weight_kg"`
 		HeightM            float64 `json:"height_m"`
@@ -201,6 +203,14 @@ func TestNutritionTarget_SuccessWithActivityOverride(t *testing.T) {
 	}
 	if resp.CarbsGrams <= 0 || resp.FatGrams <= 0 {
 		t.Errorf("expected positive carbs/fat, got carbs=%d fat=%d", resp.CarbsGrams, resp.FatGrams)
+	}
+	// Mifflin-St Jeor for this profile: 10*80 + 6.25*180 - 5*age + 5.
+	wantBMR := 10*80 + 6.25*180 - 5*float64(wantAge) + 5
+	if resp.BMR != int(math.Round(wantBMR)) {
+		t.Errorf("bmr = %v, want %v (Mifflin-St Jeor)", resp.BMR, wantBMR)
+	}
+	if wantCalories := int(math.Round(wantBMR * 1.55)); resp.Calories != wantCalories {
+		t.Errorf("calories = %v, want %v (bmr * activity_multiplier)", resp.Calories, wantCalories)
 	}
 }
 
@@ -342,6 +352,60 @@ func TestNutritionTarget_SuccessWithInferredActivityFromSteps(t *testing.T) {
 	}
 	if resp.ActivityTier != "Sedentary" || resp.ActivityMultiplier != 1.2 {
 		t.Errorf("activity tier/multiplier = %q/%v, want %q/%v", resp.ActivityTier, resp.ActivityMultiplier, "Sedentary", 1.2)
+	}
+}
+
+// Two overlapping step records per trailing day (as two sync sources writing
+// the same walk would produce) must not push the inferred Activity Level
+// tier up: fetchDailySteps collapses the overlap before
+// trailingStepsAverage ever sees the numbers. Each day's real, uncollapsed
+// total is 6000 (-> "Lightly active", 5000-7499/day); if the duplicate
+// record were summed instead of collapsed, the same days would read as
+// 12000/day and cross into "Very active" (10000-12499/day).
+func TestNutritionTarget_DuplicatedStepsDoNotInflateActivityTier(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	setProfile(t, st, userID, `{"birthdate":"1990-01-01","sex":"male"}`)
+	createRecord(t, st, userID, "weight", 80)
+	createRecord(t, st, userID, "height", 1.80)
+	createRecord(t, st, userID, "weight_goal", 75)
+
+	now := time.Now().UTC()
+	for i := 1; i <= 7; i++ {
+		ts := now.AddDate(0, 0, -i)
+		// Two overlapping intervals for the same walk: idx_steps_user_time is
+		// unique on (user_id, start_time), so they can't share a start_time —
+		// offset the second by a minute and nest it fully inside the first, so
+		// the collapse drops it whole rather than trimming it.
+		for _, rec := range []database.Steps{
+			{UserID: userID, SourcePayloadID: uuid.New(), StartTime: ts, EndTime: ts.Add(2 * time.Hour), Count: 6000},
+			{UserID: userID, SourcePayloadID: uuid.New(), StartTime: ts.Add(time.Minute), EndTime: ts.Add(time.Hour), Count: 6000},
+		} {
+			rec.ID = uuid.New()
+			rec.FamilyID = familyID
+			if err := st.DB().Create(&rec).Error; err != nil {
+				t.Fatalf("create steps day -%d: %v", i, err)
+			}
+		}
+	}
+
+	h := server.NutritionTargetHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newNutritionTargetRequest(userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		ActivityTier       string  `json:"activity_tier"`
+		ActivityMultiplier float64 `json:"activity_multiplier"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.ActivityTier != "Lightly active" || resp.ActivityMultiplier != 1.375 {
+		t.Errorf("activity tier/multiplier = %q/%v, want %q/%v (duplicate steps must not inflate the tier)",
+			resp.ActivityTier, resp.ActivityMultiplier, "Lightly active", 1.375)
 	}
 }
 

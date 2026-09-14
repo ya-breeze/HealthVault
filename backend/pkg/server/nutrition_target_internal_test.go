@@ -12,7 +12,7 @@ func almostEqual(a, b float64) bool {
 // The standard case: the fat-floor never engages, so carbs/fat come straight
 // from the 50/50 kcal split of the remaining calories after protein.
 func TestComputeNutritionTarget_StandardCase(t *testing.T) {
-	calories, protein, carbs, fat := computeNutritionTarget(
+	calories, protein, carbs, fat, bmr := computeNutritionTarget(
 		80,     // weightKg
 		1.80,   // heightM
 		30,     // ageYears
@@ -22,6 +22,9 @@ func TestComputeNutritionTarget_StandardCase(t *testing.T) {
 	)
 
 	// BMR = 10*80 + 6.25*180 - 5*30 + 5 = 1780; calories = 1780*1.55 = 2759
+	if !almostEqual(bmr, 1780) {
+		t.Errorf("bmr = %v, want 1780", bmr)
+	}
 	if !almostEqual(calories, 2759) {
 		t.Errorf("calories = %v, want 2759", calories)
 	}
@@ -42,7 +45,7 @@ func TestComputeNutritionTarget_StandardCase(t *testing.T) {
 // 0.8g/kg-goal, so fat is pinned to the floor and carbs absorb the
 // difference — but carbs stay positive here.
 func TestComputeNutritionTarget_FatFloorEngaged(t *testing.T) {
-	calories, protein, carbs, fat := computeNutritionTarget(
+	calories, protein, carbs, fat, bmr := computeNutritionTarget(
 		55,       // weightKg
 		1.50,     // heightM
 		45,       // ageYears
@@ -52,6 +55,9 @@ func TestComputeNutritionTarget_FatFloorEngaged(t *testing.T) {
 	)
 
 	// BMR = 10*55 + 6.25*150 - 5*45 - 161 = 1101.5; calories = 1101.5*1.2 = 1321.8
+	if !almostEqual(bmr, 1101.5) {
+		t.Errorf("bmr = %v, want 1101.5", bmr)
+	}
 	if !almostEqual(calories, 1321.8) {
 		t.Errorf("calories = %v, want 1321.8", calories)
 	}
@@ -73,7 +79,7 @@ func TestComputeNutritionTarget_FatFloorEngaged(t *testing.T) {
 // When protein alone meets or exceeds calories, the floor-recomputed carbs
 // go negative and must clamp to 0, not report a negative gram value.
 func TestComputeNutritionTarget_ProteinExceedsCaloriesClampsCarbsToZero(t *testing.T) {
-	calories, protein, carbs, fat := computeNutritionTarget(
+	calories, protein, carbs, fat, bmr := computeNutritionTarget(
 		40,       // weightKg
 		1.40,     // heightM
 		80,       // ageYears
@@ -83,6 +89,9 @@ func TestComputeNutritionTarget_ProteinExceedsCaloriesClampsCarbsToZero(t *testi
 	)
 
 	// BMR = 10*40 + 6.25*140 - 5*80 - 161 = 714; calories = 714*1.2 = 856.8
+	if !almostEqual(bmr, 714) {
+		t.Errorf("bmr = %v, want 714", bmr)
+	}
 	if !almostEqual(calories, 856.8) {
 		t.Errorf("calories = %v, want 856.8", calories)
 	}

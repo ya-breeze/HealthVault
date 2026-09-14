@@ -1,13 +1,11 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext, type Locator, type Route } from '@playwright/test';
+// These tests PUT settings that change `timezone`, needed so the fixture dates
+// below line up exactly with what resolveLoggingGapWindow computes — one of the
+// reasons `target.ts` refuses to resolve a prod URL at all.
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-// Like completeness.spec.ts, these tests PUT settings that change `timezone`
-// (needed so the fixture dates below line up exactly with what
-// resolveLoggingGapWindow computes) — default to the WIP stack rather than
-// risking a no-env run landing on prod; override with BASE_URL to target
-// something else deliberately.
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8892';
 
 async function login(page: Page) {
   await page.goto('/login/');
@@ -20,6 +18,27 @@ async function login(page: Page) {
 async function cookieHeader(page: Page): Promise<string> {
   const cookies = await page.context().cookies();
   return cookies.map(c => `${c.name}=${c.value}`).join('; ');
+}
+
+async function scrollElementOutsideViewport(page: Page, element: Locator) {
+  await element.evaluate(node => {
+    const absoluteTop = window.scrollY + node.getBoundingClientRect().top;
+    const pageMiddle = document.documentElement.scrollHeight / 2;
+    window.scrollTo(0, absoluteTop < pageMiddle ? document.documentElement.scrollHeight : 0);
+  });
+  await expect(element).not.toBeInViewport();
+}
+
+async function scrollElementFullyIntoViewport(element: Locator) {
+  await element.evaluate(node => node.scrollIntoView({ block: 'center' }));
+  await expect(element).toBeInViewport({ ratio: 1 });
+}
+
+async function setDocumentVisibility(page: Page, state: DocumentVisibilityState) {
+  await page.evaluate(nextState => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: nextState });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, state);
 }
 
 async function getSettings(request: APIRequestContext, cookies: string): Promise<Record<string, unknown>> {
@@ -84,6 +103,21 @@ interface LoggingGapFixture {
   weightStatus?: number;
   summaryStatus?: number;
   nutritionTargetCalories?: number;
+  // Defaults low enough (see mockLoggingGapApis) that every fixture predating
+  // the sustainability warning — none of which think about BMR at all — keeps
+  // its existing assertions unchanged: their logged-intake numbers all clear
+  // a BMR this low with room to spare.
+  nutritionTargetBmr?: number;
+  // The derivation fields the top row's ⓘ disclosure reads (docs/specs/idea.md
+  // task 6), given fixed defaults here so most fixtures — which only care
+  // about the gap line — don't have to spell them out.
+  nutritionTargetMeasuredWeightKg?: number;
+  nutritionTargetGoalWeightKg?: number;
+  nutritionTargetHeightM?: number;
+  nutritionTargetAgeYears?: number;
+  nutritionTargetSex?: 'male' | 'female';
+  nutritionTargetActivityMultiplier?: number;
+  nutritionTargetActivityTier?: string;
   nutritionTargetUnmetReason?: string;
   // Today's consumed totals, for the card's top row. Defaults to an untouched
   // day (all zeros), which is what most of these fixtures want — they exist to
@@ -91,7 +125,23 @@ interface LoggingGapFixture {
   // numbers they don't care about.
   today?: { calories: number; protein: number; carbs: number; fat: number };
   completeness?: { date: string; state: string }[];
-  dailyTotals?: { date: string; calories: number; unconfirmed_meals: number }[];
+  // The six Healthiness Label fields are optional. Macros/sugar/sodium default
+  // to zero; fiber defaults to its 25 g adequate boundary so fixtures that
+  // predate this signal do not acquire an unrelated low-fiber verdict.
+  // (filled in by mockLoggingGapApis below) — every fixture that predates
+  // the label leaves them unset, which pools to zero macro energy and so,
+  // correctly, produces no label at all.
+  dailyTotals?: {
+    date: string;
+    calories: number;
+    unconfirmed_meals: number;
+    protein_grams?: number;
+    carbs_grams?: number;
+    fat_grams?: number;
+    sugar_grams?: number;
+    sodium_grams?: number;
+    dietary_fiber_grams?: number;
+  }[];
 }
 
 // Mocks the four requests LoggingGapCard fetches (task 5.1) so its content
@@ -102,7 +152,11 @@ interface LoggingGapFixture {
 //
 // `opts.liveDailyTotals` leaves /api/food/daily-totals unrouted so it reaches
 // the real backend — see the contract test below for why one test must.
-async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?: { liveDailyTotals?: boolean }) {
+async function mockLoggingGapApis(
+  page: Page,
+  fixture: LoggingGapFixture,
+  opts?: { liveDailyTotals?: boolean; adviceHandler?: (route: Route) => Promise<void> | void },
+) {
   await page.route('**/api/data/weight**', route => {
     if (fixture.weightStatus) {
       return route.fulfill({ status: fixture.weightStatus, json: { error: 'boom' } });
@@ -125,6 +179,14 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?:
           protein_grams: 150,
           carbs_grams: 250,
           fat_grams: 70,
+          bmr: fixture.nutritionTargetBmr ?? 1000,
+          measured_weight_kg: fixture.nutritionTargetMeasuredWeightKg ?? 80,
+          goal_weight_kg: fixture.nutritionTargetGoalWeightKg ?? 75,
+          height_m: fixture.nutritionTargetHeightM ?? 1.8,
+          age_years: fixture.nutritionTargetAgeYears ?? 35,
+          sex: fixture.nutritionTargetSex ?? 'male',
+          activity_multiplier: fixture.nutritionTargetActivityMultiplier ?? 1.55,
+          activity_tier: fixture.nutritionTargetActivityTier ?? 'Moderately active',
         };
     return route.fulfill({
       json: {
@@ -137,13 +199,30 @@ async function mockLoggingGapApis(page: Page, fixture: LoggingGapFixture, opts?:
         last_logged_at: null,
         display_language: 'en',
         target,
-        recommendation: null,
       },
     });
   });
+  await page.route('**/api/food/advice', route => {
+    if (opts?.adviceHandler) return opts.adviceHandler(route);
+    return route.fulfill({ json: { available: false, reason: 'unconfigured' } });
+  });
   await page.route('**/api/food/completeness**', route => route.fulfill({ json: fixture.completeness ?? [] }));
   if (!opts?.liveDailyTotals) {
-    await page.route('**/api/food/daily-totals**', route => route.fulfill({ json: fixture.dailyTotals ?? [] }));
+    await page.route('**/api/food/daily-totals**', route =>
+      route.fulfill({
+        json: (fixture.dailyTotals ?? []).map(d => ({
+          date: d.date,
+          calories: d.calories,
+          protein_grams: d.protein_grams ?? 0,
+          carbs_grams: d.carbs_grams ?? 0,
+          fat_grams: d.fat_grams ?? 0,
+          sugar_grams: d.sugar_grams ?? 0,
+          sodium_grams: d.sodium_grams ?? 0,
+          dietary_fiber_grams: d.dietary_fiber_grams ?? 25,
+          unconfirmed_meals: d.unconfirmed_meals,
+        })),
+      })
+    );
   }
 }
 
@@ -202,6 +281,192 @@ function onTrackFixture(): LoggingGapFixture {
     today: { calories: 1200, protein: 80, carbs: 130, fat: 35 },
     completeness: windowDates.map(date => ({ date, state: 'complete' })),
     dailyTotals: windowDates.map(date => ({ date, calories: 1700, unconfirmed_meals: 0 })),
+  };
+}
+
+// This app's own Nutrition Target split (~22% protein / 39% carbs / 39% fat,
+// see healthiness.test.ts), applied to a 2000 kcal day. Low sugar and sodium
+// keep every one of the six signals on the `ok` side.
+const HEALTHY_MACROS = {
+  protein_grams: 110,
+  carbs_grams: 195,
+  fat_grams: 86.667,
+  sugar_grams: 20,
+  sodium_grams: 1.5,
+  dietary_fiber_grams: 25,
+};
+
+// A weight series the sustainability check leaves alone: -0.1 kg/day from
+// 100 kg is ~0.7%/week at the window's end, inside
+// MAX_SUSTAINABLE_LOSS_PCT_PER_WEEK (1.0) — the same rate belowBmrFixture
+// uses for the same reason. clearGapFixture's own -0.2 kg/day is ~15%/week
+// over the 58-day series, so it fires `loss_too_fast` every time.
+//
+// That matters here and it is the trap this comment used to fall into. The
+// label's *computation* reads no weight, which is true and is what the
+// earlier version of this comment said — but its *rendering* is gated on the
+// sustainability check producing no warning, which is the precedence rule the
+// spec settles ("the sustainability warning outranks the label"). Inheriting
+// clearGapFixture's slope therefore suppressed the very row these fixtures
+// exist to show, and the two tests below demanded something the spec forbids.
+function healthinessBase(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.1),
+    nutritionTargetCalories: 2500,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 500, unconfirmed_meals: 0 })),
+  };
+}
+
+// Only the last 7 days of the 28-day window feed the Healthiness Label
+// (spec's "Window"), so these fixtures layer macros onto just the most recent
+// 7 of healthinessBase's daily-totals entries. 500 kcal/day logged against a
+// 2500 target keeps the gap line itself reading `gap`, so the label is
+// rendered in the state it is specified for rather than beside an `on_track`
+// line — and no BMR is mocked, so the below-BMR check has nothing to fire on.
+function healthinessGoodFixture(): LoggingGapFixture {
+  const base = healthinessBase();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d => (last7.has(d.date) ? { ...d, ...HEALTHY_MACROS } : d)),
+  };
+}
+
+// Sodium alone pushed past the far threshold (>3.5 g/day, healthiness.ts's
+// HEALTHINESS_THRESHOLDS.sodiumGramsPerDay.farLow) — any single `far` signal
+// is enough for `needs_attention` regardless of the other five.
+function healthinessNeedsAttentionFixture(): LoggingGapFixture {
+  const base = healthinessBase();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d =>
+      last7.has(d.date) ? { ...d, ...HEALTHY_MACROS, sodium_grams: 4.0 } : d
+    ),
+  };
+}
+
+// Fiber has one adult adequate-intake line rather than a manufactured severe
+// band. A 10 g/day mean is therefore Fair and names low fiber, never Needs
+// attention on its own.
+function healthinessLowFiberFixture(): LoggingGapFixture {
+  const base = healthinessBase();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d =>
+      last7.has(d.date) ? { ...d, ...HEALTHY_MACROS, dietary_fiber_grams: 10 } : d
+    ),
+  };
+}
+
+// Protein pushed far below its band: 4*30 + 4*275 + 9*86.667 = 2000 kcal of
+// macro energy, so protein's share is 6% — under
+// HEALTHINESS_THRESHOLDS.proteinShare.farLow (10%). It exists to prove the
+// basis row says "below" for a signal that fell under its band; a two-sided
+// signal flagged for being too low is the case a verdict-only wording gets
+// backwards.
+function healthinessProteinFarLowFixture(): LoggingGapFixture {
+  const base = healthinessBase();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = new Set(dateRange(windowStart, windowEnd).slice(-7));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d =>
+      last7.has(d.date) ? { ...d, ...HEALTHY_MACROS, protein_grams: 30, carbs_grams: 275 } : d
+    ),
+  };
+}
+
+// Only 2 of the label's own last-7-day window are eligible (5 carry an
+// unconfirmed meal, which fails isValidDay) — below the 3-of-7 floor
+// (ADR-007) the label shares with the Logging Gap's own hard floor. The
+// other 21 days of the 28-day window are untouched, so the gap line itself
+// still resolves normally; only the middle row should be absent.
+//
+// Built on healthinessBase for the same reason as the two above, and here it
+// is what gives the test its meaning at all: on clearGapFixture's slope the
+// row was absent because a sustainability warning outranked it, so the test
+// passed without ever exercising the eligibility floor it is named for.
+function healthinessTooFewEligibleDaysFixture(): LoggingGapFixture {
+  const base = healthinessBase();
+  const { windowStart, windowEnd } = loggingGapWindow();
+  const last7 = dateRange(windowStart, windowEnd).slice(-7);
+  const eligible = new Set(last7.slice(0, 2));
+  const ineligible = new Set(last7.slice(2));
+  return {
+    ...base,
+    dailyTotals: base.dailyTotals!.map(d => {
+      if (eligible.has(d.date)) return { ...d, ...HEALTHY_MACROS };
+      if (ineligible.has(d.date)) return { ...d, unconfirmed_meals: 1 };
+      return d;
+    }),
+  };
+}
+
+// A weight series losing about 1.4%/week (sustainability.ts's
+// MAX_SUSTAINABLE_LOSS_PCT_PER_WEEK is 1.0), well clear of the band even on
+// the conservative slope+se bound: the series is built linear end-to-end, so
+// the EMA has converged and the regression's own residuals — and therefore
+// its standard error — are close to zero. `startKg` is chosen so weight is
+// close to 100kg right at the window's end, keeping the percentage close to
+// the 1.4% the -0.2 kg/day rate implies there. The logged-calorie history
+// (500 kcal/day against a 2500 target) is the same as clearGapFixture's, so
+// the logging gap itself reports `gap`, not `on_track` — this fixture is
+// about the rate check firing alone, not about the two warnings interacting.
+function tooFastLossFixture(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  const dailyDeltaKg = -0.2;
+  const totalDays = dateRange(leadInStart, windowEnd).length - 1;
+  const startKg = 100 - dailyDeltaKg * totalDays;
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, startKg, dailyDeltaKg),
+    nutritionTargetCalories: 2500,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 500, unconfirmed_meals: 0 })),
+  };
+}
+
+// on_track numbers (same weight trend and logged intake as onTrackFixture,
+// so the gap line reads on_track just as it does there) whose mean logged
+// intake, 1700 kcal, sits clearly under a mocked BMR of 2000 — a shortfall
+// past the 5% margin (threshold 1900). The loss rate stays inside the band
+// (0.7%/week), so only the below-BMR line should appear.
+function belowBmrFixture(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.1),
+    nutritionTargetCalories: 2500,
+    nutritionTargetBmr: 2000,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 1700, unconfirmed_meals: 0 })),
+  };
+}
+
+// The gating regression (design.md's "The interaction that makes this worth
+// a spec rather than an afternoon"): the same BMR (2000) and a mean logged
+// intake (1200) that would clear the below-BMR margin on its own — but the
+// weight trend implies 1730, a difference of 530 outside the interval, so the
+// logging gap itself reports `gap`, not `on_track`. The intake check must
+// stay silent because it cannot vouch for self-reported food the weight
+// trend disagrees with this much.
+function belowBmrGatedOffFixture(): LoggingGapFixture {
+  const { windowStart, windowEnd, leadInStart } = loggingGapWindow();
+  const windowDates = dateRange(windowStart, windowEnd);
+  return {
+    weight: buildWeightSeries(leadInStart, windowEnd, 100, -0.1),
+    nutritionTargetCalories: 2500,
+    nutritionTargetBmr: 2000,
+    completeness: windowDates.map(date => ({ date, state: 'complete' })),
+    dailyTotals: windowDates.map(date => ({ date, calories: 1200, unconfirmed_meals: 0 })),
   };
 }
 
@@ -307,6 +572,58 @@ test.describe('Logging Gap Card', () => {
     }
   });
 
+  test("the top row's ⓘ explains the target and opens independently of the gap line's own hint", async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, onTrackFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const todayHint = card.getByTestId('nutrition-today-hint');
+      const todayToggle = card.getByTestId('nutrition-today-hint-toggle');
+      await expect(todayToggle).toBeVisible({ timeout: 15_000 });
+
+      // Hidden by default, matching the gap line's own hint.
+      await expect(todayHint).toBeHidden();
+      await expect(todayToggle).toHaveAttribute('aria-expanded', 'false');
+
+      await todayToggle.click();
+      await expect(todayHint).toBeVisible();
+      await expect(todayToggle).toHaveAttribute('aria-expanded', 'true');
+      // The confirmed-meals rule, explaining the *first* number in the row.
+      await expect(todayHint).toContainText('confirmed meals only');
+      // The fixture's BMR (1000, mockLoggingGapApis' default), activity
+      // multiplier (1.55) and tier label (Moderately active -> "moderately
+      // active"), and goal weight (75 -> "75.0").
+      await expect(todayHint).toContainText('1000 kcal');
+      await expect(todayHint).toContainText('1.55');
+      await expect(todayHint).toContainText('moderately active');
+      await expect(todayHint).toContainText('75.0 kg');
+
+      // Opening the top row's hint must not open the gap line's own hint.
+      const gapHint = card.getByTestId('logging-gap-hint');
+      await expect(gapHint).toBeHidden();
+
+      // Close the top row's hint, then check the reverse: opening the gap
+      // line's own hint must not open the top row's — the two panels are
+      // independent state, not one shared toggle.
+      await todayToggle.click();
+      await expect(todayHint).toBeHidden();
+      await card.getByTestId('logging-gap-hint-toggle').click();
+      await expect(gapHint).toBeVisible();
+      await expect(todayHint).toBeHidden();
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
   // The one test in this file that does NOT mock /api/food/daily-totals.
   // Every other test here fulfills all four of the card's requests from
   // fixtures, which makes the card's *logic* deterministic but leaves the seam
@@ -352,11 +669,20 @@ test.describe('Logging Gap Card', () => {
       expect(body).toHaveLength(dateRange(windowStart, windowEnd).length);
       expect(body[0].date).toBe(windowStart);
       expect(body[body.length - 1].date).toBe(windowEnd);
-      // Field names exactly as LoggingGapCard destructures them — `calories`
-      // and the snake_case `unconfirmed_meals`, both numbers.
+      // Field names exactly as LoggingGapCard destructures them — `calories`,
+      // the five Healthiness Label fields the middle row now reads, and the
+      // snake_case `unconfirmed_meals`, all numbers. The five carry no
+      // `omitempty` server-side (food_daily_totals.go), so they must be
+      // present — not merely `undefined` — even on a day with no meals.
       for (const entry of body) {
         expect(typeof entry.date).toBe('string');
         expect(typeof entry.calories).toBe('number');
+        expect(typeof entry.protein_grams).toBe('number');
+        expect(typeof entry.carbs_grams).toBe('number');
+        expect(typeof entry.fat_grams).toBe('number');
+        expect(typeof entry.sugar_grams).toBe('number');
+        expect(typeof entry.sodium_grams).toBe('number');
+        expect(typeof entry.dietary_fiber_grams).toBe('number');
         expect(typeof entry.unconfirmed_meals).toBe('number');
       }
 
@@ -515,6 +841,662 @@ test.describe('Logging Gap Card', () => {
       await putSettings(request, cookies, original);
     }
   });
+
+  test('a weight trend losing faster than the sustainable 1%/week shows the loss-rate warning', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, tooFastLossFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const lossRate = card.getByTestId('nutrition-sustainability-loss-rate');
+      await expect(lossRate).toBeVisible({ timeout: 15_000 });
+      await expect(lossRate).toContainText(/\d+\.\d%/);
+      await expect(lossRate).toContainText('faster than the sustainable 1%');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('logged intake clearly below a mocked BMR under on_track shows the below-BMR warning, not the loss-rate one', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, belowBmrFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-on-track')).toBeVisible({ timeout: 15_000 });
+      const belowBmr = card.getByTestId('nutrition-sustainability-below-bmr');
+      await expect(belowBmr).toBeVisible();
+      await expect(belowBmr).toContainText('1700');
+      await expect(belowBmr).toContainText('2000');
+      await expect(card.getByTestId('nutrition-sustainability-loss-rate')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('the same intake and BMR numbers stay silent once the logging gap is a real gap, not on_track', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, belowBmrGatedOffFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-value')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-sustainability-below-bmr')).toHaveCount(0);
+      await expect(card.getByTestId('nutrition-sustainability')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('the middle row is absent for on_track, not_enough_data and the gap-only retrieval error', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, onTrackFixture());
+      await page.goto('/');
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('logging-gap-on-track')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-sustainability')).toHaveCount(0);
+
+      await mockLoggingGapApis(page, noDataFixture());
+      await page.goto('/');
+      await expect(card.getByTestId('logging-gap-not-enough-data')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-sustainability')).toHaveCount(0);
+
+      await mockLoggingGapApis(page, { ...clearGapFixture(), weightStatus: 500 });
+      await page.goto('/');
+      await expect(card.getByTestId('logging-gap-error')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-sustainability')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+});
+
+test.describe('Healthiness Label (nutrition card middle row)', () => {
+  test('a well-balanced 7-day window renders as Good, with the label sentence behind the hint', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, healthinessGoodFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const label = card.getByTestId('nutrition-healthiness-label');
+      await expect(label).toBeVisible({ timeout: 15_000 });
+      await expect(label).toContainText('Last 7 days: Good');
+
+      const hint = card.getByTestId('logging-gap-hint');
+      await expect(hint).toBeHidden();
+      await card.getByTestId('logging-gap-hint-toggle').click();
+      await expect(hint).toBeVisible();
+      await expect(hint).toContainText('The label covers macro balance, total sugars, sodium and fiber');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a window with a far-off signal renders as Needs attention, naming the reason', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const label = card.getByTestId('nutrition-healthiness-label');
+      await expect(label).toBeVisible({ timeout: 15_000 });
+      await expect(label).toContainText('Last 7 days: Needs attention');
+      await expect(label).toContainText('sodium is high');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('low fiber alone renders as Fair and names the measured reason', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, healthinessLowFiberFixture());
+      await page.goto('/');
+
+      const label = page.getByTestId('logging-gap-card').getByTestId('nutrition-healthiness-label');
+      await expect(label).toBeVisible({ timeout: 15_000 });
+      await expect(label).toContainText('Last 7 days: Fair');
+      await expect(label).toContainText('fiber is low');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('fewer than three eligible days in the label\'s own window renders no middle row at all', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC' });
+
+    try {
+      await mockLoggingGapApis(page, healthinessTooFewEligibleDaysFixture());
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      // The gap line itself is unaffected — only 5 of the 28 days lost
+      // eligibility, far above its own 3-day floor — which is what proves
+      // this fixture's absent label is the label's own floor, not a side
+      // effect of the gap line failing to render at all.
+      await expect(card.getByTestId('logging-gap-value')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-healthiness')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+});
+
+const matchingAdviceContext = {
+  target_calories: 2500,
+  target_protein_grams: 150,
+  target_carbs_grams: 250,
+  target_fat_grams: 70,
+  display_language: 'en',
+};
+
+test.describe('Nutrition advice (nutrition card middle row)', () => {
+  test('renders two advice lines under the label with matching server context', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route =>
+          route.fulfill({
+            json: {
+              available: true,
+              lines: ['Keep your protein pattern steady.', 'Choose whole-food carbs most often.'],
+              logged_day: '2026-09-05',
+              generated_at: '2026-09-05T06:12:00Z',
+              context: matchingAdviceContext,
+            },
+          }),
+      });
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      const label = card.getByTestId('nutrition-healthiness-label');
+      const advice = card.getByTestId('nutrition-advice');
+      await expect(advice).toBeVisible({ timeout: 15_000 });
+      await expect(advice.getByTestId('nutrition-advice-line')).toHaveCount(2);
+      // The refresh control was removed: it must not come back beside advice
+      // that is rendering normally, which is the only place it ever appeared.
+      await expect(advice.getByTestId('nutrition-advice-refresh')).toHaveCount(0);
+      const labelBox = await label.boundingBox();
+      const adviceBox = await advice.boundingBox();
+      expect(labelBox).not.toBeNull();
+      expect(adviceBox).not.toBeNull();
+      expect(adviceBox!.y).toBeGreaterThan(labelBox!.y);
+
+      await card.getByTestId('logging-gap-hint-toggle').click();
+      await expect(card.getByTestId('logging-gap-hint')).toContainText('written by an AI model');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('suppresses advice attributed to a different target or display language', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    let calls = 0;
+    try {
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route => {
+          calls++;
+          return route.fulfill({
+            json: {
+              available: true,
+              lines: [calls === 1 ? 'Wrong target.' : 'Wrong language.'],
+              logged_day: '2026-09-05',
+              generated_at: '2026-09-05T06:12:00Z',
+              context:
+                calls === 1
+                  ? { ...matchingAdviceContext, target_calories: 2600 }
+                  : { ...matchingAdviceContext, display_language: 'ru' },
+            },
+          });
+        },
+      });
+
+      await page.goto('/');
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('nutrition-healthiness-label')).toBeVisible({ timeout: 15_000 });
+      await expect.poll(() => calls).toBe(1);
+      await page.waitForTimeout(250);
+      await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
+
+      await page.goto('/');
+      await expect(card.getByTestId('nutrition-healthiness-label')).toBeVisible({ timeout: 15_000 });
+      await expect.poll(() => calls).toBe(2);
+      await page.waitForTimeout(250);
+      await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('unconfigured and unavailable background responses advertise nothing', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    let calls = 0;
+    try {
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route => {
+          calls++;
+          return route.fulfill({
+            json: {
+              available: false,
+              reason: calls === 1 ? 'unconfigured' : 'unavailable',
+            },
+          });
+        },
+      });
+      for (const expectedCalls of [1, 2]) {
+        await page.goto('/');
+        const card = page.getByTestId('logging-gap-card');
+        await expect(card.getByTestId('nutrition-healthiness-label')).toBeVisible({ timeout: 15_000 });
+        await expect.poll(() => calls).toBe(expectedCalls);
+        await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
+      }
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a sustainability warning suppresses both the label advice and the advice request', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    let adviceCalls = 0;
+    let engagementCalls = 0;
+    const fixture = tooFastLossFixture();
+    const last7 = new Set(dateRange(loggingGapWindow().windowStart, loggingGapWindow().windowEnd).slice(-7));
+    fixture.dailyTotals = fixture.dailyTotals!.map(d => (last7.has(d.date) ? { ...d, ...HEALTHY_MACROS } : d));
+    try {
+      await mockLoggingGapApis(page, fixture, {
+        adviceHandler: route => {
+          adviceCalls++;
+          return route.fulfill({ json: { available: false, reason: 'unconfigured' } });
+        },
+      });
+      await page.route('**/api/food/advice/engagement', route => {
+        engagementCalls++;
+        return route.fulfill({ status: 204, body: '' });
+      });
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('nutrition-sustainability')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-advice')).toHaveCount(0);
+      await page.waitForTimeout(2200);
+      expect(adviceCalls).toBe(0);
+      expect(engagementCalls).toBe(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('counts only after two continuous seconds fully in view and resets an interrupted interval', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    const engagementBodies: Record<string, unknown>[] = [];
+    try {
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route =>
+          route.fulfill({
+            json: {
+              available: true,
+              lines: ['Visibility-tested advice.'],
+              logged_day: '2026-09-06',
+              generated_at: '2026-09-06T06:12:00Z',
+              context: matchingAdviceContext,
+            },
+          }),
+      });
+      await page.route('**/api/food/advice/engagement', route => {
+        engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+        return route.fulfill({ status: 204, body: '' });
+      });
+      // The shared account may currently have no other data-backed cards, in
+      // which case the dashboard is shorter than the default viewport and
+      // cannot physically scroll this card out of view. A short viewport makes
+      // both sides of the intersection boundary reachable without depending on
+      // the account's saved card order or data presence.
+      await page.setViewportSize({ width: 1280, height: 240 });
+      await page.goto('/');
+
+      const advice = page.getByTestId('nutrition-advice');
+      await expect(advice).toBeVisible({ timeout: 15_000 });
+      await scrollElementOutsideViewport(page, advice);
+      await page.waitForTimeout(2200);
+      expect(engagementBodies).toHaveLength(0);
+
+      await scrollElementFullyIntoViewport(advice);
+      await page.waitForTimeout(1100);
+      await scrollElementOutsideViewport(page, advice);
+      await page.waitForTimeout(1100);
+      expect(engagementBodies).toHaveLength(0);
+
+      await scrollElementFullyIntoViewport(advice);
+      await page.waitForTimeout(1100);
+      expect(engagementBodies).toHaveLength(0);
+      await expect.poll(() => engagementBodies.length, { timeout: 4000 }).toBe(1);
+      expect(engagementBodies[0]).toEqual({
+        event: 'qualified_view',
+        logged_day: '2026-09-06',
+        generated_at: '2026-09-06T06:12:00Z',
+      });
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('counts only while the document is visible and restarts when it becomes active', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    let engagementCalls = 0;
+    try {
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route =>
+          route.fulfill({
+            json: {
+              available: true,
+              lines: ['Document-visibility-tested advice.'],
+              logged_day: '2026-09-06',
+              generated_at: '2026-09-06T07:12:00Z',
+              context: matchingAdviceContext,
+            },
+          }),
+      });
+      await page.route('**/api/food/advice/engagement', route => {
+        engagementCalls++;
+        return route.fulfill({ status: 204, body: '' });
+      });
+      await page.addInitScript(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      });
+      await page.goto('/');
+
+      const advice = page.getByTestId('nutrition-advice');
+      await expect(advice).toBeVisible({ timeout: 15_000 });
+      await scrollElementFullyIntoViewport(advice);
+      await page.waitForTimeout(2200);
+      expect(engagementCalls).toBe(0);
+
+      await setDocumentVisibility(page, 'visible');
+      await page.waitForTimeout(1100);
+      expect(engagementCalls).toBe(0);
+      await expect.poll(() => engagementCalls, { timeout: 4000 }).toBe(1);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('deduplicates a revision across rerender and reload in the same tab session', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    let engagementCalls = 0;
+    try {
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route =>
+          route.fulfill({
+            json: {
+              available: true,
+              lines: ['One revision.'],
+              logged_day: '2026-09-07',
+              generated_at: '2026-09-07T06:12:00Z',
+              context: matchingAdviceContext,
+            },
+          }),
+      });
+      await page.route('**/api/food/advice/engagement', route => {
+        engagementCalls++;
+        return route.fulfill({ status: 204, body: '' });
+      });
+      await page.goto('/');
+      const advice = page.getByTestId('nutrition-advice');
+      await advice.scrollIntoViewIfNeeded();
+      await expect.poll(() => engagementCalls, { timeout: 4000 }).toBe(1);
+
+      await page.getByTestId('logging-gap-hint-toggle').click();
+      await page.getByTestId('logging-gap-hint-toggle').click();
+      await page.waitForTimeout(2200);
+      expect(engagementCalls).toBe(1);
+
+      await page.reload();
+      const reloadedAdvice = page.getByTestId('nutrition-advice');
+      await expect(reloadedAdvice).toBeVisible({ timeout: 15_000 });
+      await reloadedAdvice.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(2200);
+      expect(engagementCalls).toBe(1);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a new revision earns its own view even when engagement delivery fails', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    const engagementBodies: Record<string, unknown>[] = [];
+    let adviceCalls = 0;
+    try {
+      // The refresh control is gone, so a second revision arrives the way a
+      // real one now does: the next load finds the server has regenerated the
+      // advice. The dedup key carries the generation timestamp, so a genuinely
+      // new revision is counted again while an unchanged one is not — which is
+      // what the reload test above asserts from the other side.
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route => {
+          adviceCalls++;
+          return route.fulfill({
+            json: {
+              available: true,
+              lines: [adviceCalls === 1 ? 'Original advice.' : 'Newer advice.'],
+              logged_day: '2026-09-08',
+              generated_at: adviceCalls === 1 ? '2026-09-08T06:12:00Z' : '2026-09-08T06:13:00Z',
+              context: matchingAdviceContext,
+            },
+          });
+        },
+      });
+      await page.route('**/api/food/advice/engagement', route => {
+        engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+        return route.fulfill({ status: 503, json: { error: 'telemetry unavailable' } });
+      });
+      await page.goto('/');
+      const advice = page.getByTestId('nutrition-advice');
+      await advice.scrollIntoViewIfNeeded();
+      await expect.poll(() => engagementBodies.length, { timeout: 4000 }).toBe(1);
+      await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Original advice.');
+
+      await page.reload();
+      await expect(page.getByTestId('nutrition-advice-line')).toHaveText('Newer advice.', { timeout: 15_000 });
+      await page.getByTestId('nutrition-advice').scrollIntoViewIfNeeded();
+      await expect.poll(() => engagementBodies.length, { timeout: 4000 }).toBe(2);
+      expect(engagementBodies.map(body => body.generated_at)).toEqual(['2026-09-08T06:12:00Z', '2026-09-08T06:13:00Z']);
+      // A 503 from the engagement endpoint never reaches the reader.
+      await expect(page.getByTestId('nutrition-advice-line')).toBeVisible();
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a queued observer callback cannot report a revision after the card unmounts', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    const engagementBodies: Record<string, unknown>[] = [];
+    let adviceCalls = 0;
+    try {
+      // IntersectionObserver.disconnect() does not have to discard an entry
+      // already queued for delivery. Delay that delivery so navigating away
+      // cleans up the revision's effect before the callback arrives.
+      await page.addInitScript(() => {
+        class DelayedIntersectionObserver {
+          readonly root = null;
+          readonly rootMargin = '0px';
+          readonly thresholds = [1];
+          private readonly callback: IntersectionObserverCallback;
+
+          constructor(callback: IntersectionObserverCallback) {
+            this.callback = callback;
+          }
+
+          observe(target: Element) {
+            window.setTimeout(() => {
+              this.callback(
+                [
+                  {
+                    isIntersecting: true,
+                    intersectionRatio: 1,
+                    target,
+                  } as IntersectionObserverEntry,
+                ],
+                this as unknown as IntersectionObserver,
+              );
+            }, 1000);
+          }
+
+          unobserve() {}
+          disconnect() {}
+          takeRecords(): IntersectionObserverEntry[] {
+            return [];
+          }
+        }
+
+        Object.defineProperty(window, 'IntersectionObserver', {
+          configurable: true,
+          writable: true,
+          value: DelayedIntersectionObserver,
+        });
+      });
+      await mockLoggingGapApis(page, healthinessGoodFixture(), {
+        adviceHandler: route => {
+          adviceCalls++;
+          return route.fulfill({
+            json: {
+              available: true,
+              lines: ['Original advice.'],
+              logged_day: '2026-09-09',
+              generated_at: '2026-09-09T06:12:00Z',
+              context: matchingAdviceContext,
+            },
+          });
+        },
+      });
+      // One revision per page life is the point of this test: a second advice
+      // request would mean a second effect, and the callback could then be
+      // reporting a live revision rather than the disposed one.
+      const assertOneAdviceCall = () => expect(adviceCalls).toBe(1);
+      await page.route('**/api/food/advice/engagement', route => {
+        engagementBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+        return route.fulfill({ status: 204, body: '' });
+      });
+      await page.goto('/');
+
+      const advice = page.getByTestId('nutrition-advice');
+      await expect(advice).toBeVisible({ timeout: 15_000 });
+
+      // Leave the dashboard through the header's own client-side link, so the
+      // card unmounts while the observer's pending callback survives. A full
+      // `page.goto` would tear down the JS realm and take that callback with
+      // it, and this test would then pass with the `disposed` guard deleted.
+      await page.evaluate(() => {
+        (window as unknown as { __realmMarker?: string }).__realmMarker = 'alive';
+      });
+      await page.locator('[data-nav-control="settings"]').click();
+      await expect(page.getByTestId('nutrition-advice')).toHaveCount(0);
+      // Proves the navigation really was client-side. Without this the
+      // assertion below is vacuous, which is exactly how the first version of
+      // this test passed for the wrong reason.
+      expect(
+        await page.evaluate(() => (window as unknown as { __realmMarker?: string }).__realmMarker),
+      ).toBe('alive');
+
+      // The observer's callback lands at 1000 ms; ungated it would then start
+      // the two-second qualified-view timer. Wait past both.
+      await page.waitForTimeout(3500);
+      expect(engagementBodies).toEqual([]);
+      assertOneAdviceCall();
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
 });
 
 // Restores the Logging Gap card to its default state (visible, last among
@@ -632,6 +1614,298 @@ test.describe('Logging Gap Card in Edit mode', () => {
       await expect(page.getByTestId('vital-card-steps')).toBeVisible();
     } finally {
       await restoreLoggingGapDefault(page);
+    }
+  });
+});
+
+// The chat sheet the discuss control opens (docs/specs/nutrition-chat.md).
+// Every test seeds the needs_attention fixture, whose sodium mean of 4.0 g/day
+// sits past the 3.5 g/day `far` boundary, so exactly one signal is flagged and
+// the basis rows have a known value to assert.
+test.describe('Nutrition advice chat', () => {
+  const adviceOk = (route: Route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        lines: ['Cut back on salty foods.'],
+        logged_day: '2026-09-05',
+        generated_at: '2026-09-05T06:12:00Z',
+        context: matchingAdviceContext,
+      },
+    });
+
+  async function openSheet(page: Page) {
+    const card = page.getByTestId('logging-gap-card');
+    await expect(card.getByTestId('nutrition-advice')).toBeVisible({ timeout: 15_000 });
+    await card.getByTestId('nutrition-advice-discuss').click();
+    const sheet = page.getByTestId('nutrition-chat-sheet');
+    await expect(sheet).toBeVisible();
+    return sheet;
+  }
+
+  test('shows the measured basis of the flagged signal and answers a question', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      const chatBodies: Array<Record<string, unknown>> = [];
+      await page.route('**/api/food/advice/chat', route => {
+        chatBodies.push(route.request().postDataJSON());
+        return route.fulfill({ json: { available: true, answer: 'It is the seven-day mean.' } });
+      });
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      // Exactly one signal crossed a boundary, so exactly one basis row.
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toHaveCount(1);
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('Sodium');
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('4.0 g');
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('2.3 g');
+      // A far verdict names the boundary that produced it, not only the guideline.
+      await expect(sheet.getByTestId('nutrition-chat-basis-row')).toContainText('3.5 g');
+      await expect(sheet.getByTestId('nutrition-chat-basis-days')).toContainText('7');
+
+      await sheet.getByTestId('nutrition-chat-input').fill('why do you say that?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-user')).toHaveText('why do you say that?');
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveText('It is the seven-day mean.');
+
+      expect(chatBodies).toHaveLength(1);
+      const body = chatBodies[0] as {
+        question: string;
+        turns: unknown[];
+        eligible_days: number;
+        signals: Array<{ code: string; verdict: string; far_boundary?: number }>;
+      };
+      expect(body.question).toBe('why do you say that?');
+      // The first question carries no prior turns: the conversation starts empty.
+      expect(body.turns).toEqual([]);
+      expect(body.eligible_days).toBe(7);
+      expect(body.signals.find(s => s.code === 'sodium')?.verdict).toBe('far');
+      expect(body.signals.find(s => s.code === 'fiber')?.verdict).toBe('ok');
+      expect(body.signals.find(s => s.code === 'fiber')?.far_boundary).toBeUndefined();
+
+      // The second question replays the first exchange, because neither side
+      // keeps a thread.
+      await sheet.getByTestId('nutrition-chat-input').fill('over how many days?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(2);
+      expect(chatBodies).toHaveLength(2);
+      expect((chatBodies[1] as { turns: Array<{ role: string }> }).turns.map(turn => turn.role)).toEqual([
+        'user',
+        'assistant',
+      ]);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('shows server-owned contributor sources, keeps them out of replay, and opens the meal', async ({ page, request }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      const mealID = '123e4567-e89b-12d3-a456-426614174000';
+      const chatBodies: Array<Record<string, unknown>> = [];
+      await page.route('**/api/food/advice/chat', route => {
+        chatBodies.push(route.request().postDataJSON());
+        return route.fulfill({
+          json: chatBodies.length === 1
+            ? {
+                available: true,
+                answer: 'Soup contributed the most sodium.',
+                sources: [{
+                  date: '2026-09-13',
+                  meal_id: mealID,
+                  food: 'Homemade soup',
+                  signal: 'sodium',
+                  nutrient_grams: 1.24,
+                  macro_source: 'estimated',
+                  confidence: 0.72,
+                }],
+              }
+            : { available: true, answer: 'The source stays on the prior answer.' },
+        });
+      });
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      await sheet.getByTestId('nutrition-chat-input').fill('Which food caused it?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+
+      const source = sheet.getByTestId('nutrition-chat-source');
+      await expect(source).toContainText('Homemade soup');
+      await expect(source).toContainText('Sodium');
+      await expect(source).toContainText('1.24 g');
+      await expect(source).toContainText('AI estimate');
+      await expect(source).toContainText('72% confidence');
+      await expect(source).toHaveAccessibleName(/Open the meal containing Homemade soup from .+/);
+      expect((await source.boundingBox())?.height).toBeGreaterThanOrEqual(48);
+      expect(await sheet.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+      await sheet.getByTestId('nutrition-chat-input').fill('And why?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-sources')).toHaveCount(1);
+      const replayed = chatBodies[1] as { turns: Array<Record<string, unknown>> };
+      expect(replayed.turns).toHaveLength(2);
+      expect(replayed.turns[1]).toEqual({ role: 'assistant', text: 'Soup contributed the most sodium.' });
+
+      await source.click();
+      await expect(page).toHaveURL(new RegExp(`/food/review/\\?meal=${mealID}`));
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a signal that fell below its band reads as below, not above', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessProteinFarLowFixture(), { adviceHandler: adviceOk });
+      await page.route('**/api/food/advice/chat', route =>
+        route.fulfill({ json: { available: true, answer: 'Protein is the low one.' } })
+      );
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      const row = sheet.getByTestId('nutrition-chat-basis-row').filter({ hasText: 'Protein' });
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText('well below');
+      await expect(row).not.toContainText('above');
+      // 6% measured, against the 15% guideline and the 10% far mark.
+      await expect(row).toContainText('6%');
+      await expect(row).toContainText('15%');
+      await expect(row).toContainText('10%');
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('discards the conversation when the sheet closes, and again after a reload', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      await page.route('**/api/food/advice/chat', route =>
+        route.fulfill({ json: { available: true, answer: 'It is the seven-day mean.' } })
+      );
+      await page.goto('/');
+
+      let sheet = await openSheet(page);
+      await sheet.getByTestId('nutrition-chat-input').fill('why?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(1);
+
+      await sheet.getByTestId('nutrition-chat-close').click();
+      await expect(page.getByTestId('nutrition-chat-sheet')).toHaveCount(0);
+
+      sheet = await openSheet(page);
+      await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(0);
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(0);
+
+      await sheet.getByTestId('nutrition-chat-input').fill('why?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(1);
+      await page.reload();
+
+      sheet = await openSheet(page);
+      await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(0);
+      // Nothing was written anywhere a reload could restore it from.
+      const stored = await page.evaluate(() => {
+        const keys = [
+          ...Object.keys(window.localStorage),
+          ...Object.keys(window.sessionStorage),
+        ];
+        return keys.filter(key => key.toLowerCase().includes('chat'));
+      });
+      expect(stored).toEqual([]);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('a failing answer leaves the sheet and the advice usable', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      let fail = true;
+      await page.route('**/api/food/advice/chat', route => {
+        if (fail) {
+          fail = false;
+          return route.fulfill({ json: { available: false, reason: 'unavailable' } });
+        }
+        return route.fulfill({ json: { available: true, answer: 'Recovered.' } });
+      });
+      await page.goto('/');
+
+      const sheet = await openSheet(page);
+      await sheet.getByTestId('nutrition-chat-input').fill('why?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-error')).toBeVisible();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(0);
+
+      // The same sheet still answers the next question.
+      await sheet.getByTestId('nutrition-chat-input').fill('and now?');
+      await sheet.getByTestId('nutrition-chat-send').click();
+      await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveText('Recovered.');
+      await expect(sheet.getByTestId('nutrition-chat-error')).toHaveCount(0);
+
+      await sheet.getByTestId('nutrition-chat-close').click();
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('nutrition-advice-line')).toBeVisible();
+      await expect(card.getByTestId('nutrition-advice-discuss')).toBeEnabled();
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('offers no discuss control when there is no advice to discuss', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), {
+        adviceHandler: route => route.fulfill({ json: { available: false, reason: 'unconfigured' } }),
+      });
+      await page.goto('/');
+
+      const card = page.getByTestId('logging-gap-card');
+      await expect(card.getByTestId('nutrition-healthiness-label')).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByTestId('nutrition-advice-discuss')).toHaveCount(0);
+      await expect(page.getByTestId('nutrition-chat-sheet')).toHaveCount(0);
+    } finally {
+      await putSettings(request, cookies, original);
+    }
+  });
+
+  test('Escape closes the sheet and returns focus to the control that opened it', async ({ page, request }) => {
+    await login(page);
+    const cookies = await cookieHeader(page);
+    const original = await getSettings(request, cookies);
+    await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+    try {
+      await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+      await page.goto('/');
+
+      await openSheet(page);
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('nutrition-chat-sheet')).toHaveCount(0);
+      await expect(page.getByTestId('nutrition-advice-discuss')).toBeFocused();
+    } finally {
+      await putSettings(request, cookies, original);
     }
   });
 });

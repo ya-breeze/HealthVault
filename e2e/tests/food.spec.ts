@@ -1,9 +1,9 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext, type Locator } from '@playwright/test';
 import path from 'path';
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8888';
 
 async function login(page: Page) {
   await page.goto('/login/');
@@ -310,7 +310,7 @@ test.describe('Photo upload', () => {
         get: () => null,
         set: () => {},
       });
-      HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: () => {} })) as typeof HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: () => {} })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.toBlob = function (callback) {
         callback(new Blob(['camera'], { type: 'image/jpeg' }));
       };
@@ -406,7 +406,114 @@ test.describe('In-app camera capture', () => {
     // The page itself must still be alive and showing the app, not a crash screen.
     await expect(page.getByRole('heading', { name: /log a meal/i })).toBeVisible();
   });
+
+  // Same navigator.mediaDevices mock 'camera capture uses the same hinted
+  // upload path' (above) establishes, so these tests exercise the real
+  // component layout without needing an actual camera in CI.
+  async function mockCamera(page: Page) {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => {} }] }) },
+      });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, get: () => 1920 });
+      Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, get: () => 1080 });
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get: () => null,
+        set: () => {},
+      });
+    });
+  }
+
+  async function boxOf(locator: Locator, label: string) {
+    const box = await locator.boundingBox();
+    expect(box, `${label} should have a bounding box`).not.toBeNull();
+    return box!;
+  }
+
+  // Regression for a real bug: the capture card had no height bound, so at a
+  // short viewport its natural column height (~350-450px) exceeded what was
+  // visible and overflow-hidden clipped the Capture button — the last
+  // element in the column — while leaving it in the DOM, enabled, and
+  // completely invisible. 740x320 is a phone held horizontally with browser
+  // chrome showing, the case that was actually broken. 390x844 (portrait
+  // mobile) and 1280x800 (desktop) are the orientations that already
+  // worked, included so this change is proven not to regress them.
+  const VIEWPORTS: Record<string, { width: number; height: number }> = {
+    'landscape, short viewport (740x320)': { width: 740, height: 320 },
+    'portrait mobile (390x844)': { width: 390, height: 844 },
+    'desktop (1280x800)': { width: 1280, height: 800 },
+  };
+
+  for (const [label, viewport] of Object.entries(VIEWPORTS)) {
+    test(`Capture button and card fit the viewport — ${label}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await mockCamera(page);
+      await login(page);
+      await page.goto('/food/upload/');
+      await page.getByRole('button', { name: 'Take Photo' }).click();
+
+      const captureButton = page.getByRole('button', { name: 'Capture' });
+      await expect(captureButton).toBeVisible();
+      await expect(captureButton).toBeEnabled();
+      // trial: true runs Playwright's actionability checks (hit-testable at
+      // its own position, not covered by another element) without actually
+      // clicking — the assertion a stacking-order-only fix would not
+      // satisfy, unlike toBeVisible() alone.
+      await captureButton.click({ trial: true });
+
+      const buttonBox = await boxOf(captureButton, 'Capture button');
+      expect(buttonBox.y).toBeGreaterThanOrEqual(0);
+      expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(viewport.height);
+
+      // A non-trivial floor, not just a non-zero box — a "fix" that
+      // collapses the preview to make room for the button would still pass
+      // a bare toBeVisible() check but fails here.
+      const videoBox = await boxOf(page.locator('video'), 'camera preview');
+      expect(videoBox.height).toBeGreaterThan(60);
+
+      // The invariant the clipping actually violated: the card itself fits
+      // within the viewport height.
+      const cardBox = await boxOf(page.getByTestId('camera-capture-card'), 'capture card');
+      expect(cardBox.y).toBeGreaterThanOrEqual(0);
+      expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(viewport.height);
+    });
+  }
+
+  test('overlay declares the bottom safe-area inset with an env() term', async ({ page }) => {
+    // Headless Chromium reports env(safe-area-inset-bottom) as 0 and offers
+    // no way to set it, so this only confirms the padding is declared with
+    // an env() term, not that a non-zero inset behaves correctly on a
+    // notched device — that half needs a manual check, the same residue
+    // ADR-008 records for safe-area handling.
+    await mockCamera(page);
+    await login(page);
+    await page.goto('/food/upload/');
+    await page.getByRole('button', { name: 'Take Photo' }).click();
+
+    const overlay = page.getByTestId('camera-capture-overlay');
+    await expect(overlay).toHaveClass(/env\(safe-area-inset-bottom\)/);
+    // The class assertion above reads the attribute, which is a verbatim copy
+    // of the JSX literal — it passes even if Tailwind stops emitting the
+    // utility and the padding silently drops to 0. This checks the rule
+    // actually reaches the element: with the inset reported as 0,
+    // max(1rem, 0px) resolves to 16px, and a missing rule to 0px.
+    await expect(overlay).toHaveCSS('padding-bottom', '16px');
+  });
 });
+
+// A day header's totals row carrying both halves of a day's totals.
+//
+// The day header renders calories and macros as two elements rather than one
+// run-on string (docs/specs/meal-history-day-header.md), so a single
+// getByText('450 kcal · P 30g · C 45g · F 15g') no longer resolves. Filtering
+// one testid on both substrings keeps the assertion exactly as strong: both
+// halves must appear, and in the same day's totals row rather than anywhere on
+// the page.
+function dayTotal(page: Page, calories: string, macros: string): Locator {
+  return page.getByTestId('day-total').filter({ hasText: calories }).filter({ hasText: macros });
+}
 
 // Seeds a confirmed meal directly via the manual-entry API (no vision call,
 // deterministic) so these tests can exercise the review-page UI against a
@@ -521,8 +628,16 @@ test.describe('Meal history', () => {
       await page.goto('/food/history/');
       // Newest (index 50) is on page 1; oldest (index 0) is exactly the
       // 51st meal, so it's the one meal page 1 (limit 50) can't include yet.
-      await expect(page.getByText('E2E LoadOlder 50')).toBeVisible();
-      await expect(page.getByText('E2E LoadOlder 0')).not.toBeVisible();
+      //
+      // `exact` is load-bearing, not tidiness. A row's name and its time sit
+      // in one container, and since the time became `07:05 PM` rather than a
+      // full timestamp (docs/specs/meal-history-day-header.md) the container
+      // for "E2E LoadOlder 5" reads "E2E LoadOlder 507:05 PM · Confirmed" —
+      // which contains "E2E LoadOlder 50" as a substring. A substring match
+      // therefore resolves to two elements and fails on strict mode. The same
+      // trap catches "E2E LoadOlder 1" against index 10, and so on.
+      await expect(page.getByText('E2E LoadOlder 50', { exact: true })).toBeVisible();
+      await expect(page.getByText('E2E LoadOlder 0', { exact: true })).not.toBeVisible();
 
       const loadOlder = page.getByRole('button', { name: 'Load older' });
       await expect(loadOlder).toBeVisible();
@@ -530,8 +645,8 @@ test.describe('Meal history', () => {
 
       // The real second page (containing at least the 51st meal) arrives
       // and is appended, not swapped in.
-      await expect(page.getByText('E2E LoadOlder 0')).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByText('E2E LoadOlder 50')).toBeVisible();
+      await expect(page.getByText('E2E LoadOlder 0', { exact: true })).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText('E2E LoadOlder 50', { exact: true })).toBeVisible();
     } finally {
       await deleteMeals(request, cookies, createdIds);
     }
@@ -594,9 +709,9 @@ test.describe('Meal history', () => {
     await expect(page.getByText('Yesterday Meal 1')).toBeVisible();
 
     // Today's total: 300+150=450 kcal, 20+10=30g protein.
-    await expect(page.getByText('450 kcal · P 30g · C 45g · F 15g')).toBeVisible();
+    await expect(dayTotal(page, '450 kcal', 'P 30g · C 45g · F 15g')).toBeVisible();
     // Yesterday's total: just the one meal.
-    await expect(page.getByText('80 kcal · P 5g · C 8g · F 2g')).toBeVisible();
+    await expect(dayTotal(page, '80 kcal', 'P 5g · C 8g · F 2g')).toBeVisible();
   });
 
   test('a day with only a non-confirmed meal shows a zero total', async ({ page }) => {
@@ -615,7 +730,7 @@ test.describe('Meal history', () => {
     // The day total must exclude the pending meal's numbers entirely (it
     // has no final nutrition yet), showing zero rather than omitting the
     // total line or leaking the pending meal's provisional values into it.
-    await expect(page.getByText('0 kcal · P 0g · C 0g · F 0g')).toBeVisible();
+    await expect(dayTotal(page, '0 kcal', 'P 0g · C 0g · F 0g')).toBeVisible();
   });
 
   test('"Load older" merges into an existing day section and adds a new one', async ({ page }) => {
@@ -656,16 +771,16 @@ test.describe('Meal history', () => {
     await page.goto('/food/history/');
     await expect(page.getByText('Merge Today 0')).toBeVisible();
     // 50 meals * 10 kcal = 500 kcal for today's section before loading more.
-    await expect(page.getByText('500 kcal · P 50g · C 50g · F 50g')).toBeVisible();
+    await expect(dayTotal(page, '500 kcal', 'P 50g · C 50g · F 50g')).toBeVisible();
 
     await page.getByRole('button', { name: 'Load older' }).click();
 
     await expect(page.getByText('Merge Today Extra')).toBeVisible();
     await expect(page.getByText('Merge Yesterday')).toBeVisible();
     // Today's total grows by the extra meal: 500+10=510 kcal.
-    await expect(page.getByText('510 kcal · P 51g · C 51g · F 51g')).toBeVisible();
+    await expect(dayTotal(page, '510 kcal', 'P 51g · C 51g · F 51g')).toBeVisible();
     // A new, separate section for yesterday.
-    await expect(page.getByText('20 kcal · P 2g · C 2g · F 2g')).toBeVisible();
+    await expect(dayTotal(page, '20 kcal', 'P 2g · C 2g · F 2g')).toBeVisible();
   });
 });
 
@@ -723,6 +838,152 @@ test.describe('Editing a confirmed meal', () => {
 });
 
 test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)', () => {
+  test('shows sodium and fiber before confirmation and edits them from prefilled values', async ({ page }) => {
+    await login(page);
+    const initialItem = {
+      ...mockFoodMeal().items[0],
+      calories: 312,
+      protein_grams: 14,
+      carbs_grams: 27,
+      fat_grams: 9,
+      sugar_grams: 6,
+      sodium_grams: 0.42,
+      dietary_fiber_grams: 8.5,
+    };
+    const initial = mockFoodMeal({
+      status: 'pending_review',
+      items: [initialItem],
+    });
+    const updated = mockFoodMeal({
+      status: 'pending_review',
+      items: [{ ...initialItem, sodium_grams: 0.18, dietary_fiber_grams: 9.5 }],
+    });
+    let patchBody: Record<string, unknown> | undefined;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', route => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      patchBody = route.request().postDataJSON();
+      return route.fulfill({ json: updated });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    const nutrientLine = page.getByTestId('item-nutrients-item-1');
+    await expect(nutrientLine).toContainText('Sodium 0.42g');
+    await expect(nutrientLine).toContainText('Fiber 8.5g');
+
+    await page.getByRole('button', { name: 'Edit nutrients' }).click();
+    await expect(page.getByRole('tab', { name: 'Enter macros' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('label:has-text("Name") input')).toHaveValue('Old Item');
+    await expect(page.locator('label:has-text("Calories") input')).toHaveValue('312');
+    await expect(page.locator('label:has-text("Protein (g)") input')).toHaveValue('14');
+    await expect(page.locator('label:has-text("Carbs (g)") input')).toHaveValue('27');
+    await expect(page.locator('label:has-text("Fat (g)") input')).toHaveValue('9');
+    await expect(page.locator('label:has-text("Sugar (g)") input')).toHaveValue('6');
+    await expect(page.locator('label:has-text("Sodium (g)") input')).toHaveValue('0.42');
+    await expect(page.locator('label:has-text("Fiber (g)") input')).toHaveValue('8.5');
+
+    await page.locator('label:has-text("Sodium (g)") input').fill('0.18');
+    await page.locator('label:has-text("Fiber (g)") input').fill('9.5');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+    await expect.poll(() => patchBody).toEqual({
+      manual: true,
+      name: 'Old Item',
+      save_as_custom_food: false,
+      calories: 312,
+      protein_grams: 14,
+      carbs_grams: 27,
+      fat_grams: 9,
+      sugar_grams: 6,
+      sodium_grams: 0.18,
+      dietary_fiber_grams: 9.5,
+    });
+    await expect(nutrientLine).toContainText('Sodium 0.18g');
+    await expect(nutrientLine).toContainText('Fiber 9.5g');
+  });
+
+  test('keeps untouched nutrient fields current when a weight update finishes after the editor opens', async ({ page }) => {
+    await login(page);
+    const initialItem = {
+      ...mockFoodMeal().items[0],
+      macro_source: 'reference',
+      fdc_id: 42,
+      calories: 312,
+      protein_grams: 14,
+      carbs_grams: 27,
+      fat_grams: 9,
+      sugar_grams: 6,
+      sodium_grams: 0.42,
+      dietary_fiber_grams: 8.5,
+    };
+    const weightedItem = {
+      ...initialItem,
+      weight_grams: 200,
+      calories: 624,
+      protein_grams: 28,
+      carbs_grams: 54,
+      fat_grams: 18,
+      sugar_grams: 12,
+      sodium_grams: 0.84,
+      dietary_fiber_grams: 17,
+    };
+    const initial = mockFoodMeal({ status: 'pending_review', items: [initialItem] });
+    const weighted = mockFoodMeal({ status: 'pending_review', items: [weightedItem] });
+    const corrected = mockFoodMeal({
+      status: 'pending_review',
+      items: [{ ...weightedItem, macro_source: 'manual', fdc_id: undefined, sodium_grams: 0.5 }],
+    });
+    let manualPatchBody: Record<string, unknown> | undefined;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      if (body.manual === true) {
+        manualPatchBody = body;
+        return route.fulfill({ json: corrected });
+      }
+      await new Promise(resolve => setTimeout(resolve, 800));
+      return route.fulfill({ json: weighted });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    const weightInput = page.locator('input[type="number"]').first();
+    await weightInput.fill('200');
+    await page.getByRole('button', { name: 'Edit nutrients' }).click();
+
+    const caloriesInput = page.locator('label:has-text("Calories") input');
+    const sodiumInput = page.locator('label:has-text("Sodium (g)") input');
+    const fiberInput = page.locator('label:has-text("Fiber (g)") input');
+    await sodiumInput.fill('0.5');
+
+    await expect(caloriesInput).toHaveValue('624');
+    await expect(page.locator('label:has-text("Protein (g)") input')).toHaveValue('28');
+    await expect(page.locator('label:has-text("Carbs (g)") input')).toHaveValue('54');
+    await expect(page.locator('label:has-text("Fat (g)") input')).toHaveValue('18');
+    await expect(page.locator('label:has-text("Sugar (g)") input')).toHaveValue('12');
+    await expect(fiberInput).toHaveValue('17');
+    await expect(sodiumInput).toHaveValue('0.5');
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => manualPatchBody).toEqual({
+      manual: true,
+      name: 'Old Item',
+      save_as_custom_food: false,
+      calories: 624,
+      protein_grams: 28,
+      carbs_grams: 54,
+      fat_grams: 18,
+      sugar_grams: 12,
+      sodium_grams: 0.5,
+      dietary_fiber_grams: 17,
+    });
+  });
+
   // Regression (round 8): MealMetaEditor always sent logged_at back on save,
   // even for a name-only edit — and the datetime-local input truncates to
   // minute granularity, so that silently dropped the meal's real

@@ -2,10 +2,10 @@ import { test, expect, chromium } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { BASE_URL } from './helpers/target';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8888';
 
 async function login(page: Page) {
   await page.goto('/login/');

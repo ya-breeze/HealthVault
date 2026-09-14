@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api, ApiError, FoodItem, FoodMeal, FoodSearchResult } from '@/lib/api';
-import ItemResolver from './ItemResolver';
+import ItemResolver, { type NutrientValues } from './ItemResolver';
 import TapTarget from '@/components/ui/TapTarget';
 import CanonicalNameLabel from '@/components/food/CanonicalNameLabel';
 import { useLanguage } from '@/components/LanguageContext';
@@ -56,6 +56,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(item.macro_source === 'none');
+  const [resolverMode, setResolverMode] = useState<'search' | 'manual'>('search');
 
   // Keep the weight draft in sync with the authoritative item prop. A
   // sibling request for this same item (e.g. a bind PATCH from ItemResolver
@@ -135,7 +136,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
 
   const handleManual = async (
     name: string,
-    macros: Omit<Parameters<typeof api.patchMealItem>[2], 'manual' | 'name' | 'save_as_custom_food'>,
+    macros: NutrientValues,
     saveAsCustomFood: boolean
   ) => {
     await onUpdated(() => api.patchMealItem(mealId, item.id, {
@@ -224,24 +225,66 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
         {item.fat_grams.toFixed(1)}{t('unit.grams')}
       </div>
 
-      {!resolving && (
-        <TapTarget
-          onClick={() => setResolving(true)}
-          className={
-            item.macro_source === 'none' || item.macro_source === 'estimated'
-              ? 'mt-2 flex items-center text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline'
-              : 'mt-2 flex items-center text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline'
-          }
+      {item.macro_source !== 'none' && (
+        <div
+          data-testid={`item-nutrients-${item.id}`}
+          className="mt-1 text-xs text-gray-500 dark:text-gray-400"
         >
-          {item.macro_source === 'none'
-            ? t('item.resolve')
-            : item.macro_source === 'estimated'
-              ? t('item.verifyEstimate')
-              : t('item.changeMatch')}
-        </TapTarget>
+          {t('item.sodium')} {item.sodium_grams.toFixed(2)}{t('unit.grams')} ·{' '}
+          {t('item.fiber')} {item.dietary_fiber_grams.toFixed(1)}{t('unit.grams')}
+        </div>
+      )}
+
+      {!resolving && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <TapTarget
+            onClick={() => {
+              setResolverMode('search');
+              setResolving(true);
+            }}
+            className={
+              item.macro_source === 'none' || item.macro_source === 'estimated'
+                ? 'flex items-center text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline'
+                : 'flex items-center text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline'
+            }
+          >
+            {item.macro_source === 'none'
+              ? t('item.resolve')
+              : item.macro_source === 'estimated'
+                ? t('item.verifyEstimate')
+                : t('item.changeMatch')}
+          </TapTarget>
+          {item.macro_source !== 'none' && (
+            <TapTarget
+              onClick={() => {
+                setResolverMode('manual');
+                setResolving(true);
+              }}
+              className="flex items-center text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              {t('item.editNutrients')}
+            </TapTarget>
+          )}
+        </div>
       )}
       {resolving && (
-        <ItemResolver itemName={item.name} onBind={handleBind} onManual={handleManual} allowSaveAsCustomFood expertMode={expertMode} />
+        <ItemResolver
+          itemName={item.name}
+          onBind={handleBind}
+          onManual={handleManual}
+          allowSaveAsCustomFood
+          expertMode={expertMode}
+          initialMode={resolverMode}
+          initialMacros={{
+            calories: item.calories,
+            protein_grams: item.protein_grams,
+            carbs_grams: item.carbs_grams,
+            fat_grams: item.fat_grams,
+            sugar_grams: item.sugar_grams,
+            sodium_grams: item.sodium_grams,
+            dietary_fiber_grams: item.dietary_fiber_grams,
+          }}
+        />
       )}
 
       {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}

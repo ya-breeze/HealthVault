@@ -1,127 +1,27 @@
-import { test, expect, type Page, type APIRequestContext, type Locator } from '@playwright/test';
-
-const USER = process.env.HCW_USER || 'alice';
-const PASS = process.env.HCW_PASS || 'pass1';
-// Unlike this suite's other spec files, these tests PUT settings that change
-// `timezone` — which cascades to hard-deleting the caller's FoodDayCompletion
-// rows (design.md §4 "Storage") — so a no-env run must never land on the prod
-// stack (8888) by accident. Defaults to the WIP stack instead; override with
-// BASE_URL to target something else deliberately.
-const BASE_URL = process.env.BASE_URL || 'http://192.168.1.54:8892';
-
-async function login(page: Page) {
-  await page.goto('/login/');
-  await page.getByPlaceholder(/username/i).fill(USER);
-  await page.getByPlaceholder(/password/i).fill(PASS);
-  await page.getByRole('button', { name: /sign in|login/i }).click();
-  await page.waitForURL('/');
-}
-
-async function cookieHeader(page: Page): Promise<string> {
-  const cookies = await page.context().cookies();
-  return cookies.map(c => `${c.name}=${c.value}`).join('; ');
-}
-
-// Seeds a confirmed meal at a specific instant via the manual-entry API (no
-// vision call, deterministic), so Day Completeness state (which is driven
-// entirely by logged_at) is fully under the test's control.
-async function createMealAt(
-  request: APIRequestContext,
-  cookies: string,
-  name: string,
-  loggedAtISO: string,
-  calories = 100
-) {
-  const res = await request.post(`${BASE_URL}/api/food/meals/manual`, {
-    headers: { Cookie: cookies },
-    data: { name, logged_at: loggedAtISO, items: [{ name: 'Item', source: 'manual', weight_grams: 100, calories }] },
-  });
-  expect(res.status()).toBe(201);
-  return res.json();
-}
-
-async function deleteMeal(request: APIRequestContext, cookies: string, id: string): Promise<void> {
-  const res = await request.delete(`${BASE_URL}/api/data/food_meal/${id}`, { headers: { Cookie: cookies } });
-  if (!res.ok() && res.status() !== 404) {
-    throw new Error(`failed to delete meal ${id}: ${res.status()} ${await res.text()}`);
-  }
-}
-
-async function deleteMeals(request: APIRequestContext, cookies: string, ids: string[]): Promise<void> {
-  const results = await Promise.allSettled(ids.map(id => deleteMeal(request, cookies, id)));
-  // Carries each rejection's own message, not just the id. The previous
-  // version reported only "failed to clean up 3/3 meals: <uuids>", which is
-  // the one thing that cannot be acted on: a cleanup failure leaves meals
-  // behind that go on to break *other* days' tests, and the status code that
-  // would say why (401? 409? a timeout?) was discarded at exactly the moment
-  // it mattered. Observed once on 2026-08-26 with no server-side log to
-  // match it against.
-  const failures = results.flatMap((r, i) =>
-    r.status === 'rejected' ? [`${ids[i]}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`] : []
-  );
-  if (failures.length > 0) {
-    throw new Error(`failed to clean up ${failures.length}/${ids.length} meals:\n  ${failures.join('\n  ')}`);
-  }
-}
-
-async function getSettings(request: APIRequestContext, cookies: string): Promise<Record<string, unknown>> {
-  const res = await request.get(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies } });
-  return res.json();
-}
-
-// Full (non-merging) write, mirroring PUT /users/me/settings' whole-document
-// semantics — used to force a known baseline before a test and to restore
-// the account's prior settings afterward, regardless of what the test itself
-// changed via the UI.
-async function putSettings(request: APIRequestContext, cookies: string, settings: Record<string, unknown>) {
-  const res = await request.put(`${BASE_URL}/api/users/me/settings`, { headers: { Cookie: cookies }, data: settings });
-  if (!res.ok()) throw new Error(`failed to write settings: ${res.status()} ${await res.text()}`);
-}
-
-// Best-effort: a confirmation that was never created (or already retracted)
-// 404s/204s either way, and cleanup must not fail the test over that.
-async function unconfirmDate(request: APIRequestContext, cookies: string, date: string) {
-  await request.delete(`${BASE_URL}/api/food/completeness/${date}/confirm`, { headers: { Cookie: cookies } }).catch(() => {});
-}
-
-// The Eating Occasion count the API currently reports for a local date.
-//
-// Asks the app rather than assuming: these tests run against a shared
-// account whose history accumulates meals from every other spec file (and
-// from runs killed before their cleanup), so a date this test picks may
-// already hold occasions it did not create. A test that needs its day to sit
-// *below* threshold must therefore derive the threshold from what the day
-// actually holds — see thresholdLeavingDayBelow.
-async function occasionCount(request: APIRequestContext, cookies: string, date: string): Promise<number> {
-  const res = await request.get(`${BASE_URL}/api/food/completeness?from=${date}&to=${date}`, {
-    headers: { Cookie: cookies },
-  });
-  if (!res.ok()) throw new Error(`failed to read completeness for ${date}: ${res.status()} ${await res.text()}`);
-  const days = (await res.json()) as Array<{ date: string; occasion_count: number }>;
-  return days.find(d => d.date === date)?.occasion_count ?? 0;
-}
-
-// A usual_meals_per_day value that leaves `date` exactly one occasion short
-// of its threshold, so the day is Unconfirmed and renders its "Mark day
-// complete" control. Call it after seeding, since the seeded meals count too.
-//
-// Hardcoding 3 here instead is what made this suite's failures a matter of
-// which dates happened to be clean: on 2026-08-26 the day seven days back
-// already held 3 occasions (two stray meals plus four leftover 'E2E Edit
-// Meal' rows collapsing into one), so it was already Complete and the
-// control the test waited for was correctly absent.
-async function thresholdLeavingDayBelow(
-  request: APIRequestContext,
-  cookies: string,
-  date: string
-): Promise<number> {
-  return (await occasionCount(request, cookies, date)) + 1;
-}
+import { test, expect, type Page } from '@playwright/test';
+import {
+  cookieHeader,
+  createMealAt,
+  daySection,
+  deleteMeal,
+  deleteMeals,
+  findEmptyDaysAgo,
+  getSettings,
+  isoAtUTC,
+  login,
+  occasionCount,
+  putSettings,
+  thresholdLeavingDayBelow,
+  unconfirmDate,
+} from './helpers/food-day';
 
 // Runs `action` and waits for the settings PUT it triggers to actually land,
 // not just for the click that starts it — mirrors dashboard.spec.ts's
 // withSettingsSave (the settings panel here does the same GET-then-PUT via
 // api.updateSettings, so the UI interaction resolves before the write does).
+//
+// Stays local rather than moving to helpers/food-day.ts: it is about this
+// file's settings-panel interactions, not about seeding a day.
 async function withSettingsSave(page: Page, action: () => Promise<unknown>): Promise<void> {
   const saved = page.waitForResponse(
     r => r.url().includes('/api/users/me/settings') && r.request().method() === 'PUT',
@@ -129,13 +29,6 @@ async function withSettingsSave(page: Page, action: () => Promise<unknown>): Pro
   );
   await action();
   await saved;
-}
-
-// Locates the day-group section (page.tsx's `<div className="mb-5">` per
-// day) containing the given meal name, so assertions about that day's
-// completeness control don't accidentally match another day's section.
-function daySection(page: Page, mealName: string): Locator {
-  return page.locator('div.mb-5').filter({ hasText: mealName });
 }
 
 // Distinguishes this run's seeded meals from an earlier run's leftovers.
@@ -146,13 +39,6 @@ function daySection(page: Page, mealName: string): Locator {
 // mode instead of on the assertion. That is what turned one transient
 // cleanup failure into a red retry on 2026-08-26.
 const RUN_TAG = Math.random().toString(36).slice(2, 8);
-
-function isoAtUTC(daysAgo: number, hour: number, minute = 0): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - daysAgo);
-  d.setUTCHours(hour, minute, 0, 0);
-  return d.toISOString();
-}
 
 test.describe('Day completeness', () => {
   // 12.1: an unconfirmed day can be confirmed and retracted from the history
@@ -172,8 +58,12 @@ test.describe('Day completeness', () => {
     await putSettings(request, cookies, { ...original, timezone: 'UTC', usual_meals_per_day: 3 });
 
     const mealName = `E2E Completeness Unconfirmed Day ${RUN_TAG}`;
-    const meal = await createMealAt(request, cookies, mealName, isoAtUTC(2, 12));
-    const date = isoAtUTC(2, 12).slice(0, 10);
+    // Seeded on a day the account holds nothing else on, because the last
+    // assertion here is that deleting the meal drops the whole day section —
+    // which only follows if this test's meal was the section's only one.
+    const daysAgo = await findEmptyDaysAgo(request, cookies, 2);
+    const meal = await createMealAt(request, cookies, mealName, isoAtUTC(daysAgo, 12));
+    const date = isoAtUTC(daysAgo, 12).slice(0, 10);
 
     try {
       // This test asserts the day starts Unconfirmed, which requires both

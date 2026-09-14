@@ -148,6 +148,17 @@ export interface VitalResult {
   /** Chronological, oldest first — one point per day-bucket returned. */
   sparkline: number[];
   trend: 'up' | 'down' | 'flat';
+  /**
+   * The last bucket's own `bucket_start` (an ISO string), when the row
+   * carried one. `value` is always read from the *last* row in the response
+   * — see each branch below — and the backend's bucket query is a plain
+   * `GROUP BY` with no zero-fill (storage_impl.go's QueryAggregate/
+   * QueryAggregateSteps), so a day with no records yet simply has no row: the
+   * last bucket can be yesterday's, or older. `asOf` lets VitalCard say so
+   * instead of presenting a stale total as if it were current (see
+   * check-the-health-data spec).
+   */
+  asOf?: string;
 }
 
 function num(v: unknown): number {
@@ -163,6 +174,14 @@ function trendFrom(series: number[]): 'up' | 'down' | 'flat' {
   return 'flat';
 }
 
+// The last row's own bucket_start, or undefined when the row carries none —
+// every extractVital branch reads `value` off this same last row, so this is
+// the one place that decides what "as of" means for all of them.
+function asOfFrom(rows: Record<string, unknown>[]): string | undefined {
+  const v = rows[rows.length - 1]?.bucket_start;
+  return typeof v === 'string' ? v : undefined;
+}
+
 /**
  * Extracts a vitals-grid card's display value, sparkline, and trend from a
  * ?bucket=day response, per the type's aggregation family (see
@@ -171,42 +190,43 @@ function trendFrom(series: number[]): 'up' | 'down' | 'flat' {
  */
 export function extractVital(type: DataType, rows: Record<string, unknown>[]): VitalResult | null {
   if (rows.length === 0) return null;
+  const asOf = asOfFrom(rows);
 
   switch (type) {
     case 'steps': {
       const series = rows.map(r => num(r.sum));
-      return { value: formatMetricValue('steps', series[series.length - 1]), sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('steps', series[series.length - 1]), sparkline: series, trend: trendFrom(series), asOf };
     }
     case 'distance': {
       const series = rows.map(r => toDisplayUnit('distance', num(r.sum)));
-      return { value: formatMetricValue('distance', series[series.length - 1]), unit: 'unit.km', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('distance', series[series.length - 1]), unit: 'unit.km', sparkline: series, trend: trendFrom(series), asOf };
     }
     case 'sleep': {
       const series = rows.map(r => toDisplayUnit('sleep', num(r.sum)));
-      return { value: formatMetricValue('sleep', series[series.length - 1]), unit: 'unit.h', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('sleep', series[series.length - 1]), unit: 'unit.h', sparkline: series, trend: trendFrom(series), asOf };
     }
     case 'heart_rate': {
       const series = rows.map(r => num(r.avg));
-      return { value: formatMetricValue('heart_rate', series[series.length - 1]), unit: 'unit.bpm', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('heart_rate', series[series.length - 1]), unit: 'unit.bpm', sparkline: series, trend: trendFrom(series), asOf };
     }
     case 'heart_rate_variability': {
       const series = rows.map(r => num(r.avg));
-      return { value: formatMetricValue('heart_rate_variability', series[series.length - 1]), unit: 'unit.ms', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('heart_rate_variability', series[series.length - 1]), unit: 'unit.ms', sparkline: series, trend: trendFrom(series), asOf };
     }
     case 'weight': {
       const series = rows.map(r => num(r.avg));
-      return { value: formatMetricValue('weight', series[series.length - 1]), unit: 'unit.kg', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('weight', series[series.length - 1]), unit: 'unit.kg', sparkline: series, trend: trendFrom(series), asOf };
     }
     case 'oxygen_saturation': {
       const series = rows.map(r => num(r.avg));
-      return { value: formatMetricValue('oxygen_saturation', series[series.length - 1]), unit: 'unit.percent', sparkline: series, trend: trendFrom(series) };
+      return { value: formatMetricValue('oxygen_saturation', series[series.length - 1]), unit: 'unit.percent', sparkline: series, trend: trendFrom(series), asOf };
     }
     case 'blood_pressure': {
       const sysSeries = rows.map(r => num(r.systolic_avg));
       const diaSeries = rows.map(r => num(r.diastolic_avg));
       const sysLatest = formatMetricValue('blood_pressure', sysSeries[sysSeries.length - 1]);
       const diaLatest = formatMetricValue('blood_pressure', diaSeries[diaSeries.length - 1]);
-      return { value: `${sysLatest}/${diaLatest}`, sparkline: sysSeries, trend: trendFrom(sysSeries) };
+      return { value: `${sysLatest}/${diaLatest}`, sparkline: sysSeries, trend: trendFrom(sysSeries), asOf };
     }
     default:
       return null;

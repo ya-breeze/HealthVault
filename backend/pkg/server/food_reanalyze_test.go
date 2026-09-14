@@ -866,6 +866,10 @@ func (c *gatedRecognizeClient) Translate(context.Context, string) (string, error
 	return "", nil
 }
 
+func (c *gatedRecognizeClient) Advise(context.Context, vision.AdviceInput) ([]string, error) {
+	return nil, nil
+}
+
 func (c *gatedRecognizeClient) Describe(context.Context, string, string) (*vision.RecognizeResult, error) {
 	return &vision.RecognizeResult{}, nil
 }
@@ -952,4 +956,8 @@ func TestReanalyze_ConcurrentCallsOnlyOneProceeds(t *testing.T) {
 	if w1.Code != http.StatusOK {
 		t.Errorf("expected the first call to succeed, got %d: %s", w1.Code, w1.Body.String())
 	}
+}
+
+func (c *gatedRecognizeClient) NutritionChat(context.Context, vision.NutritionChatInput) (*vision.NutritionChatResult, error) {
+	return &vision.NutritionChatResult{}, nil
 }

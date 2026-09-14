@@ -7,6 +7,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ya-breeze/healthvault/cmd/commands"
+
+	// The runtime image (debian:bookworm-slim, see backend/Dockerfile)
+	// installs no tzdata package, so without this embedded zone database
+	// every time.LoadLocation call fails and database.ResolveTimezone
+	// silently degrades every user's chart buckets to UTC.
+	_ "time/tzdata"
 )
 
 func main() {

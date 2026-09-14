@@ -5,7 +5,7 @@ ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 # which the USDA food index depends on. Keep it on build, test and vet alike.
 GO_TAGS := sqlite_fts5
 
-.PHONY: all build test test-backend test-frontend test-android test-e2e lint lint-android run-backend android-apk
+.PHONY: all build test test-backend test-frontend test-android test-e2e lint lint-android lint-e2e run-backend android-apk
 
 all: build
 
@@ -46,7 +46,7 @@ $(ROOT_DIR)e2e/node_modules/.install-stamp: $(ROOT_DIR)e2e/package-lock.json
 	@cd $(ROOT_DIR)e2e && npm ci
 	@touch $(ROOT_DIR)e2e/node_modules/.install-stamp
 
-lint: lint-android
+lint: lint-android lint-e2e
 	@cd $(ROOT_DIR)/backend && go vet -tags $(GO_TAGS) ./...
 
 # Same skip condition and reasoning as test-android above.
@@ -61,6 +61,13 @@ lint-android:
 # signing config and no automated device coverage (see android/README.md).
 android-apk:
 	@cd $(ROOT_DIR)android && ./gradlew assembleDebug
+
+# This suite mutates a live stack (creates/deletes meals, rewrites settings,
+# writes records against hcw-wip), so a typo here is a real edit, not a test
+# failure someone shrugs off. Gated into `lint` rather than left advisory,
+# because an advisory check that nobody has to pass is a check nobody reads.
+lint-e2e: $(ROOT_DIR)e2e/node_modules/.install-stamp
+	@cd $(ROOT_DIR)e2e && npm run typecheck --silent
 
 run-backend: build
 	@HCW_DBPATH=$(ROOT_DIR)hcw.db \

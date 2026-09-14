@@ -11,13 +11,20 @@
 // (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
 // custom-food catalog list, and the Expert Mode toggle.
 //
-// Still English regardless of Display Language: the per-type data detail
-// pages, the import and login screens, app/food/upload/page.tsx, and the
-// food components not on the review path: AddItemForm, CameraCapture,
-// ClarifyModal, CustomFoodModal, DeleteMealControl, MacroSummary,
-// ManualItemEditor, MealMetaEditor and ReanalyzeControl. (AddItemForm's own
-// chrome is English, but the ItemResolver panel it embeds is covered, so
-// that form is partly translated rather than wholly English.)
+// Still English regardless of Display Language: the write form on the
+// per-type data detail pages (AddRecordForm); the import and login screens;
+// app/food/upload/page.tsx; and the food components not on the review path:
+// AddItemForm, CameraCapture, ClarifyModal, CustomFoodModal,
+// DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
+// ReanalyzeControl. (AddItemForm's own chrome is English, but the
+// ItemResolver panel it embeds is covered, so that form is partly translated
+// rather than wholly English. The per-type data detail pages are likewise
+// partly translated: their metric heading, raw record table, steps
+// diagnostic disclosure, zoom/macro controls, every chart series name and
+// tooltip, the Avg/Max/Total/BMI summary row, the BMI category and the
+// weight trend-projection copy, and the route's loading fallback are all
+// covered — only the AddRecordForm write surface is not. See dataDetail.*
+// below; AddRecordForm is the deferred child change.)
 //
 // app/food/manual/page.tsx is now partly translated, not wholly English: its
 // description-first entry path (the textarea, name/time inputs, character
@@ -145,6 +152,9 @@ const en = {
   'item.resolve': 'Resolve this item',
   'item.verifyEstimate': 'Verify this estimate',
   'item.changeMatch': 'Change match',
+  'item.editNutrients': 'Edit nutrients',
+  'item.sodium': 'Sodium',
+  'item.fiber': 'Fiber',
   'item.deleteTitle': 'Delete item',
   'item.confirm': 'Confirm',
   'item.cancel': 'Cancel',
@@ -313,11 +323,17 @@ const en = {
   'vitals.trend7d': '7d trend',
   'vitals.moveUp': 'Move {metric} up',
   'vitals.moveDown': 'Move {metric} down',
+  // Shown on a Vital Card only when its value's source bucket isn't today's
+  // (check-the-health-data spec) — e.g. today has no records yet, so the
+  // card is showing yesterday's full-day total.
+  'vitals.asOf': 'As of {date}',
 
   // The `loggingGap.` prefix is kept for the whole card, including the keys
-  // below that have nothing to do with the gap. Renaming it is deferred to
-  // Phase 4, when the Healthiness Label row lands and the card fully becomes a
-  // nutrition card — so the churn happens once rather than twice.
+  // below that have nothing to do with the gap — including the Healthiness
+  // Label keys added below. The prefix stays internal and unrenamed
+  // permanently: renaming the registry id would make reconcileMetricOrder
+  // drop the saved dashboard-order entry and silently re-show a hidden card,
+  // and renaming just the key prefix is churn with no reader-facing benefit.
   'loggingGap.title': 'Nutrition',
   'loggingGap.loading': 'Loading your nutrition…',
   'loggingGap.todayCalories': '{consumed} / {target} kcal today',
@@ -336,6 +352,157 @@ const en = {
   'loggingGap.outlierNote': 'One or more weigh-ins were excluded as outliers.',
   'loggingGap.caveatPhoto': 'Logged intake is estimated from photo recognition and may carry its own bias.',
   'loggingGap.caveatActivity': "This doesn't separately account for error in your activity multiplier — a misestimate of activity can look like unlogged (or over-logged) intake.",
+  'loggingGap.lossTooFast': 'You are losing {percent}% of body weight a week, faster than the sustainable 1%.',
+  'loggingGap.intakeBelowBmr': 'You average {intake} kcal a day, below your BMR of {bmr} kcal.',
+  'loggingGap.sustainabilityDetail': "Too steep a deficit is hard to hold, and a relapse is the usual outcome. These numbers are estimates from the same trend and the same log the rest of this card uses, and this isn't medical advice.",
+
+  // The top row's own ⓘ disclosure (docs/specs/idea.md), explaining today's
+  // calorie/macro figures and the Nutrition Target they're measured against —
+  // a separate panel from the gap line's caveats above.
+  'loggingGap.targetCaveatConfirmedOnly': "Today's total counts confirmed meals only — an unconfirmed photo isn't included yet.",
+  'loggingGap.targetCalorieDerivation':
+    'Calories: basal metabolism {bmr} kcal (Mifflin-St Jeor) from weight {weight} kg, height {height} cm, age {age}, sex {sex}, times activity {multiplier} ({tier}), giving {calories} kcal.',
+  'loggingGap.targetProteinDerivation': 'Protein: 1.6 g per kg of goal weight ({goal} kg), giving {protein} g.',
+  'loggingGap.targetFatCarbDerivation':
+    "Fat and carbs split what's left of the calorie budget after protein, half each by energy — except fat never drops below 0.8 g per kg of goal weight, in which case carbs take the rest.",
+  'loggingGap.targetRecomputed':
+    'This target is recomputed every time the page loads, so a new weigh-in, goal weight or step average can move it.',
+  'loggingGap.sexMale': 'male',
+  'loggingGap.sexFemale': 'female',
+  'loggingGap.tierSedentary': 'sedentary',
+  'loggingGap.tierLight': 'lightly active',
+  'loggingGap.tierModerate': 'moderately active',
+  'loggingGap.tierActive': 'very active',
+  'loggingGap.tierExtra': 'extra active',
+
+  // The Healthiness Label (middle row): a deterministic heuristic, not an
+  // LLM judgment (ADR-004) — see frontend/lib/healthiness.ts for the
+  // thresholds. Copy says only what was measured: no "healthy"/"unhealthy",
+  // and no claim about sodium the log can't support.
+  'loggingGap.healthinessLine': 'Last 7 days: {label}',
+  'loggingGap.healthinessLabel.good': 'Good',
+  'loggingGap.healthinessLabel.fair': 'Fair',
+  'loggingGap.healthinessLabel.needs_attention': 'Needs attention',
+  'loggingGap.healthinessReason.protein_low': 'protein is low',
+  'loggingGap.healthinessReason.protein_high': 'protein is high',
+  'loggingGap.healthinessReason.carbs_low': 'carbs are low',
+  'loggingGap.healthinessReason.carbs_high': 'carbs are high',
+  'loggingGap.healthinessReason.fat_low': 'fat is low',
+  'loggingGap.healthinessReason.fat_high': 'fat is high',
+  'loggingGap.healthinessReason.sugar_high': 'sugar is high',
+  'loggingGap.healthinessReason.sodium_high': 'sodium is high',
+  'loggingGap.healthinessReason.fiber_low': 'fiber is low',
+  'loggingGap.healthinessHintNote':
+    "The label covers macro balance, total sugars, sodium and fiber on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
+  'nutritionChat.title': 'About this advice',
+  'nutritionChat.basisTitle': 'What this is based on',
+  'nutritionChat.basis.off.above': '{signal}: {value} per day on average, above the {threshold} guideline.',
+  'nutritionChat.basis.off.below': '{signal}: {value} per day on average, below the {threshold} guideline.',
+  'nutritionChat.basis.far.above': '{signal}: {value} per day on average, well above the {threshold} guideline and past the {farThreshold} mark.',
+  'nutritionChat.basis.far.below': '{signal}: {value} per day on average, well below the {threshold} guideline and under the {farThreshold} mark.',
+  'nutritionChat.basisNothingFlagged': 'Nothing crossed a guideline in this window.',
+  'nutritionChat.basisDays': 'Measured over {days} fully logged days in the last 7.',
+  'nutritionChat.signal.protein': 'Protein share',
+  'nutritionChat.signal.carbs': 'Carb share',
+  'nutritionChat.signal.fat': 'Fat share',
+  'nutritionChat.signal.sugar': 'Sugar share',
+  'nutritionChat.signal.sodium': 'Sodium',
+  'nutritionChat.signal.fiber': 'Fiber',
+  'nutritionChat.gramsPerDay': '{value} g',
+  'nutritionChat.sourcesTitle': 'Records used in this answer',
+  'nutritionChat.sourceContribution': '{signal}: {value} g · {date}',
+  'nutritionChat.sourceConfidence': '{value}% confidence',
+  'nutritionChat.openMeal': 'Open the meal containing {food} from {date}',
+  'nutritionChat.placeholder': 'Ask about this advice',
+  'nutritionChat.inputLabel': 'Your question about this advice',
+  'nutritionChat.send': 'Ask',
+  'nutritionChat.thinking': 'Thinking…',
+  'nutritionChat.unavailable': 'The answer is temporarily unavailable. Try again.',
+  'nutritionChat.turnLimit': 'This conversation is full. Close and reopen to start a new one.',
+  'nutritionChat.ephemeralNote': 'This conversation is not saved. Closing this panel discards it.',
+  'nutritionChat.open': 'Why this advice?',
+  'loggingGap.adviceDetail':
+    'These lines are written by an AI model from the label, its reason codes and your Nutrition Target. They are cached for the current day and regenerate when those inputs change. They are not medical advice.',
+
+  // The steps detail page's diagnostic disclosure (check-the-health-data
+  // spec) — collapsed by default, same hint-then-detail pattern as the
+  // loggingGap keys above. These are the steps-specific detail-page strings;
+  // the shared record-table translations follow below.
+  'stepsDiagnostics.hintToggle': 'Show diagnostic',
+  'stepsDiagnostics.title': 'Step diagnostics',
+  'stepsDiagnostics.columnDay': 'Day',
+  'stepsDiagnostics.columnRaw': 'Raw total',
+  'stepsDiagnostics.columnCollapsed': 'Counted total',
+  'stepsDiagnostics.columnDropped': 'Records dropped',
+  'stepsDiagnostics.columnPayloads': 'Syncs contributing',
+  'stepsDiagnostics.columnLocalDay': 'Local-day total',
+  'stepsDiagnostics.readingDuplicates': 'Duplicate step records in the database are inflating the raw total.',
+  'stepsDiagnostics.readingMultipleSyncs': 'More than one sync wrote steps for the same day.',
+  'stepsDiagnostics.readingDayBoundary': "Your local day boundary differs from this chart's UTC day.",
+  'stepsDiagnostics.readingNothing': 'Nothing to report — raw, counted and local-day totals agree.',
+
+  // Raw record table on every per-type data detail page. Column labels name
+  // the stored value and unit; charts may intentionally convert that value to
+  // another display unit (distance and sleep), but the table does not.
+  'dataTable.actions': 'Actions',
+  'dataTable.loading': 'Loading…',
+  'dataTable.empty': 'No data in this range.',
+  'dataTable.confirmDelete': 'Confirm',
+  'dataTable.cancelDelete': 'Cancel',
+  'dataTable.deleteRecord': 'Delete record',
+  'dataTable.deleteFailed': 'Could not delete the record. Try again.',
+  'dataTable.column.unknown': 'Field',
+  'dataTable.column.createdAt': 'Created at',
+  'dataTable.column.updatedAt': 'Updated at',
+  'dataTable.column.time': 'Time',
+  'dataTable.column.startTime': 'Start time',
+  'dataTable.column.endTime': 'End time',
+  'dataTable.column.sessionEndTime': 'Session end time',
+  'dataTable.column.loggedAt': 'Logged at',
+  'dataTable.column.name': 'Name',
+  'dataTable.column.status': 'Status',
+  'dataTable.column.stepCount': 'Steps',
+  'dataTable.column.distanceMeters': 'Distance (m)',
+  'dataTable.column.heightMeters': 'Height (m)',
+  'dataTable.column.hydrationLiters': 'Hydration (L)',
+  'dataTable.column.heartRateBpm': 'Heart rate (bpm)',
+  'dataTable.column.restingHeartRateBpm': 'Resting heart rate (bpm)',
+  'dataTable.column.rmssdMillis': 'RMSSD (ms)',
+  'dataTable.column.weightKilograms': 'Weight (kg)',
+  'dataTable.column.goalWeightKilograms': 'Goal weight (kg)',
+  'dataTable.column.leanBodyMassKilograms': 'Lean body mass (kg)',
+  'dataTable.column.boneMassKilograms': 'Bone mass (kg)',
+  'dataTable.column.bloodGlucoseMmolPerLiter': 'Blood glucose (mmol/L)',
+  'dataTable.column.oxygenSaturationPercentage': 'Oxygen saturation (%)',
+  'dataTable.column.bodyFatPercentage': 'Body fat (%)',
+  'dataTable.column.bodyTemperatureCelsius': 'Body temperature (°C)',
+  'dataTable.column.respiratoryRate': 'Respiratory rate (breaths/min)',
+  'dataTable.column.basalMetabolicRateWatts': 'Basal metabolic rate (W)',
+  'dataTable.column.systolic': 'Systolic (mmHg)',
+  'dataTable.column.diastolic': 'Diastolic (mmHg)',
+  'dataTable.column.skinTemperatureDeltaCelsius': 'Temperature change (°C)',
+  'dataTable.column.skinTemperatureBaselineCelsius': 'Baseline temperature (°C)',
+  'dataTable.column.measurementLocation': 'Measurement location',
+  'dataTable.column.sleepDurationSeconds': 'Sleep duration (seconds)',
+  'dataTable.column.exerciseDurationSeconds': 'Exercise duration (seconds)',
+  'dataTable.column.exerciseType': 'Exercise type',
+  'dataTable.column.exerciseDistanceMeters': 'Distance (m)',
+  'dataTable.column.exerciseSteps': 'Steps',
+  'dataTable.column.averageCadenceSpm': 'Average cadence (steps/min)',
+  'dataTable.column.maximumCadenceSpm': 'Maximum cadence (steps/min)',
+  'dataTable.column.strideLengthMeters': 'Stride length (m)',
+  'dataTable.column.speedMetersPerSecond': 'Speed (m/s)',
+  'dataTable.column.vo2MaxMlPerKgPerMin': 'VO2 max (mL/kg/min)',
+  'dataTable.column.activeCaloriesKcal': 'Active calories (kcal)',
+  'dataTable.column.totalCaloriesKcal': 'Total calories (kcal)',
+  'dataTable.column.nutritionCaloriesKcal': 'Calories (kcal)',
+  'dataTable.column.mealCaloriesKcal': 'Calories (kcal)',
+  'dataTable.column.proteinGrams': 'Protein (g)',
+  'dataTable.column.carbsGrams': 'Carbohydrates (g)',
+  'dataTable.column.fatGrams': 'Fat (g)',
+  'dataTable.column.sugarGrams': 'Sugar (g)',
+  'dataTable.column.sodiumGrams': 'Sodium (g)',
+  'dataTable.column.dietaryFiberGrams': 'Dietary fiber (g)',
 
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing
@@ -367,6 +534,50 @@ const en = {
   'metric.bone_mass': 'Bone Mass',
   'metric.speed': 'Speed',
   'metric.food_meal': 'Food Meal',
+
+  // The per-type data detail page (DataTypeClient.tsx): zoom control,
+  // nutrition macro selector, every explicit Recharts series name (Day and
+  // bucketed lines/bars/areas), the Avg/Max/Total/BMI summary row, the BMI
+  // category readout, and the weight trend-projection copy. See en.ts's
+  // scope comment above for what this route still leaves English
+  // (AddRecordForm) and docs/specs/complete-the-owner-selected-english-and.md
+  // for why the two are split.
+  'dataDetail.zoomDay': 'Day',
+  'dataDetail.zoomWeek': 'Week',
+  'dataDetail.zoomMonth': 'Month',
+  'dataDetail.zoomYear': 'Year',
+  'dataDetail.setGoal': 'Set goal',
+  'dataDetail.setHeight': 'Set height',
+  'dataDetail.macroCalories': 'Calories',
+  'dataDetail.macroProtein': 'Protein',
+  'dataDetail.macroCarbs': 'Carbs',
+  'dataDetail.macroFat': 'Fat',
+  'dataDetail.macroSugar': 'Sugar',
+  'dataDetail.macroSodium': 'Sodium',
+  'dataDetail.macroFiber': 'Fiber',
+  'dataDetail.systolic': 'Systolic',
+  'dataDetail.diastolic': 'Diastolic',
+  'dataDetail.systolicRange': 'Systolic range',
+  'dataDetail.diastolicRange': 'Diastolic range',
+  'dataDetail.goal': 'Goal',
+  'dataDetail.range': 'Range',
+  'dataDetail.avg': 'Avg',
+  'dataDetail.trend': 'Trend',
+  'dataDetail.projection': 'Projection',
+  'dataDetail.max': 'Max',
+  'dataDetail.total': 'Total',
+  'dataDetail.bmi': 'BMI',
+  'dataDetail.bmiUnderweight': 'Underweight',
+  'dataDetail.bmiNormal': 'Normal',
+  'dataDetail.bmiOverweight': 'Overweight',
+  'dataDetail.bmiObese': 'Obese',
+  'dataDetail.projectionReached': "You've reached your goal weight",
+  'dataDetail.projectionNotOnTrack': 'Not on track at your current trend',
+  'dataDetail.projectionOnTrack': 'On track to reach your goal around {date}',
+  'dataDetail.projectionInsufficientData': 'Not enough data to project yet',
+  'dataDetail.projectionLoadFailed': "Couldn't load your weight history",
+  // The route's <Suspense> fallback (app/data/[type]/DataTypeLoading.tsx).
+  'dataDetail.loading': 'Loading...',
 };
 
 export default en;

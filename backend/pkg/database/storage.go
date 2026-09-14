@@ -34,9 +34,13 @@ const (
 	AggFamilyPoint      AggFamily = "point"
 )
 
-// Bucket is the aggregation granularity for QueryAggregate. There is no
-// "week" bucket: the UI's Week and Month zoom levels both use Day and
-// differ only in requested time range (see the chart-zoom-aggregation spec).
+// Bucket is the aggregation granularity for QueryAggregate. Day and month
+// buckets are local calendar days and months — resolved in the *time.Location
+// passed to QueryAggregate/QueryAggregateBloodPressure/QueryAggregateNutrition
+// — not UTC calendar days, and bucket_start labels a local calendar date
+// (see LocalBucketKey). There is no "week" bucket: the UI's Week and Month
+// zoom levels both use Day and differ only in requested time range (see the
+// chart-zoom-aggregation spec).
 type Bucket string
 
 const (
@@ -55,13 +59,29 @@ type Storage interface {
 	QueryRecords(tableName string, timeCol string, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
 	// QueryAggregate returns one row per time bucket for a single value
 	// column: {bucket_start, count, sum} for the cumulative family or
-	// {bucket_start, count, avg, min, max} for the point family.
-	QueryAggregate(tableName, timeCol, valueCol string, family AggFamily, bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
+	// {bucket_start, count, avg, min, max} for the point family. The bucket
+	// resolves in loc (a nil loc is treated as time.UTC).
+	QueryAggregate(
+		tableName, timeCol, valueCol string, family AggFamily, bucket Bucket, loc *time.Location,
+		userID uuid.UUID, tr TimeRange,
+	) ([]map[string]any, error)
 	// QueryAggregateBloodPressure and QueryAggregateNutrition handle the two
 	// registered types with more than one value column, which QueryAggregate's
-	// single-valueCol shape can't express.
-	QueryAggregateBloodPressure(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
-	QueryAggregateNutrition(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
+	// single-valueCol shape can't express. The bucket resolves in loc (a nil
+	// loc is treated as time.UTC).
+	QueryAggregateBloodPressure(bucket Bucket, loc *time.Location, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
+	QueryAggregateNutrition(bucket Bucket, loc *time.Location, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
+	// QueryAggregateSteps is steps' own aggregate query, not the generic
+	// QueryAggregate: Health Connect stores one set of step records per
+	// source (phone sensor, watch, a fitness app, ...), and those sources'
+	// intervals overlap, so a plain SUM(count) double-counts the overlap.
+	// This streams the user's raw (start_time, end_time, count) rows
+	// ordered by start_time then end_time and folds them through the
+	// CollapseOverlappingSteps watermark rule in a single pass, crediting
+	// each kept record's count to the bucket its own start_time falls in.
+	// Returns the same {bucket_start, count, sum} shape QueryAggregate
+	// produces for the cumulative family, so callers don't have to change.
+	QueryAggregateSteps(bucket Bucket, userID uuid.UUID, tr TimeRange) ([]map[string]any, error)
 	// DeleteRecord hard-deletes a single record by ID, scoped to userID.
 	// Returns ErrNotFound if no matching row exists or the row belongs to another user.
 	DeleteRecord(tableName string, id uuid.UUID, userID uuid.UUID) error

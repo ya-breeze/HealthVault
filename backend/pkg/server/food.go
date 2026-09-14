@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +32,7 @@ type foodHandlers struct {
 	vision         vision.Client
 	maxUploadBytes int64
 	visionTimeout  time.Duration
+	adviceMu       sync.Mutex
 }
 
 // defaultMaxUploadBytes and defaultVisionTimeout mirror config.go's own

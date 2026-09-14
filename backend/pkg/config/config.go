@@ -14,6 +14,12 @@ type Config struct {
 	CookieSecure bool
 	MCPToken     string // required bearer token for /mcp; if empty, /mcp is disabled
 
+	// Cloudflare Access sign-in exchange (POST /api/auth/cf-access). All three
+	// default to empty; the endpoint answers 404 unless all three are set.
+	CFAccessTeamDomain string // e.g. "myteam.cloudflareaccess.com"
+	CFAccessAUD        string // the Access application's AUD tag
+	CFAccessEmailMap   string // "email:username,..." — see database.SeedUsers's spec shape
+
 	// Food logging
 	OpenAIAPIKey   string
 	OpenAIModel    string
@@ -43,6 +49,10 @@ func Load() (*Config, error) {
 		JWTSecret:    viper.GetString("JWT_SECRET"),
 		CookieSecure: viper.GetBool("COOKIE_SECURE"),
 		MCPToken:     viper.GetString("MCP_TOKEN"),
+
+		CFAccessTeamDomain: viper.GetString("CF_ACCESS_TEAM_DOMAIN"),
+		CFAccessAUD:        viper.GetString("CF_ACCESS_AUD"),
+		CFAccessEmailMap:   viper.GetString("CF_ACCESS_EMAIL_MAP"),
 
 		OpenAIAPIKey:   viper.GetString("OPENAI_API_KEY"),
 		OpenAIModel:    viper.GetString("OPENAI_MODEL"),
