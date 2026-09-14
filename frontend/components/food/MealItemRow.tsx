@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api, ApiError, FoodItem, FoodMeal, FoodSearchResult } from '@/lib/api';
-import ItemResolver from './ItemResolver';
+import ItemResolver, { type NutrientValues } from './ItemResolver';
 import TapTarget from '@/components/ui/TapTarget';
 import CanonicalNameLabel from '@/components/food/CanonicalNameLabel';
 import { useLanguage } from '@/components/LanguageContext';
@@ -136,7 +136,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
 
   const handleManual = async (
     name: string,
-    macros: Omit<Parameters<typeof api.patchMealItem>[2], 'manual' | 'name' | 'save_as_custom_food'>,
+    macros: NutrientValues,
     saveAsCustomFood: boolean
   ) => {
     await onUpdated(() => api.patchMealItem(mealId, item.id, {

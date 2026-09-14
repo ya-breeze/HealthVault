@@ -905,6 +905,85 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(nutrientLine).toContainText('Fiber 9.5g');
   });
 
+  test('keeps untouched nutrient fields current when a weight update finishes after the editor opens', async ({ page }) => {
+    await login(page);
+    const initialItem = {
+      ...mockFoodMeal().items[0],
+      macro_source: 'reference',
+      fdc_id: 42,
+      calories: 312,
+      protein_grams: 14,
+      carbs_grams: 27,
+      fat_grams: 9,
+      sugar_grams: 6,
+      sodium_grams: 0.42,
+      dietary_fiber_grams: 8.5,
+    };
+    const weightedItem = {
+      ...initialItem,
+      weight_grams: 200,
+      calories: 624,
+      protein_grams: 28,
+      carbs_grams: 54,
+      fat_grams: 18,
+      sugar_grams: 12,
+      sodium_grams: 0.84,
+      dietary_fiber_grams: 17,
+    };
+    const initial = mockFoodMeal({ status: 'pending_review', items: [initialItem] });
+    const weighted = mockFoodMeal({ status: 'pending_review', items: [weightedItem] });
+    const corrected = mockFoodMeal({
+      status: 'pending_review',
+      items: [{ ...weightedItem, macro_source: 'manual', fdc_id: undefined, sodium_grams: 0.5 }],
+    });
+    let manualPatchBody: Record<string, unknown> | undefined;
+
+    await page.route('**/api/food/meals/mock-meal-id', route =>
+      route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
+    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      if (body.manual === true) {
+        manualPatchBody = body;
+        return route.fulfill({ json: corrected });
+      }
+      await new Promise(resolve => setTimeout(resolve, 800));
+      return route.fulfill({ json: weighted });
+    });
+
+    await page.goto('/food/review/?meal=mock-meal-id');
+    const weightInput = page.locator('input[type="number"]').first();
+    await weightInput.fill('200');
+    await page.getByRole('button', { name: 'Edit nutrients' }).click();
+
+    const caloriesInput = page.locator('label:has-text("Calories") input');
+    const sodiumInput = page.locator('label:has-text("Sodium (g)") input');
+    const fiberInput = page.locator('label:has-text("Fiber (g)") input');
+    await sodiumInput.fill('0.5');
+
+    await expect(caloriesInput).toHaveValue('624');
+    await expect(page.locator('label:has-text("Protein (g)") input')).toHaveValue('28');
+    await expect(page.locator('label:has-text("Carbs (g)") input')).toHaveValue('54');
+    await expect(page.locator('label:has-text("Fat (g)") input')).toHaveValue('18');
+    await expect(page.locator('label:has-text("Sugar (g)") input')).toHaveValue('12');
+    await expect(fiberInput).toHaveValue('17');
+    await expect(sodiumInput).toHaveValue('0.5');
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => manualPatchBody).toEqual({
+      manual: true,
+      name: 'Old Item',
+      save_as_custom_food: false,
+      calories: 624,
+      protein_grams: 28,
+      carbs_grams: 54,
+      fat_grams: 18,
+      sugar_grams: 12,
+      sodium_grams: 0.5,
+      dietary_fiber_grams: 17,
+    });
+  });
+
   // Regression (round 8): MealMetaEditor always sent logged_at back on save,
   // even for a name-only edit — and the datetime-local input truncates to
   // minute granularity, so that silently dropped the meal's real
