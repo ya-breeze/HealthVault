@@ -85,6 +85,24 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
     }
   };
 
+  const errorMessage = (() => {
+    if (!error) return null;
+    switch (error.kind) {
+      case 'positive':
+        return t('addRecord.positiveNumber');
+      case 'range':
+        return spec && unit
+          ? interpolate(t('addRecord.range'), {
+              min: spec.min,
+              max: spec.max,
+              unit,
+            })
+          : null;
+      case 'saveFailed':
+        return t('addRecord.saveFailed');
+    }
+  })();
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -143,15 +161,7 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
       )}
       {error && (
         <p className="w-full text-sm text-red-600 dark:text-red-400">
-          {error.kind === 'positive'
-            ? t('addRecord.positiveNumber')
-            : error.kind === 'range' && spec && unit
-              ? interpolate(t('addRecord.range'), {
-                  min: spec.min,
-                  max: spec.max,
-                  unit,
-                })
-              : t('addRecord.saveFailed')}
+          {errorMessage}
         </p>
       )}
     </form>

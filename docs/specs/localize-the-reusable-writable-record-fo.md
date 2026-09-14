@@ -56,20 +56,20 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 3: Add deterministic English writable-form coverage
 
-- [ ] Add reusable method-aware route fixtures to `e2e/tests/data-types.spec.ts` for weight, height, and weight-goal GET/POST traffic, with captured bodies, mutable returned records, explicit failure responses, and explicitly controlled delayed responses; keep them isolated from the existing chart mocks and persistent seeded account data.
-- [ ] Add table-driven English assertions for all three direct forms’ Value-with-unit and Time labels, Add action, absence of Cancel, and exact `min`/`max` attributes, expecting `kg`, `m`, and `kg` respectively.
-- [ ] Exercise both custom client-validation branches for each type by dispatching submission past native constraint blocking: assert the exact English positive-number and bounded-range messages and prove no POST was issued.
-- [ ] For each writable type, mock a failed POST with a distinctive English server body; assert the operation-level English failure, absence of the server body, retained value/time, and restored enabled Add action.
-- [ ] For each writable type, hold a valid POST response, assert Saving… and a disabled submit action while it is pending, then release it and assert the captured `{ value, time? }` semantics, cleared value/time fields, restored Add action, and refreshed record output.
-- [ ] Cover Cancel on both Set goal and Set height shortcut forms by asserting that it closes the form without a POST and restores the relevant shortcut; also assert a weight family-member view renders neither direct nor shortcut write forms.
-- [ ] Mark completed
+- [x] Add reusable method-aware route fixtures to `e2e/tests/data-types.spec.ts` for weight, height, and weight-goal GET/POST traffic, with captured bodies, mutable returned records, explicit failure responses, and explicitly controlled delayed responses; keep them isolated from the existing chart mocks and persistent seeded account data.
+- [x] Add table-driven English assertions for all three direct forms’ Value-with-unit and Time labels, Add action, absence of Cancel, and exact `min`/`max` attributes, expecting `kg`, `m`, and `kg` respectively.
+- [x] Exercise both custom client-validation branches for each type by dispatching submission past native constraint blocking: assert the exact English positive-number and bounded-range messages and prove no POST was issued.
+- [x] For each writable type, mock a failed POST with a distinctive English server body; assert the operation-level English failure, absence of the server body, retained value/time, and restored enabled Add action.
+- [x] For each writable type, hold a valid POST response, assert Saving… and a disabled submit action while it is pending, then release it and assert the captured `{ value, time? }` semantics, cleared value/time fields, restored Add action, and refreshed record output.
+- [x] Cover Cancel on both Set goal and Set height shortcut forms by asserting that it closes the form without a POST and restores the relevant shortcut; also assert a weight family-member view renders neither direct nor shortcut write forms.
+- [x] Mark completed
 
 ### Task 4: Mirror writable-form coverage in Russian and contain language state
 
-- [ ] Run the Russian writable-form scenarios through the existing `selectRussianDisplayLanguage`/`withSettingsSave` convention, placing every Russian test body in `try`/`finally` and calling `restoreEnglishDisplayLanguage` from `finally`.
-- [ ] Assert all three forms render Значение with the translated `кг`/`м` unit, Время (необязательно), Добавить, and their unchanged numeric bounds; keep direct forms free of an Отмена action.
-- [ ] Exercise both client-validation paths for weight, height, and weight goal, asserting the exact Russian positive-number and interpolated range messages and no POST on either failure.
-- [ ] Cover failed POSTs for all three types with a distinctive English backend body, asserting Не удалось сохранить запись. Попробуйте ещё раз., absence of the backend text, retained fields, and a re-enabled Добавить action.
-- [ ] Cover explicitly delayed successful saves with Сохранение… and a disabled submit action, then verify request-body/timestamp semantics, reset fields, Добавить restoration, and refreshed records after release.
-- [ ] Cover Отмена on the localized Set goal and Set height shortcut forms, proving cancellation sends no POST and returns to the localized shortcut state, while preserving owner-only visibility.
-- [ ] Mark completed
+- [x] Run the Russian writable-form scenarios through the existing `selectRussianDisplayLanguage`/`withSettingsSave` convention, placing every Russian test body in `try`/`finally` and calling `restoreEnglishDisplayLanguage` from `finally`.
+- [x] Assert all three forms render Значение with the translated `кг`/`м` unit, Время (необязательно), Добавить, and their unchanged numeric bounds; keep direct forms free of an Отмена action.
+- [x] Exercise both client-validation paths for weight, height, and weight goal, asserting the exact Russian positive-number and interpolated range messages and no POST on either failure.
+- [x] Cover failed POSTs for all three types with a distinctive English backend body, asserting Не удалось сохранить запись. Попробуйте ещё раз., absence of the backend text, retained fields, and a re-enabled Добавить action.
+- [x] Cover explicitly delayed successful saves with Сохранение… and a disabled submit action, then verify request-body/timestamp semantics, reset fields, Добавить restoration, and refreshed records after release.
+- [x] Cover Отмена on the localized Set goal and Set height shortcut forms, proving cancellation sends no POST and returns to the localized shortcut state, while preserving owner-only visibility.
+- [x] Mark completed

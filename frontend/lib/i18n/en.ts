@@ -529,10 +529,10 @@ const en = {
   // The per-type data detail page (DataTypeClient.tsx): zoom control,
   // nutrition macro selector, every explicit Recharts series name (Day and
   // bucketed lines/bars/areas), the Avg/Max/Total/BMI summary row, the BMI
-  // category readout, and the weight trend-projection copy. See en.ts's
-  // scope comment above for what this route still leaves English
-  // (AddRecordForm) and docs/specs/complete-the-owner-selected-english-and.md
-  // for why the two are split.
+  // category readout, the weight trend-projection copy, and the complete
+  // AddRecordForm writable surface. See en.ts's scope comment above and
+  // docs/specs/complete-the-owner-selected-english-and.md for the read/write
+  // coverage history of this route.
   'dataDetail.zoomDay': 'Day',
   'dataDetail.zoomWeek': 'Week',
   'dataDetail.zoomMonth': 'Month',
