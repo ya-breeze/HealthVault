@@ -11,8 +11,7 @@
 // (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
 // custom-food catalog list, and the Expert Mode toggle.
 //
-// Still English regardless of Display Language: the write form on the
-// per-type data detail pages (AddRecordForm); the import and login screens;
+// Still English regardless of Display Language: the import and login screens;
 // app/food/upload/page.tsx; and the food components not on the review path:
 // AddItemForm, CameraCapture, ClarifyModal, CustomFoodModal,
 // DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
@@ -23,8 +22,8 @@
 // diagnostic disclosure, zoom/macro controls, every chart series name and
 // tooltip, the Avg/Max/Total/BMI summary row, the BMI category and the
 // weight trend-projection copy, and the route's loading fallback are all
-// covered — only the AddRecordForm write surface is not. See dataDetail.*
-// below; AddRecordForm is the deferred child change.)
+// covered, including the complete data-detail writable form (AddRecordForm).
+// See dataDetail.* and addRecord.* below.)
 //
 // app/food/manual/page.tsx is now partly translated, not wholly English: its
 // description-first entry path (the textarea, name/time inputs, character
@@ -192,6 +191,7 @@ const en = {
   'unit.h': 'h',
   'unit.ms': 'ms',
   'unit.kg': 'kg',
+  'unit.m': 'm',
   'unit.percent': '%',
   'unit.kcal': 'kcal',
   'unit.kcalPer100g': 'kcal/100g',
@@ -569,6 +569,19 @@ const en = {
   'dataDetail.projectionLoadFailed': "Couldn't load your weight history",
   // The route's <Suspense> fallback (app/data/[type]/DataTypeLoading.tsx).
   'dataDetail.loading': 'Loading...',
+
+  // Reusable writable form on the per-type data-detail pages and their
+  // owner-only shortcuts. Labels and validation messages use placeholders so
+  // the selected unit stays part of the translated sentence.
+  'addRecord.value': 'Value',
+  'addRecord.valueWithUnit': 'Value ({unit})',
+  'addRecord.time': 'Time (optional)',
+  'addRecord.positiveNumber': 'Enter a positive number',
+  'addRecord.range': 'Enter a value between {min} and {max} {unit}',
+  'addRecord.add': 'Add',
+  'addRecord.saving': 'Saving…',
+  'addRecord.cancel': 'Cancel',
+  'addRecord.saveFailed': 'Could not save the record. Try again.',
 };
 
 export default en;

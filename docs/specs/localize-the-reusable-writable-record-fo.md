@@ -39,11 +39,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 
 ### Task 1: Define the writable-form localization contract
 
-- [ ] Add `addRecord.*` entries to `frontend/lib/i18n/en.ts` for the plain and unit-bearing Value labels, optional Time label, positive-number and interpolated range validation messages, Add, Saving…, Cancel, and the operation-level save failure, using the exact English copy from `## How`.
-- [ ] Add matching Russian entries to `frontend/lib/i18n/ru.ts` using the exact Russian copy from `## How`, preserving compile-time parity through `Dictionary = typeof en`.
-- [ ] Add `unit.m` as `m` in English and `м` in Russian, and retain the existing `unit.kg` translations for kilogram forms.
-- [ ] Update `en.ts`’s localization scope comment to identify the complete data-detail writable form as covered and remove the obsolete statement that `AddRecordForm` remains English.
-- [ ] Mark completed
+- [x] Add `addRecord.*` entries to `frontend/lib/i18n/en.ts` for the plain and unit-bearing Value labels, optional Time label, positive-number and interpolated range validation messages, Add, Saving…, Cancel, and the operation-level save failure, using the exact English copy from `## How`.
+- [x] Add matching Russian entries to `frontend/lib/i18n/ru.ts` using the exact Russian copy from `## How`, preserving compile-time parity through `Dictionary = typeof en`.
+- [x] Add `unit.m` as `m` in English and `м` in Russian, and retain the existing `unit.kg` translations for kilogram forms.
+- [x] Update `en.ts`’s localization scope comment to identify the complete data-detail writable form as covered and remove the obsolete statement that `AddRecordForm` remains English.
+- [x] Mark completed
 
 ### Task 2: Localize AddRecordForm without changing its write contract
 
