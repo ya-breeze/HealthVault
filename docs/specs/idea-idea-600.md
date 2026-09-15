@@ -58,11 +58,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Wire and localize the card
-- [ ] Import and render `FoodLogHistoryCard` from `frontend/app/page.tsx` for the `food_log_history` registry branch, passing the already-loaded timezone and the existing reorder/visibility callbacks
-- [ ] Add matching `foodLogHistory.*` keys to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts` for the title, loading/error states, aggregate labels, three day outcomes, and accessible day descriptions
-- [ ] Use count-safe Russian copy such as “Засчитано дней: X из 7” rather than introducing unhandled noun inflection
-- [ ] Update relevant registry comments in `frontend/lib/vitals.ts`, `frontend/app/page.tsx`, and `CONTEXT.md` so they describe multiple non-`DataType` Food Cards rather than treating `logging_gap` as the only possible one
-- [ ] Mark completed
+- [x] Import and render `FoodLogHistoryCard` from `frontend/app/page.tsx` for the `food_log_history` registry branch, passing the already-loaded timezone and the existing reorder/visibility callbacks
+- [x] Add matching `foodLogHistory.*` keys to `frontend/lib/i18n/en.ts` and `frontend/lib/i18n/ru.ts` for the title, loading/error states, aggregate labels, three day outcomes, and accessible day descriptions
+- [x] Use count-safe Russian copy such as “Засчитано дней: X из 7” rather than introducing unhandled noun inflection
+- [x] Update relevant registry comments in `frontend/lib/vitals.ts`, `frontend/app/page.tsx`, and `CONTEXT.md` so they describe multiple non-`DataType` Food Cards rather than treating `logging_gap` as the only possible one
+- [x] Mark completed
 
 ### Task 5: Cover the dashboard behavior end to end
 - [ ] Extend `e2e/tests/dashboard.spec.ts` or add a focused E2E spec that supplies deterministic completeness and daily-total responses and asserts the three summary counts and seven chronological markers

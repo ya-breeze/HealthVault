@@ -70,7 +70,7 @@ A Dashboard Card showing one vital metric's current value, 7-day sparkline, and 
 _Avoid_: Metric card, stat card
 
 **Food Card**:
-A Dashboard Card summarizing food-logging data — e.g. today's intake against a Nutrition Target, a Healthiness Label, or the Logging Gap Card.
+A Dashboard Card summarizing food-logging data — e.g. today's intake against a Nutrition Target, a Healthiness Label, the Logging Gap Card, or Food Log History.
 _Avoid_: Nutrition widget, food widget
 
 **Presence**:

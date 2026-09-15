@@ -226,11 +226,11 @@ export default function Dashboard() {
   // There is no longer a "no data at all" empty state to pair `allHidden`
   // against: hide-unrecorded-data-types' `vitals-grid-empty-no-data`
   // placeholder could only fire when `presentOrder` was empty, and since
-  // 'logging_gap' joined PRIMARY_METRICS with unconditional presence
-  // (hasCardPresence, design.md decision 8) it never can be. A user with no
-  // readings at all now gets the Logging Gap card's own "not enough data yet"
-  // content instead. `allHidden` keeps its own length check regardless — it
-  // must not fire on an empty list.
+  // Food Cards joined PRIMARY_METRICS with unconditional presence
+  // (hasCardPresence, design.md decision 8) it never can. A user with no
+  // readings at all now gets the Food Cards' own local content states instead.
+  // `allHidden` keeps its own length check regardless — it must not fire on
+  // an empty list.
   const allHidden = presentOrder.length > 0 && presentOrder.every(m => m.hidden);
   // Gated on dashboardReady (not just presenceReady) so a section the user
   // hid can't flash unhidden before the saved more_data_hidden preference has

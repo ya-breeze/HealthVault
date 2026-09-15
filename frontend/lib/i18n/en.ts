@@ -6,8 +6,8 @@
 //
 // What is covered, precisely, so this doesn't quietly overstate itself:
 // the header/navigation — including the mobile bottom navigation bar and
-// the More sheet it opens — the dashboard (its vitals grid, meal-attention
-// line, log-food actions and secondary-metric links), the meal review screen
+// the More sheet it opens — the dashboard (its vitals and Food Card grid,
+// meal-attention line, log-food actions and secondary-metric links), the meal review screen
 // (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
 // custom-food catalog list, and the Expert Mode toggle.
 //

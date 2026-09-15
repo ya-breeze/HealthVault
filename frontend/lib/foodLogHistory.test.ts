@@ -94,13 +94,15 @@ describe('summarizeFoodLogHistory', () => {
   });
 
   it('reuses isValidDay: unresolved meals disqualify complete-looking days', () => {
-    const result = summarize(['complete', 'confirmed_complete', ...DATES.slice(2).map(() => 'complete')], [1, 1, 0, 0, 0, 0, 0]);
+    const states: DayCompleteness['state'][] = ['complete', 'confirmed_complete', ...DATES.slice(2).map(() => 'complete' as const)];
+    const result = summarize(states, [1, 1, 0, 0, 0, 0, 0]);
     expect(result.days.slice(0, 2).map(day => day.outcome)).toEqual(['needs_attention', 'needs_attention']);
     expect(result.countedDays).toBe(5);
   });
 
   it('keeps overlapping attention reasons on the day result', () => {
-    const input = rows(['unconfirmed', ...DATES.slice(1).map(() => 'complete')], [2, 0, 0, 0, 0, 0, 0]);
+    const states: DayCompleteness['state'][] = ['unconfirmed', ...DATES.slice(1).map(() => 'complete' as const)];
+    const input = rows(states, [2, 0, 0, 0, 0, 0, 0]);
     const first: FoodLogHistoryDay = summarizeFoodLogHistory(input.completeness, input.dailyTotals, DATES).days[0];
     expect(first).toMatchObject({ state: 'unconfirmed', occasionCount: 3, unconfirmedMeals: 2, outcome: 'needs_attention' });
   });
