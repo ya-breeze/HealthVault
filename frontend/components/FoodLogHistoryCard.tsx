@@ -67,7 +67,7 @@ function statusSymbol(outcome: FoodLogHistoryOutcome): string {
 }
 
 function weekdayLabel(date: string, language: LanguageCode): string {
-  return new Intl.DateTimeFormat(language === 'ru' ? 'ru' : undefined, { weekday: 'short' }).format(
+  return new Intl.DateTimeFormat(language === 'ru' ? 'ru' : undefined, { weekday: 'short', timeZone: 'UTC' }).format(
     new Date(`${date}T12:00:00.000Z`),
   );
 }
