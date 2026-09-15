@@ -33,5 +33,5 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Add a concise description consistent with `CONTEXT.md`, identifying HealthVault as a personal health-tracking application and summarizing its AI-assisted photographed-meal nutrition tracking.
 - [x] Add a compact repository map linking to `backend/`, `frontend/`, and `e2e/`, and documentation links to `CONTEXT.md` and `docs/adr/`.
 - [x] Confirm every relative image and documentation link resolves from the root README and that the final change leaves the existing logo, favicon, Apple icon, manifest, and public icon bundle byte-for-byte unchanged.
-- [ ] Run the validation commands and address any failures caused by the README change.
-- [ ] Mark completed
+- [x] Run the validation commands and address any failures caused by the README change.
+- [x] Mark completed
