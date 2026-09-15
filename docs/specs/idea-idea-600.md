@@ -36,11 +36,11 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
 
 ### Task 1: Define the seven-day logging-history model
-- [ ] Add `frontend/lib/foodLogHistory.ts` with the `resolveFoodLogHistoryWindow` and `summarizeFoodLogHistory` pure functions and typed `counted`, `no_food`, and `needs_attention` day outcomes described in `## How`
-- [ ] Reuse `loggedDayKey` for the stored-timezone boundary and `isValidDay` for downstream eligibility instead of duplicating either rule
-- [ ] Validate that both endpoint results contain one row for every expected date and reject missing, duplicate, out-of-window, or mismatched rows
-- [ ] Add `frontend/lib/foodLogHistory.test.ts` covering UTC and date-boundary timezones, chronological seven-day windows, all four Day Completeness states, unresolved Food Meals, overlapping attention reasons, aggregate counts, and malformed response joins
-- [ ] Mark completed
+- [x] Add `frontend/lib/foodLogHistory.ts` with the `resolveFoodLogHistoryWindow` and `summarizeFoodLogHistory` pure functions and typed `counted`, `no_food`, and `needs_attention` day outcomes described in `## How`
+- [x] Reuse `loggedDayKey` for the stored-timezone boundary and `isValidDay` for downstream eligibility instead of duplicating either rule
+- [x] Validate that both endpoint results contain one row for every expected date and reject missing, duplicate, out-of-window, or mismatched rows
+- [x] Add `frontend/lib/foodLogHistory.test.ts` covering UTC and date-boundary timezones, chronological seven-day windows, all four Day Completeness states, unresolved Food Meals, overlapping attention reasons, aggregate counts, and malformed response joins
+- [x] Mark completed
 
 ### Task 2: Generalize the dashboard registry for another Food Card
 - [ ] Extend `CardId` and `PRIMARY_METRICS` in `frontend/lib/vitals.ts` with `food_log_history`
