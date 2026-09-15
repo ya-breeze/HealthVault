@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, DATA_TYPES, DataType } from '@/lib/api';
 import { metricColorVar } from '@/lib/tokens';
-import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, hasCardPresence, secondaryTypes, DashboardCardPref, VitalResult } from '@/lib/vitals';
+import { PRIMARY_METRICS, extractVital, reconcileMetricOrder, hasPresence, hasCardPresence, isDataTypeCard, secondaryTypes, DashboardCardPref, VitalResult } from '@/lib/vitals';
 import { useToast } from '@/components/Toast';
 import { useLanguage } from '@/components/LanguageContext';
 import { interpolate, metricLabel, pluralForm } from '@/lib/i18n';
@@ -50,11 +50,10 @@ async function fetchPrimaryVitals(
     return loggedDayKey(d, timezone);
   })();
 
-  // 'logging_gap' has no /api/data/{type} backing (design.md decision 8) —
-  // it fetches and computes its own state (task 5's LoggingGapCard), so it's
-  // excluded here rather than passed to api.data/extractVital, which are
-  // DataType-only.
-  const dataMetrics = PRIMARY_METRICS.filter((m): m is { type: DataType } => m.type !== 'logging_gap');
+  // Food Cards have no /api/data/{type} backing (design.md decision 8) —
+  // each fetches and computes its own state, so the shared predicate keeps
+  // them out of api.data/extractVital, which are DataType-only.
+  const dataMetrics = PRIMARY_METRICS.filter((m): m is { type: DataType } => isDataTypeCard(m.type));
   const results = await Promise.all(
     dataMetrics.map(m => api.data(m.type, from, to, undefined, 'day').catch(() => []))
   );
@@ -334,21 +333,21 @@ export default function Dashboard() {
                   onToggleHidden={() => toggleHidden(i)}
                   controlsDisabled={saving}
                 />
-              ) : (
-              <VitalCard
-                key={m.type}
-                type={m.type}
-                label={metricLabel(t, m.type)}
-                result={ready ? vitals[m.type] ?? null : null}
-                editing={editing}
-                onMoveUp={() => moveCard(i, -1)}
-                onMoveDown={() => moveCard(i, 1)}
-                moveUpDisabled={i === 0}
-                moveDownDisabled={i === presentOrder.length - 1}
-                hidden={m.hidden}
-                onToggleHidden={() => toggleHidden(i)}
-                controlsDisabled={saving}
-              />
+              ) : m.type === 'food_log_history' ? null : (
+                <VitalCard
+                  key={m.type}
+                  type={m.type}
+                  label={metricLabel(t, m.type)}
+                  result={ready ? vitals[m.type] ?? null : null}
+                  editing={editing}
+                  onMoveUp={() => moveCard(i, -1)}
+                  onMoveDown={() => moveCard(i, 1)}
+                  moveUpDisabled={i === 0}
+                  moveDownDisabled={i === presentOrder.length - 1}
+                  hidden={m.hidden}
+                  onToggleHidden={() => toggleHidden(i)}
+                  controlsDisabled={saving}
+                />
               )
             ))}
           </div>

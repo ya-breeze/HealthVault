@@ -43,11 +43,11 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Generalize the dashboard registry for another Food Card
-- [ ] Extend `CardId` and `PRIMARY_METRICS` in `frontend/lib/vitals.ts` with `food_log_history`
-- [ ] Add a narrow `DataType`-card predicate and use it from `frontend/app/page.tsx#fetchPrimaryVitals` so neither `logging_gap` nor `food_log_history` is requested through `api.data`
-- [ ] Update `hasCardPresence` so both non-`DataType` Food Cards are always eligible while real `DataType` cards retain the existing fail-open Presence behavior
-- [ ] Extend `frontend/lib/vitals.test.ts` for old saved orders, explicit reorder/hide persistence, unconditional Food Card presence, DataType filtering, and exclusion from `secondaryTypes`
-- [ ] Mark completed
+- [x] Extend `CardId` and `PRIMARY_METRICS` in `frontend/lib/vitals.ts` with `food_log_history`
+- [x] Add a narrow `DataType`-card predicate and use it from `frontend/app/page.tsx#fetchPrimaryVitals` so neither `logging_gap` nor `food_log_history` is requested through `api.data`
+- [x] Update `hasCardPresence` so both non-`DataType` Food Cards are always eligible while real `DataType` cards retain the existing fail-open Presence behavior
+- [x] Extend `frontend/lib/vitals.test.ts` for old saved orders, explicit reorder/hide persistence, unconditional Food Card presence, DataType filtering, and exclusion from `secondaryTypes`
+- [x] Mark completed
 
 ### Task 3: Build the Food logging history card
 - [ ] Add `frontend/components/FoodLogHistoryCard.tsx` with local loading, ready, and retrieval-error states and parallel calls to `api.getCompleteness` and `api.getFoodDailyTotals`
