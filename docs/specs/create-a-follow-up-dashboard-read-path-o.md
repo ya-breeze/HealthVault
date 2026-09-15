@@ -54,8 +54,8 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 4: Record the profiling decision
-- [ ] Add `docs/investigations/idea-478-dashboard-read-path.md` describing the measured fresh-load components, dataset sizes, benchmark invocation, before-and-after statement counts, and representative benchmark results.
-- [ ] Include `EXPLAIN QUERY PLAN` output or a concise interpretation showing that each `EXISTS` arm uses the registered table's per-user index and terminates after finding a row rather than counting all matches.
-- [ ] State the resulting seam explicitly: this change optimizes the existing Presence endpoint, while the child change will define and consume the authenticated dashboard read-model response.
-- [ ] Document why no caching or precomputation was introduced and list the import, manual record, Food Meal, profile/Nutrition Target, and settings/timezone invalidation sources that any later cache design must cover.
-- [ ] Mark completed
+- [x] Add `docs/investigations/idea-478-dashboard-read-path.md` describing the measured fresh-load components, dataset sizes, benchmark invocation, before-and-after statement counts, and representative benchmark results.
+- [x] Include `EXPLAIN QUERY PLAN` output or a concise interpretation showing that each `EXISTS` arm uses the registered table's per-user index and terminates after finding a row rather than counting all matches.
+- [x] State the resulting seam explicitly: this change optimizes the existing Presence endpoint, while the child change will define and consume the authenticated dashboard read-model response.
+- [x] Document why no caching or precomputation was introduced and list the import, manual record, Food Meal, profile/Nutrition Target, and settings/timezone invalidation sources that any later cache design must cover.
+- [x] Mark completed
