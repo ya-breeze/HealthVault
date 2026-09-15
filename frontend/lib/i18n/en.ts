@@ -424,6 +424,18 @@ const en = {
   'loggingGap.adviceDetail':
     'These lines are written by an AI model from the label, its reason codes and your Nutrition Target. They are cached for the current day and regenerate when those inputs change. They are not medical advice.',
 
+  'foodLogHistory.title': 'Food log history',
+  'foodLogHistory.loading': 'Loading food logging history…',
+  'foodLogHistory.retrievalError': 'Temporarily unavailable',
+  'foodLogHistory.countedDays': 'Days counted: {count} of 7',
+  'foodLogHistory.noFoodDays': 'No food logged: {count}',
+  'foodLogHistory.needsAttentionDays': 'Need attention: {count}',
+  'foodLogHistory.outcome.counted': 'counted',
+  'foodLogHistory.outcome.noFood': 'no food logged',
+  'foodLogHistory.outcome.needsAttention': 'needs attention',
+  'foodLogHistory.dayDescription': '{date}: {outcome}; {occasions} eating occasions.',
+  'foodLogHistory.dayDescriptionWithUnresolved': '{date}: {outcome}; {occasions} eating occasions; {unresolved} unresolved meals.',
+
   // The steps detail page's diagnostic disclosure (check-the-health-data
   // spec) — collapsed by default, same hint-then-detail pattern as the
   // loggingGap keys above. These are the steps-specific detail-page strings;

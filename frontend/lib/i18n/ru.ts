@@ -292,6 +292,18 @@ const ru: Dictionary = {
   'loggingGap.adviceDetail':
     'Эти строки пишет ИИ на основе оценки, её кодов причин и вашей цели по питанию. Они кэшируются на текущий день и создаются заново, когда меняются эти данные. Это не медицинская рекомендация.',
 
+  'foodLogHistory.title': 'История питания',
+  'foodLogHistory.loading': 'Загрузка истории питания…',
+  'foodLogHistory.retrievalError': 'Временно недоступно',
+  'foodLogHistory.countedDays': 'Засчитано дней: {count} из 7',
+  'foodLogHistory.noFoodDays': 'Дней без записей о еде: {count}',
+  'foodLogHistory.needsAttentionDays': 'Требуют внимания: {count}',
+  'foodLogHistory.outcome.counted': 'день засчитан',
+  'foodLogHistory.outcome.noFood': 'еда не записана',
+  'foodLogHistory.outcome.needsAttention': 'требует внимания',
+  'foodLogHistory.dayDescription': '{date}: {outcome}; приёмов пищи: {occasions}.',
+  'foodLogHistory.dayDescriptionWithUnresolved': '{date}: {outcome}; приёмов пищи: {occasions}; неподтверждённых приёмов пищи: {unresolved}.',
+
   'stepsDiagnostics.hintToggle': 'Показать диагностику',
   'stepsDiagnostics.title': 'Диагностика шагов',
   'stepsDiagnostics.columnDay': 'День',

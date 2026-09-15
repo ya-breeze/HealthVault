@@ -12,6 +12,7 @@ import { useLatest } from '@/lib/useLatest';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import VitalCard from '@/components/VitalCard';
 import LoggingGapCard from '@/components/LoggingGapCard';
+import FoodLogHistoryCard from '@/components/FoodLogHistoryCard';
 import TapTarget from '@/components/ui/TapTarget';
 import { CameraIcon, PencilIcon, HistoryIcon, EyeIcon, EyeOffIcon } from '@/components/icons';
 
@@ -317,9 +318,9 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
             {presentOrder.map((m, i) => (editing || !m.hidden) && (
-              // 'logging_gap' has no /api/data/{type} presence or VitalCard
-              // rendering — LoggingGapCard (task 5) owns its own fetch
-              // lifecycle and content states instead of reading `vitals`.
+              // Food Cards have no /api/data/{type} presence or VitalCard
+              // rendering — each owns its own fetch lifecycle and content
+              // states instead of reading `vitals`.
               m.type === 'logging_gap' ? (
                 <LoggingGapCard
                   key={m.type}
@@ -333,7 +334,20 @@ export default function Dashboard() {
                   onToggleHidden={() => toggleHidden(i)}
                   controlsDisabled={saving}
                 />
-              ) : m.type === 'food_log_history' ? null : (
+              ) : m.type === 'food_log_history' ? (
+                <FoodLogHistoryCard
+                  key={m.type}
+                  timezone={timezone}
+                  editing={editing}
+                  onMoveUp={() => moveCard(i, -1)}
+                  onMoveDown={() => moveCard(i, 1)}
+                  moveUpDisabled={i === 0}
+                  moveDownDisabled={i === presentOrder.length - 1}
+                  hidden={m.hidden}
+                  onToggleHidden={() => toggleHidden(i)}
+                  controlsDisabled={saving}
+                />
+              ) : (
                 <VitalCard
                   key={m.type}
                   type={m.type}

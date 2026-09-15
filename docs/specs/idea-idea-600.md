@@ -50,12 +50,12 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 3: Build the Food logging history card
-- [ ] Add `frontend/components/FoodLogHistoryCard.tsx` with local loading, ready, and retrieval-error states and parallel calls to `api.getCompleteness` and `api.getFoodDailyTotals`
-- [ ] Render the counted, no-food, and needs-attention totals and a chronological seven-day status strip from the pure summary result
-- [ ] Give every marker a visible non-colour status cue and an accessible label containing its date, outcome, Eating Occasion count, and applicable unresolved-meal information
-- [ ] Link the read-only card to `/food/history/` and implement the same move, show/hide, disabled-control, hidden-card dimming, `data-hidden`, and test-id conventions used by `VitalCard` and `LoggingGapCard` in edit mode
-- [ ] Treat either failed request or an invalid joined response as “temporarily unavailable” without presenting missing response rows as logging gaps
-- [ ] Mark completed
+- [x] Add `frontend/components/FoodLogHistoryCard.tsx` with local loading, ready, and retrieval-error states and parallel calls to `api.getCompleteness` and `api.getFoodDailyTotals`
+- [x] Render the counted, no-food, and needs-attention totals and a chronological seven-day status strip from the pure summary result
+- [x] Give every marker a visible non-colour status cue and an accessible label containing its date, outcome, Eating Occasion count, and applicable unresolved-meal information
+- [x] Link the read-only card to `/food/history/` and implement the same move, show/hide, disabled-control, hidden-card dimming, `data-hidden`, and test-id conventions used by `VitalCard` and `LoggingGapCard` in edit mode
+- [x] Treat either failed request or an invalid joined response as “temporarily unavailable” without presenting missing response rows as logging gaps
+- [x] Mark completed
 
 ### Task 4: Wire and localize the card
 - [ ] Import and render `FoodLogHistoryCard` from `frontend/app/page.tsx` for the `food_log_history` registry branch, passing the already-loaded timezone and the existing reorder/visibility callbacks
