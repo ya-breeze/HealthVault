@@ -480,9 +480,6 @@ func dataTypesPresence(db *gorm.DB, userID uuid.UUID) (map[string]bool, error) {
 		}
 		presence[row.TypeName] = row.Present == 1
 	}
-	if len(presence) != len(typeNames) {
-		return nil, fmt.Errorf("presence returned an incomplete type set")
-	}
 	return presence, nil
 }
 
