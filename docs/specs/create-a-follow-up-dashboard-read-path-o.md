@@ -38,20 +38,20 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Collapse Presence into bounded probes
-- [ ] In `backend/pkg/server/api.go`, extract the Presence query work used by `DataTypesPresenceHandler` into a helper that accepts the resolved user ID and returns a complete `map[string]bool` or an error.
-- [ ] Have the helper sort the `typeRegistry` keys for deterministic SQL construction and issue one allowlisted `UNION ALL` query whose arms use bounded `EXISTS` probes; concatenate only registry-owned table identifiers and bind type names and user IDs as parameters.
-- [ ] Normalize SQLite's boolean result for every row, verify the result covers every registered type exactly once, and treat a malformed or incomplete scan as an error rather than returning a partial map.
-- [ ] Route `DataTypesPresenceHandler` through the helper while preserving its claims check, `FamilyIDFromCtx` plus `resolveUser` behavior, response shape, and all-or-nothing HTTP 500 error contract.
-- [ ] Keep the optimization read-through only: do not add process memory, cache tables, schema migrations, write-path invalidation, or changes to any health-data mutation.
-- [ ] Mark completed
+- [x] In `backend/pkg/server/api.go`, extract the Presence query work used by `DataTypesPresenceHandler` into a helper that accepts the resolved user ID and returns a complete `map[string]bool` or an error.
+- [x] Have the helper sort the `typeRegistry` keys for deterministic SQL construction and issue one allowlisted `UNION ALL` query whose arms use bounded `EXISTS` probes; concatenate only registry-owned table identifiers and bind type names and user IDs as parameters.
+- [x] Normalize SQLite's boolean result for every row, verify the result covers every registered type exactly once, and treat a malformed or incomplete scan as an error rather than returning a partial map.
+- [x] Route `DataTypesPresenceHandler` through the helper while preserving its claims check, `FamilyIDFromCtx` plus `resolveUser` behavior, response shape, and all-or-nothing HTTP 500 error contract.
+- [x] Keep the optimization read-through only: do not add process memory, cache tables, schema migrations, write-path invalidation, or changes to any health-data mutation.
+- [x] Mark completed
 
 ### Task 3: Pin compatibility and query cardinality
-- [ ] Extend `backend/pkg/server/data_types_presence_handler_test.go` so populated and absent types still produce the same booleans and every `typeRegistry` member remains present in the response.
-- [ ] Retain coverage for unauthenticated requests, family-member selection through `?user=`, and rejection of a user outside the caller's family.
-- [ ] Replace the old per-table `COUNT` error injection with a failure that reaches the combined query, and assert the handler returns HTTP 500 without a partial JSON response when any referenced table cannot be probed.
-- [ ] Add an internal helper-level assertion that Presence executes exactly one SQL statement after user resolution, preventing a later refactor from silently restoring a per-table loop.
-- [ ] Cover both an empty account and an account with multiple rows in more than one registered table, proving `EXISTS` reports presence without changing the complete response shape.
-- [ ] Mark completed
+- [x] Extend `backend/pkg/server/data_types_presence_handler_test.go` so populated and absent types still produce the same booleans and every `typeRegistry` member remains present in the response.
+- [x] Retain coverage for unauthenticated requests, family-member selection through `?user=`, and rejection of a user outside the caller's family.
+- [x] Replace the old per-table `COUNT` error injection with a failure that reaches the combined query, and assert the handler returns HTTP 500 without a partial JSON response when any referenced table cannot be probed.
+- [x] Add an internal helper-level assertion that Presence executes exactly one SQL statement after user resolution, preventing a later refactor from silently restoring a per-table loop.
+- [x] Cover both an empty account and an account with multiple rows in more than one registered table, proving `EXISTS` reports presence without changing the complete response shape.
+- [x] Mark completed
 
 ### Task 4: Record the profiling decision
 - [ ] Add `docs/investigations/idea-478-dashboard-read-path.md` describing the measured fresh-load components, dataset sizes, benchmark invocation, before-and-after statement counts, and representative benchmark results.

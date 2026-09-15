@@ -50,6 +50,11 @@ func BenchmarkDashboardReadPath(b *testing.B) {
 					_, err := legacyPresenceForBenchmark(fixture.storage.DB(), fixture.userID)
 					return err
 				}},
+				{name: "presence_union_exists", fn: func() error {
+					presence, err := dataTypesPresence(fixture.storage.DB(), fixture.userID)
+					dashboardBenchmarkSink = presence
+					return err
+				}},
 				{name: "aggregate_steps", fn: func() error {
 					return benchmarkDailyAggregate(fixture, "steps")
 				}},
@@ -79,6 +84,9 @@ func BenchmarkDashboardReadPath(b *testing.B) {
 				}},
 				{name: "legacy_fresh_load", fn: func() error {
 					return benchmarkLegacyFreshLoad(fixture)
+				}},
+				{name: "current_fresh_load", fn: func() error {
+					return benchmarkCurrentFreshLoad(fixture)
 				}},
 			}
 
@@ -297,6 +305,24 @@ func benchmarkLegacyFreshLoad(fixture dashboardBenchmarkFixture) error {
 		return err
 	}
 	if _, err := legacyPresenceForBenchmark(fixture.storage.DB(), fixture.userID); err != nil {
+		return err
+	}
+	for _, typeName := range []string{
+		"steps", "heart_rate", "sleep", "heart_rate_variability", "distance", "weight",
+		"blood_pressure", "oxygen_saturation",
+	} {
+		if err := benchmarkDailyAggregate(fixture, typeName); err != nil {
+			return err
+		}
+	}
+	return benchmarkNeedsAttentionCount(fixture.storage.DB(), fixture.userID)
+}
+
+func benchmarkCurrentFreshLoad(fixture dashboardBenchmarkFixture) error {
+	if _, err := readUserSettingsJSON(fixture.storage, fixture.userID); err != nil {
+		return err
+	}
+	if _, err := dataTypesPresence(fixture.storage.DB(), fixture.userID); err != nil {
 		return err
 	}
 	for _, typeName := range []string{
