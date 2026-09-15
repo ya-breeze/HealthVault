@@ -6,14 +6,15 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/ya-breeze/kin-core/auth"
-	kinmodels "github.com/ya-breeze/kin-core/models"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
+	"github.com/ya-breeze/kin-core/auth"
+	kinmodels "github.com/ya-breeze/kin-core/models"
 	"gorm.io/gorm"
 )
 
@@ -80,11 +81,11 @@ func TestDataTypesPresenceHandler_ReportsPresenceAndAbsence(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if !presence["steps"] {
-		t.Errorf("expected steps = true, got %v", presence["steps"])
-	}
-	if presence["weight"] {
-		t.Errorf("expected weight = false, got %v", presence["weight"])
+	for _, name := range presenceTypeNames {
+		want := name == "steps"
+		if presence[name] != want {
+			t.Errorf("presence[%q] = %v, want %v", name, presence[name], want)
+		}
 	}
 }
 
@@ -113,6 +114,80 @@ func TestDataTypesPresenceHandler_OneEntryPerRegisteredType(t *testing.T) {
 		}
 	}
 }
+
+func TestDataTypesPresenceHandler_EmptyAccountReportsEveryTypeAbsent(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+
+	h := server.DataTypesPresenceHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, withClaims(newPresenceRequest(""), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var presence map[string]bool
+	if err := json.Unmarshal(w.Body.Bytes(), &presence); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(presence) != len(presenceTypeNames) {
+		t.Fatalf("expected %d entries, got %d: %+v", len(presenceTypeNames), len(presence), presence)
+	}
+	for _, name := range presenceTypeNames {
+		if presence[name] {
+			t.Errorf("empty account reported presence[%q] = true", name)
+		}
+	}
+}
+
+func TestDataTypesPresenceHandler_MultipleRowsAcrossTypesRemainPresent(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+
+	for i := range 3 {
+		ts := time.Date(2026, time.January, 1+i, 8, 0, 0, 0, time.UTC)
+		steps := database.Steps{
+			UserID: userID, SourcePayloadID: uuid.New(), StartTime: ts,
+			EndTime: ts.Add(time.Hour), Count: 100 + i,
+		}
+		steps.ID, steps.FamilyID = uuid.New(), familyID
+		if err := st.DB().Create(&steps).Error; err != nil {
+			t.Fatalf("create steps row %d: %v", i, err)
+		}
+
+		weight := database.Weight{
+			UserID: userID, SourcePayloadID: ptrUUIDForPresence(uuid.New()),
+			Time: ts, Kilograms: 80 + float64(i),
+		}
+		weight.ID, weight.FamilyID = uuid.New(), familyID
+		if err := st.DB().Create(&weight).Error; err != nil {
+			t.Fatalf("create weight row %d: %v", i, err)
+		}
+	}
+
+	h := server.DataTypesPresenceHandler(st)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, withClaims(newPresenceRequest(""), userID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var presence map[string]bool
+	if err := json.Unmarshal(w.Body.Bytes(), &presence); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(presence) != len(presenceTypeNames) {
+		t.Fatalf("expected %d entries, got %d: %+v", len(presenceTypeNames), len(presence), presence)
+	}
+	for _, name := range presenceTypeNames {
+		want := name == "steps" || name == "weight"
+		if presence[name] != want {
+			t.Errorf("presence[%q] = %v, want %v", name, presence[name], want)
+		}
+	}
+}
+
+func ptrUUIDForPresence(value uuid.UUID) *uuid.UUID { return &value }
 
 func TestDataTypesPresenceHandler_FamilyMemberResolutionViaUserParam(t *testing.T) {
 	st := newFoodTestStorage(t)
@@ -170,27 +245,31 @@ func TestDataTypesPresenceHandler_UserParamOutsideFamilyForbidden(t *testing.T) 
 	}
 }
 
-// Regression guard: the per-type Count query's error must surface as a 500,
+// Regression guard: a combined presence query error must surface as a 500,
 // not be swallowed into a partial/incorrect 200 presence map.
 func TestDataTypesPresenceHandler_QueryErrorReturns500(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)
 
 	const hookName = "test:presence-query-error"
-	st.DB().Callback().Query().Before("gorm:query").Register(hookName, func(tx *gorm.DB) {
-		// Scoped to the "steps" table so this only poisons the presence
-		// handler's own per-type Count query, not resolveUser's user lookup.
-		if tx.Statement.Table == "steps" {
-			tx.Error = errors.New("simulated count query failure")
+	st.DB().Callback().Row().Before("gorm:row").Register(hookName, func(tx *gorm.DB) {
+		// Raw(...).Scan uses GORM's row callback. The SQL is already built at
+		// this point, so matching a registry-owned arm proves this hook poisons
+		// the combined Presence statement, not resolveUser's user lookup.
+		if strings.Contains(tx.Statement.SQL.String(), "FROM steps") {
+			tx.Error = errors.New("simulated combined presence query failure")
 		}
 	})
-	t.Cleanup(func() { st.DB().Callback().Query().Remove(hookName) })
+	t.Cleanup(func() { st.DB().Callback().Row().Remove(hookName) })
 
 	h := server.DataTypesPresenceHandler(st)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, withClaims(newPresenceRequest(""), userID))
 
 	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 when a Count query errors, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 500 when the combined presence query errors, got %d: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "{") || strings.Contains(w.Body.String(), "steps") {
+		t.Fatalf("expected no partial JSON response, got %q", w.Body.String())
 	}
 }
