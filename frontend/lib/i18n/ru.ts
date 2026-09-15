@@ -302,6 +302,7 @@ const ru: Dictionary = {
   'foodLogHistory.outcome.noFood': 'еда не записана',
   'foodLogHistory.outcome.needsAttention': 'требует внимания',
   'foodLogHistory.dayDescription': '{date}: {outcome}; приёмов пищи: {occasions}.',
+  'foodLogHistory.dayDescriptionWithOneUnresolved': '{date}: {outcome}; приёмов пищи: {occasions}; неподтверждённый приём пищи: 1.',
   'foodLogHistory.dayDescriptionWithUnresolved': '{date}: {outcome}; приёмов пищи: {occasions}; неподтверждённых приёмов пищи: {unresolved}.',
 
   'stepsDiagnostics.hintToggle': 'Показать диагностику',

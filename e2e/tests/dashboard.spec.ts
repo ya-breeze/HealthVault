@@ -22,6 +22,7 @@ const PRIMARY_METRIC_TYPES = [
   'steps', 'heart_rate', 'sleep', 'heart_rate_variability', 'distance', 'weight',
   'blood_pressure', 'oxygen_saturation',
 ];
+const FOOD_CARD_TYPES = ['logging_gap', 'food_log_history'];
 
 const SECONDARY_TYPES = ALL_DATA_TYPES.filter(t => !PRIMARY_METRIC_TYPES.includes(t));
 
@@ -33,12 +34,106 @@ function presenceFixture(overrides: Record<string, boolean> = {}): Record<string
   return { ...map, ...overrides };
 }
 
+function isoDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function addUtcDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return isoDateOnly(date);
+}
+
+function loggedDayToday(timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function foodHistoryDates(timezone: string): string[] {
+  const yesterday = addUtcDays(loggedDayToday(timezone), -1);
+  return Array.from({ length: 7 }, (_, index) => addUtcDays(yesterday, index - 6));
+}
+
+type CompletenessState = 'complete' | 'confirmed_complete' | 'unconfirmed' | 'incomplete';
+
+function foodHistoryFixture(
+  timezone: string,
+  states: CompletenessState[] = ['complete', 'confirmed_complete', 'incomplete', 'unconfirmed', 'complete', 'confirmed_complete', 'complete'],
+  unresolvedMeals: number[] = [0, 0, 0, 0, 1, 2, 0],
+) {
+  const dates = foodHistoryDates(timezone);
+  return {
+    dates,
+    completeness: dates.map((date, index) => ({
+      date,
+      state: states[index],
+      occasion_count: states[index] === 'incomplete' ? 0 : 3,
+    })),
+    dailyTotals: dates.map((date, index) => ({
+      date,
+      calories: 1800,
+      protein_grams: 100,
+      carbs_grams: 200,
+      fat_grams: 60,
+      sugar_grams: 20,
+      sodium_grams: 2,
+      dietary_fiber_grams: 25,
+      unconfirmed_meals: unresolvedMeals[index],
+    })),
+  };
+}
+
+async function mockFoodHistoryApis(
+  page: Page,
+  timezone: string,
+  fixture = foodHistoryFixture(timezone),
+  options?: { completenessStatus?: number },
+) {
+  const requests: { endpoint: string; from: string; to: string }[] = [];
+  await page.route('**/api/food/completeness**', route => {
+    const url = new URL(route.request().url());
+    requests.push({
+      endpoint: 'completeness',
+      from: url.searchParams.get('from') ?? '',
+      to: url.searchParams.get('to') ?? '',
+    });
+    if (options?.completenessStatus) {
+      return route.fulfill({ status: options.completenessStatus, json: { error: 'boom' } });
+    }
+    return route.fulfill({ json: fixture.completeness });
+  });
+  await page.route('**/api/food/daily-totals**', route => {
+    const url = new URL(route.request().url());
+    requests.push({
+      endpoint: 'daily-totals',
+      from: url.searchParams.get('from') ?? '',
+      to: url.searchParams.get('to') ?? '',
+    });
+    return route.fulfill({ json: fixture.dailyTotals });
+  });
+  return requests;
+}
+
 async function login(page: Page) {
   await page.goto('/login/');
   await page.getByPlaceholder(/username/i).fill(USER);
   await page.getByPlaceholder(/password/i).fill(PASS);
   await page.getByRole('button', { name: /sign in|login/i }).click();
   await page.waitForURL('/');
+}
+
+async function rawSettings(page: Page): Promise<Record<string, unknown>> {
+  return page.evaluate(async () => {
+    const response = await fetch('/api/users/me/settings', { credentials: 'include' });
+    if (!response.ok) throw new Error(`GET settings failed: ${response.status}`);
+    return response.json();
+  });
 }
 
 // Runs `action` and waits for the settings PUT it triggers to actually come
@@ -75,22 +170,19 @@ async function withSettingsSave(page: Page, action: () => Promise<unknown>): Pro
 }
 
 // Shared cleanup for tests that reorder the vitals grid: puts Weight back
-// where PRIMARY_METRICS has it, so a predictable grid is left for later tests.
+// where PRIMARY_METRICS has it, and returns Food Cards to their registry
+// positions, so a predictable grid is left for later tests.
 // Every step is best-effort and swallows its own failure — used from a
 // `finally` block, so one broken step (e.g. the page was left mid-reorder by a
 // failed assertion above it) must not hide the real assertion failure that
 // triggered the cleanup.
 //
-// Weight is only moved back to *last* by pressing down, which is not the
-// default: PRIMARY_METRICS (frontend/lib/vitals.ts) puts weight 6th of 8, with
-// blood_pressure and oxygen_saturation after it. Hence the two ups below. This
-// used to stop at the bottom while its name and comment both promised the
-// default order — harmless only because no test yet asserts the seeded grid
-// order, and actively misleading to the first one that does. Found in code
-// review.
+// The registry puts Weight 6th of the 10 cards, with the two Food Cards after
+// the other DataType-backed cards. The sorter below restores that whole
+// registry order, so it remains correct when either kind of card was moved.
 //
-// Correct because Weight is the only card any test in this file moves, so
-// everything else is still in default relative order when this runs.
+// Correct because every test in this file only moves cards through the same
+// registry controls, so sorting the rendered ids is enough to restore state.
 async function restoreDefaultOrder(page: Page) {
   const customizeBtn = page.getByRole('button', { name: 'Customize' });
   // Waits before asking, because isVisible() answers immediately and never
@@ -107,17 +199,32 @@ async function restoreDefaultOrder(page: Page) {
   // otherwise sit out its full timeout waiting for a PUT nothing will send.
   if (!(await customizeBtn.isVisible().catch(() => false))) return;
   await customizeBtn.click().catch(() => {});
-  const moveWeightDown = page.getByRole('button', { name: /move weight down/i });
-  for (let i = 0; i < 8; i++) {
-    if (await moveWeightDown.isDisabled().catch(() => true)) break;
-    await moveWeightDown.click().catch(() => {});
-  }
-  // Now last; lift it back over oxygen_saturation and blood_pressure into its
-  // default 6th slot.
-  const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
-  for (let i = 0; i < 2; i++) {
-    if (await moveWeightUp.isDisabled().catch(() => true)) break;
-    await moveWeightUp.click().catch(() => {});
+  const grid = page.getByTestId('vitals-grid');
+  const defaultOrder = [
+    ...PRIMARY_METRIC_TYPES.map(type => `vital-card-${type}`),
+    'logging-gap-card',
+    'food-log-history-card',
+  ];
+  // Sort by the registry order using the card's own move controls. Filtering
+  // against the rendered grid keeps this cleanup safe when a presence fixture
+  // intentionally removes a DataType-backed card.
+  const initialIds = await grid.locator('> *').evaluateAll(els => els.map(el => el.getAttribute('data-testid')));
+  const desiredOrder = defaultOrder.filter(id => initialIds.includes(id));
+  for (let targetIndex = 0; targetIndex < desiredOrder.length; targetIndex++) {
+    const ids = await grid.locator('> *').evaluateAll(els => els.map(el => el.getAttribute('data-testid')));
+    const wantedId = desiredOrder[targetIndex];
+    const currentIndex = ids.indexOf(wantedId);
+    if (currentIndex < 0) continue;
+    const wanted = grid.getByTestId(wantedId);
+    if (currentIndex > targetIndex) {
+      for (let index = currentIndex; index > targetIndex; index--) {
+        await wanted.getByRole('button', { name: /move .* up/i }).click().catch(() => {});
+      }
+    } else if (currentIndex < targetIndex) {
+      for (let index = currentIndex; index < targetIndex; index++) {
+        await wanted.getByRole('button', { name: /move .* down/i }).click().catch(() => {});
+      }
+    }
   }
   // handleDone (app/page.tsx) PUTs unconditionally, so this always has a
   // response to wait for.
@@ -153,6 +260,130 @@ test.describe('Dashboard', () => {
     await expect(link).toBeVisible();
     await link.click();
     await expect(page).toHaveURL(/\/data\/vo2_max/);
+  });
+});
+
+test.describe('Food log history card', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    await restoreAllVisible(page);
+    await page.route('**/api/data-types/presence', route =>
+      route.fulfill({ json: presenceFixture() })
+    );
+  });
+
+  test('shows seven chronological days, honest totals, and the exact closed-day request window', async ({ page }) => {
+    const original = await rawSettings(page);
+    const timezone = 'UTC';
+    try {
+      await putRawSettings(page, { timezone, display_language: 'en' });
+      const fixture = foodHistoryFixture(timezone);
+      const requests = await mockFoodHistoryApis(page, timezone, fixture);
+      await page.goto('/');
+
+      const card = page.getByTestId('food-log-history-card');
+      await expect(card).toBeVisible();
+      await expect(card.getByTestId('food-log-history-counted')).toHaveText('Days counted: 3 of 7');
+      await expect(card.getByTestId('food-log-history-no-food')).toHaveText('No food logged: 1');
+      await expect(card.getByTestId('food-log-history-needs-attention')).toHaveText('Need attention: 3');
+
+      const markers = card.getByTestId('food-log-history-strip').locator('[data-testid^="food-log-history-day-"]');
+      await expect(markers).toHaveCount(7);
+      await expect(markers.first()).toHaveAttribute('data-testid', `food-log-history-day-${fixture.dates[0]}`);
+      await expect(markers.last()).toHaveAttribute('data-testid', `food-log-history-day-${fixture.dates[6]}`);
+      expect(await markers.evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')!.slice('food-log-history-day-'.length)))).toEqual(fixture.dates);
+
+      // Complete/Confirmed Complete days with unresolved meals are attention
+      // days, not counted days, and their accessible labels expose both causes.
+      await expect(card.getByTestId(`food-log-history-day-${fixture.dates[4]}`)).toHaveAttribute('data-outcome', 'needs_attention');
+      await expect(card.getByTestId(`food-log-history-day-${fixture.dates[4]}`)).toHaveAttribute('aria-label', /needs attention; 3 eating occasions; 1 unresolved meal/);
+      await expect(card.getByTestId(`food-log-history-day-${fixture.dates[5]}`)).toHaveAttribute('aria-label', /needs attention; 3 eating occasions; 2 unresolved meals/);
+
+      const expected = { from: fixture.dates[0], to: fixture.dates[6] };
+      const historyRequests = requests.filter(request => request.from === expected.from && request.to === expected.to);
+      expect(historyRequests.map(request => request.endpoint).sort()).toEqual(['completeness', 'daily-totals']);
+      expect(expected.to).toBe(addUtcDays(loggedDayToday(timezone), -1));
+      expect(expected.to).not.toBe(loggedDayToday(timezone));
+    } finally {
+      await putRawSettings(page, { display_language: original.display_language ?? 'en', timezone: original.timezone ?? 'UTC' }).catch(() => {});
+    }
+  });
+
+  test('localizes totals, links to history, and reports retrieval failure', async ({ page }) => {
+    const original = await rawSettings(page);
+    const timezone = 'UTC';
+    try {
+      await putRawSettings(page, { display_language: 'ru', timezone });
+      const fixture = foodHistoryFixture(timezone);
+      await mockFoodHistoryApis(page, timezone, fixture);
+      await page.goto('/');
+
+      const card = page.getByTestId('food-log-history-card');
+      await expect(card).toBeVisible();
+      await expect(card.getByText('История питания', { exact: true })).toBeVisible();
+      await expect(card.getByTestId('food-log-history-counted')).toHaveText('Засчитано дней: 3 из 7');
+      await expect(card.getByTestId('food-log-history-needs-attention')).toHaveText('Требуют внимания: 3');
+
+      await card.click();
+      await expect(page).toHaveURL(/\/food\/history/);
+
+      await page.goto('/');
+      await page.unroute('**/api/food/completeness**');
+      await page.unroute('**/api/food/daily-totals**');
+      await mockFoodHistoryApis(page, timezone, fixture, { completenessStatus: 500 });
+      await page.goto('/');
+      await expect(page.getByTestId('food-log-history-error')).toHaveText('Временно недоступно');
+    } finally {
+      await putRawSettings(page, { display_language: original.display_language ?? 'en', timezone: original.timezone ?? 'UTC' }).catch(() => {});
+    }
+  });
+
+  test('show, hide, reorder, and persistence controls work for the Food Card', async ({ page }) => {
+    const original = await rawSettings(page);
+    const timezone = 'UTC';
+    const fixture = foodHistoryFixture(timezone);
+
+    const grid = page.getByTestId('vitals-grid');
+    const card = page.getByTestId('food-log-history-card');
+    try {
+      await putRawSettings(page, { display_language: 'en', timezone });
+      await mockFoodHistoryApis(page, timezone, fixture);
+      await page.goto('/');
+      await expect(card).toBeVisible();
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await expect(card).toHaveAttribute('data-hidden', 'false');
+      await page.getByTestId('food-log-history-card-visibility').click();
+      await expect(card).toHaveAttribute('data-hidden', 'true');
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(grid.getByTestId('food-log-history-card')).toHaveCount(0);
+
+      await page.reload();
+      await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+      await expect(grid.getByTestId('food-log-history-card')).toHaveCount(0);
+
+      await page.getByRole('button', { name: 'Customize' }).click();
+      const hiddenCard = page.getByTestId('food-log-history-card');
+      await hiddenCard.getByTestId('food-log-history-card-visibility').click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+      await expect(grid.getByTestId('food-log-history-card')).toBeVisible();
+
+      await page.getByRole('button', { name: 'Customize' }).click();
+      const beforeIds = await grid.locator('> *').evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')!));
+      const beforeIndex = beforeIds.indexOf('food-log-history-card');
+      expect(beforeIndex).toBeGreaterThan(0);
+      await card.getByRole('button', { name: /move .* up/i }).click();
+      await withSettingsSave(page, () => page.getByRole('button', { name: 'Done' }).click());
+
+      await page.reload();
+      await expect(grid.getByTestId('vital-card-steps')).toBeVisible();
+      await expect(grid.getByTestId('food-log-history-card')).toBeVisible();
+      const afterIds = await grid.locator('> *').evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')!));
+      expect(afterIds.indexOf('food-log-history-card')).toBe(beforeIndex - 1);
+    } finally {
+      await restoreAllVisible(page);
+      await restoreDefaultOrder(page);
+      await putRawSettings(page, { display_language: original.display_language ?? 'en', timezone: original.timezone ?? 'UTC' }).catch(() => {});
+    }
   });
 });
 
@@ -294,7 +525,7 @@ async function restoreAllVisible(page: Page) {
   // Counting hidden cards directly — rather than checking the read-only grid
   // for a full complement — keeps this independent of how many primary
   // metrics there are. An earlier version compared against a hardcoded 8, so
-  // adding a 9th metric would have made a run with exactly one card hidden
+  // adding another Food Card would have made a run with exactly one card hidden
   // look complete and turned this cleanup into a silent no-op.
   //
   // Bounded loop rather than while(count): a toggle that fails to clear would
@@ -406,8 +637,8 @@ test.describe('Dashboard card visibility', () => {
     try {
       await page.getByRole('button', { name: 'Customize' }).click();
 
-      // Hide all 9 (the 8 DataType-backed vitals plus the always-present
-      // Logging Gap card — see hasCardPresence in lib/vitals.ts). Each toggle
+      // Hide all 10 (the 8 DataType-backed vitals plus the two always-present
+      // Food Cards — see hasCardPresence in lib/vitals.ts). Each toggle
       // stays in the DOM while editing, so this can walk them by index.
       // Scoped to vitals-grid, not the whole page — More Data has grown its
       // own "-visibility" toggle (more-data-visibility), which would
@@ -415,7 +646,7 @@ test.describe('Dashboard card visibility', () => {
       // presence.
       const toggles = page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]');
       const count = await toggles.count();
-      expect(count).toBe(PRIMARY_METRIC_TYPES.length + 1);
+      expect(count).toBe(PRIMARY_METRIC_TYPES.length + FOOD_CARD_TYPES.length);
       for (let i = 0; i < count; i++) {
         await toggles.nth(i).click();
       }
@@ -450,10 +681,11 @@ test.describe('Dashboard card visibility', () => {
     await expect(grid.locator('> *').nth(1)).toHaveAttribute('data-testid', 'vital-card-steps');
     // ...and the metrics the old shape never mentioned are appended, visible,
     // rather than being dropped or defaulting to hidden — including
-    // 'logging_gap', which the pre-visibility shape predates entirely.
-    await expect(grid.locator('> *')).toHaveCount(PRIMARY_METRIC_TYPES.length + 1);
+    // both Food Cards, which the pre-visibility shape predates entirely.
+    await expect(grid.locator('> *')).toHaveCount(PRIMARY_METRIC_TYPES.length + FOOD_CARD_TYPES.length);
     await expect(grid.getByTestId('vital-card-sleep')).toBeVisible();
     await expect(grid.getByTestId('logging-gap-card')).toBeVisible();
+    await expect(grid.getByTestId('food-log-history-card')).toBeVisible();
     await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
   });
 
@@ -662,10 +894,10 @@ test.describe('Data-type presence filtering', () => {
     await expect(page.getByTestId('vital-card-sleep-visibility')).toHaveCount(0);
     // Scoped to vitals-grid so More Data's own "-visibility" toggle
     // (more-data-visibility) isn't counted alongside the primary cards'.
-    // Sleep is excluded by zero presence, but 'logging_gap' never is
-    // (hasCardPresence, design.md decision 8) — net -1 +1 leaves the count
-    // unchanged from PRIMARY_METRIC_TYPES.length.
-    await expect(page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length);
+    // Sleep is excluded by zero presence, but both Food Cards never are
+    // (hasCardPresence, design.md decision 8) — net -1 +2 leaves one more
+    // control than PRIMARY_METRIC_TYPES.length.
+    await expect(page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1 + FOOD_CARD_TYPES.length);
 
     // Nothing was changed, so leave without triggering a settings write —
     // same reasoning as restoreAllVisible's own no-op exit.
@@ -781,18 +1013,17 @@ test.describe('Data-type presence filtering', () => {
     }
   });
 
-  // Predates logging-gap: before it, zero presence across every DataType-backed
+  // Predates the Food Cards: before them, zero presence across every DataType-backed
   // primary metric meant presentOrder was genuinely empty, so the
-  // `vitals-grid-empty-no-data` placeholder fired. 'logging_gap' now always has
-  // presence (hasCardPresence, design.md decision 8) and is a member of
+  // `vitals-grid-empty-no-data` placeholder fired. Both Food Cards now always
+  // have presence (hasCardPresence, design.md decision 8) and are members of
   // PRIMARY_METRICS, so presentOrder can no longer be empty via presence alone
-  // — the grid falls through to rendering the Logging Gap card instead, and
+  // — the grid falls through to rendering the Food Cards instead, and
   // that placeholder has been removed as unreachable. This is the intended
   // consequence of decision 8 ("always eligible to render"), not a regression:
-  // a user with zero vitals data now sees the Nutrition card's own content —
-  // today's intake, and whatever the gap line resolves to — rather than a
-  // static dead end.
-  test('zero presence on every DataType-backed metric still renders the grid, with only the Logging Gap card', async ({ page }) => {
+  // a user with zero vitals data now sees the Food Cards' own content rather
+  // than a static dead end.
+  test('zero presence on every DataType-backed metric still renders the grid, with both Food Cards', async ({ page }) => {
     const overrides = Object.fromEntries(PRIMARY_METRIC_TYPES.map(type => [type, false]));
     await page.route('**/api/data-types/presence', route =>
       route.fulfill({ json: presenceFixture(overrides) })
@@ -801,8 +1032,9 @@ test.describe('Data-type presence filtering', () => {
 
     const grid = page.getByTestId('vitals-grid');
     await expect(grid).toBeVisible();
-    await expect(grid.locator('> *')).toHaveCount(1);
+    await expect(grid.locator('> *')).toHaveCount(FOOD_CARD_TYPES.length);
     await expect(grid.getByTestId('logging-gap-card')).toBeVisible();
+    await expect(grid.getByTestId('food-log-history-card')).toBeVisible();
     await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
   });
 

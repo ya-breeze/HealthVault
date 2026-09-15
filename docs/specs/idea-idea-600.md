@@ -65,8 +65,8 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 5: Cover the dashboard behavior end to end
-- [ ] Extend `e2e/tests/dashboard.spec.ts` or add a focused E2E spec that supplies deterministic completeness and daily-total responses and asserts the three summary counts and seven chronological markers
-- [ ] Assert that a day with Complete or Confirmed Complete state but a nonzero `unconfirmed_meals` value is shown as needing attention and is not included in the counted total
-- [ ] Assert that the card’s request window contains exactly the seven closed Logged Days in the stored timezone and excludes today
-- [ ] Cover English and Russian copy, navigation to `/food/history/`, retrieval failure, and show/hide/reorder persistence using the dashboard’s existing cleanup conventions for shared settings
-- [ ] Mark completed
+- [x] Extend `e2e/tests/dashboard.spec.ts` or add a focused E2E spec that supplies deterministic completeness and daily-total responses and asserts the three summary counts and seven chronological markers
+- [x] Assert that a day with Complete or Confirmed Complete state but a nonzero `unconfirmed_meals` value is shown as needing attention and is not included in the counted total
+- [x] Assert that the card’s request window contains exactly the seven closed Logged Days in the stored timezone and excludes today
+- [x] Cover English and Russian copy, navigation to `/food/history/`, retrieval failure, and show/hide/reorder persistence using the dashboard’s existing cleanup conventions for shared settings
+- [x] Mark completed

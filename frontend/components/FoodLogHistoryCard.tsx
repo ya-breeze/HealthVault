@@ -119,9 +119,11 @@ export default function FoodLogHistoryCard({
 
   function dayDescription(day: FoodLogHistoryDay): string {
     const outcome = t(outcomeLabelKey(day.outcome));
-    const key = day.unconfirmedMeals > 0
-      ? 'foodLogHistory.dayDescriptionWithUnresolved'
-      : 'foodLogHistory.dayDescription';
+    const key = day.unconfirmedMeals === 1
+      ? 'foodLogHistory.dayDescriptionWithOneUnresolved'
+      : day.unconfirmedMeals > 1
+        ? 'foodLogHistory.dayDescriptionWithUnresolved'
+        : 'foodLogHistory.dayDescription';
     return interpolate(t(key), {
       date: day.date,
       outcome,

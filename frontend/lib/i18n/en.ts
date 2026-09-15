@@ -434,6 +434,7 @@ const en = {
   'foodLogHistory.outcome.noFood': 'no food logged',
   'foodLogHistory.outcome.needsAttention': 'needs attention',
   'foodLogHistory.dayDescription': '{date}: {outcome}; {occasions} eating occasions.',
+  'foodLogHistory.dayDescriptionWithOneUnresolved': '{date}: {outcome}; {occasions} eating occasions; 1 unresolved meal.',
   'foodLogHistory.dayDescriptionWithUnresolved': '{date}: {outcome}; {occasions} eating occasions; {unresolved} unresolved meals.',
 
   // The steps detail page's diagnostic disclosure (check-the-health-data
