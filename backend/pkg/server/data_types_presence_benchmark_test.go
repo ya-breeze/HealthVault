@@ -293,6 +293,23 @@ func benchmarkDailyAggregate(fixture dashboardBenchmarkFixture, typeName string)
 	return err
 }
 
+// benchmarkDashboardDailyAggregate includes the timezone/settings lookup that
+// DataHandler performs before every real bucketed dashboard request. The
+// component benchmarks above isolate queryBucketed itself; the combined
+// fresh-load sequences must include the complete post-user-resolution path.
+func benchmarkDashboardDailyAggregate(fixture dashboardBenchmarkFixture, typeName string) error {
+	loc, err := resolveViewerTimezone(fixture.storage, fixture.userID)
+	if err != nil {
+		return err
+	}
+	info := typeRegistry[typeName]
+	rows, err := queryBucketed(
+		fixture.storage, typeName, info, database.BucketDay, loc, fixture.userID, fixture.range_,
+	)
+	dashboardBenchmarkSink = rows
+	return err
+}
+
 func benchmarkNeedsAttentionCount(db *gorm.DB, userID uuid.UUID) error {
 	var count int64
 	return db.Model(&database.FoodMeal{}).
@@ -311,7 +328,7 @@ func benchmarkLegacyFreshLoad(fixture dashboardBenchmarkFixture) error {
 		"steps", "heart_rate", "sleep", "heart_rate_variability", "distance", "weight",
 		"blood_pressure", "oxygen_saturation",
 	} {
-		if err := benchmarkDailyAggregate(fixture, typeName); err != nil {
+		if err := benchmarkDashboardDailyAggregate(fixture, typeName); err != nil {
 			return err
 		}
 	}
@@ -329,7 +346,7 @@ func benchmarkCurrentFreshLoad(fixture dashboardBenchmarkFixture) error {
 		"steps", "heart_rate", "sleep", "heart_rate_variability", "distance", "weight",
 		"blood_pressure", "oxygen_saturation",
 	} {
-		if err := benchmarkDailyAggregate(fixture, typeName); err != nil {
+		if err := benchmarkDashboardDailyAggregate(fixture, typeName); err != nil {
 			return err
 		}
 	}

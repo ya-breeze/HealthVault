@@ -3,11 +3,12 @@
 ## Outcome
 
 The current dashboard source queries have a deterministic round-trip baseline:
-one settings read, 27 serial Presence `COUNT` statements, eight daily
-aggregate statements, and one needs-attention count — 37 SQL statements once
+one dashboard settings read, 27 serial Presence `COUNT` statements, eight
+timezone/settings reads performed by the bucketed data handlers, eight daily
+aggregate statements, and one needs-attention count — 45 SQL statements once
 the target user is resolved. Replacing only the Presence computation with one
 sorted `UNION ALL` statement of bounded `EXISTS` probes reduces that measured
-sequence to 11 statements. The optimization removes 26 of the 27 Presence
+sequence to 19 statements. The optimization removes 26 of the 27 Presence
 round trips; benchmark wall-clock results are supporting evidence, not a
 machine-specific acceptance threshold.
 
@@ -22,9 +23,11 @@ HTTP cutover is part of this change.
 `server` package benchmark. It passes a resolved user ID directly to the
 measured source operations so the profile isolates database work in those
 sources; user lookup, fixture setup, and seed writes are outside the timed
-region. The benchmark measures each component independently and then runs the
-old browser-driven source sequence as `legacy_fresh_load`. It also runs the
-same sequence with the optimized Presence helper as `current_fresh_load`.
+region. The benchmark measures each database component independently and then
+runs the old browser-driven source sequence as `legacy_fresh_load`. The
+combined sequence includes the timezone/settings lookup that each bucketed
+data handler performs before its aggregate query. It also runs the same
+sequence with the optimized Presence helper as `current_fresh_load`.
 
 The test-only statement counter registers GORM query and row callbacks after
 setup, so `Rows()`-based steps aggregation is counted as well as ordinary
@@ -60,21 +63,22 @@ i3-10100 host using the populated fixture:
 
 | Benchmark | `ns/op` | SQL statements/op | `B/op` | allocs/op |
 | --- | ---: | ---: | ---: | ---: |
-| `presence_serial_count` | 426,326 | 27 | 90,746 | 1,361 |
-| `presence_union_exists` | 233,971 | 1 | 52,337 | 553 |
-| `legacy_fresh_load` | 1,436,163 | 37 | 334,538 | 6,383 |
-| `current_fresh_load` | 1,301,816 | 11 | 296,195 | 5,575 |
+| `presence_serial_count` | 421,410 | 27 | 90,751 | 1,361 |
+| `presence_union_exists` | 225,766 | 1 | 52,335 | 553 |
+| `legacy_fresh_load` | 1,842,361 | 45 | 387,144 | 7,345 |
+| `current_fresh_load` | 1,572,441 | 19 | 348,870 | 6,537 |
 
 Timings and allocations vary with the Go, SQLite, and host environment. The
 statement counts are the reproducible decision signal:
 
 | Measured component | Before | After | Reason |
 | --- | ---: | ---: | --- |
-| Settings read | 1 | 1 | unchanged |
+| Dashboard settings read | 1 | 1 | unchanged |
 | Presence | 27 serial `COUNT`s | 1 combined probe | 26 round trips removed |
+| Timezone/settings reads for 8 aggregates | 8 | 8 | unchanged |
 | Each of 8 daily aggregates | 1 | 1 | unchanged |
 | Needs-attention count | 1 | 1 | unchanged |
-| Fresh-load source sequence | 37 | 11 | 26 statements removed |
+| Fresh-load source sequence | 45 | 19 | 26 statements removed |
 
 ## Query-plan evidence
 
@@ -93,7 +97,7 @@ On the migrated SQLite benchmark database, `EXPLAIN QUERY PLAN` reported a
 subquery for every registered table. Representative output is:
 
 ```text
-SCALAR SUBQUERY 47
+SCALAR SUBQUERY 45
 SEARCH steps USING COVERING INDEX idx_steps_user_time (user_id=?)
 SCALAR SUBQUERY 53
 SEARCH weight_goals USING COVERING INDEX idx_weight_goal_user_time (user_id=?)
