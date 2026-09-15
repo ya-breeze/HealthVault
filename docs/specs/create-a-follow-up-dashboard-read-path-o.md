@@ -32,10 +32,10 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
 
 ### Task 1: Establish the post-fix database baseline
-- [ ] Add an internal-package benchmark in `backend/pkg/server/data_types_presence_benchmark_test.go` that seeds an empty user and a representative populated user, then exercises the settings read, the existing serial Presence computation, the eight dashboard daily aggregates (`steps`, `heart_rate`, `sleep`, `heart_rate_variability`, `distance`, `weight`, `blood_pressure`, and `oxygen_saturation`), and the `needsAttentionStatuses` count separately and as one legacy fresh-load sequence.
-- [ ] Add test-only GORM tracing or equivalent statement counting around the measured operations, excluding seed/setup work, so the benchmark can report deterministic SQL-statement counts alongside `ns/op` and allocations without changing production logging.
-- [ ] Include both empty and high-cardinality Presence cases so the profile distinguishes fixed round-trip amplification from the additional work `COUNT` performs when a user has many rows.
-- [ ] Mark completed
+- [x] Add an internal-package benchmark in `backend/pkg/server/data_types_presence_benchmark_test.go` that seeds an empty user and a representative populated user, then exercises the settings read, the existing serial Presence computation, the eight dashboard daily aggregates (`steps`, `heart_rate`, `sleep`, `heart_rate_variability`, `distance`, `weight`, `blood_pressure`, and `oxygen_saturation`), and the `needsAttentionStatuses` count separately and as one legacy fresh-load sequence.
+- [x] Add test-only GORM tracing or equivalent statement counting around the measured operations, excluding seed/setup work, so the benchmark can report deterministic SQL-statement counts alongside `ns/op` and allocations without changing production logging.
+- [x] Include both empty and high-cardinality Presence cases so the profile distinguishes fixed round-trip amplification from the additional work `COUNT` performs when a user has many rows.
+- [x] Mark completed
 
 ### Task 2: Collapse Presence into bounded probes
 - [ ] In `backend/pkg/server/api.go`, extract the Presence query work used by `DataTypesPresenceHandler` into a helper that accepts the resolved user ID and returns a complete `map[string]bool` or an error.
