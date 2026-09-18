@@ -155,6 +155,14 @@ func TestIngredientCandidateMatches(t *testing.T) {
 		// nowhere near a real match.
 		{"chicken breast", "Bread, white, commercially prepared", false},
 		{"", "Cucumber, peeled, raw", false},
+		// Regression (found in code review): a single-word ingredient name
+		// used to accept any candidate whose FIRST word matched, which a
+		// processed variant's head noun satisfies just as well as the plain
+		// ingredient — "Tomato sauce, canned" is not raw tomato and must be
+		// rejected, even though "tomato" is both its first word and its only
+		// name-derived word.
+		{"tomato", "Tomato sauce, canned", false},
+		{"tomato", "Tomato juice, canned, without added ascorbic acid", false},
 	}
 	for _, c := range cases {
 		if got := ingredientCandidateMatches(c.name, c.description); got != c.want {
@@ -291,6 +299,62 @@ func TestResolveIngredientReference_PartialResolutionLeavesNoShadowProfile(t *te
 	}
 	if entries[1].Resolved {
 		t.Errorf("entries[1] (zzzznotarealfood) should not have resolved")
+	}
+}
+
+// Regression (found in code review): a blank canonical_name_en used to be
+// dropped by toIngredientEstimates before it ever reached persistence,
+// shrinking a two-ingredient dish down to one and letting the
+// all-or-nothing gate see it as "fully resolved". It must instead survive
+// into the persisted breakdown and simply fail its own USDA search, keeping
+// HasIngredientReference false for the whole item.
+func TestResolveIngredientReference_BlankCanonicalNameBlocksTheGate(t *testing.T) {
+	h := NewFoodHandlers(nil, cucumberTomatoIndex(t), t.TempDir())
+
+	item := database.FoodItem{WeightGrams: 200}
+	item.SetIngredients([]database.IngredientReferenceEntry{
+		{Name: "огурец", CanonicalNameEN: "cucumber", WeightGrams: 100},
+		{Name: "?", CanonicalNameEN: "", WeightGrams: 100},
+	})
+
+	h.resolveIngredientReference(&item)
+
+	if item.HasIngredientReference {
+		t.Fatalf("expected HasIngredientReference=false with a blank-named ingredient present")
+	}
+	entries, ok := item.Ingredients()
+	if !ok || len(entries) != 2 {
+		t.Fatalf("Ingredients() = %v, %v; want both entries preserved", entries, ok)
+	}
+	if entries[1].Resolved {
+		t.Errorf("the blank-named entry should never resolve")
+	}
+}
+
+// Regression (found in code review): a zero-weight ingredient's identity
+// match used to still increment resolvedCount even though it contributed
+// nothing to the sum, letting HasIngredientReference become true over a
+// dish where one ingredient's actual mass was never accounted for.
+func TestResolveIngredientReference_ZeroWeightIngredientBlocksTheGate(t *testing.T) {
+	h := NewFoodHandlers(nil, cucumberTomatoIndex(t), t.TempDir())
+
+	item := database.FoodItem{WeightGrams: 200}
+	item.SetIngredients([]database.IngredientReferenceEntry{
+		{Name: "огурец", CanonicalNameEN: "cucumber", WeightGrams: 100},
+		{Name: "помидор", CanonicalNameEN: "tomato", WeightGrams: 0},
+	})
+
+	h.resolveIngredientReference(&item)
+
+	if item.HasIngredientReference {
+		t.Fatalf("expected HasIngredientReference=false with a zero-weight ingredient present")
+	}
+	entries, ok := item.Ingredients()
+	if !ok || len(entries) != 2 {
+		t.Fatalf("Ingredients() = %v, %v; want both entries preserved", entries, ok)
+	}
+	if entries[1].Resolved {
+		t.Errorf("a zero-weight entry should never be marked Resolved, even though its identity is findable")
 	}
 }
 

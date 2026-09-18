@@ -715,14 +715,17 @@ type ingredientTotals struct {
 // ingredients too, a larger change than this shadow field's own scope), so
 // it substitutes a stricter acceptance rule instead of trusting rank:
 // ingredientCandidateMatches requires every (lightly stemmed) word of the
-// ingredient's own name to appear in the candidate's full description, and
-// the candidate's leading word — FDC's description convention always states
-// the base food name before its comma-separated qualifiers — to match the
-// ingredient's own leading word. That rejects a same-topic-but-wrong-food
-// candidate ("Turkey breast, chicken-fried" for the query "chicken breast")
-// as well as one that merely shares an unrelated word, while still
-// tolerating ordinary English plurals ("tomato" against a "Tomatoes, red,
-// ripe, raw" description).
+// ingredient's own name to appear in the candidate's full description, AND
+// every word of the candidate's own leading segment (before its first
+// comma-separated qualifier — FDC's description convention always states
+// the base food name there) to be drawn from the ingredient's own name, with
+// nothing extra. That rejects a same-topic-but-wrong-food candidate ("Turkey
+// breast, chicken-fried" for the query "chicken breast"), a processed
+// variant whose head noun absorbs an extra word ("Tomato sauce, canned" for
+// the query "tomato" — an unaccounted "sauce" in the leading segment), and
+// one that merely shares an unrelated word, while still tolerating ordinary
+// English plurals ("tomato" against a "Tomatoes, red, ripe, raw"
+// description).
 //
 // The trade-off is deliberate, not hidden: whenever nothing in an
 // ingredient's shortlist clears this bar, that ingredient is left
@@ -746,6 +749,18 @@ func (h *foodHandlers) resolveIngredientReference(item *database.FoodItem) {
 		entries[i].Resolved = false
 		entries[i].FdcID = nil
 
+		// A non-positive weight can never contribute meaningfully to the sum
+		// (0g of anything is 0g of every nutrient) and is itself a sign
+		// something is wrong with this entry — treated as unresolved rather
+		// than "identity matched but weightless", so it correctly blocks the
+		// all-or-nothing gate below instead of silently passing it. Found in
+		// code review: checking this only after accumulation let a
+		// zero/negative-weight entry still count toward resolvedCount.
+		weight := entries[i].WeightGrams
+		if weight <= 0 {
+			continue
+		}
+
 		foods, err := h.usda.Search(ingredientSearchTerm(entries[i].CanonicalNameEN), ingredientResolutionCandidates)
 		if err != nil || len(foods) == 0 {
 			continue
@@ -760,10 +775,6 @@ func (h *foodHandlers) resolveIngredientReference(item *database.FoodItem) {
 		entries[i].FdcID = &fdcID
 		resolvedCount++
 
-		weight := entries[i].WeightGrams
-		if weight <= 0 {
-			continue // resolved for provenance, but contributes nothing to the sum
-		}
 		f := weight / 100.0
 		totals.calories += match.Profile.CaloriesPer100g * f
 		totals.protein += match.Profile.ProteinPer100g * f
@@ -807,20 +818,49 @@ func bestIngredientMatch(name string, foods []usda.Food) (usda.Food, bool) {
 
 // ingredientCandidateMatches reports whether description is a confident
 // match for name — see resolveIngredientReference's doc comment for the
-// rationale. Both rules must hold: every stemmed word of name appears
-// somewhere among description's own stemmed words, and description's
-// leading word equals name's leading word (after the same stemming).
+// rationale. Both rules must hold: description's leading segment (its words
+// up to the first comma) contains only words drawn from name, and every
+// word of name appears somewhere in description's full word set.
 func ingredientCandidateMatches(name, description string) bool {
 	nameWords := stemmedWords(name)
 	if len(nameWords) == 0 {
 		return false
 	}
-	descWords := stemmedWords(description)
-	if len(descWords) == 0 || descWords[0] != nameWords[0] {
+	nameSet := make(map[string]bool, len(nameWords))
+	for _, w := range nameWords {
+		nameSet[w] = true
+	}
+
+	// The leading segment (before the first comma) must consist ENTIRELY of
+	// words drawn from the ingredient's own name — not merely start with one
+	// of them. Without this, a single-word ingredient name like "tomato"
+	// happily matches "Tomato sauce, canned": the old rule only checked that
+	// the description's first word equalled the name's first word, which a
+	// processed variant's head noun satisfies just as well as the plain
+	// ingredient does. Requiring the whole leading segment to be accounted
+	// for rejects "sauce"/"juice"/"paste"-style qualifiers fused into the
+	// head noun itself, while still accepting "Chicken, broiler or fryers,
+	// breast, ..." for "chicken breast" (its leading segment is just
+	// "Chicken", a single word already in the name). Found in code review.
+	lead := description
+	if i := strings.IndexByte(description, ','); i >= 0 {
+		lead = description[:i]
+	}
+	leadWords := stemmedWords(lead)
+	if len(leadWords) == 0 {
 		return false
 	}
-	descSet := make(map[string]bool, len(descWords))
-	for _, w := range descWords {
+	for _, w := range leadWords {
+		if !nameSet[w] {
+			return false
+		}
+	}
+
+	// Every word of the ingredient's own name must still appear somewhere in
+	// the full description — this is what lets "breast" (present only after
+	// the first comma) count toward matching "chicken breast".
+	descSet := make(map[string]bool)
+	for _, w := range stemmedWords(description) {
 		descSet[w] = true
 	}
 	for _, w := range nameWords {

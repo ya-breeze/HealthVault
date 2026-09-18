@@ -441,29 +441,29 @@ func toEstimatedProfile(p *recognizeSchemaEstimatedProfile) *database.NutrientPr
 }
 
 // toIngredientEstimates converts the schema's ingredient breakdown to the
-// shared vision.IngredientEstimate shape, trimming whitespace and dropping
-// any entry with no usable English name — a blank canonical_name_en cannot
-// be searched against USDA/OFF regardless of how the model filled the rest
-// of the entry in. Returns nil (not an empty non-nil slice) for an atomic
-// item, matching Ingredients' "empty means no breakdown" contract.
+// shared vision.IngredientEstimate shape, trimming whitespace. It
+// deliberately keeps an entry whose canonical_name_en came back blank
+// rather than dropping it: dropping it would silently shrink the breakdown
+// to only the ingredients the model happened to name well, letting the
+// all-or-nothing HasIngredientReference gate (see
+// docs/specs/component-reference-shadow.md) pass as "fully resolved" over a
+// dish it never actually covered in full — the exact partial-sum-disguised-
+// as-complete failure that gate exists to prevent. A blank name simply
+// cannot be searched, so resolveIngredientReference's own USDA search
+// naturally leaves it unresolved (empty query -> no results), which is what
+// correctly blocks the gate. Returns nil (not an empty non-nil slice) for an
+// atomic item, matching Ingredients' "empty means no breakdown" contract.
 func toIngredientEstimates(entries []recognizeSchemaIngredient) []IngredientEstimate {
 	if len(entries) == 0 {
 		return nil
 	}
-	out := make([]IngredientEstimate, 0, len(entries))
-	for _, e := range entries {
-		canonical := strings.TrimSpace(e.CanonicalNameEN)
-		if canonical == "" {
-			continue
-		}
-		out = append(out, IngredientEstimate{
+	out := make([]IngredientEstimate, len(entries))
+	for i, e := range entries {
+		out[i] = IngredientEstimate{
 			Name:            strings.TrimSpace(e.Name),
-			CanonicalNameEN: canonical,
+			CanonicalNameEN: strings.TrimSpace(e.CanonicalNameEN),
 			WeightGrams:     e.WeightGrams,
-		})
-	}
-	if len(out) == 0 {
-		return nil
+		}
 	}
 	return out
 }

@@ -246,12 +246,20 @@ func TestOpenAIClient_Recognize_EmptyIngredientsParsedAsNil(t *testing.T) {
 	}
 }
 
-func TestOpenAIClient_Recognize_IngredientWithBlankCanonicalNameIsDropped(t *testing.T) {
+// Regression: a blank canonical_name_en must NOT be dropped from the
+// breakdown. Dropping it would shrink a two-ingredient dish down to
+// whichever ingredient the model happened to name well, letting the
+// all-or-nothing HasIngredientReference gate see a "fully resolved"
+// one-ingredient list instead of the genuinely-partial two-ingredient dish
+// it actually is — found in code review. The blank entry is kept and left
+// for resolveIngredientReference's own USDA search to naturally fail on.
+func TestOpenAIClient_Recognize_IngredientWithBlankCanonicalNameIsKept(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(chatResponse(t, //nolint:errcheck
 			`{"items":[{"display_name":"mystery salad","canonical_name":"","preparation":"unknown","state":"unknown",`+
 				`"weight_grams":150,"confidence":0.5,"estimated_profile":null,`+
-				`"ingredients":[{"name":"?","canonical_name_en":"  ","weight_grams":50}]}],`+
+				`"ingredients":[{"name":"cucumber","canonical_name_en":"cucumber","weight_grams":100},`+
+				`{"name":"?","canonical_name_en":"  ","weight_grams":50}]}],`+
 				`"clarification_questions":[]}`)))
 	})
 
@@ -259,10 +267,12 @@ func TestOpenAIClient_Recognize_IngredientWithBlankCanonicalNameIsDropped(t *tes
 	if err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
-	// A blank canonical_name_en can never be searched against USDA/OFF, so
-	// toIngredientEstimates drops it rather than keeping an unsearchable entry.
-	if result.Items[0].Ingredients != nil {
-		t.Errorf("expected the blank-canonical-name ingredient to be dropped, got %+v", result.Items[0].Ingredients)
+	ingredients := result.Items[0].Ingredients
+	if len(ingredients) != 2 {
+		t.Fatalf("expected both ingredients kept, got %+v", ingredients)
+	}
+	if ingredients[1].CanonicalNameEN != "" {
+		t.Errorf("expected ingredient[1]'s blank canonical name preserved as empty, got %q", ingredients[1].CanonicalNameEN)
 	}
 }
 

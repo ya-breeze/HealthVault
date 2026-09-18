@@ -42,8 +42,12 @@ with English names and estimated weights; leave it empty for an already-atomic i
 `ingredients` is a required array property in `recognizeJSONSchema` (empty array, not a nullable
 object — OpenAI's strict mode requires every property listed in `required`, and an array's own
 emptiness already signals "no breakdown", the same way `estimated_profile: null` signals "no
-estimate"). `toIngredientEstimates` drops any entry whose `canonical_name_en` is blank after
-trimming — nothing can be searched against USDA/OFF without one.
+estimate"). `toIngredientEstimates` trims each entry but deliberately keeps one whose
+`canonical_name_en` comes back blank rather than dropping it (an early version dropped it — found
+in code review to silently shrink the breakdown and let the all-or-nothing gate below pass over a
+dish it never actually covered). A blank name simply cannot be searched, so it is left in the
+persisted list for `resolveIngredientReference` to naturally fail to resolve, which is what
+correctly keeps `HasIngredientReference` false.
 
 ### Persistence
 
@@ -145,9 +149,9 @@ schema change needed to run it.
 - [x] Add `ingredientSchema` and the required `ingredients` array property to
       `recognizeJSONSchema`; add `recognizeSchemaIngredient` and wire it through
       `recognizeSchemaItem`
-- [x] `toIngredientEstimates` converts and trims, dropping any entry with a blank
-      `canonical_name_en`
-- [x] Cover schema-requiredness and parsing (present, empty, blank-name-dropped) in
+- [x] `toIngredientEstimates` converts and trims, keeping (not dropping) an entry with a blank
+      `canonical_name_en` so it correctly fails resolution downstream instead of vanishing
+- [x] Cover schema-requiredness and parsing (present, empty, blank-name-kept) in
       `vision/openai_test.go`
 - [x] Mark completed
 
