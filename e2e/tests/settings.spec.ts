@@ -347,7 +347,17 @@ test.describe('Body measurements (Settings)', () => {
 
       const heightForm = page.getByTestId('add-record-height');
       await heightForm.getByLabel(/^Value/).fill('1.82');
-      await heightForm.getByRole('button', { name: 'Add', exact: true }).click();
+      // Capture the id from this form's own POST response, not from a later GET's "latest" guess
+      // -- on the shared 'alice' account, a concurrent writer could otherwise own the record this
+      // test deletes, or (if values differ) make the assertion below throw before newId is ever
+      // set, leaking this test's own write. See docs/specs/a-permanent-way-to-change-height-and-go.md.
+      const [response] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/data/height') && r.request().method() === 'POST'),
+        heightForm.getByRole('button', { name: 'Add', exact: true }).click(),
+      ]);
+      const created = await response.json() as { id: string; meters: number };
+      newId = created.id;
+      expect(created.meters).toBe(1.82);
       await expect(heightForm).not.toBeVisible();
 
       // The new value actually became the latest record -- not just that the form accepted a
@@ -356,8 +366,8 @@ test.describe('Body measurements (Settings)', () => {
       // page: that needs a weight record too, out of this test's own scope (see this section's
       // spec).
       const latest = await latestRecord(page, 'height');
+      expect(latest.id).toBe(newId);
       expect(latest.meters).toBe(1.82);
-      newId = latest.id;
     } finally {
       if (seedId) await deleteRecord(page, 'height', seedId);
       if (newId) await deleteRecord(page, 'height', newId);
@@ -376,13 +386,20 @@ test.describe('Body measurements (Settings)', () => {
 
       const goalForm = page.getByTestId('add-record-weight_goal');
       await goalForm.getByLabel(/^Value/).fill('68');
-      await goalForm.getByRole('button', { name: 'Add', exact: true }).click();
+      // Same id-from-the-real-response reasoning as the height test above.
+      const [response] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/data/weight_goal') && r.request().method() === 'POST'),
+        goalForm.getByRole('button', { name: 'Add', exact: true }).click(),
+      ]);
+      const created = await response.json() as { id: string; kilograms: number };
+      newId = created.id;
+      expect(created.kilograms).toBe(68);
       await expect(goalForm).not.toBeVisible();
 
       // Same "actually the latest record" proof as the height test above.
       const latest = await latestRecord(page, 'weight_goal');
+      expect(latest.id).toBe(newId);
       expect(latest.kilograms).toBe(68);
-      newId = latest.id;
 
       // And that the new goal, not the seed, is what the goal ReferenceLine on the weight page
       // now reflects.
