@@ -50,10 +50,14 @@ write endpoints, matching how `birthdate`/`sex`/`activity_override` already beha
 page — one place a user can expect to find and change every piece of their own profile data.
 
 The Settings page's existing labels ("Profile", "Birthdate", "Sex", "Activity level", "Save", ...)
-are plain hardcoded English text, not run through `t()` — only its language `<select>` is. The two
-new buttons match that existing convention (do **not** introduce `t()` calls) rather than
-partially localizing one section of a page that currently has no Russian strings of its own at
-all; fully localizing Settings is a separate, pre-existing gap this change does not take on.
+are plain hardcoded English text, not run through `t()` — only its language `<select>` is. The
+two new buttons *do* call `t('dataDetail.setHeight')`/`t('dataDetail.setGoal')` rather than
+hardcoding English, since both keys already exist and are already translated in both languages —
+reusing them costs nothing and gives a Russian-speaking user the same Russian label they already
+see on the Weight page, instead of deliberately shipping new English-only text next to a section
+this Idea's own body was written in Russian. This leaves the rest of the page's existing labels
+exactly as English as they already were; fully localizing Settings is a separate, pre-existing gap
+this change does not take on.
 
 **Cut from this pass**: showing the current height/goal-weight value next to each button (e.g.
 "Height: 178 cm · change"). Doing that correctly needs the latest-record fetch, the
@@ -71,23 +75,25 @@ answers what the Idea asked for.
 
 ### Task 1: Settings page gets a permanent, always-visible way to change height and goal weight
 
-- [ ] Add a "Body measurements" section to `frontend/app/settings/page.tsx`: two buttons ("Set
+- [x] Add a "Body measurements" section to `frontend/app/settings/page.tsx`: two buttons ("Set
       height", "Set goal"), each toggling its own `AddRecordForm` (`type="height"` /
       `type="weight_goal"`) inline, mirroring the toggle pattern the Weight page already uses for
       the same two forms (`showHeightForm`/`showGoalForm` state, `onCancel` closes it back).
-- [ ] Neither button is gated on whether a value already exists — unlike the Weight page's
+- [x] Neither button is gated on whether a value already exists — unlike the Weight page's
       height shortcut, and matching its goal shortcut, since this section's whole purpose is to
       remain available after the value is already set.
-- [ ] Do not modify `frontend/app/data/[type]/DataTypeClient.tsx`'s existing shortcuts, their
+- [x] Do not modify `frontend/app/data/[type]/DataTypeClient.tsx`'s existing shortcuts, their
       gating, or `AddRecordForm.tsx` itself.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 2: Prove it, on the deployed stack
 
-- [ ] Add or extend an e2e spec (`e2e/tests/`) covering: a user with an existing height record
-      still sees and can use the Settings "Set height" button to write a new height record that
-      updates the BMI readout on the Weight page; the same for "Set goal" and the goal
-      ReferenceLine. Confirms the fix from the read path a real user would actually notice, not
-      just that a button renders.
+- [x] Add an e2e spec (`e2e/tests/settings.spec.ts`, "Body measurements (Settings)") covering: a
+      user with an existing height record still sees and can use the Settings "Set height" button
+      to write a new height record, verified as the latest row on `/data/height/`; the same for
+      "Set goal", additionally verified against the goal ReferenceLine it feeds on the Weight page
+      (height's own downstream BMI readout needs a weight record too, which is out of this test's
+      scope to also set up — the direct record check already proves the write path). Confirms the
+      fix from the read path a real user would actually notice, not just that a button renders.
 - [ ] Run every command in `## Validation Commands` and resolve all failures.
 - [ ] Mark completed

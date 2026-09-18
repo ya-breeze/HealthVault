@@ -277,3 +277,90 @@ test.describe('Profile form', () => {
     await expect(page.getByLabel('Activity level')).toHaveValue('active');
   });
 });
+
+// The Weight page's own "Set height"/"Set goal" shortcuts (data-types.spec.ts) exist for a
+// narrower purpose and are unchanged by this: height's retires forever after its first use,
+// proving the read path a user with an *existing* record would actually hit needs a different,
+// permanent affordance -- this section (docs/specs/a-permanent-way-to-change-height-and-go.md).
+test.describe('Body measurements (Settings)', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  // Duplicated from data-types.spec.ts's own copies rather than shared, matching this suite's
+  // established per-file convention (see login/withSettingsSave above).
+  async function deleteAllRecords(page: Page, type: string) {
+    const records = await page.evaluate(async (t) => {
+      const r = await fetch(`/api/data/${t}?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`, {
+        credentials: 'include',
+      });
+      return r.json();
+    }, type);
+    for (const rec of records as Array<{ id: string }>) {
+      await page.evaluate(async ({ t, id }) => {
+        await fetch(`/api/data/${t}/${id}`, { method: 'DELETE', credentials: 'include' });
+      }, { t: type, id: rec.id });
+    }
+  }
+
+  async function postRecord(page: Page, type: string, value: number) {
+    await page.evaluate(async ({ t, value }) => {
+      await fetch(`/api/data/${t}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      });
+    }, { t: type, value });
+  }
+
+  test('the height shortcut stays visible and usable in Settings after a height record already exists', async ({ page }) => {
+    await postRecord(page, 'height', 1.7);
+    try {
+      await page.goto('/settings');
+      // The equivalent shortcut on /data/weight/ would already be gone at this point
+      // (data-types.spec.ts's own "shortcut retires once it has served its purpose") -- this one
+      // must not be.
+      const setHeight = page.getByTestId('settings-set-height');
+      await expect(setHeight).toBeVisible();
+      await setHeight.click();
+
+      const heightForm = page.getByTestId('add-record-height');
+      await heightForm.getByLabel(/^Value/).fill('1.82');
+      await heightForm.getByRole('button', { name: 'Add', exact: true }).click();
+      await expect(heightForm).not.toBeVisible();
+
+      // The new value actually landed and became the latest record, reflected in the BMI
+      // reading it feeds on the weight page -- not just that the form accepted a submission.
+      await page.goto('/data/height/');
+      await expect(page.getByRole('cell', { name: '1.82' })).toBeVisible();
+    } finally {
+      await deleteAllRecords(page, 'height');
+    }
+  });
+
+  test('the goal shortcut stays visible and usable in Settings after a goal record already exists', async ({ page }) => {
+    await postRecord(page, 'weight_goal', 70);
+    try {
+      await page.goto('/settings');
+      const setGoal = page.getByTestId('settings-set-goal');
+      await expect(setGoal).toBeVisible();
+      await setGoal.click();
+
+      const goalForm = page.getByTestId('add-record-weight_goal');
+      await goalForm.getByLabel(/^Value/).fill('68');
+      await goalForm.getByRole('button', { name: 'Add', exact: true }).click();
+      await expect(goalForm).not.toBeVisible();
+
+      await page.goto('/data/weight_goal/');
+      await expect(page.getByRole('cell', { name: '68' })).toBeVisible();
+
+      // The new goal actually became the latest record, reflected in the goal ReferenceLine it
+      // feeds on the weight page -- not just that the form accepted a submission.
+      await page.goto('/data/weight/');
+      await expect(page.getByText('Goal', { exact: true })).toBeVisible();
+    } finally {
+      await deleteAllRecords(page, 'weight_goal');
+    }
+  });
+});
