@@ -2,8 +2,10 @@ package server_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/server"
 	"github.com/ya-breeze/healthvault/pkg/vision"
 )
@@ -20,6 +23,15 @@ type chatTestResponse struct {
 	Available bool   `json:"available"`
 	Reason    string `json:"reason"`
 	Answer    string `json:"answer"`
+	Sources   []struct {
+		Date          string  `json:"date"`
+		MealID        string  `json:"meal_id"`
+		Food          string  `json:"food"`
+		Signal        string  `json:"signal"`
+		NutrientGrams float64 `json:"nutrient_grams"`
+		MacroSource   string  `json:"macro_source"`
+		Confidence    float64 `json:"confidence"`
+	} `json:"sources"`
 }
 
 func chatSignal(code, unit, verdict, reason string, value, off, far float64) map[string]any {
@@ -41,6 +53,7 @@ func chatBody(question string, turns []map[string]any) map[string]any {
 			"mean_calories": 1820.5, "mean_protein_grams": 74.25,
 			"mean_carbs_grams": 210.25, "mean_fat_grams": 62.5,
 			"mean_sugar_grams": 88.75, "mean_sodium_grams": 4.1,
+			"mean_dietary_fiber_grams": 12.5, "mean_saturated_fat_grams": 8.5,
 		},
 		"signals": []map[string]any{
 			chatSignal("sodium", "gramsPerDay", "far", "sodium_high", 4.1, 2.3, 3.5),
@@ -79,6 +92,54 @@ func callChat(t *testing.T, h interface {
 	return w, response
 }
 
+func createNutritionChatHistoryMeal(
+	t *testing.T, st database.Storage, userID, familyID uuid.UUID, loggedAt time.Time,
+	food string, sodium, fiber float64, source string,
+) database.FoodMeal {
+	t.Helper()
+	meal := database.FoodMeal{
+		UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: loggedAt,
+		Calories: 300, ProteinGrams: 20, CarbsGrams: 30, FatGrams: 10,
+		SugarGrams: 5, SodiumGrams: sodium, DietaryFiberGrams: fiber,
+	}
+	meal.ID = uuid.New()
+	meal.FamilyID = familyID
+	if err := st.DB().Create(&meal).Error; err != nil {
+		t.Fatalf("create history meal: %v", err)
+	}
+	item := database.FoodItem{
+		UserID: userID, MealID: meal.ID, Name: food, WeightGrams: 250, Confidence: 0.72,
+		MacroSource: source, Calories: 300, ProteinGrams: 20, CarbsGrams: 30,
+		FatGrams: 10, SugarGrams: 5, SodiumGrams: sodium, DietaryFiberGrams: fiber,
+	}
+	item.ID = uuid.New()
+	item.FamilyID = familyID
+	if err := st.DB().Create(&item).Error; err != nil {
+		t.Fatalf("create history item: %v", err)
+	}
+	return meal
+}
+
+type sourceUsingNutritionChatClient struct {
+	vision.Fake
+	toolResult string
+	input      vision.NutritionChatInput
+}
+
+func (c *sourceUsingNutritionChatClient) NutritionChat(
+	ctx context.Context, in vision.NutritionChatInput,
+) (*vision.NutritionChatResult, error) {
+	c.input = in
+	result, err := in.HistoryTools.Execute(
+		ctx, "explain_nutrition_signal", json.RawMessage(`{"signal":"fiber"}`),
+	)
+	if err != nil {
+		return nil, err
+	}
+	c.toolResult = string(result)
+	return &vision.NutritionChatResult{Answer: "Клетчатка пришла из этих записей."}, nil
+}
+
 func TestFoodAdviceChat_AnswersFromTheCallersOwnEvidence(t *testing.T) {
 	st := newFileFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
@@ -93,6 +154,9 @@ func TestFoodAdviceChat_AnswersFromTheCallersOwnEvidence(t *testing.T) {
 	w, response := callChat(t, h, newChatRequest(t, userID, familyID, chatBody("  за какие дни?  ", turns)))
 	if w.Code != http.StatusOK || !response.Available {
 		t.Fatalf("chat: %d: %s", w.Code, w.Body.String())
+	}
+	if len(response.Sources) != 0 {
+		t.Fatalf("answer without a contributor lookup returned sources: %+v", response.Sources)
 	}
 	if response.Answer != "fake answer to: за какие дни?" {
 		t.Fatalf("answer did not travel through the handler: %q", response.Answer)
@@ -124,8 +188,218 @@ func TestFoodAdviceChat_AnswersFromTheCallersOwnEvidence(t *testing.T) {
 	if in.TargetCalories == 0 || in.DisplayLanguage != "ru" {
 		t.Errorf("expected a server-resolved target and language, got %d / %q", in.TargetCalories, in.DisplayLanguage)
 	}
+	if in.CurrentLoggedDay == "" {
+		t.Error("expected the caller's current Logged Day for relative-date tool questions")
+	}
 	if in.MeanSodiumGrams != 4.1 {
 		t.Errorf("expected the posted window means, got %v", in.MeanSodiumGrams)
+	}
+	if in.MeanDietaryFiberGrams != 12.5 {
+		t.Errorf("expected the posted fiber mean, got %v", in.MeanDietaryFiberGrams)
+	}
+	if in.MeanSaturatedFatGrams != 8.5 {
+		t.Errorf("expected the posted saturated fat mean, got %v", in.MeanSaturatedFatGrams)
+	}
+}
+
+func TestFoodAdviceChat_HistoryToolsReadOnlyTheCallersData(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	otherUserID, otherFamilyID := seedSecondFoodUser(t, st)
+	configureAdviceTarget(t, st, userID, "ru-RU")
+
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	yesterday := today.AddDate(0, 0, -1)
+	for i, hour := range []int{8, 13, 19} {
+		name := []string{"Домашний суп", "Хлеб", "Индейка"}[i]
+		sodium := []float64{1.2, 0.3, 0.8}[i]
+		createNutritionChatHistoryMeal(
+			t, st, userID, familyID, yesterday.Add(time.Duration(hour)*time.Hour),
+			name, sodium, 3, database.MacroSourceEstimated,
+		)
+	}
+	createNutritionChatHistoryMeal(
+		t, st, otherUserID, otherFamilyID, yesterday.Add(9*time.Hour),
+		"Чужая еда", 99, 3, database.MacroSourceManual,
+	)
+	createNutritionChatHistoryMeal(
+		t, st, userID, familyID, yesterday.AddDate(0, 0, -1).Add(12*time.Hour),
+		"Неполный солёный день", 50, 3, database.MacroSourceManual,
+	)
+
+	payloadID := uuid.New()
+	step := database.Steps{
+		UserID: userID, SourcePayloadID: payloadID,
+		StartTime: yesterday.Add(7 * time.Hour), EndTime: yesterday.Add(8 * time.Hour), Count: 4321,
+	}
+	step.ID, step.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&step).Error; err != nil {
+		t.Fatalf("create steps: %v", err)
+	}
+	sleep := database.Sleep{
+		UserID: userID, SourcePayloadID: payloadID,
+		StartTime: yesterday, SessionEndTime: yesterday.Add(8 * time.Hour), DurationSeconds: 8 * 3600,
+	}
+	sleep.ID, sleep.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&sleep).Error; err != nil {
+		t.Fatalf("create sleep: %v", err)
+	}
+	weightPayloadID := payloadID
+	weight := database.Weight{
+		UserID: userID, SourcePayloadID: &weightPayloadID,
+		Time: yesterday.Add(9 * time.Hour), Kilograms: 80.5,
+	}
+	weight.ID, weight.FamilyID = uuid.New(), familyID
+	if err := st.DB().Create(&weight).Error; err != nil {
+		t.Fatalf("create weight: %v", err)
+	}
+
+	fake := &vision.Fake{}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+	w, response := callChat(t, h, newChatRequest(t, userID, familyID, chatBody("откуда натрий?", nil)))
+	if w.Code != http.StatusOK || !response.Available || len(fake.NutritionChatCalls) != 1 {
+		t.Fatalf("chat did not reach the model with tools: %d: %s", w.Code, w.Body.String())
+	}
+	tools := fake.NutritionChatCalls[0].HistoryTools
+	if tools == nil {
+		t.Fatal("authenticated history tools were not attached")
+	}
+
+	explanation, err := tools.Execute(
+		context.Background(), "explain_nutrition_signal", json.RawMessage(`{"signal":"sodium"}`),
+	)
+	if err != nil {
+		t.Fatalf("explain nutrition signal: %v", err)
+	}
+	explanationText := string(explanation)
+	for _, want := range []string{"Домашний суп", `"macro_source":"estimated"`, `"eligible_days":1`} {
+		if !strings.Contains(explanationText, want) {
+			t.Errorf("explanation missing %q: %s", want, explanationText)
+		}
+	}
+	if strings.Contains(explanationText, "Чужая еда") || strings.Contains(explanationText, "99") {
+		t.Fatalf("another user's food reached the tool result: %s", explanationText)
+	}
+	if strings.Contains(explanationText, "Неполный солёный день") {
+		t.Fatalf("an ineligible day reached the contributor list: %s", explanationText)
+	}
+
+	date := yesterday.Format("2006-01-02")
+	details, err := tools.Execute(
+		context.Background(), "get_day_details", json.RawMessage(`{"date":"`+date+`"}`),
+	)
+	if err != nil {
+		t.Fatalf("get day details: %v", err)
+	}
+	detailText := string(details)
+	if !strings.Contains(detailText, "Домашний суп") || strings.Contains(detailText, "Чужая еда") {
+		t.Fatalf("day details were not caller-scoped: %s", detailText)
+	}
+	for _, forbidden := range []string{"photo_path", "raw_response", "clarify_log", "description", "meal_id", "user_id"} {
+		if strings.Contains(detailText, forbidden) {
+			t.Errorf("day details exposed %q: %s", forbidden, detailText)
+		}
+	}
+
+	for _, tc := range []struct {
+		metric string
+		want   string
+	}{
+		{metric: "steps", want: "4321"},
+		{metric: "sleep", want: `"value":8`},
+		{metric: "weight", want: "80.5"},
+	} {
+		trend, err := tools.Execute(
+			context.Background(), "get_health_trend",
+			json.RawMessage(`{"metric":"`+tc.metric+`","days":7}`),
+		)
+		if err != nil {
+			t.Fatalf("get %s trend: %v", tc.metric, err)
+		}
+		if !strings.Contains(string(trend), tc.want) {
+			t.Errorf("%s trend missing %q: %s", tc.metric, tc.want, trend)
+		}
+	}
+
+	_, err = tools.Execute(
+		context.Background(), "get_day_details", json.RawMessage(`{"date":"1900-01-01"}`),
+	)
+	if !errors.Is(err, vision.ErrInvalidNutritionChatToolCall) {
+		t.Fatalf("old day should be rejected as an invalid tool call, got %v", err)
+	}
+	for _, call := range []struct {
+		name string
+		args string
+	}{
+		{name: "get_health_trend", args: `{"metric":"steps","days":8}`},
+		{name: "get_health_trend", args: `{"metric":"steps","days":7,"user_id":"other"}`},
+		{name: "unknown", args: `{}`},
+	} {
+		if _, err := tools.Execute(context.Background(), call.name, json.RawMessage(call.args)); !errors.Is(err, vision.ErrInvalidNutritionChatToolCall) {
+			t.Errorf("%s %s should be rejected, got %v", call.name, call.args, err)
+		}
+	}
+}
+
+func TestFoodAdviceChat_ReturnsBoundedServerOwnedFiberSources(t *testing.T) {
+	st := newFileFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	otherUserID, otherFamilyID := seedSecondFoodUser(t, st)
+	configureAdviceTarget(t, st, userID, "ru-RU")
+
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	yesterday := today.AddDate(0, 0, -1)
+	var largest database.FoodMeal
+	for i := 1; i <= 6; i++ {
+		meal := createNutritionChatHistoryMeal(
+			t, st, userID, familyID, yesterday.Add(time.Duration(i*2)*time.Hour),
+			fmt.Sprintf("Источник %d", i), 0.1, float64(i), database.MacroSourceEstimated,
+		)
+		if i == 6 {
+			largest = meal
+		}
+	}
+	createNutritionChatHistoryMeal(
+		t, st, otherUserID, otherFamilyID, yesterday.Add(3*time.Hour),
+		"Чужой источник", 0.1, 999, database.MacroSourceManual,
+	)
+
+	client := &sourceUsingNutritionChatClient{}
+	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(client, 10<<20, time.Second)
+	body := chatBody("откуда клетчатка?", nil)
+	body["label"] = "fair"
+	body["reasons"] = []string{"fiber_low"}
+	fiberSignal := chatSignal("fiber", "gramsPerDay", "off", "fiber_low", 21, 25, 25)
+	delete(fiberSignal, "far_boundary")
+	body["signals"] = []map[string]any{fiberSignal}
+	w, response := callChat(t, h, newChatRequest(t, userID, familyID, body))
+	if w.Code != http.StatusOK || !response.Available {
+		t.Fatalf("chat: %d: %s", w.Code, w.Body.String())
+	}
+	if len(client.input.Signals) != 1 || client.input.Signals[0].Code != "fiber" ||
+		client.input.Signals[0].FarBoundary != nil {
+		t.Fatalf("fiber signal invented a far boundary before the model: %+v", client.input.Signals)
+	}
+	if strings.Contains(client.toolResult, "meal_id") || strings.Contains(client.toolResult, largest.ID.String()) {
+		t.Fatalf("navigation identifiers reached the model-visible tool result: %s", client.toolResult)
+	}
+	if !strings.Contains(client.toolResult, `"signal":"fiber"`) || !strings.Contains(client.toolResult, "Источник 6") {
+		t.Fatalf("fiber evidence did not reach the tool result: %s", client.toolResult)
+	}
+	if len(response.Sources) != 5 {
+		t.Fatalf("sources = %d, want server cap 5: %+v", len(response.Sources), response.Sources)
+	}
+	first := response.Sources[0]
+	if first.MealID != largest.ID.String() || first.Food != "Источник 6" || first.Signal != "fiber" ||
+		first.NutrientGrams != 6 || first.MacroSource != database.MacroSourceEstimated || first.Confidence != 0.72 {
+		t.Fatalf("top source = %+v", first)
+	}
+	for _, source := range response.Sources {
+		if source.Food == "Чужой источник" || source.NutrientGrams == 999 {
+			t.Fatalf("another user's source leaked into response: %+v", response.Sources)
+		}
 	}
 }
 
@@ -176,7 +450,15 @@ func TestFoodAdviceChat_AuthenticationOriginAndInput(t *testing.T) {
 		"too many turns":           func(b map[string]any) { b["turns"] = tooManyTurns },
 		"an invalid label":         func(b map[string]any) { b["label"] = "excellent" },
 		"an invalid reason code":   func(b map[string]any) { b["reasons"] = []string{"Sodium High"} },
-		"a missing window mean":    func(b map[string]any) { delete(b["window"].(map[string]any), "mean_sodium_grams") },
+		"a missing existing window mean": func(b map[string]any) {
+			delete(b["window"].(map[string]any), "mean_sodium_grams")
+		},
+		"a missing fiber window mean": func(b map[string]any) {
+			delete(b["window"].(map[string]any), "mean_dietary_fiber_grams")
+		},
+		"a missing saturated fat window mean": func(b map[string]any) {
+			delete(b["window"].(map[string]any), "mean_saturated_fat_grams")
+		},
 		"an unknown verdict": func(b map[string]any) {
 			b["signals"] = []map[string]any{chatSignal("sodium", "gramsPerDay", "terrible", "sodium_high", 4.1, 2.3, 3.5)}
 		},
@@ -192,6 +474,27 @@ func TestFoodAdviceChat_AuthenticationOriginAndInput(t *testing.T) {
 		},
 		"a flagged signal with no reason": func(b map[string]any) {
 			b["signals"] = []map[string]any{chatSignal("sodium", "gramsPerDay", "far", "", 4.1, 2.3, 3.5)}
+		},
+		"a non-fiber signal with no far boundary": func(b map[string]any) {
+			s := chatSignal("sodium", "gramsPerDay", "off", "sodium_high", 2.8, 2.3, 3.5)
+			delete(s, "far_boundary")
+			b["signals"] = []map[string]any{s}
+		},
+		"a fiber signal with an invented far boundary": func(b map[string]any) {
+			b["signals"] = []map[string]any{chatSignal("fiber", "gramsPerDay", "off", "fiber_low", 20, 25, 10)}
+		},
+		"a fiber signal with a far verdict": func(b map[string]any) {
+			s := chatSignal("fiber", "gramsPerDay", "far", "fiber_low", 5, 25, 10)
+			delete(s, "far_boundary")
+			b["signals"] = []map[string]any{s}
+		},
+		"a saturated_fat signal with an invented far boundary": func(b map[string]any) {
+			b["signals"] = []map[string]any{chatSignal("saturated_fat", "share", "off", "saturated_fat_high", 0.12, 0.1, 0.15)}
+		},
+		"a saturated_fat signal with a far verdict": func(b map[string]any) {
+			s := chatSignal("saturated_fat", "share", "far", "saturated_fat_high", 0.2, 0.1, 0.15)
+			delete(s, "far_boundary")
+			b["signals"] = []map[string]any{s}
 		},
 		"an out-of-range eligible day count": func(b map[string]any) { b["eligible_days"] = 8 },
 		"an unknown field":                   func(b map[string]any) { b["user"] = "someone-else" },

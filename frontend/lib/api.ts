@@ -238,6 +238,7 @@ export interface NutrientProfile {
   sugar_per_100g: number;
   sodium_per_100g: number;
   dietary_fiber_per_100g: number;
+  saturated_fat_per_100g: number;
 }
 
 export interface FoodSearchResult {
@@ -272,6 +273,7 @@ export interface CustomFood {
   sugar_per_100g: number;
   sodium_per_100g: number;
   dietary_fiber_per_100g: number;
+  saturated_fat_per_100g: number;
 }
 
 export type CustomFoodInput = Omit<CustomFood, 'id'>;
@@ -303,6 +305,7 @@ export interface FoodItem {
   sugar_grams: number;
   sodium_grams: number;
   dietary_fiber_grams: number;
+  saturated_fat_grams: number;
 }
 
 export interface FoodMeal {
@@ -321,6 +324,7 @@ export interface FoodMeal {
   sugar_grams: number;
   sodium_grams: number;
   dietary_fiber_grams: number;
+  saturated_fat_grams: number;
   items: FoodItem[] | null;
 }
 
@@ -356,6 +360,7 @@ export interface ManualMealItemInput {
   sugar_grams?: number;
   sodium_grams?: number;
   dietary_fiber_grams?: number;
+  saturated_fat_grams?: number;
 }
 
 export interface PatchItemInput {
@@ -377,6 +382,7 @@ export interface PatchItemInput {
   sugar_grams?: number;
   sodium_grams?: number;
   dietary_fiber_grams?: number;
+  saturated_fat_grams?: number;
 }
 
 export interface ExpertComponentInput {
@@ -463,17 +469,20 @@ export interface DayCompleteness {
 export interface DailyTotal {
   date: string;
   calories: number;
-  // protein_grams, carbs_grams, fat_grams, sugar_grams and sodium_grams mirror
+  // protein_grams, carbs_grams, fat_grams, sugar_grams, sodium_grams,
+  // dietary_fiber_grams and saturated_fat_grams mirror
   // database.DailyTotal (food_daily_totals.go) — required, not optional. The
-  // backend serializes all five with no `omitempty`, so a zero sum always
+  // backend serializes all seven with no `omitempty`, so a zero sum always
   // arrives as the number 0, never an absent key.
   protein_grams: number;
   carbs_grams: number;
   fat_grams: number;
   sugar_grams: number;
   sodium_grams: number;
+  dietary_fiber_grams: number;
+  saturated_fat_grams: number;
   // How many of that day's meals are in a status other than `confirmed`, and
-  // so contributed nothing to `calories` or the five fields above. Non-zero
+  // so contributed nothing to `calories` or the seven fields above. Non-zero
   // means the day's total is under-counted by an unknown amount, which is
   // not the same thing as a low total — see database.DailyTotal's own
   // comment.
@@ -607,6 +616,8 @@ export interface NutritionAdviceWindow {
   mean_fat_grams: number;
   mean_sugar_grams: number;
   mean_sodium_grams: number;
+  mean_dietary_fiber_grams: number;
+  mean_saturated_fat_grams: number;
 }
 
 export interface NutritionAdviceRequest {
@@ -643,12 +654,23 @@ export interface NutritionChatSignal {
   /** Absent for an `ok` signal, which contributed no reason code. */
   reason?: string;
   off_boundary: number;
-  far_boundary: number;
+  /** Absent when the evidence defines no separate `far` verdict. */
+  far_boundary?: number;
 }
 
 export interface NutritionChatTurn {
   role: 'user' | 'assistant';
   text: string;
+}
+
+export interface NutritionChatSource {
+  date: string;
+  meal_id: string;
+  food: string;
+  signal: string;
+  nutrient_grams: number;
+  macro_source: string;
+  confidence: number;
 }
 
 export interface NutritionChatRequest {
@@ -666,7 +688,7 @@ export interface NutritionChatRequest {
 // inaccessible until the caller has proved the response carries one.
 export type NutritionChatResponse =
   | { available: false; reason: 'unconfigured' | 'unavailable' }
-  | { available: true; answer: string };
+  | { available: true; answer: string; sources?: NutritionChatSource[] };
 
 export interface FoodAdviceEngagementRequest {
   event: 'qualified_view';
@@ -718,6 +740,30 @@ export interface Me {
   family_id: string;
 }
 
+// In-flight dedup for the two parameterless bootstrap reads that
+// AuthenticatedShell, LanguageProvider and the dashboard's settings effect
+// each call independently on mount: concurrent callers share the one promise
+// below rather than each issuing their own GET. This is deduplication of
+// calls that overlap in time, not a value cache — the slot is cleared the
+// moment the shared request settles (success or failure, see the `finally`
+// on each), so a later, non-overlapping caller always gets a fresh GET. The
+// identity check inside each `finally` guards against an old settled promise
+// clearing a slot a newer call has since occupied; since both the request and
+// the slot assignment happen synchronously up to their first `await`, no
+// other caller can interleave between them today, but the check costs
+// nothing and keeps that invariant explicit rather than incidental.
+let mePromise: Promise<Me> | null = null;
+let settingsPromise: Promise<UserSettings> | null = null;
+
+// The uncached read behind api.getSettings() below and api.updateSettings()'s
+// own pre-write fetch. Kept as a private function, not part of the coalescing
+// slot, precisely because updateSettings must never share a promise with a
+// bootstrap read: see updateSettings's doc comment for why reusing either
+// direction is wrong.
+function fetchSettingsFresh(): Promise<UserSettings> {
+  return apiFetch<UserSettings>('/users/me/settings');
+}
+
 export const api = {
   login: (username: string, password: string) =>
     apiFetch('/auth/login', {
@@ -753,9 +799,23 @@ export const api = {
   // to assert on what happens after the click rather than on the control.
   logout: () => apiFetchNoBody('/auth/logout', { method: 'POST' }),
 
-  me: () => apiFetch<Me>('/users/me'),
+  me: () => {
+    if (mePromise) return mePromise;
+    const p: Promise<Me> = apiFetch<Me>('/users/me').finally(() => {
+      if (mePromise === p) mePromise = null;
+    });
+    mePromise = p;
+    return p;
+  },
 
-  getSettings: () => apiFetch<UserSettings>('/users/me/settings'),
+  getSettings: () => {
+    if (settingsPromise) return settingsPromise;
+    const p = fetchSettingsFresh().finally(() => {
+      if (settingsPromise === p) settingsPromise = null;
+    });
+    settingsPromise = p;
+    return p;
+  },
   putSettings: (settings: UserSettings) =>
     apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
 
@@ -818,6 +878,15 @@ export const api = {
   // refetch is the only read that matters before a write, so a second,
   // longer-lived copy in a component would only be another way to go stale.
   //
+  // Calls fetchSettingsFresh(), not api.getSettings(), deliberately bypassing
+  // the bootstrap coalescing slot: a UI mount read in flight for an unrelated
+  // purpose (e.g. the dashboard's own settings effect) may be reading a
+  // snapshot from before whatever concurrent change this write needs to see,
+  // so this read-modify-write must always issue its own GET. The reverse
+  // matters too — a bootstrap caller awaiting the coalesced slot must never
+  // be handed a response this write already changed further, which is
+  // exactly what would happen if this shared that promise.
+  //
   // A failed refetch aborts the write rather than falling back to a cached
   // copy. PUT /users/me/settings is a whole-document upsert, not a merge, so
   // proceeding from a stale or empty snapshot is exactly the clobbering this
@@ -828,7 +897,7 @@ export const api = {
   // other key in the blob. Rejecting instead surfaces a toast at the call
   // site and leaves the stored document untouched. Found in code review.
   updateSettings: async (patch: Partial<UserSettings>): Promise<UserSettings> => {
-    const current = await api.getSettings();
+    const current = await fetchSettingsFresh();
     const next: UserSettings = { ...current, ...patch };
     await api.putSettings(next);
     return next;

@@ -82,6 +82,8 @@ function nutritionAdviceSignature(
     request.window.mean_fat_grams,
     request.window.mean_sugar_grams,
     request.window.mean_sodium_grams,
+    request.window.mean_dietary_fiber_grams,
+    request.window.mean_saturated_fat_grams,
     context.target_calories,
     context.target_protein_grams,
     context.target_carbs_grams,
@@ -313,7 +315,7 @@ export default function LoggingGapCard({
         // HealthinessDayData extends the Logging Gap's own DayWindowData, so
         // this one map serves both computations below — checkHardFloor and
         // computeLoggingGap only read the fields DayWindowData declares, and
-        // computeHealthinessLabel additionally reads the five macro fields.
+        // computeHealthinessLabel additionally reads the nutrition fields.
         const perDayWindowData: Record<number, HealthinessDayData> = {};
         const completenessByDate = new Map(completeness.map(c => [c.date, c.state]));
         for (const total of dailyTotals) {
@@ -326,6 +328,8 @@ export default function LoggingGapCard({
             fatGrams: total.fat_grams,
             sugarGrams: total.sugar_grams,
             sodiumGrams: total.sodium_grams,
+            dietaryFiberGrams: total.dietary_fiber_grams,
+            saturatedFatGrams: total.saturated_fat_grams,
           };
         }
 
@@ -424,6 +428,8 @@ export default function LoggingGapCard({
         mean_fat_grams: healthiness.means.fatGrams,
         mean_sugar_grams: healthiness.means.sugarGrams,
         mean_sodium_grams: healthiness.means.sodiumGrams,
+        mean_dietary_fiber_grams: healthiness.means.dietaryFiberGrams,
+        mean_saturated_fat_grams: healthiness.means.saturatedFatGrams,
       },
     };
     const context: NutritionAdviceContext = {

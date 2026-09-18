@@ -25,12 +25,14 @@ import (
 var adviceReasonCode = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
 
 type foodAdviceWindow struct {
-	MeanCalories     *float64 `json:"mean_calories"`
-	MeanProteinGrams *float64 `json:"mean_protein_grams"`
-	MeanCarbsGrams   *float64 `json:"mean_carbs_grams"`
-	MeanFatGrams     *float64 `json:"mean_fat_grams"`
-	MeanSugarGrams   *float64 `json:"mean_sugar_grams"`
-	MeanSodiumGrams  *float64 `json:"mean_sodium_grams"`
+	MeanCalories          *float64 `json:"mean_calories"`
+	MeanProteinGrams      *float64 `json:"mean_protein_grams"`
+	MeanCarbsGrams        *float64 `json:"mean_carbs_grams"`
+	MeanFatGrams          *float64 `json:"mean_fat_grams"`
+	MeanSugarGrams        *float64 `json:"mean_sugar_grams"`
+	MeanSodiumGrams       *float64 `json:"mean_sodium_grams"`
+	MeanDietaryFiberGrams *float64 `json:"mean_dietary_fiber_grams"`
+	MeanSaturatedFatGrams *float64 `json:"mean_saturated_fat_grams"`
 }
 
 type foodAdviceRequest struct {
@@ -100,8 +102,9 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	loc := database.ResolveTimezone(settingsJSON)
 	language := primaryAdviceLanguage(displayLanguageFromSettings(settingsJSON))
+	profile := parseUserProfile(settingsJSON)
 	target, unavailableReason, err := computeNutritionTargetForProfile(
-		h.storage, claims.UserID, now, loc, parseUserProfile(settingsJSON))
+		h.storage, claims.UserID, now, loc, profile)
 	if err != nil {
 		slog.Warn("nutrition advice target computation failed", "err", err, "user_id", claims.UserID)
 		writeFoodAdviceUnavailable(w, "unavailable")
@@ -112,15 +115,23 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		writeFoodAdviceUnavailable(w, "unavailable")
 		return
 	}
+	healthContext, err := buildAdviceHealthContext(h.storage, claims.UserID, loc, now, profile, target)
+	if err != nil {
+		slog.Warn("nutrition advice health context failed", "err", err, "user_id", claims.UserID)
+		writeFoodAdviceUnavailable(w, "unavailable")
+		return
+	}
 
 	in := vision.AdviceInput{
 		Label: req.Label, Reasons: reasons,
 		MeanCalories: *req.Window.MeanCalories, MeanProteinGrams: *req.Window.MeanProteinGrams,
 		MeanCarbsGrams: *req.Window.MeanCarbsGrams, MeanFatGrams: *req.Window.MeanFatGrams,
 		MeanSugarGrams: *req.Window.MeanSugarGrams, MeanSodiumGrams: *req.Window.MeanSodiumGrams,
-		TargetCalories: target.Calories, TargetProteinGrams: target.ProteinGrams,
+		MeanDietaryFiberGrams: *req.Window.MeanDietaryFiberGrams,
+		MeanSaturatedFatGrams: *req.Window.MeanSaturatedFatGrams,
+		TargetCalories:        target.Calories, TargetProteinGrams: target.ProteinGrams,
 		TargetCarbsGrams: target.CarbsGrams, TargetFatGrams: target.FatGrams,
-		DisplayLanguage: language,
+		DisplayLanguage: language, HealthContext: healthContext,
 	}
 	encodedInput, err := json.Marshal(in)
 	if err != nil {
@@ -226,6 +237,7 @@ func normalizeAdviceRequest(req *foodAdviceRequest) ([]string, bool) {
 	figures := [...]*float64{
 		req.Window.MeanCalories, req.Window.MeanProteinGrams, req.Window.MeanCarbsGrams,
 		req.Window.MeanFatGrams, req.Window.MeanSugarGrams, req.Window.MeanSodiumGrams,
+		req.Window.MeanDietaryFiberGrams, req.Window.MeanSaturatedFatGrams,
 	}
 	for _, figure := range figures {
 		if figure == nil || math.IsNaN(*figure) || math.IsInf(*figure, 0) || *figure < 0 || *figure > 100000 {

@@ -84,7 +84,7 @@ func TestFoodItem_CarriesUserID(t *testing.T) {
 // created, because creating it through the current schema is not the case
 // that could actually break: AutoMigrate adds the column to existing tables
 // without backfilling it, so a genuinely pre-change row holds NULL, whereas a
-// row written by today's code holds ''. Scanning '' into a string can never
+// row written by today's code holds ”. Scanning ” into a string can never
 // fail; scanning NULL into a non-pointer string is the case worth a
 // regression test. Both the direct read and the Preload path used by the meal
 // detail endpoint are exercised, since they build different queries. Test
@@ -283,13 +283,24 @@ func TestFoodItem_ApplyProfileScalesByWeight(t *testing.T) {
 	}
 }
 
+// Saturated fat scales by weight the same way every other per-100g nutrient
+// does — the 8th field must not have been missed in applyScaledProfile.
+func TestFoodItem_ApplyProfileScalesSaturatedFatByWeight(t *testing.T) {
+	it := database.FoodItem{WeightGrams: 200}
+	it.ApplyProfile(database.NutrientProfile{SaturatedFatPer100g: 4})
+
+	if math.Abs(it.SaturatedFatGrams-8) > 1e-9 {
+		t.Errorf("SaturatedFatGrams = %v, want 8", it.SaturatedFatGrams)
+	}
+}
+
 // The bug this guards: aggregating only reference-bound items zeroes out a meal
 // logged entirely from package labels.
 func TestFoodMeal_AggregateIncludesManualItems(t *testing.T) {
 	items := []database.FoodItem{
-		{MacroSource: database.MacroSourceReference, Calories: 100, ProteinGrams: 10},
-		{MacroSource: database.MacroSourceManual, Calories: 250, ProteinGrams: 5},
-		{MacroSource: database.MacroSourceNone, Calories: 999, ProteinGrams: 999},
+		{MacroSource: database.MacroSourceReference, Calories: 100, ProteinGrams: 10, SaturatedFatGrams: 2},
+		{MacroSource: database.MacroSourceManual, Calories: 250, ProteinGrams: 5, SaturatedFatGrams: 3},
+		{MacroSource: database.MacroSourceNone, Calories: 999, ProteinGrams: 999, SaturatedFatGrams: 999},
 	}
 	var m database.FoodMeal
 	m.Aggregate(items)
@@ -299,6 +310,9 @@ func TestFoodMeal_AggregateIncludesManualItems(t *testing.T) {
 	}
 	if m.ProteinGrams != 15 {
 		t.Errorf("ProteinGrams = %v, want 15", m.ProteinGrams)
+	}
+	if m.SaturatedFatGrams != 5 {
+		t.Errorf("SaturatedFatGrams = %v, want 5 (reference + manual, excluding none)", m.SaturatedFatGrams)
 	}
 }
 
@@ -465,6 +479,29 @@ func TestFoodItem_PlausibleEstimatedProfile_SugarPlusFiberBoundaryPasses(t *test
 	}
 }
 
+// Saturated fat cannot legitimately exceed total fat — it's a subset by
+// definition.
+func TestFoodItem_PlausibleEstimatedProfile_SaturatedFatExceedingFatRejected(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 310, ProteinPer100g: 25, CarbsPer100g: 30, FatPer100g: 10, SaturatedFatPer100g: 13,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Error("expected saturated fat 13 against total fat 10 (past the 2g tolerance) to be rejected")
+	}
+}
+
+// Saturated fat exactly at the fat+2g tolerance boundary is still usable.
+func TestFoodItem_PlausibleEstimatedProfile_SaturatedFatAtBoundaryPasses(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 310, ProteinPer100g: 25, CarbsPer100g: 30, FatPer100g: 10, SaturatedFatPer100g: 12,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); !ok {
+		t.Error("expected saturated fat 12 against total fat 10 (exactly fat+2g) to be usable")
+	}
+}
+
 // Declared calories below the one-sided Atwater threshold are rejected.
 func TestFoodItem_PlausibleEstimatedProfile_CaloriesBelowAtwaterThresholdRejected(t *testing.T) {
 	it := database.FoodItem{}
@@ -602,7 +639,7 @@ func TestFoodMeal_JSONFieldsAreSnakeCase(t *testing.T) {
 	for _, key := range []string{
 		"id", "family_id", "user_id", "status", "logged_at", "name",
 		"clarify_round", "calories", "protein_grams", "carbs_grams", "fat_grams",
-		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "items",
+		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "saturated_fat_grams", "items",
 	} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("expected JSON key %q, got keys %v", key, keysOf(raw))
@@ -657,4 +694,75 @@ func keysOf(m map[string]any) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func TestFoodItem_SetIngredients_EmptyClearsRatherThanStoringEmptyArray(t *testing.T) {
+	item := database.FoodItem{}
+	item.SetIngredients([]database.IngredientReferenceEntry{{Name: "a", CanonicalNameEN: "a", WeightGrams: 1}})
+	if item.IngredientsJSON == "" {
+		t.Fatal("expected a non-empty IngredientsJSON after setting one entry")
+	}
+
+	item.SetIngredients(nil)
+	if item.IngredientsJSON != "" {
+		t.Errorf("expected SetIngredients(nil) to clear IngredientsJSON, got %q", item.IngredientsJSON)
+	}
+}
+
+func TestFoodItem_Ingredients_RoundTrip(t *testing.T) {
+	fdcID := int64(1234)
+	want := []database.IngredientReferenceEntry{
+		{Name: "огурец", CanonicalNameEN: "cucumber", WeightGrams: 100, Resolved: true, FdcID: &fdcID},
+		{Name: "помидор", CanonicalNameEN: "tomato", WeightGrams: 100},
+	}
+
+	item := database.FoodItem{}
+	item.SetIngredients(want)
+
+	got, ok := item.Ingredients()
+	if !ok {
+		t.Fatal("Ingredients() ok=false for a freshly-set value")
+	}
+	if len(got) != 2 {
+		t.Fatalf("Ingredients() = %+v, want 2 entries", got)
+	}
+	if got[0].CanonicalNameEN != "cucumber" || !got[0].Resolved || got[0].FdcID == nil || *got[0].FdcID != fdcID {
+		t.Errorf("entry 0 = %+v, want a resolved cucumber entry with FdcID %d", got[0], fdcID)
+	}
+	if got[1].CanonicalNameEN != "tomato" || got[1].Resolved || got[1].FdcID != nil {
+		t.Errorf("entry 1 = %+v, want an unresolved tomato entry", got[1])
+	}
+}
+
+func TestFoodItem_Ingredients_EmptyMeansAtomicItem(t *testing.T) {
+	item := database.FoodItem{} // never had SetIngredients called — an atomic item
+	got, ok := item.Ingredients()
+	if !ok {
+		t.Fatal("Ingredients() ok=false for an item that was simply never given a breakdown")
+	}
+	if got != nil {
+		t.Errorf("Ingredients() = %+v, want nil for an atomic item", got)
+	}
+}
+
+func TestFoodItem_Ingredients_CorruptJSONReportsNotOK(t *testing.T) {
+	item := database.FoodItem{IngredientsJSON: "{not valid json"}
+	got, ok := item.Ingredients()
+	if ok {
+		t.Errorf("Ingredients() ok=true for corrupt JSON, want false; got %+v", got)
+	}
+}
+
+func TestFoodItem_SetIngredientReferenceProfile(t *testing.T) {
+	item := database.FoodItem{}
+	item.SetIngredientReferenceProfile(database.NutrientProfile{
+		CaloriesPer100g: 50, ProteinPer100g: 2, CarbsPer100g: 8, FatPer100g: 1,
+		SugarPer100g: 3, SodiumPer100g: 0.1, DietaryFiberPer100g: 1.5, SaturatedFatPer100g: 0.3,
+	})
+	if !item.HasIngredientReference {
+		t.Fatal("expected HasIngredientReference=true after SetIngredientReferenceProfile")
+	}
+	if item.IngredientReferenceCaloriesPer100g != 50 || item.IngredientReferenceSaturatedFatPer100g != 0.3 {
+		t.Errorf("unexpected stored profile: %+v", item)
+	}
 }

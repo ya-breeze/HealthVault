@@ -1,14 +1,23 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { api, type NutritionAdviceWindow, type NutritionChatSignal, type NutritionChatTurn } from '@/lib/api';
+import Link from 'next/link';
+import {
+  api,
+  type NutritionAdviceWindow,
+  type NutritionChatSignal,
+  type NutritionChatSource,
+  type NutritionChatTurn,
+} from '@/lib/api';
 import type { HealthinessResult } from '@/lib/healthiness';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
-import { interpolate } from '@/lib/i18n';
+import { dateLocaleFor, interpolate, macroSourceLabel, numberLocaleFor } from '@/lib/i18n';
 
 /** The server's own limits, restated so the input can stop the user at them. */
 const QUESTION_MAX_LENGTH = 500;
 const MAX_TURNS = 8;
+
+type DisplayTurn = NutritionChatTurn & { sources?: NutritionChatSource[] };
 
 /**
  * The sheet the nutrition card's discuss control opens: the advice's measured
@@ -33,12 +42,12 @@ export default function NutritionChatSheet({
   window: NutritionAdviceWindow;
   onClose: () => void;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const pressedBackdrop = useRef(false);
-  const [turns, setTurns] = useState<NutritionChatTurn[]>([]);
+  const [turns, setTurns] = useState<DisplayTurn[]>([]);
   const [question, setQuestion] = useState('');
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -113,15 +122,20 @@ export default function NutritionChatSheet({
             verdict: signal.verdict,
             ...(signal.reason ? { reason: signal.reason } : {}),
             off_boundary: signal.offBoundary,
-            far_boundary: signal.farBoundary,
+            ...(signal.farBoundary !== null ? { far_boundary: signal.farBoundary } : {}),
           })
         ),
         eligible_days: healthiness.eligibleDays,
-        turns,
+        // Sources are display-only evidence from prior server tool calls. The
+        // model replays only the words that were already on screen.
+        turns: turns.map(({ role, text }) => ({ role, text })),
         question: asked,
       });
       if (response.available) {
-        setTurns([...nextTurns, { role: 'assistant', text: response.answer }]);
+        setTurns([
+          ...nextTurns,
+          { role: 'assistant', text: response.answer, sources: response.sources ?? [] },
+        ]);
       } else {
         setFailed(true);
       }
@@ -145,6 +159,27 @@ export default function NutritionChatSheet({
   // against it answers the question for one-sided signals too.
   function direction(signal: HealthinessResult['signals'][number]) {
     return signal.value < signal.offBoundary ? 'below' : 'above';
+  }
+
+  function sourceSignalLabel(signal: string) {
+    switch (signal) {
+      case 'protein': return t('nutritionChat.signal.protein');
+      case 'carbs': return t('nutritionChat.signal.carbs');
+      case 'fat': return t('nutritionChat.signal.fat');
+      case 'sugar': return t('nutritionChat.signal.sugar');
+      case 'sodium': return t('nutritionChat.signal.sodium');
+      case 'fiber': return t('nutritionChat.signal.fiber');
+      case 'saturated_fat': return t('nutritionChat.signal.saturated_fat');
+      default: return signal;
+    }
+  }
+
+  function sourceDate(date: string) {
+    return new Date(`${date}T12:00:00Z`).toLocaleDateString(dateLocaleFor(language), {
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    });
   }
 
   const flagged = healthiness.signals.filter(signal => signal.reason !== null);
@@ -200,7 +235,7 @@ export default function NutritionChatSheet({
                   // crossed. A far row names both, so the number that produced
                   // its verdict is on screen rather than only in the request.
                   threshold: formatValue(signal, signal.offBoundary),
-                  farThreshold: formatValue(signal, signal.farBoundary),
+                  farThreshold: signal.farBoundary === null ? '' : formatValue(signal, signal.farBoundary),
                 })}
               </p>
             ))
@@ -216,17 +251,70 @@ export default function NutritionChatSheet({
           data-testid="nutrition-chat-log"
         >
           {turns.map((turn, index) => (
-            <p
+            <div
               key={`${index}:${turn.role}`}
-              data-testid={`nutrition-chat-${turn.role}`}
               className={
                 turn.role === 'user'
-                  ? 'self-end rounded-lg bg-accent/15 px-3 py-2 text-sm text-text max-w-[85%]'
-                  : 'self-start rounded-lg bg-bg px-3 py-2 text-sm text-text max-w-[85%]'
+                  ? 'self-end max-w-[85%]'
+                  : 'self-start w-full max-w-[92%]'
               }
             >
-              {turn.text}
-            </p>
+              <p
+                data-testid={`nutrition-chat-${turn.role}`}
+                className={
+                  turn.role === 'user'
+                    ? 'rounded-lg bg-accent/15 px-3 py-2 text-sm text-text'
+                    : 'rounded-lg bg-bg px-3 py-2 text-sm text-text'
+                }
+              >
+                {turn.text}
+              </p>
+              {turn.role === 'assistant' && turn.sources && turn.sources.length > 0 && (
+                <div className="mt-2 space-y-1" data-testid="nutrition-chat-sources">
+                  <p className="px-1 text-[11px] font-medium text-text-muted">
+                    {t('nutritionChat.sourcesTitle')}
+                  </p>
+                  {turn.sources.map((source, sourceIndex) => (
+                    <Link
+                      key={`${source.meal_id}:${source.signal}:${sourceIndex}`}
+                      href={`/food/review/?meal=${encodeURIComponent(source.meal_id)}`}
+                      aria-label={interpolate(t('nutritionChat.openMeal'), {
+                        food: source.food,
+                        date: sourceDate(source.date),
+                      })}
+                      data-testid="nutrition-chat-source"
+                      className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-left hover:border-accent"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium text-text">{source.food}</span>
+                        <span className="block text-[11px] text-text-muted tabular-nums">
+                          {interpolate(t('nutritionChat.sourceContribution'), {
+                            signal: sourceSignalLabel(source.signal),
+                            value: source.nutrient_grams.toLocaleString(numberLocaleFor(language), {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 2,
+                            }),
+                            date: sourceDate(source.date),
+                          })}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end gap-0.5">
+                        <span className="rounded bg-bg px-1.5 py-0.5 text-[10px] text-text-muted">
+                          {macroSourceLabel(t, source.macro_source)}
+                        </span>
+                        {source.macro_source === 'estimated' && source.confidence > 0 && (
+                          <span className="text-[10px] text-text-muted">
+                            {interpolate(t('nutritionChat.sourceConfidence'), {
+                              value: Math.round(source.confidence * 100),
+                            })}
+                          </span>
+                        )}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
           {pending && (
             <p className="self-start text-xs text-text-muted" data-testid="nutrition-chat-pending">

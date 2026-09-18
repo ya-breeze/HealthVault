@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -326,6 +327,7 @@ func (h *foodHandlers) resolveItems(
 
 	for i, ri := range recognizedItems {
 		items[i] = newUnresolvedItem(ri, meal.ID, meal.UserID, meal.FamilyID)
+		h.resolveIngredientReference(&items[i])
 
 		candidates, exact := h.retrieveCandidates(ranked, customFoods, usageByID, ri, displayLanguage)
 		candidateSets[i] = candidates
@@ -576,12 +578,18 @@ func (h *foodHandlers) rankedCustomFoodCandidates(
 // for a brandless query. See design.md "OFF queried only when a brand was
 // extracted, USDA as the fallback".
 //
-// When displayLanguage is not English, Open Food Facts and USDA are not
-// queried at all, regardless of brand — both are English-vocabulary
-// reference databases and no attempt is made to translate the Display Name
-// back to English for matching. See design.md decision 4. The fuzzy
-// custom-food match above is unaffected by language: it matches against the
-// user's own catalog, not an English-vocabulary reference database.
+// When displayLanguage is not English, Open Food Facts and USDA are queried
+// by ri.CanonicalName (Recognize's own English identity for the item — see
+// languageDirective) instead of the localized ri.Name, since both are
+// English-vocabulary reference databases. Search is skipped entirely only
+// when CanonicalName is empty — an item recognized before that field
+// existed, or one Recognize genuinely couldn't translate — narrowing
+// design.md decision 4's original "not queried at all" to that residual
+// case (see ya-breeze/idea-forge#640: the original blanket skip zeroed out
+// reference matching for every non-English account for weeks before this
+// fix). The fuzzy custom-food match above is unaffected by language: it
+// matches against the user's own catalog, not an English-vocabulary
+// reference database.
 //
 // The bool return is true only for the fuzzy-name custom-food short-circuit
 // — see fuzzyMatchThreshold and design.md decision 5 for why a fuzzy hit is
@@ -612,12 +620,18 @@ func (h *foodHandlers) retrieveCandidates(
 		return []vision.Candidate{{CustomFoodID: &id, Description: best.Name}}, true
 	}
 
+	// See the doc comment above for why a non-English display language
+	// searches by CanonicalName instead of the localized Name.
+	searchName := ri.Name
 	if !vision.IsEnglishDisplayLanguage(displayLanguage) {
-		return ranked, false
+		if ri.CanonicalName == "" {
+			return ranked, false
+		}
+		searchName = ri.CanonicalName
 	}
 
 	if ri.Brand != "" && h.off != nil {
-		foods, offErr := h.off.Search(ri.Name, ri.Brand, off.DefaultCandidates)
+		foods, offErr := h.off.Search(searchName, ri.Brand, off.DefaultCandidates)
 		if offErr == nil && len(foods) > 0 {
 			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
 			out = append(out, ranked...)
@@ -630,7 +644,7 @@ func (h *foodHandlers) retrieveCandidates(
 	}
 
 	if h.usda != nil {
-		term := usda.QueryFor(ri.Name, ri.Preparation, ri.State)
+		term := usda.QueryFor(searchName, ri.Preparation, ri.State)
 		foods, usdaErr := h.usda.Search(term, usda.DefaultCandidates)
 		if usdaErr == nil {
 			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
@@ -643,6 +657,255 @@ func (h *foodHandlers) retrieveCandidates(
 		}
 	}
 	return ranked, false
+}
+
+// ingredientResolutionCandidates bounds how many USDA search results
+// resolveIngredientReference inspects per ingredient — the same shortlist
+// size retrieveCandidates already requests for a whole item.
+const ingredientResolutionCandidates = usda.DefaultCandidates
+
+// ingredientSearchTerm builds the query passed to USDA for one ingredient.
+// FTS5 (usda/query.go's sanitizeFTSQuery) does exact-token OR matching, no
+// stemming — a plain singular ingredient name like "tomato" would never
+// match a document whose only token is "tomatoes" (SR Legacy's actual
+// description is "Tomatoes, red, ripe, raw, ..."), which is a search-recall
+// problem, not a candidate-ranking one, and would silently zero out
+// resolution for a wide swath of ordinary produce ingredients regardless of
+// ingredientCandidateMatches' own precision. Appending a naive plural of the
+// ingredient's own last word gives Search's existing OR-join
+// (sanitizeFTSQuery) a second exact token to match against — the same
+// "extra hint terms, never a filter" shape QueryFor already relies on for
+// preparation/state, so it can only add recall, never exclude a result the
+// bare name would have found.
+func ingredientSearchTerm(canonicalNameEN string) string {
+	words := strings.Fields(canonicalNameEN)
+	if len(words) == 0 {
+		return canonicalNameEN
+	}
+	return canonicalNameEN + " " + naivePlural(words[len(words)-1])
+}
+
+// naivePlural is deliberately simple — it exists only to bridge ordinary
+// regular English plurals (tomato/tomatoes, onion/onions), not a real
+// inflection engine. An already-plural or irregular word just gets a second,
+// harmless, non-matching OR term.
+func naivePlural(word string) string {
+	lower := strings.ToLower(word)
+	if strings.HasSuffix(lower, "s") || strings.HasSuffix(lower, "x") ||
+		strings.HasSuffix(lower, "ch") || strings.HasSuffix(lower, "sh") ||
+		strings.HasSuffix(lower, "o") { // tomato/tomatoes, potato/potatoes
+		return word + "es"
+	}
+	return word + "s"
+}
+
+// ingredientTotals accumulates resolved ingredients' weighted nutrient grams
+// across one item — plain totals, not a per-100g figure, hence a separate
+// type from database.NutrientProfile rather than reusing (and confusingly
+// relabeling) its PerX00g-named fields mid-sum.
+type ingredientTotals struct {
+	calories, protein, carbs, fat, sugar, sodium, fiber, saturatedFat float64
+}
+
+// resolveIngredientReference resolves item's own persisted ingredient
+// breakdown (FoodItem.Ingredients) against USDA — deterministically, no
+// Select call, unlike the whole-item candidate flow above. USDA only, not
+// Open Food Facts: OFF's own Search needs a brand to be useful (see
+// retrieveCandidates), and a rough ingredient like "cucumber" never has one.
+// Search itself goes through ingredientSearchTerm rather than the bare
+// canonical name — see its own doc comment for a real search-recall bug
+// this hit and fixed during development (a singular ingredient name found
+// zero USDA rows against SR Legacy's actual plural descriptions).
+//
+// Matching is deliberately conservative. usda.go's own DefaultCandidates
+// comment records that plain search rank alone is unreliable even for
+// common foods ("chicken breast" ranked 12th, "white rice" ranked 17th") —
+// exactly why the whole-item flow above uses an LLM Select call rather than
+// trusting rank. Ingredient resolution has no Select call (see
+// docs/specs/component-reference-shadow.md's Why for why not — in short, it
+// would need to extend Select's item-indexed contract to address individual
+// ingredients too, a larger change than this shadow field's own scope), so
+// it substitutes a stricter acceptance rule instead of trusting rank:
+// ingredientCandidateMatches requires every (lightly stemmed) word of the
+// ingredient's own name to appear in the candidate's full description, AND
+// every word of the candidate's own leading segment (before its first
+// comma-separated qualifier — FDC's description convention always states
+// the base food name there) to be drawn from the ingredient's own name, with
+// nothing extra. That rejects a same-topic-but-wrong-food candidate ("Turkey
+// breast, chicken-fried" for the query "chicken breast"), a processed
+// variant whose head noun absorbs an extra word ("Tomato sauce, canned" for
+// the query "tomato" — an unaccounted "sauce" in the leading segment), and
+// one that merely shares an unrelated word, while still tolerating ordinary
+// English plurals ("tomato" against a "Tomatoes, red, ripe, raw"
+// description).
+//
+// The trade-off is deliberate, not hidden: whenever nothing in an
+// ingredient's shortlist clears this bar, that ingredient is left
+// unresolved rather than bound to a guess — the safe failure mode for a
+// field whose entire purpose is being a trustworthy comparison point. See
+// HasIngredientReference's doc comment for why a partial resolution across
+// an item's ingredients is never stored as if it were complete.
+func (h *foodHandlers) resolveIngredientReference(item *database.FoodItem) {
+	if h.usda == nil {
+		return
+	}
+	entries, ok := item.Ingredients()
+	if !ok || len(entries) == 0 {
+		return
+	}
+
+	var totals ingredientTotals
+	var totalWeight float64
+	resolvedCount := 0
+	for i := range entries {
+		entries[i].Resolved = false
+		entries[i].FdcID = nil
+
+		// A non-positive weight can never contribute meaningfully to the sum
+		// (0g of anything is 0g of every nutrient) and is itself a sign
+		// something is wrong with this entry — treated as unresolved rather
+		// than "identity matched but weightless", so it correctly blocks the
+		// all-or-nothing gate below instead of silently passing it. Found in
+		// code review: checking this only after accumulation let a
+		// zero/negative-weight entry still count toward resolvedCount.
+		weight := entries[i].WeightGrams
+		if weight <= 0 {
+			continue
+		}
+
+		foods, err := h.usda.Search(ingredientSearchTerm(entries[i].CanonicalNameEN), ingredientResolutionCandidates)
+		if err != nil || len(foods) == 0 {
+			continue
+		}
+		match, matched := bestIngredientMatch(entries[i].CanonicalNameEN, foods)
+		if !matched {
+			continue
+		}
+
+		entries[i].Resolved = true
+		fdcID := match.FdcID
+		entries[i].FdcID = &fdcID
+		resolvedCount++
+
+		f := weight / 100.0
+		totals.calories += match.Profile.CaloriesPer100g * f
+		totals.protein += match.Profile.ProteinPer100g * f
+		totals.carbs += match.Profile.CarbsPer100g * f
+		totals.fat += match.Profile.FatPer100g * f
+		totals.sugar += match.Profile.SugarPer100g * f
+		totals.sodium += match.Profile.SodiumPer100g * f
+		totals.fiber += match.Profile.DietaryFiberPer100g * f
+		totals.saturatedFat += match.Profile.SaturatedFatPer100g * f
+		totalWeight += weight
+	}
+
+	item.SetIngredients(entries)
+	if resolvedCount != len(entries) || totalWeight <= 0 {
+		return
+	}
+	f := 100.0 / totalWeight
+	item.SetIngredientReferenceProfile(database.NutrientProfile{
+		CaloriesPer100g:     totals.calories * f,
+		ProteinPer100g:      totals.protein * f,
+		CarbsPer100g:        totals.carbs * f,
+		FatPer100g:          totals.fat * f,
+		SugarPer100g:        totals.sugar * f,
+		SodiumPer100g:       totals.sodium * f,
+		DietaryFiberPer100g: totals.fiber * f,
+		SaturatedFatPer100g: totals.saturatedFat * f,
+	})
+}
+
+// bestIngredientMatch returns the best-ranked USDA food whose description
+// passes ingredientCandidateMatches against name — foods is already
+// rank-ordered by usda.Index.Search, so the first one to pass wins.
+func bestIngredientMatch(name string, foods []usda.Food) (usda.Food, bool) {
+	for _, f := range foods {
+		if ingredientCandidateMatches(name, f.Description) {
+			return f, true
+		}
+	}
+	return usda.Food{}, false
+}
+
+// ingredientCandidateMatches reports whether description is a confident
+// match for name — see resolveIngredientReference's doc comment for the
+// rationale. Both rules must hold: description's leading segment (its words
+// up to the first comma) contains only words drawn from name, and every
+// word of name appears somewhere in description's full word set.
+func ingredientCandidateMatches(name, description string) bool {
+	nameWords := stemmedWords(name)
+	if len(nameWords) == 0 {
+		return false
+	}
+	nameSet := make(map[string]bool, len(nameWords))
+	for _, w := range nameWords {
+		nameSet[w] = true
+	}
+
+	// The leading segment (before the first comma) must consist ENTIRELY of
+	// words drawn from the ingredient's own name — not merely start with one
+	// of them. Without this, a single-word ingredient name like "tomato"
+	// happily matches "Tomato sauce, canned": the old rule only checked that
+	// the description's first word equalled the name's first word, which a
+	// processed variant's head noun satisfies just as well as the plain
+	// ingredient does. Requiring the whole leading segment to be accounted
+	// for rejects "sauce"/"juice"/"paste"-style qualifiers fused into the
+	// head noun itself, while still accepting "Chicken, broiler or fryers,
+	// breast, ..." for "chicken breast" (its leading segment is just
+	// "Chicken", a single word already in the name). Found in code review.
+	lead := description
+	if i := strings.IndexByte(description, ','); i >= 0 {
+		lead = description[:i]
+	}
+	leadWords := stemmedWords(lead)
+	if len(leadWords) == 0 {
+		return false
+	}
+	for _, w := range leadWords {
+		if !nameSet[w] {
+			return false
+		}
+	}
+
+	// Every word of the ingredient's own name must still appear somewhere in
+	// the full description — this is what lets "breast" (present only after
+	// the first comma) count toward matching "chicken breast".
+	descSet := make(map[string]bool)
+	for _, w := range stemmedWords(description) {
+		descSet[w] = true
+	}
+	for _, w := range nameWords {
+		if !descSet[w] {
+			return false
+		}
+	}
+	return true
+}
+
+// stemmedWords lowercases s, splits it into letter/digit runs (the same
+// tokenization USDA's own FTS query sanitizer uses — see usda/query.go's
+// sanitizeFTSQuery), and strips a trailing "es" or "s" from each word longer
+// than a few letters. This is a deliberately light plural stemmer, not a
+// real one — it exists only to stop "tomato" from failing to match a
+// "Tomatoes, red, ripe, raw" description over a plain -s/-es plural, and
+// makes no attempt at irregular plurals (leaf/leaves) or other inflection.
+func stemmedWords(s string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	words := make([]string, len(fields))
+	for i, w := range fields {
+		switch {
+		case len(w) > 4 && strings.HasSuffix(w, "es"):
+			words[i] = w[:len(w)-2]
+		case len(w) > 3 && strings.HasSuffix(w, "s"):
+			words[i] = w[:len(w)-1]
+		default:
+			words[i] = w
+		}
+	}
+	return words
 }
 
 // fuzzyCustomFoodMatch scores every one of foods (the caller's own custom
@@ -754,7 +1017,27 @@ func newUnresolvedItem(ri vision.Item, mealID, userID, familyID uuid.UUID) datab
 	item.ID = uuid.New()
 	item.FamilyID = familyID
 	item.SetEstimatedProfile(ri.EstimatedProfile)
+	item.SetIngredients(unresolvedIngredientEntries(ri.Ingredients))
 	return item
+}
+
+// unresolvedIngredientEntries converts Recognize's own ingredient breakdown
+// to its persisted shape, every entry starting Resolved=false —
+// resolveIngredientReference fills in the resolution outcome afterward, in
+// resolveItems only (not here: this runs for the pending_clarification path
+// too, via unresolvedItemsFrom, which has no USDA/OFF index to resolve
+// against and whose items are about to be replaced by the next round anyway).
+func unresolvedIngredientEntries(ingredients []vision.IngredientEstimate) []database.IngredientReferenceEntry {
+	if len(ingredients) == 0 {
+		return nil
+	}
+	entries := make([]database.IngredientReferenceEntry, len(ingredients))
+	for i, ing := range ingredients {
+		entries[i] = database.IngredientReferenceEntry{
+			Name: ing.Name, CanonicalNameEN: ing.CanonicalNameEN, WeightGrams: ing.WeightGrams,
+		}
+	}
+	return entries
 }
 
 func unresolvedItemsFrom(recognizedItems []vision.Item, mealID, userID, familyID uuid.UUID) []database.FoodItem {
@@ -811,7 +1094,7 @@ func (h *foodHandlers) persistAnalysis(
 	updates := map[string]any{
 		"status": status, "raw_response": rawResponse,
 		"calories": 0, "protein_grams": 0, "carbs_grams": 0, "fat_grams": 0,
-		"sugar_grams": 0, "sodium_grams": 0, "dietary_fiber_grams": 0,
+		"sugar_grams": 0, "sodium_grams": 0, "dietary_fiber_grams": 0, "saturated_fat_grams": 0,
 	}
 	if clarifyLog != nil {
 		updates["clarify_log"] = *clarifyLog
@@ -847,7 +1130,7 @@ func (h *foodHandlers) persistAnalysis(
 	meal.RawResponse = rawResponse
 	meal.Items = items
 	meal.Calories, meal.ProteinGrams, meal.CarbsGrams, meal.FatGrams = 0, 0, 0, 0
-	meal.SugarGrams, meal.SodiumGrams, meal.DietaryFiberGrams = 0, 0, 0
+	meal.SugarGrams, meal.SodiumGrams, meal.DietaryFiberGrams, meal.SaturatedFatGrams = 0, 0, 0, 0
 	if clarifyLog != nil {
 		meal.ClarifyLog = *clarifyLog
 	}

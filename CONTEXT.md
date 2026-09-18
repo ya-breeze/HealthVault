@@ -132,8 +132,20 @@ signals are never blended. Fewer than 7 valid trailing days with no override set
 Nutrition Target uncomputable (`insufficient_activity_data`). See ADR-006.
 _Avoid_: Activity multiplier alone (that's the numeric output, not the tier), exercise level
 
+**Ingredient Reference**:
+A background-only, per-`FoodItem` shadow estimate, distinct from and never displayed alongside the
+Healthiness Label: for a composite item Recognize judged worth decomposing (a salad, a curry), the
+weighted sum of each ingredient's own USDA/OFF match, in the same per-100g terms as Luna's own
+`Estimated*Per100g` guess, so the two are directly comparable later. Resolved deterministically (no
+model call), and only ever stored once *every* ingredient in the breakdown resolved — a partial sum
+is discarded rather than kept, since it would otherwise look like a whole-dish figure while
+measuring less than the whole dish. Never drives `macro_source`, the Healthiness Label, advice, or
+chat.
+_Avoid_: Component estimate (a different, unrelated "components" already names Reanalyze's
+expert-supplied correction list)
+
 **Healthiness Label**:
-A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged macros, not an LLM judgment (ADR-004). The window is the 7 Logged Days ending yesterday — the last 7 days of the 28-day Logging Gap window the nutrition card already resolves, so it costs no extra fetch. A day counts only if it passes the Logging Gap's own `isValidDay` test (Day Completeness Complete/Confirmed Complete, and every one of that day's meals `confirmed`) — imported from `loggingGap.ts` rather than reimplemented, so the two rows can never disagree about what "logged" means. Below the ADR-007 3-of-7 floor, or with zero pooled macro energy, there is no label at all. The five signals, computed from *pooled* (not per-day-averaged) totals — three macro-energy shares (protein, carbs, fat, of `4P + 4C + 9F`), total-sugars share, and mean elemental sodium — each land on `ok`/`off`/`far`; any `far`, or 3+ `off`, is Needs attention, 1-2 `off` is Fair, all `ok` is Good.
+A qualitative (Good / Fair / Needs attention), not numeric, assessment of how nutritious a user's food logging has been over a rolling window — computed by a deterministic heuristic over already-logged nutrition fields, not an LLM judgment (ADR-004). The window is the 7 Logged Days ending yesterday — the last 7 days of the 28-day Logging Gap window the nutrition card already resolves, so it costs no extra fetch. A day counts only if it passes the Logging Gap's own `isValidDay` test (Day Completeness Complete/Confirmed Complete, and every one of that day's meals `confirmed`) — imported from `loggingGap.ts` rather than reimplemented, so the two rows can never disagree about what "logged" means. Below the ADR-007 3-of-7 floor, or with zero pooled macro energy, there is no label at all. Seven signals are computed from *pooled* (not per-day-averaged) totals: three macro-energy shares (protein, carbs, fat, of `4P + 4C + 9F`), total-sugars share, mean elemental sodium, mean dietary fiber, and saturated-fat share (`9 × saturatedFat / macroEnergy`). The original five land on `ok`/`off`/`far`; fiber uses EFSA's adult adequate intake of 25 g/day as one lower boundary, and saturated fat uses WHO's 10%-of-energy limit as one upper boundary — both land only on `ok` or `off`. Any `far`, or 3+ `off`, is Needs attention, 1-2 `off` is Fair, all `ok` is Good. Saturated fat is last in reason precedence (fiber is second-to-last) and neither can produce Needs attention by itself.
 _Avoid_: Health score, nutrition score
 
 **Qualified Advice View**:
@@ -156,13 +168,28 @@ and never generated, so what the user reads is the arithmetic the label actually
 _Avoid_: Explanation, reasoning (both suggest generated prose rather than reported measurements)
 
 **Nutrition Chat**:
-A question-and-answer conversation about the advice currently on screen, opened from the nutrition
-card and answered from the Advice Basis, the window means, and the Nutrition Target. It is
-**ephemeral**: turns live in the browser tab's component state alone and are discarded when the
-sheet closes, the page navigates, or the tab reloads. No chat table, no browser storage, no raw
-prompt log, no cross-day thread. The model is told the label is final and may not dispute it, and
-is given no activity, sleep, or weight data, because the label never measured those.
+A question-and-answer conversation about the advice currently on screen, answered from the Advice
+Basis and purpose-limited reads of the user's recent food and health history. It is **ephemeral**:
+closing the sheet, navigating, or reloading discards every turn; broader history may explain or
+contextualize the label but never becomes part of the label's calculation. When a nutrition-signal
+lookup reads Food Item contributors, the authenticated server may attach up to five Actionable
+Sources to that assistant turn. Each source names the Logged Day, Food Item, contribution, Macro
+Source and confidence and links to its Food Meal review screen. The server owns those links: meal
+identifiers never enter the model prompt or tool result, and sources are not replayed in later turns.
 _Avoid_: Assistant, coach (both imply a standing relationship this surface does not have)
+
+**Actionable Source**:
+A server-owned evidence row attached to one Nutrition Chat answer after the model asks to inspect a
+nutrition signal's Food Item contributors. It links the named contribution to the caller-owned Food
+Meal correction screen. It is request-scoped display metadata, not model prose, conversation
+history, or a persisted citation.
+_Avoid_: Citation (the row is application data, not a published reference), model source
+
+**Advice Health Context**:
+A sufficiently covered 28-day summary of completed-day steps, sleep and weight that may tailor a
+generated nutrition recommendation. It does not change the Healthiness Label or recalculate the
+Nutrition Target, whose Activity Level already accounts for applicable step history.
+_Avoid_: Advice Basis (that is the label's own arithmetic), health score
 
 ### Weight chart
 

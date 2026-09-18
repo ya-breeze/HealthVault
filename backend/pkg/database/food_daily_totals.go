@@ -17,19 +17,22 @@ import (
 type DailyTotal struct {
 	Date     string  `json:"date"`
 	Calories float64 `json:"calories"`
-	// ProteinGrams, CarbsGrams, FatGrams, SugarGrams and SodiumGrams are summed
+	// ProteinGrams, CarbsGrams, FatGrams, SugarGrams, SodiumGrams,
+	// DietaryFiberGrams and SaturatedFatGrams are summed
 	// the same way, and over the same `confirmed`-status meals, as Calories.
 	// They carry no `omitempty`: a day with confirmed meals whose sum is
 	// exactly zero (or no confirmed meals at all) is a legitimate zero, not an
 	// absence, and `omitempty` would drop the key — a consumer that types the
 	// field as required would then read `undefined` and render `NaN`, the same
 	// trap `summaryTargetPayload` (summary_today.go) hit first.
-	ProteinGrams     float64 `json:"protein_grams"`
-	CarbsGrams       float64 `json:"carbs_grams"`
-	FatGrams         float64 `json:"fat_grams"`
-	SugarGrams       float64 `json:"sugar_grams"`
-	SodiumGrams      float64 `json:"sodium_grams"`
-	UnconfirmedMeals int     `json:"unconfirmed_meals"`
+	ProteinGrams      float64 `json:"protein_grams"`
+	CarbsGrams        float64 `json:"carbs_grams"`
+	FatGrams          float64 `json:"fat_grams"`
+	SugarGrams        float64 `json:"sugar_grams"`
+	SodiumGrams       float64 `json:"sodium_grams"`
+	DietaryFiberGrams float64 `json:"dietary_fiber_grams"`
+	SaturatedFatGrams float64 `json:"saturated_fat_grams"`
+	UnconfirmedMeals  int     `json:"unconfirmed_meals"`
 }
 
 // DailyTotalsRange computes, for userID across the inclusive Logged-Day
@@ -73,7 +76,7 @@ func DailyTotalsRange(
 	var meals []FoodMeal
 	if err := db.Select(
 		"logged_at", "calories", "protein_grams", "carbs_grams", "fat_grams",
-		"sugar_grams", "sodium_grams", "status",
+		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "saturated_fat_grams", "status",
 	).
 		Where("user_id = ? AND logged_at >= ? AND logged_at < ?",
 			userID, windowStart, windowEnd).
@@ -92,6 +95,8 @@ func DailyTotalsRange(
 			s.fatGrams += m.FatGrams
 			s.sugarGrams += m.SugarGrams
 			s.sodiumGrams += m.SodiumGrams
+			s.dietaryFiberGrams += m.DietaryFiberGrams
+			s.saturatedFatGrams += m.SaturatedFatGrams
 			sumsByDate[d] = s
 			continue
 		}
@@ -103,14 +108,16 @@ func DailyTotalsRange(
 		dateStr := d.Format("2006-01-02")
 		s := sumsByDate[dateStr]
 		result = append(result, DailyTotal{
-			Date:             dateStr,
-			Calories:         s.calories,
-			ProteinGrams:     s.proteinGrams,
-			CarbsGrams:       s.carbsGrams,
-			FatGrams:         s.fatGrams,
-			SugarGrams:       s.sugarGrams,
-			SodiumGrams:      s.sodiumGrams,
-			UnconfirmedMeals: unconfirmedByDate[dateStr],
+			Date:              dateStr,
+			Calories:          s.calories,
+			ProteinGrams:      s.proteinGrams,
+			CarbsGrams:        s.carbsGrams,
+			FatGrams:          s.fatGrams,
+			SugarGrams:        s.sugarGrams,
+			SodiumGrams:       s.sodiumGrams,
+			DietaryFiberGrams: s.dietaryFiberGrams,
+			SaturatedFatGrams: s.saturatedFatGrams,
+			UnconfirmedMeals:  unconfirmedByDate[dateStr],
 		})
 	}
 
@@ -121,10 +128,12 @@ func DailyTotalsRange(
 // into one map value rather than five parallel maps, since every field is
 // written and read together.
 type dailyMealSums struct {
-	calories     float64
-	proteinGrams float64
-	carbsGrams   float64
-	fatGrams     float64
-	sugarGrams   float64
-	sodiumGrams  float64
+	calories          float64
+	proteinGrams      float64
+	carbsGrams        float64
+	fatGrams          float64
+	sugarGrams        float64
+	sodiumGrams       float64
+	dietaryFiberGrams float64
+	saturatedFatGrams float64
 }

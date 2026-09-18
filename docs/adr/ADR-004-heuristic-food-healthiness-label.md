@@ -3,6 +3,23 @@
 ## Status
 Accepted
 
+> **Update (`docs/specs/saturated-fat-signal.md`, 2026-09-18):** saturated fat is now the seventh
+> deterministic signal, a share of pooled macro energy (`9 × saturatedFat / macroEnergy`), the same
+> proxy sugar's share uses. WHO's 2023 guideline ("Saturated Fatty Acid and Trans-Fatty Acid Intake
+> for Adults and Children: WHO Guideline") recommends no more than 10% of total energy intake from
+> saturated fat — one evidence-backed boundary, so like fiber it has no invented `far` verdict. It
+> is appended after fiber, preserving every earlier signal's reason precedence; saturated fat is now
+> last. Populated from both USDA and Open Food Facts reference data — no new provenance column was
+> needed, since a `FoodItem`'s `fdc_id`/`off_code` were already mutually exclusive per resolved
+> reference match.
+
+> **Update (`docs/specs/fiber-signal-actionable-chat-sources.md`, 2026-09-14):** dietary fiber is
+> now the sixth deterministic signal. Its pooled mean uses EFSA's adult adequate intake of
+> 25 g/day as a single lower boundary: below it is `off`, at or above it is `ok`, and fiber has no
+> invented `far` verdict. It is appended after the original five signals, preserving their reason
+> precedence. Nutrition Chat can return request-scoped, server-owned contributor links beside the
+> model's answer; meal identifiers never enter model-visible tool results.
+
 > **Update (`docs/specs/remove-advice-refresh.md`, 2026-09-11):** the user-triggered refresh
 > named in the Decision Outcome below has been removed, along with the request flag and the
 > engagement counters that measured it. The advice is a deterministic judgment turned into prose,
@@ -46,7 +63,7 @@ Food logging already calls an LLM for photo recognition (`ClarifyRound`/`Log` on
 ## Decision Drivers
 
 - The label is read on every dashboard load; an LLM call in that path adds latency and cost to a screen that's viewed far more often than any single meal is logged
-- All the inputs it needs (macros, sugar, sodium) are already numeric fields on `FoodMeal`, populated regardless of whether a meal was logged by photo, manual entry, or barcode
+- All the inputs it needs (macros, sugar, sodium, fiber) are already numeric fields on `FoodMeal`, populated regardless of whether a meal was logged by photo, manual entry, or barcode
 - A deterministic label is reproducible — the same 7 days of logged food always yields the same label, which an LLM judgment would not guarantee
 - The LLM is still used, just for a different, better-suited part of the feature: turning the label into personalized recommendation text, and answering follow-up questions in the chat affordance
 
@@ -54,7 +71,7 @@ Food logging already calls an LLM for photo recognition (`ClarifyRound`/`Log` on
 
 - **LLM-judged score per recent period** — most nuanced, but adds a paid, latency-bearing call to routine dashboard loads, and produces a score that could vary between two structurally identical weeks of eating.
 - **Nutri-Score (Open Food Facts)** — only covers barcode-sourced items; the majority of logged meals are photo or manual entries with no Nutri-Score to read.
-- **Deterministic heuristic over already-logged macros** — a rolling-7-day comparison of macro-calorie share against normal ranges, plus sugar/sodium thresholds, using fields already on `FoodMeal`. No LLM call, works for every entry source, same input always yields the same label.
+- **Deterministic heuristic over already-logged nutrition fields** — a rolling-7-day comparison of macro-calorie share against normal ranges, plus sugar, sodium, and fiber thresholds, using fields already on `FoodMeal`. No LLM call, works for every entry source, same input always yields the same label.
 
 ## Decision Outcome
 
@@ -62,5 +79,5 @@ Chosen: **a deterministic heuristic computes the 3-level label** (Good / Fair / 
 
 ### Consequences
 
-- The heuristic's exact thresholds (macro-share ranges, sugar/sodium cutoffs) are not fixed by this decision — they're deferred to Phase 4's own `opsx:propose`.
+- The heuristic's exact thresholds live beside the pure computation in `frontend/lib/healthiness.ts`, with their evidence and rationale documented there.
 - If the heuristic and an LLM-generated recommendation ever disagree in tone (e.g. label says "Fair" but the LLM text reads alarmed), that's a prompt-design problem to solve in Phase 4, not a reason to move the label itself to the LLM.

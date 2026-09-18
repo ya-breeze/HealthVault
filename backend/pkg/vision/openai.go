@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -78,10 +79,25 @@ Also estimate each item's own per-100g nutrition as estimated_profile — your
 best guess from the photo, even for an item you expect will be matched to a
 known food or product afterward, since this is only used as a fallback if no
 match is found later. Units: calories_per_100g is kcal; every other field
-(protein, carbs, fat, sugar, sodium, dietary_fiber) is grams per 100g —
-sodium included: a food label's milligram sodium value must be converted to
-grams (divide by 1000) before reporting it here. Set estimated_profile to
-null only if you genuinely cannot make any reasonable estimate for that item.
+(protein, carbs, fat, sugar, sodium, dietary_fiber, saturated_fat) is grams
+per 100g — sodium included: a food label's milligram sodium value must be
+converted to grams (divide by 1000) before reporting it here. Set
+estimated_profile to null only if you genuinely cannot make any reasonable
+estimate for that item.
+
+When an item is itself a composite or merged dish (its ingredients were
+mixed, chopped, tossed, or cooked/sauced together — the same test used above
+to decide it stays one item), also break it into a rough ingredients list:
+each with its own name in the display language, its standard English name as
+canonical_name_en, and an estimated weight in grams, so its parts can be
+searched against a nutrition database individually. For example "cucumber
+and tomato salad" returns ingredients [{"canonical_name_en": "cucumber",
+"weight_grams": 100}, {"canonical_name_en": "tomato", "weight_grams": 100}]
+(plus each one's display-language name). This is a rough breakdown for
+database lookup, not a precise recipe — approximate proportions are fine.
+Leave ingredients empty for an item that is already a single atomic food
+(e.g. one apple, one chicken breast): do not decompose something that has no
+parts to break into.
 
 If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
@@ -137,10 +153,24 @@ to a known food or product afterward. On this path there is usually no other
 source of macros for the item, so make your best estimate rather than
 leaving it null whenever you can reasonably guess. Units: calories_per_100g
 is kcal; every other field (protein, carbs, fat, sugar, sodium,
-dietary_fiber) is grams per 100g — sodium included: a milligram sodium value
-must be converted to grams (divide by 1000) before reporting it here. Set
-estimated_profile to null only if you genuinely cannot make any reasonable
-estimate for that item.
+dietary_fiber, saturated_fat) is grams per 100g — sodium included: a
+milligram sodium value must be converted to grams (divide by 1000) before
+reporting it here. Set estimated_profile to null only if you genuinely
+cannot make any reasonable estimate for that item.
+
+When an item is itself a composite or merged dish (its ingredients were
+mixed, chopped, tossed, or cooked/sauced together — the same test used above
+to decide it stays one item), also break it into a rough ingredients list:
+each with its own name in the display language, its standard English name as
+canonical_name_en, and an estimated weight in grams, so its parts can be
+searched against a nutrition database individually. For example "cucumber
+and tomato salad" returns ingredients [{"canonical_name_en": "cucumber",
+"weight_grams": 100}, {"canonical_name_en": "tomato", "weight_grams": 100}]
+(plus each one's display-language name). This is a rough breakdown for
+database lookup, not a precise recipe — approximate proportions are fine.
+Leave ingredients empty for an item that is already a single atomic food
+(e.g. one apple, one chicken breast): do not decompose something that has no
+parts to break into.
 
 If the description is too vague to size or identify an item confidently,
 list one or two short clarification_questions for the user instead of
@@ -212,15 +242,41 @@ func (c *OpenAIClient) url() string {
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Role       string         `json:"role"`
+	Content    any            `json:"content,omitempty"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
 }
 
 type chatCompletionRequest struct {
-	Model          string         `json:"model"`
-	Messages       []chatMessage  `json:"messages"`
-	ResponseFormat responseFormat `json:"response_format"`
-	Store          bool           `json:"store"`
+	Model           string         `json:"model"`
+	Messages        []chatMessage  `json:"messages"`
+	ResponseFormat  responseFormat `json:"response_format"`
+	Store           bool           `json:"store"`
+	Tools           []chatTool     `json:"tools,omitempty"`
+	ToolChoice      string         `json:"tool_choice,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+}
+
+type chatTool struct {
+	Type     string           `json:"type"`
+	Function chatToolFunction `json:"function"`
+}
+
+type chatToolFunction struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"`
+	Strict      bool   `json:"strict"`
+}
+
+type chatToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 type responseFormat struct {
@@ -238,7 +294,8 @@ type chatCompletionResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content   string         `json:"content"`
+			ToolCalls []chatToolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Usage struct {
@@ -265,11 +322,28 @@ var estimatedProfileSchema = map[string]any{
 		"sugar_per_100g":         map[string]any{"type": "number"},
 		"sodium_per_100g":        map[string]any{"type": "number"},
 		"dietary_fiber_per_100g": map[string]any{"type": "number"},
+		"saturated_fat_per_100g": map[string]any{"type": "number"},
 	},
 	"required": []string{
 		"calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g",
-		"sugar_per_100g", "sodium_per_100g", "dietary_fiber_per_100g",
+		"sugar_per_100g", "sodium_per_100g", "dietary_fiber_per_100g", "saturated_fat_per_100g",
 	},
+	"additionalProperties": false,
+}
+
+// ingredientSchema is one entry in a composite item's optional ingredient
+// breakdown — see Item.Ingredients and IngredientEstimate. Not nullable:
+// unlike estimated_profile (one optional value per item), this is an array
+// property, and an atomic item signals "no breakdown" with an empty array
+// rather than a null one.
+var ingredientSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"name":              map[string]any{"type": "string"},
+		"canonical_name_en": map[string]any{"type": "string"},
+		"weight_grams":      map[string]any{"type": "number"},
+	},
+	"required":             []string{"name", "canonical_name_en", "weight_grams"},
 	"additionalProperties": false,
 }
 
@@ -289,10 +363,11 @@ var recognizeJSONSchema = map[string]any{
 					"weight_grams":      map[string]any{"type": "number"},
 					"confidence":        map[string]any{"type": "number"},
 					"estimated_profile": estimatedProfileSchema,
+					"ingredients":       map[string]any{"type": "array", "items": ingredientSchema},
 				},
 				"required": []string{
 					"display_name", "canonical_name", "preparation", "state", "brand", "weight_grams",
-					"confidence", "estimated_profile",
+					"confidence", "estimated_profile", "ingredients",
 				},
 				"additionalProperties": false,
 			},
@@ -320,6 +395,13 @@ type recognizeSchemaEstimatedProfile struct {
 	SugarPer100g        float64 `json:"sugar_per_100g"`
 	SodiumPer100g       float64 `json:"sodium_per_100g"`
 	DietaryFiberPer100g float64 `json:"dietary_fiber_per_100g"`
+	SaturatedFatPer100g float64 `json:"saturated_fat_per_100g"`
+}
+
+type recognizeSchemaIngredient struct {
+	Name            string  `json:"name"`
+	CanonicalNameEN string  `json:"canonical_name_en"`
+	WeightGrams     float64 `json:"weight_grams"`
 }
 
 type recognizeSchemaItem struct {
@@ -331,6 +413,7 @@ type recognizeSchemaItem struct {
 	WeightGrams      float64                          `json:"weight_grams"`
 	Confidence       float64                          `json:"confidence"`
 	EstimatedProfile *recognizeSchemaEstimatedProfile `json:"estimated_profile"`
+	Ingredients      []recognizeSchemaIngredient      `json:"ingredients"`
 }
 
 type recognizeSchemaResponse struct {
@@ -353,7 +436,36 @@ func toEstimatedProfile(p *recognizeSchemaEstimatedProfile) *database.NutrientPr
 		SugarPer100g:        p.SugarPer100g,
 		SodiumPer100g:       p.SodiumPer100g,
 		DietaryFiberPer100g: p.DietaryFiberPer100g,
+		SaturatedFatPer100g: p.SaturatedFatPer100g,
 	}
+}
+
+// toIngredientEstimates converts the schema's ingredient breakdown to the
+// shared vision.IngredientEstimate shape, trimming whitespace. It
+// deliberately keeps an entry whose canonical_name_en came back blank
+// rather than dropping it: dropping it would silently shrink the breakdown
+// to only the ingredients the model happened to name well, letting the
+// all-or-nothing HasIngredientReference gate (see
+// docs/specs/component-reference-shadow.md) pass as "fully resolved" over a
+// dish it never actually covered in full — the exact partial-sum-disguised-
+// as-complete failure that gate exists to prevent. A blank name simply
+// cannot be searched, so resolveIngredientReference's own USDA search
+// naturally leaves it unresolved (empty query -> no results), which is what
+// correctly blocks the gate. Returns nil (not an empty non-nil slice) for an
+// atomic item, matching Ingredients' "empty means no breakdown" contract.
+func toIngredientEstimates(entries []recognizeSchemaIngredient) []IngredientEstimate {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]IngredientEstimate, len(entries))
+	for i, e := range entries {
+		out[i] = IngredientEstimate{
+			Name:            strings.TrimSpace(e.Name),
+			CanonicalNameEN: strings.TrimSpace(e.CanonicalNameEN),
+			WeightGrams:     e.WeightGrams,
+		}
+	}
+	return out
 }
 
 // unknownToEmpty maps the model's explicit "unknown" enum value to "", the
@@ -367,7 +479,7 @@ func unknownToEmpty(s string) string {
 }
 
 func (c *OpenAIClient) call(ctx context.Context, messages []chatMessage, schemaName string, schema any) (*chatCompletionResponse, time.Duration, error) {
-	reqBody := chatCompletionRequest{
+	return c.callRequest(ctx, chatCompletionRequest{
 		Model:    c.Model,
 		Messages: messages,
 		ResponseFormat: responseFormat{
@@ -379,7 +491,12 @@ func (c *OpenAIClient) call(ctx context.Context, messages []chatMessage, schemaN
 			},
 		},
 		Store: false,
-	}
+	})
+}
+
+func (c *OpenAIClient) callRequest(
+	ctx context.Context, reqBody chatCompletionRequest,
+) (*chatCompletionResponse, time.Duration, error) {
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, 0, fmt.Errorf("marshal request: %w", err)
@@ -450,6 +567,7 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration, disp
 			WeightGrams:      it.WeightGrams,
 			Confidence:       it.Confidence,
 			EstimatedProfile: toEstimatedProfile(it.EstimatedProfile),
+			Ingredients:      toIngredientEstimates(it.Ingredients),
 		}
 	}
 
@@ -768,7 +886,15 @@ or cleanses. Do not prescribe calories below the supplied target. Use no
 measurements, thresholds, or quantities except values supplied in the input
 or simple differences derived directly from them. Return one or two lines,
 each with at most one clause and about 90 characters. Write in the supplied
-display_language.`
+display_language.
+
+health_context is a 28-day summary ending yesterday. Optional metrics are
+present only when the server found enough recorded days. Use them only when
+they materially tailor an action already supported by the nutrition finding,
+or to acknowledge a measured weight direction. Never claim one metric caused
+another. Never infer or recalculate calorie needs from steps, sleep, or weight:
+the supplied target already incorporates activity_level and is final. Do not
+mention a missing optional metric.`
 
 // Advise is text-only: it sends the complete normalized input as JSON and no
 // image. The model's lines are bounded again after structured-output parsing.
@@ -840,11 +966,13 @@ The supplied label, reason codes, and signal values are an already-computed
 deterministic judgment. Never dispute, restate, upgrade, or downgrade the
 label, and never contradict a supplied measurement or boundary.
 
-Answer only from the supplied input. Use no measurement, threshold, or
-quantity that is not in the input or a simple difference derived directly
-from it. When the user asks about something the input does not contain —
-activity, sleep, weight, a specific meal, a day outside the window — say
-plainly that it was not measured here, and do not estimate it.
+Answer only from the supplied input and the read-only history tools. Use no
+measurement, threshold, or quantity that is not in those sources or a simple
+difference derived directly from them. When the user asks which foods or days
+produced a nutrition signal, call explain_nutrition_signal. Use get_day_details
+when a particular Logged Day needs more detail. Use get_health_trend for a
+question about steps, sleep, or weight. If a relevant tool returns no data,
+say plainly that the history does not contain it, and do not estimate it.
 
 Every supplied nutrition figure comes from logged food, much of which was
 itself estimated — from a photo, from a written description, or from a
@@ -861,7 +989,65 @@ Make no medical claim, diagnosis, or prognosis. Do not recommend
 supplements, fasting, or cleanses. Do not prescribe calories below the
 supplied target. Do not reassure beyond what the input supports.
 
+History is additional context, not part of the deterministic Healthiness
+Label unless the tool explicitly says a Food Item or Logged Day was eligible.
+Never claim that steps, sleep, or weight caused a nutrition finding. Describe
+cross-metric patterns as coincidences in the available history, not causes.
+
 Answer in at most four short sentences, in the supplied display_language.`
+
+const nutritionChatMaxToolCalls = 3
+
+var nutritionChatTools = []chatTool{
+	{
+		Type: "function",
+		Function: chatToolFunction{
+			Name:        "explain_nutrition_signal",
+			Description: "Read the seven-day food-history evidence and Food Item contributors for one Healthiness Label signal.",
+			Strict:      true,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"signal": map[string]any{
+						"type": "string", "enum": []string{"protein", "carbs", "fat", "sugar", "sodium", "fiber", "saturated_fat"},
+					},
+				},
+				"required": []string{"signal"}, "additionalProperties": false,
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: chatToolFunction{
+			Name:        "get_health_trend",
+			Description: "Read the authenticated user's daily steps, sleep, or weight trend over a bounded recent window.",
+			Strict:      true,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"metric": map[string]any{"type": "string", "enum": []string{"steps", "sleep", "weight"}},
+					"days":   map[string]any{"type": "integer", "enum": []int{7, 28, 90}},
+				},
+				"required": []string{"metric", "days"}, "additionalProperties": false,
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: chatToolFunction{
+			Name:        "get_day_details",
+			Description: "Read Food Meals and Food Items for one recent Logged Day in YYYY-MM-DD form.",
+			Strict:      true,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"date": map[string]any{"type": "string", "description": "Logged Day in YYYY-MM-DD form"},
+				},
+				"required": []string{"date"}, "additionalProperties": false,
+			},
+		},
+	},
+}
 
 // NutritionChat is text-only: it sends the evidence and the conversation so far
 // as JSON and no image. The conversation is replayed in full on every call
@@ -875,12 +1061,85 @@ func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput)
 		{Role: "system", Content: nutritionChatSystemPrompt},
 		{Role: "user", Content: string(payload)},
 	}
-	resp, latency, err := c.call(ctx, messages, "nutrition_chat", nutritionChatJSONSchema)
-	if err != nil {
-		return nil, err
+
+	tools := []chatTool(nil)
+	toolChoice := ""
+	reasoningEffort := ""
+	if in.HistoryTools != nil {
+		tools = nutritionChatTools
+		toolChoice = "auto"
+		// Chat Completions rejects function tools for reasoning models when
+		// reasoning_effort is active. Keep this compatibility setting scoped
+		// to the tool-enabled chat path; the other vision calls stay unchanged.
+		reasoningEffort = "none"
 	}
+	totalPromptTokens := 0
+	totalCompletionTokens := 0
+	totalLatency := time.Duration(0)
+	toolCallsUsed := 0
+	toolCallIDs := make(map[string]bool, nutritionChatMaxToolCalls)
+	lastModel := ""
+
+	for {
+		resp, latency, err := c.callRequest(ctx, chatCompletionRequest{
+			Model: c.Model, Messages: messages,
+			ResponseFormat: responseFormat{Type: "json_schema", JSONSchema: jsonSchema{
+				Name: "nutrition_chat", Strict: true, Schema: nutritionChatJSONSchema,
+			}},
+			Store: false, Tools: tools, ToolChoice: toolChoice, ReasoningEffort: reasoningEffort,
+		})
+		if err != nil {
+			return nil, err
+		}
+		totalLatency += latency
+		totalPromptTokens += resp.Usage.PromptTokens
+		totalCompletionTokens += resp.Usage.CompletionTokens
+		lastModel = resp.Model
+		message := resp.Choices[0].Message
+		if len(message.ToolCalls) == 0 {
+			return parseNutritionChatAnswer(
+				message.Content, lastModel, totalPromptTokens, totalCompletionTokens, totalLatency,
+			)
+		}
+		if in.HistoryTools == nil || toolCallsUsed+len(message.ToolCalls) > nutritionChatMaxToolCalls {
+			return nil, fmt.Errorf("nutrition chat exceeded tool call limit")
+		}
+
+		assistantMessage := chatMessage{Role: "assistant", ToolCalls: message.ToolCalls}
+		if message.Content != "" {
+			assistantMessage.Content = message.Content
+		}
+		messages = append(messages, assistantMessage)
+		for _, call := range message.ToolCalls {
+			if call.ID == "" || toolCallIDs[call.ID] || call.Type != "function" || call.Function.Name == "" {
+				return nil, fmt.Errorf("nutrition chat returned an invalid tool call")
+			}
+			toolCallIDs[call.ID] = true
+			result, execErr := in.HistoryTools.Execute(
+				ctx, call.Function.Name, json.RawMessage(call.Function.Arguments),
+			)
+			if execErr != nil {
+				if !errors.Is(execErr, ErrInvalidNutritionChatToolCall) {
+					return nil, fmt.Errorf("nutrition chat history tool failed: %w", execErr)
+				}
+				result = json.RawMessage(`{"available":false,"reason":"invalid_request"}`)
+			}
+			if !json.Valid(result) {
+				return nil, fmt.Errorf("nutrition chat history tool returned invalid JSON")
+			}
+			messages = append(messages, chatMessage{
+				Role: "tool", ToolCallID: call.ID, Content: string(result),
+			})
+			toolCallsUsed++
+		}
+	}
+}
+
+func parseNutritionChatAnswer(
+	content, model string, promptTokens, completionTokens int, latency time.Duration,
+) (*NutritionChatResult, error) {
 	var schemaResp nutritionChatSchemaResponse
-	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &schemaResp); err != nil {
+	if err := json.Unmarshal([]byte(content), &schemaResp); err != nil {
 		return nil, fmt.Errorf("unmarshal structured content: %w", err)
 	}
 	answer := strings.TrimSpace(schemaResp.Answer)
@@ -891,11 +1150,8 @@ func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput)
 		answer = string(runes[:NutritionChatAnswerMaxRunes])
 	}
 	return &NutritionChatResult{
-		Answer:           answer,
-		Model:            resp.Model,
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		Latency:          latency,
+		Answer: answer, Model: model, PromptTokens: promptTokens,
+		CompletionTokens: completionTokens, Latency: latency,
 	}, nil
 }
 

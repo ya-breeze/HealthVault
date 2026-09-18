@@ -18,6 +18,8 @@ function day(overrides: Partial<HealthinessDayData> = {}): HealthinessDayData {
     fatGrams: 0,
     sugarGrams: 0,
     sodiumGrams: 0,
+    dietaryFiberGrams: 25,
+    saturatedFatGrams: 0,
     ...overrides,
   };
 }
@@ -105,6 +107,8 @@ describe('computeHealthinessLabel — eligibility floor', () => {
       carbsGrams: 195,
       sugarGrams: 11,
       sodiumGrams: 2,
+      dietaryFiberGrams: 25,
+      saturatedFatGrams: 0,
     });
     expect(means?.fatGrams).toBeCloseTo(86.667);
   });
@@ -307,6 +311,69 @@ describe('computeHealthinessLabel — sodium boundary (macros held at the good b
   });
 });
 
+describe('computeHealthinessLabel — fiber boundary (macros held at the good baseline)', () => {
+  it('25 g/day lands on the adequate side', () => {
+    const result = computeHealthinessLabel(
+      poolOf(3, { ...GOOD_DAY, dietaryFiberGrams: HEALTHINESS_THRESHOLDS.fiberGramsPerDay.offHigh }),
+      WINDOW
+    );
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
+  });
+
+  it('a mean below 25 g/day is off and contributes fiber_low', () => {
+    const result = computeHealthinessLabel(poolOf(3, { ...GOOD_DAY, dietaryFiberGrams: 24.9 }), WINDOW);
+    expect(result).toMatchObject({ label: 'fair', reasons: ['fiber_low'] });
+    const fiber = result?.signals.find(s => s.code === 'fiber');
+    expect(fiber).toMatchObject({
+      unit: 'gramsPerDay',
+      verdict: 'off',
+      reason: 'fiber_low',
+    });
+    expect(fiber?.value).toBeCloseTo(24.9);
+  });
+
+  it('does not invent a far verdict even for zero logged fiber', () => {
+    const result = computeHealthinessLabel(poolOf(3, { ...GOOD_DAY, dietaryFiberGrams: 0 }), WINDOW);
+    expect(result?.signals.find(s => s.code === 'fiber')).toMatchObject({
+      verdict: 'off',
+      offBoundary: 25,
+      farBoundary: null,
+    });
+    expect(result).toMatchObject({ label: 'fair', reasons: ['fiber_low'] });
+  });
+});
+
+describe('computeHealthinessLabel — saturated fat boundary (macros held at the good baseline)', () => {
+  function poolAtSaturatedFatShare(saturatedFatShare: number): Record<number, HealthinessDayData> {
+    const energy = 2000;
+    return poolOf(3, { ...GOOD_DAY, saturatedFatGrams: (saturatedFatShare * energy) / 9 });
+  }
+
+  it('0.10 (offHigh/ok boundary) lands on the ok side', () => {
+    const result = computeHealthinessLabel(
+      poolAtSaturatedFatShare(HEALTHINESS_THRESHOLDS.saturatedFatShare.offHigh),
+      WINDOW
+    );
+    expect(result).toMatchObject({ label: 'good', reasons: [] });
+  });
+
+  it('just over 0.10 is off and contributes saturated_fat_high, not far', () => {
+    const result = computeHealthinessLabel(poolAtSaturatedFatShare(0.11), WINDOW);
+    expect(result).toMatchObject({ label: 'fair', reasons: ['saturated_fat_high'] });
+    const saturatedFat = result?.signals.find(s => s.code === 'saturated_fat');
+    expect(saturatedFat).toMatchObject({ unit: 'share', verdict: 'off', reason: 'saturated_fat_high' });
+  });
+
+  it('does not invent a far verdict even for a very high share', () => {
+    const result = computeHealthinessLabel(poolAtSaturatedFatShare(0.5), WINDOW);
+    expect(result?.signals.find(s => s.code === 'saturated_fat')).toMatchObject({
+      verdict: 'off',
+      offBoundary: 0.1,
+      farBoundary: null,
+    });
+  });
+});
+
 describe('computeHealthinessLabel — combination rule', () => {
   it('one off signal is fair', () => {
     const perDayData = poolOf(7, { ...GOOD_DAY, sodiumGrams: 2.8 });
@@ -330,6 +397,40 @@ describe('computeHealthinessLabel — combination rule', () => {
     expect(result?.reasons).toEqual(['protein_low', 'sugar_high']);
   });
 
+  it('fiber participates in the existing three-off combination rule', () => {
+    const energy = 2000;
+    const result = computeHealthinessLabel(
+      poolOf(7, {
+        ...GOOD_DAY,
+        sugarGrams: (0.18 * energy) / 4,
+        sodiumGrams: 2.8,
+        dietaryFiberGrams: 10,
+      }),
+      WINDOW
+    );
+    expect(result?.label).toBe('needs_attention');
+    // Fiber is appended after the original five signals, so it changes the
+    // count without displacing their established reason precedence.
+    expect(result?.reasons).toEqual(['sugar_high', 'sodium_high']);
+  });
+
+  it('saturated fat participates in the existing three-off combination rule', () => {
+    const energy = 2000;
+    const result = computeHealthinessLabel(
+      poolOf(7, {
+        ...GOOD_DAY,
+        sugarGrams: (0.18 * energy) / 4,
+        sodiumGrams: 2.8,
+        saturatedFatGrams: (0.11 * energy) / 9,
+      }),
+      WINDOW
+    );
+    expect(result?.label).toBe('needs_attention');
+    // Saturated fat is appended after fiber, so it changes the count without
+    // displacing the established reason precedence.
+    expect(result?.reasons).toEqual(['sugar_high', 'sodium_high']);
+  });
+
   it('any far signal is needs_attention even with every other signal ok', () => {
     const perDayData = poolOf(7, { ...GOOD_DAY, sodiumGrams: 4.0 });
     expect(computeHealthinessLabel(perDayData, WINDOW)).toMatchObject({
@@ -338,7 +439,7 @@ describe('computeHealthinessLabel — combination rule', () => {
     });
   });
 
-  it('all five signals ok is good, with no reasons', () => {
+  it('all seven signals ok is good, with no reasons', () => {
     const perDayData = poolOf(7, GOOD_DAY);
     expect(computeHealthinessLabel(perDayData, WINDOW)).toMatchObject({ label: 'good', reasons: [] });
   });
@@ -378,9 +479,11 @@ describe('computeHealthinessLabel — reason ordering and cap', () => {
 });
 
 describe('computeHealthinessLabel — reported workings', () => {
-  it('reports all five signals in the fixed tie-break order', () => {
+  it('reports fiber and saturated fat after the original five-signal tie-break order', () => {
     const result = computeHealthinessLabel(poolOf(5, GOOD_DAY), WINDOW)!;
-    expect(result.signals.map(s => s.code)).toEqual(['protein', 'sugar', 'sodium', 'fat', 'carbs']);
+    expect(result.signals.map(s => s.code)).toEqual([
+      'protein', 'sugar', 'sodium', 'fat', 'carbs', 'fiber', 'saturated_fat',
+    ]);
   });
 
   it('counts only eligible days', () => {
@@ -400,6 +503,10 @@ describe('computeHealthinessLabel — reported workings', () => {
     const sodium = result.signals.find(s => s.code === 'sodium')!;
     expect(sodium.unit).toBe('gramsPerDay');
     expect(sodium.value).toBeCloseTo(1.5, 6);
+
+    const fiber = result.signals.find(s => s.code === 'fiber')!;
+    expect(fiber.unit).toBe('gramsPerDay');
+    expect(fiber.value).toBe(25);
   });
 
   it('reports no reason code for a signal that is ok, and the flagged code for one that is not', () => {

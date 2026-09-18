@@ -1,6 +1,7 @@
 package database
 
 import (
+	"encoding/json"
 	"math"
 	"time"
 
@@ -61,6 +62,7 @@ type FoodMeal struct {
 	SugarGrams        float64 `gorm:"not null;default:0" json:"sugar_grams"`
 	SodiumGrams       float64 `gorm:"not null;default:0" json:"sodium_grams"`
 	DietaryFiberGrams float64 `gorm:"not null;default:0" json:"dietary_fiber_grams"`
+	SaturatedFatGrams float64 `gorm:"not null;default:0" json:"saturated_fat_grams"`
 
 	Items []FoodItem `gorm:"foreignKey:MealID" json:"items,omitempty"`
 }
@@ -116,6 +118,13 @@ type FoodItem struct {
 	SugarGrams        float64 `gorm:"not null" json:"sugar_grams"`
 	SodiumGrams       float64 `gorm:"not null" json:"sodium_grams"`
 	DietaryFiberGrams float64 `gorm:"not null" json:"dietary_fiber_grams"`
+	// default:0 (unlike its siblings above): this column is new against an
+	// already-populated table, and SQLite's ALTER TABLE ADD COLUMN refuses a
+	// NOT NULL column with no default when the table has existing rows
+	// ("Cannot add a NOT NULL column with default value NULL") — see
+	// docs/specs/saturated-fat-signal.md. The siblings above never hit this
+	// because they were present since this table's original schema.
+	SaturatedFatGrams float64 `gorm:"not null;default:0" json:"saturated_fat_grams"`
 
 	// HasEstimate and the EstimatedXPer100g fields are Recognize's own
 	// per-100g macro estimate for this item (see vision.Item.EstimatedProfile),
@@ -134,6 +143,116 @@ type FoodItem struct {
 	EstimatedSugarPer100g        float64 `gorm:"not null;default:0" json:"estimated_sugar_per_100g,omitempty"`
 	EstimatedSodiumPer100g       float64 `gorm:"not null;default:0" json:"estimated_sodium_per_100g,omitempty"`
 	EstimatedDietaryFiberPer100g float64 `gorm:"not null;default:0" json:"estimated_dietary_fiber_per_100g,omitempty"`
+	EstimatedSaturatedFatPer100g float64 `gorm:"not null;default:0" json:"estimated_saturated_fat_per_100g,omitempty"`
+
+	// IngredientsJSON is Recognize's own ingredient breakdown for this item —
+	// see IngredientReferenceEntry — persisted verbatim at row-creation time,
+	// the same point SetEstimatedProfile is, regardless of whether resolution
+	// against USDA/OFF later succeeds. Empty for an item Recognize judged
+	// atomic (e.g. a single apple) rather than composite, and for every item
+	// created before this field existed. A JSON blob rather than a child
+	// table, matching FoodMeal.ClarifyLog's existing precedent for "a small
+	// point-in-time list that is never queried by its own fields, only read
+	// back whole" — see Ingredients/SetIngredients below.
+	IngredientsJSON string `gorm:"type:text" json:"ingredients_json,omitempty"`
+
+	// HasIngredientReference and the IngredientReferenceXPer100g fields are a
+	// SECOND, independent per-100g estimate for this item — grounded in
+	// USDA/OFF rather than guessed by Luna — computed by resolving every
+	// ingredient in IngredientsJSON against the reference databases and
+	// summing their weighted profiles back to a per-100g-of-combined-
+	// ingredients figure, directly comparable to EstimatedXPer100g above.
+	// Deliberately all-or-nothing: HasIngredientReference is true only when
+	// EVERY ingredient resolved, never for a partial sum — a partial sum's
+	// per-100g figure would silently omit whatever fraction of the dish its
+	// unresolved ingredients represent, which would make it look directly
+	// comparable to EstimatedXPer100g (both "per 100g of the whole dish")
+	// while actually measuring something narrower. See
+	// docs/specs/component-reference-shadow.md. Never displayed to the user
+	// and never drives MacroSource, the Healthiness Label, advice, or chat —
+	// purely a background comparison field, same posture as HasEstimate.
+	HasIngredientReference                 bool    `gorm:"not null;default:false" json:"has_ingredient_reference,omitempty"`
+	IngredientReferenceCaloriesPer100g     float64 `gorm:"not null;default:0" json:"ingredient_reference_calories_per_100g,omitempty"`
+	IngredientReferenceProteinPer100g      float64 `gorm:"not null;default:0" json:"ingredient_reference_protein_per_100g,omitempty"`
+	IngredientReferenceCarbsPer100g        float64 `gorm:"not null;default:0" json:"ingredient_reference_carbs_per_100g,omitempty"`
+	IngredientReferenceFatPer100g          float64 `gorm:"not null;default:0" json:"ingredient_reference_fat_per_100g,omitempty"`
+	IngredientReferenceSugarPer100g        float64 `gorm:"not null;default:0" json:"ingredient_reference_sugar_per_100g,omitempty"`
+	IngredientReferenceSodiumPer100g       float64 `gorm:"not null;default:0" json:"ingredient_reference_sodium_per_100g,omitempty"`
+	IngredientReferenceDietaryFiberPer100g float64 `gorm:"not null;default:0" json:"ingredient_reference_dietary_fiber_per_100g,omitempty"`
+	IngredientReferenceSaturatedFatPer100g float64 `gorm:"not null;default:0" json:"ingredient_reference_saturated_fat_per_100g,omitempty"`
+}
+
+// IngredientReferenceEntry is one ingredient of a composite FoodItem, as
+// Recognize broke it down, plus its USDA/OFF resolution outcome. Stored as a
+// JSON array on FoodItem.IngredientsJSON — see that field's doc comment for
+// why a blob rather than a child table.
+type IngredientReferenceEntry struct {
+	// Name is the ingredient's display-language name; CanonicalNameEN is its
+	// English identity, the only field actually searched against USDA/OFF —
+	// see openspec/specs/display-language for why an English search term is
+	// needed regardless of the user's own display language.
+	Name            string  `json:"name"`
+	CanonicalNameEN string  `json:"canonical_name_en"`
+	WeightGrams     float64 `json:"weight_grams"`
+	// Resolved, FdcID and OffCode are filled in by resolution, not by
+	// Recognize — false/nil until resolveIngredientReference runs.
+	Resolved bool    `json:"resolved"`
+	FdcID    *int64  `json:"fdc_id,omitempty"`
+	OffCode  *string `json:"off_code,omitempty"`
+}
+
+// SetIngredients persists Recognize's ingredient breakdown verbatim (every
+// entry starts Resolved=false) — called once at row-creation time, the same
+// point SetEstimatedProfile is, and again after resolution runs to persist
+// each entry's outcome. A nil or empty entries list clears the field rather
+// than storing "[]", so an atomic item (Recognize returned no breakdown) and
+// a composite item's blob are distinguishable by IngredientsJSON's emptiness
+// alone, without needing a separate HasIngredients flag.
+func (i *FoodItem) SetIngredients(entries []IngredientReferenceEntry) {
+	if len(entries) == 0 {
+		i.IngredientsJSON = ""
+		return
+	}
+	b, err := json.Marshal(entries)
+	if err != nil {
+		// entries is built entirely from float64/string fields with no
+		// cyclic or unsupported types, so Marshal cannot fail in practice;
+		// leaving the prior value in place (rather than a partial/corrupt
+		// write) is the only sane fallback for a theoretical error here.
+		return
+	}
+	i.IngredientsJSON = string(b)
+}
+
+// Ingredients decodes IngredientsJSON, or returns (nil, true) for an atomic
+// item that never had a breakdown. ok is false only for a genuinely corrupt
+// blob, which callers should treat the same as "no breakdown" rather than
+// failing the request over it.
+func (i FoodItem) Ingredients() ([]IngredientReferenceEntry, bool) {
+	if i.IngredientsJSON == "" {
+		return nil, true
+	}
+	var entries []IngredientReferenceEntry
+	if err := json.Unmarshal([]byte(i.IngredientsJSON), &entries); err != nil {
+		return nil, false
+	}
+	return entries, true
+}
+
+// SetIngredientReferenceProfile records the fully-resolved ingredient-sum
+// profile — callers must only call this once every entry in Ingredients()
+// resolved (see HasIngredientReference's doc comment for why partial sums
+// are never stored here).
+func (i *FoodItem) SetIngredientReferenceProfile(p NutrientProfile) {
+	i.HasIngredientReference = true
+	i.IngredientReferenceCaloriesPer100g = p.CaloriesPer100g
+	i.IngredientReferenceProteinPer100g = p.ProteinPer100g
+	i.IngredientReferenceCarbsPer100g = p.CarbsPer100g
+	i.IngredientReferenceFatPer100g = p.FatPer100g
+	i.IngredientReferenceSugarPer100g = p.SugarPer100g
+	i.IngredientReferenceSodiumPer100g = p.SodiumPer100g
+	i.IngredientReferenceDietaryFiberPer100g = p.DietaryFiberPer100g
+	i.IngredientReferenceSaturatedFatPer100g = p.SaturatedFatPer100g
 }
 
 // HasMacros reports whether the item contributes to its meal's aggregate.
@@ -158,6 +277,7 @@ func (i *FoodItem) SetEstimatedProfile(p *NutrientProfile) {
 	i.EstimatedSugarPer100g = p.SugarPer100g
 	i.EstimatedSodiumPer100g = p.SodiumPer100g
 	i.EstimatedDietaryFiberPer100g = p.DietaryFiberPer100g
+	i.EstimatedSaturatedFatPer100g = p.SaturatedFatPer100g
 }
 
 // EstimatedProfile returns the item's persisted per-100g estimate and
@@ -176,9 +296,10 @@ func (i FoodItem) EstimatedProfile() (NutrientProfile, bool) {
 		SugarPer100g:        i.EstimatedSugarPer100g,
 		SodiumPer100g:       i.EstimatedSodiumPer100g,
 		DietaryFiberPer100g: i.EstimatedDietaryFiberPer100g,
+		SaturatedFatPer100g: i.EstimatedSaturatedFatPer100g,
 	}
 	if p.CaloriesPer100g < 0 || p.ProteinPer100g < 0 || p.CarbsPer100g < 0 || p.FatPer100g < 0 ||
-		p.SugarPer100g < 0 || p.SodiumPer100g < 0 || p.DietaryFiberPer100g < 0 {
+		p.SugarPer100g < 0 || p.SodiumPer100g < 0 || p.DietaryFiberPer100g < 0 || p.SaturatedFatPer100g < 0 {
 		return NutrientProfile{}, false
 	}
 	return p, true
@@ -212,6 +333,12 @@ func (i FoodItem) PlausibleEstimatedProfile() (NutrientProfile, bool) {
 	if p.SugarPer100g+p.DietaryFiberPer100g > p.CarbsPer100g+macroRoundingTolerance {
 		return NutrientProfile{}, false
 	}
+	// Saturated fat is a subset of total fat by definition; an estimate
+	// claiming more is physically impossible and must not outrank a matched
+	// reference candidate.
+	if p.SaturatedFatPer100g > p.FatPer100g+macroRoundingTolerance {
+		return NutrientProfile{}, false
+	}
 
 	atwater := p.ProteinPer100g*4 + p.CarbsPer100g*4 + p.FatPer100g*9
 	calorieTolerance := math.Max(25.0, atwater*0.15)
@@ -241,6 +368,9 @@ type CustomFood struct {
 	SugarPer100g        float64 `gorm:"not null" json:"sugar_per_100g"`
 	SodiumPer100g       float64 `gorm:"not null" json:"sodium_per_100g"`
 	DietaryFiberPer100g float64 `gorm:"not null" json:"dietary_fiber_per_100g"`
+	// default:0: see the identical note on FoodItem.SaturatedFatGrams above —
+	// this column is new against an already-populated table.
+	SaturatedFatPer100g float64 `gorm:"not null;default:0" json:"saturated_fat_per_100g"`
 }
 
 // FoodSearchTranslation is a user's cached free-text-to-USDA-vocabulary
@@ -323,6 +453,7 @@ type NutrientProfile struct {
 	SugarPer100g        float64 `json:"sugar_per_100g"`
 	SodiumPer100g       float64 `json:"sodium_per_100g"`
 	DietaryFiberPer100g float64 `json:"dietary_fiber_per_100g"`
+	SaturatedFatPer100g float64 `json:"saturated_fat_per_100g"`
 }
 
 // Profile returns the custom food's per-100g values.
@@ -335,6 +466,7 @@ func (c CustomFood) Profile() NutrientProfile {
 		SugarPer100g:        c.SugarPer100g,
 		SodiumPer100g:       c.SodiumPer100g,
 		DietaryFiberPer100g: c.DietaryFiberPer100g,
+		SaturatedFatPer100g: c.SaturatedFatPer100g,
 	}
 }
 
@@ -375,14 +507,15 @@ func (i *FoodItem) applyScaledProfile(p NutrientProfile, source string) {
 	i.SugarGrams = p.SugarPer100g * f
 	i.SodiumGrams = p.SodiumPer100g * f
 	i.DietaryFiberGrams = p.DietaryFiberPer100g * f
+	i.SaturatedFatGrams = p.SaturatedFatPer100g * f
 	i.MacroSource = source
 }
 
-// Aggregate sums the 7 macros over items that have usable macros. Items with
+// Aggregate sums the 8 macros over items that have usable macros. Items with
 // MacroSource none are excluded rather than counted as zero-value foods.
 func (m *FoodMeal) Aggregate(items []FoodItem) {
 	m.Calories, m.ProteinGrams, m.CarbsGrams, m.FatGrams = 0, 0, 0, 0
-	m.SugarGrams, m.SodiumGrams, m.DietaryFiberGrams = 0, 0, 0
+	m.SugarGrams, m.SodiumGrams, m.DietaryFiberGrams, m.SaturatedFatGrams = 0, 0, 0, 0
 	for _, it := range items {
 		if !it.HasMacros() {
 			continue
@@ -394,5 +527,6 @@ func (m *FoodMeal) Aggregate(items []FoodItem) {
 		m.SugarGrams += it.SugarGrams
 		m.SodiumGrams += it.SodiumGrams
 		m.DietaryFiberGrams += it.DietaryFiberGrams
+		m.SaturatedFatGrams += it.SaturatedFatGrams
 	}
 }

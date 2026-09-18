@@ -29,7 +29,7 @@ const (
 	// The Healthiness Label's own window, restated here because the model is
 	// told what the means rest on and the server must not guess it.
 	nutritionChatWindowDays = 7
-	nutritionChatMaxSignals = 5
+	nutritionChatMaxSignals = 7
 	// A provider error can carry a whole response body, so the logged form is
 	// bounded as well as redacted.
 	nutritionChatMaxLoggedErrorRune = 300
@@ -67,9 +67,10 @@ type nutritionChatRequest struct {
 }
 
 type nutritionChatResponse struct {
-	Available bool   `json:"available"`
-	Reason    string `json:"reason,omitempty"`
-	Answer    string `json:"answer,omitempty"`
+	Available bool                  `json:"available"`
+	Reason    string                `json:"reason,omitempty"`
+	Answer    string                `json:"answer,omitempty"`
+	Sources   []nutritionChatSource `json:"sources,omitempty"`
 }
 
 func writeNutritionChatUnavailable(w http.ResponseWriter, reason string) {
@@ -153,17 +154,22 @@ func (h *foodHandlers) PostFoodAdviceChat(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	historyTools := newNutritionChatHistoryTools(h.storage, claims.UserID, loc, settingsJSON, now)
 	in := vision.NutritionChatInput{
 		Label: req.Label, Reasons: reasons, Signals: signals,
 		EligibleDays: req.EligibleDays, WindowDays: nutritionChatWindowDays,
 		MeanCalories: *req.Window.MeanCalories, MeanProteinGrams: *req.Window.MeanProteinGrams,
 		MeanCarbsGrams: *req.Window.MeanCarbsGrams, MeanFatGrams: *req.Window.MeanFatGrams,
 		MeanSugarGrams: *req.Window.MeanSugarGrams, MeanSodiumGrams: *req.Window.MeanSodiumGrams,
-		TargetCalories: target.Calories, TargetProteinGrams: target.ProteinGrams,
+		MeanDietaryFiberGrams: *req.Window.MeanDietaryFiberGrams,
+		MeanSaturatedFatGrams: *req.Window.MeanSaturatedFatGrams,
+		TargetCalories:        target.Calories, TargetProteinGrams: target.ProteinGrams,
 		TargetCarbsGrams: target.CarbsGrams, TargetFatGrams: target.FatGrams,
-		DisplayLanguage: language,
-		Turns:           turns,
-		Question:        question,
+		DisplayLanguage:  language,
+		CurrentLoggedDay: database.LocalDate(now, loc),
+		HistoryTools:     historyTools,
+		Turns:            turns,
+		Question:         question,
 	}
 
 	tctx, cancel := context.WithTimeout(r.Context(), h.visionTimeout)
@@ -181,7 +187,7 @@ func (h *foodHandlers) PostFoodAdviceChat(w http.ResponseWriter, r *http.Request
 		writeNutritionChatUnavailable(w, "unavailable")
 		return
 	}
-	writeJSON(w, nutritionChatResponse{Available: true, Answer: result.Answer})
+	writeJSON(w, nutritionChatResponse{Available: true, Answer: result.Answer, Sources: historyTools.Sources()})
 }
 
 // normalizeNutritionChatSignals accepts only the workings the Healthiness Label
@@ -217,16 +223,27 @@ func normalizeNutritionChatSignals(in []nutritionChatSignal) ([]vision.Nutrition
 		if (signal.Verdict == "ok") != (signal.Reason == "") {
 			return nil, false
 		}
-		for _, figure := range [...]*float64{signal.Value, signal.OffBoundary, signal.FarBoundary} {
+		for _, figure := range [...]*float64{signal.Value, signal.OffBoundary} {
 			if figure == nil || math.IsNaN(*figure) || math.IsInf(*figure, 0) ||
 				*figure < 0 || *figure > 100000 {
 				return nil, false
 			}
 		}
+		// Fiber and saturated fat each have one evidence-backed boundary and no
+		// `far` verdict. Every other current signal has a real second boundary,
+		// and a far verdict can never arrive without the line it crossed.
+		if signal.Code == "fiber" || signal.Code == "saturated_fat" {
+			if signal.FarBoundary != nil || signal.Verdict == "far" {
+				return nil, false
+			}
+		} else if signal.FarBoundary == nil || math.IsNaN(*signal.FarBoundary) ||
+			math.IsInf(*signal.FarBoundary, 0) || *signal.FarBoundary < 0 || *signal.FarBoundary > 100000 {
+			return nil, false
+		}
 		out = append(out, vision.NutritionChatSignal{
 			Code: signal.Code, Value: *signal.Value, Unit: signal.Unit,
 			Verdict: signal.Verdict, Reason: signal.Reason,
-			OffBoundary: *signal.OffBoundary, FarBoundary: *signal.FarBoundary,
+			OffBoundary: *signal.OffBoundary, FarBoundary: signal.FarBoundary,
 		})
 	}
 	return out, true

@@ -131,6 +131,37 @@ func TestOffProduct_ToFood_SodiumFallsBackToSaltOverTwoPointFive(t *testing.T) {
 	}
 }
 
+// Saturated fat is optional at the source, like sugar and fiber: present maps
+// through, absent defaults to 0 without excluding the product.
+func TestOffProduct_ToFood_SaturatedFatOptional(t *testing.T) {
+	withSaturatedFat := offProduct{
+		Nutriments: offNutriments{
+			EnergyKcal100g: f64(1), Proteins100g: f64(1), Carbohydrates100g: f64(1), Fat100g: f64(1),
+			SaturatedFat100g: f64(2.4),
+		},
+	}
+	food, ok := withSaturatedFat.toFood()
+	if !ok {
+		t.Fatal("expected product with saturated fat to pass the completeness filter")
+	}
+	if food.Profile.SaturatedFatPer100g != 2.4 {
+		t.Errorf("SaturatedFatPer100g = %v, want 2.4", food.Profile.SaturatedFatPer100g)
+	}
+
+	absent := offProduct{
+		Nutriments: offNutriments{
+			EnergyKcal100g: f64(1), Proteins100g: f64(1), Carbohydrates100g: f64(1), Fat100g: f64(1),
+		},
+	}
+	food2, ok := absent.toFood()
+	if !ok {
+		t.Fatal("expected missing saturated fat to still pass the filter")
+	}
+	if food2.Profile.SaturatedFatPer100g != 0 {
+		t.Errorf("SaturatedFatPer100g = %v, want 0 when absent", food2.Profile.SaturatedFatPer100g)
+	}
+}
+
 // gzipLines gzip-compresses a JSONL payload built from the given lines and
 // writes it to a temp file, returning its path.
 func gzipLines(t *testing.T, lines ...string) string {

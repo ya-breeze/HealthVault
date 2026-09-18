@@ -198,7 +198,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
             [
               ['calories', 'Calories'], ['protein_grams', 'Protein (g)'], ['carbs_grams', 'Carbs (g)'],
               ['fat_grams', 'Fat (g)'], ['sugar_grams', 'Sugar (g)'], ['sodium_grams', 'Sodium (g)'],
-              ['dietary_fiber_grams', 'Fiber (g)'],
+              ['dietary_fiber_grams', 'Fiber (g)'], ['saturated_fat_grams', 'Saturated fat (g)'],
             ] as const
           ).map(([key, label]) => (
             <label key={key} className="text-xs text-gray-600 dark:text-gray-300">

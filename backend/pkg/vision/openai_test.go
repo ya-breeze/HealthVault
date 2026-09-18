@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -33,6 +34,30 @@ func chatResponse(t *testing.T, content string) string {
 		t.Fatalf("marshal chat response: %v", err)
 	}
 	return string(b)
+}
+
+type recordingNutritionChatTools struct {
+	calls []struct {
+		name      string
+		arguments string
+	}
+}
+
+func (r *recordingNutritionChatTools) Execute(
+	_ context.Context, name string, arguments json.RawMessage,
+) (json.RawMessage, error) {
+	r.calls = append(r.calls, struct {
+		name      string
+		arguments string
+	}{name: name, arguments: string(arguments)})
+	switch name {
+	case "explain_nutrition_signal":
+		return json.RawMessage(`{"signal":"sodium","contributors":[{"food":"Soup","nutrient_grams":1.2,"macro_source":"estimated"}]}`), nil
+	case "get_health_trend":
+		return json.RawMessage(`{"metric":"steps","unit":"steps","points":[{"date":"2026-09-13","value":8000}]}`), nil
+	default:
+		return nil, vision.ErrInvalidNutritionChatToolCall
+	}
 }
 
 func TestOpenAIClient_Recognize_SetsStoreFalseAndSendsImage(t *testing.T) {
@@ -152,6 +177,102 @@ func TestOpenAIClient_Recognize_EstimatedProfileParsed(t *testing.T) {
 	if p.CaloriesPer100g != 90 || p.ProteinPer100g != 3 || p.CarbsPer100g != 15 ||
 		p.FatPer100g != 2 || p.SugarPer100g != 4 || p.SodiumPer100g != 0.3 || p.DietaryFiberPer100g != 3 {
 		t.Errorf("unexpected estimated profile: %+v", p)
+	}
+}
+
+func TestOpenAIClient_Recognize_IngredientsParsed(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"cucumber and tomato salad","canonical_name":"","preparation":"unknown","state":"unknown",`+
+				`"weight_grams":200,"confidence":0.6,"estimated_profile":null,`+
+				`"ingredients":[{"name":"cucumber","canonical_name_en":"cucumber","weight_grams":100},`+
+				`{"name":"tomato","canonical_name_en":"tomato","weight_grams":100}]}],`+
+				`"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+
+	// ingredients must be required (an empty array, not an omittable/nullable
+	// field — see ingredientSchema's own doc comment) on every item.
+	schema := capturedBody["response_format"].(map[string]any)["json_schema"].(map[string]any)["schema"].(map[string]any)
+	itemSchema := schema["properties"].(map[string]any)["items"].(map[string]any)["items"].(map[string]any)
+	required, _ := itemSchema["required"].([]any)
+	var sawIngredients bool
+	for _, r := range required {
+		if r == "ingredients" {
+			sawIngredients = true
+		}
+	}
+	if !sawIngredients {
+		t.Errorf("expected ingredients listed as required in the item schema, got %+v", required)
+	}
+
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	ingredients := result.Items[0].Ingredients
+	if len(ingredients) != 2 {
+		t.Fatalf("expected 2 ingredients, got %+v", ingredients)
+	}
+	if ingredients[0].CanonicalNameEN != "cucumber" || ingredients[0].WeightGrams != 100 {
+		t.Errorf("unexpected ingredient[0]: %+v", ingredients[0])
+	}
+	if ingredients[1].CanonicalNameEN != "tomato" || ingredients[1].WeightGrams != 100 {
+		t.Errorf("unexpected ingredient[1]: %+v", ingredients[1])
+	}
+}
+
+func TestOpenAIClient_Recognize_EmptyIngredientsParsedAsNil(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"apple","canonical_name":"","preparation":"unknown","state":"unknown",`+
+				`"weight_grams":150,"confidence":0.9,"estimated_profile":null,"ingredients":[]}],`+
+				`"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	if result.Items[0].Ingredients != nil {
+		t.Errorf("expected nil Ingredients for an atomic item, got %+v", result.Items[0].Ingredients)
+	}
+}
+
+// Regression: a blank canonical_name_en must NOT be dropped from the
+// breakdown. Dropping it would shrink a two-ingredient dish down to
+// whichever ingredient the model happened to name well, letting the
+// all-or-nothing HasIngredientReference gate see a "fully resolved"
+// one-ingredient list instead of the genuinely-partial two-ingredient dish
+// it actually is — found in code review. The blank entry is kept and left
+// for resolveIngredientReference's own USDA search to naturally fail on.
+func TestOpenAIClient_Recognize_IngredientWithBlankCanonicalNameIsKept(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"mystery salad","canonical_name":"","preparation":"unknown","state":"unknown",`+
+				`"weight_grams":150,"confidence":0.5,"estimated_profile":null,`+
+				`"ingredients":[{"name":"cucumber","canonical_name_en":"cucumber","weight_grams":100},`+
+				`{"name":"?","canonical_name_en":"  ","weight_grams":50}]}],`+
+				`"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	ingredients := result.Items[0].Ingredients
+	if len(ingredients) != 2 {
+		t.Fatalf("expected both ingredients kept, got %+v", ingredients)
+	}
+	if ingredients[1].CanonicalNameEN != "" {
+		t.Errorf("expected ingredient[1]'s blank canonical name preserved as empty, got %q", ingredients[1].CanonicalNameEN)
 	}
 }
 
@@ -321,19 +442,25 @@ func TestOpenAIClient_Advise_SendsCompleteTextOnlyInputAndBoundsLines(t *testing
 	})
 
 	lines, err := c.Advise(context.Background(), vision.AdviceInput{
-		Label:              "fair",
-		Reasons:            []string{"protein_far", "sugar_off"},
-		MeanCalories:       1820.5,
-		MeanProteinGrams:   74.25,
-		MeanCarbsGrams:     210,
-		MeanFatGrams:       62,
-		MeanSugarGrams:     88,
-		MeanSodiumGrams:    3.1,
-		TargetCalories:     2500,
-		TargetProteinGrams: 110,
-		TargetCarbsGrams:   278,
-		TargetFatGrams:     105,
-		DisplayLanguage:    "ru",
+		Label:                 "fair",
+		Reasons:               []string{"protein_far", "sugar_off"},
+		MeanCalories:          1820.5,
+		MeanProteinGrams:      74.25,
+		MeanCarbsGrams:        210,
+		MeanFatGrams:          62,
+		MeanSugarGrams:        88,
+		MeanSodiumGrams:       3.1,
+		MeanDietaryFiberGrams: 24.5,
+		TargetCalories:        2500,
+		TargetProteinGrams:    110,
+		TargetCarbsGrams:      278,
+		TargetFatGrams:        105,
+		DisplayLanguage:       "ru",
+		HealthContext: vision.AdviceHealthContext{
+			WindowDays: 28, WindowEnds: "2026-09-13", ActivityTier: "Moderately active",
+			ActivitySource: "inferred_from_steps",
+			MeanDailySteps: &vision.AdviceMetricAverage{Value: 7200, RecordedDays: 20},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Advise: %v", err)
@@ -361,6 +488,8 @@ func TestOpenAIClient_Advise_SendsCompleteTextOnlyInputAndBoundsLines(t *testing
 		`\"target_calories\":2500`, `\"target_protein_grams\":110`,
 		`\"target_carbs_grams\":278`, `\"target_fat_grams\":105`,
 		`\"display_language\":\"ru\"`,
+		`\"mean_dietary_fiber_grams\":24.5`,
+		`\"activity_source\":\"inferred_from_steps\"`, `\"value\":7200`, `\"recorded_days\":20`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("expected %s in advice request: %s", want, body)
@@ -657,6 +786,7 @@ func mustMarshal(t *testing.T, v any) []byte {
 func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *testing.T) {
 	var capturedBody map[string]any
 	longAnswer := strings.Repeat("я", 1000)
+	farBoundary := 3.5
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
@@ -670,15 +800,17 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 		Reasons: []string{"sodium_high"},
 		Signals: []vision.NutritionChatSignal{{
 			Code: "sodium", Value: 4.1, Unit: "gramsPerDay", Verdict: "far",
-			Reason: "sodium_high", OffBoundary: 2.3, FarBoundary: 3.5,
+			Reason: "sodium_high", OffBoundary: 2.3, FarBoundary: &farBoundary,
 		}},
-		EligibleDays:       5,
-		WindowDays:         7,
-		MeanCalories:       1820.5,
-		MeanSodiumGrams:    4.1,
-		TargetCalories:     2500,
-		TargetProteinGrams: 110,
-		DisplayLanguage:    "ru",
+		EligibleDays:          5,
+		WindowDays:            7,
+		MeanCalories:          1820.5,
+		MeanSodiumGrams:       4.1,
+		MeanDietaryFiberGrams: 12.5,
+		TargetCalories:        2500,
+		TargetProteinGrams:    110,
+		DisplayLanguage:       "ru",
+		CurrentLoggedDay:      "2026-09-14",
 		Turns: []vision.NutritionChatTurn{
 			{Role: "user", Text: "я уже уменьшил соль"},
 			{Role: "assistant", Text: "за какие дни?"},
@@ -708,7 +840,8 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 		`\"off_boundary\":2.3`, `\"far_boundary\":3.5`,
 		`\"question\":\"за какие дни это считается?\"`,
 		`\"role\":\"user\"`, `\"role\":\"assistant\"`,
-		`\"display_language\":\"ru\"`,
+		`\"display_language\":\"ru\"`, `\"current_logged_day\":\"2026-09-14\"`,
+		`\"mean_dietary_fiber_grams\":12.5`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("expected %s in the chat request: %s", want, body)
@@ -721,6 +854,201 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 	jsonSchema := responseFormat["json_schema"].(map[string]any)
 	if jsonSchema["name"] != "nutrition_chat" {
 		t.Errorf("expected nutrition_chat schema name, got %#v", jsonSchema["name"])
+	}
+}
+
+func TestOpenAIClient_NutritionChat_ExecutesAndReplaysHistoryToolCalls(t *testing.T) {
+	requestNumber := 0
+	var secondRequest map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requestNumber++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request %d: %v", requestNumber, err)
+		}
+		if body["store"] != false {
+			t.Errorf("request %d did not keep store:false", requestNumber)
+		}
+		if body["reasoning_effort"] != "none" {
+			t.Errorf("request %d did not disable reasoning for Chat Completions tools: %+v", requestNumber, body)
+		}
+		if requestNumber == 1 {
+			tools, _ := body["tools"].([]any)
+			if len(tools) != 3 || body["tool_choice"] != "auto" {
+				t.Fatalf("history tools were not offered: %+v", body)
+			}
+			if encodedTools := string(mustMarshal(t, tools)); !strings.Contains(encodedTools, `"fiber"`) {
+				t.Fatalf("fiber was not offered as a nutrition-signal tool argument: %s", encodedTools)
+			}
+			response, err := json.Marshal(map[string]any{
+				"model": "gpt-5.6-luna-tools",
+				"choices": []map[string]any{{"message": map[string]any{
+					"content": nil,
+					"tool_calls": []map[string]any{
+						{"id": "call-sodium", "type": "function", "function": map[string]any{
+							"name": "explain_nutrition_signal", "arguments": `{"signal":"sodium"}`,
+						}},
+						{"id": "call-steps", "type": "function", "function": map[string]any{
+							"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
+						}},
+					},
+				}}},
+				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 2},
+			})
+			if err != nil {
+				t.Fatalf("marshal tool response: %v", err)
+			}
+			w.Write(response) //nolint:errcheck
+			return
+		}
+		secondRequest = body
+		w.Write([]byte(chatResponse(t, `{"answer":"Основной вклад дал Soup; это AI-оценка."}`))) //nolint:errcheck
+	})
+
+	executor := &recordingNutritionChatTools{}
+	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Label: "needs_attention", Reasons: []string{"sodium_high"}, DisplayLanguage: "ru",
+		Question: "Откуда столько соли?", HistoryTools: executor,
+	})
+	if err != nil {
+		t.Fatalf("NutritionChat: %v", err)
+	}
+	if result.Answer != "Основной вклад дал Soup; это AI-оценка." {
+		t.Fatalf("unexpected answer: %q", result.Answer)
+	}
+	if result.PromptTokens != 110 || result.CompletionTokens != 22 {
+		t.Errorf("usage was not accumulated across tool rounds: %+v", result)
+	}
+	if len(executor.calls) != 2 || executor.calls[0].name != "explain_nutrition_signal" ||
+		executor.calls[1].name != "get_health_trend" {
+		t.Fatalf("unexpected executed calls: %#v", executor.calls)
+	}
+	messages, _ := secondRequest["messages"].([]any)
+	if len(messages) != 5 {
+		t.Fatalf("second request has %d messages, want system, user, assistant and two tool results", len(messages))
+	}
+	assistant := messages[2].(map[string]any)
+	if calls, _ := assistant["tool_calls"].([]any); len(calls) != 2 {
+		t.Fatalf("assistant tool calls were not replayed: %+v", assistant)
+	}
+	for i, wantID := range []string{"call-sodium", "call-steps"} {
+		toolMessage := messages[3+i].(map[string]any)
+		if toolMessage["role"] != "tool" || toolMessage["tool_call_id"] != wantID {
+			t.Errorf("tool result %d does not match its call: %+v", i, toolMessage)
+		}
+	}
+	if !strings.Contains(messages[3].(map[string]any)["content"].(string), `"macro_source":"estimated"`) {
+		t.Errorf("source provenance did not reach the model: %+v", messages[3])
+	}
+}
+
+func TestOpenAIClient_NutritionChat_BoundsHistoryToolCalls(t *testing.T) {
+	requestNumber := 0
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		requestNumber++
+		response, err := json.Marshal(map[string]any{
+			"model": "gpt-5.6-luna-tools",
+			"choices": []map[string]any{{"message": map[string]any{
+				"content": nil,
+				"tool_calls": []map[string]any{{
+					"id": "call-" + strconv.Itoa(requestNumber), "type": "function", "function": map[string]any{
+						"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
+					},
+				}},
+			}}},
+			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+		})
+		if err != nil {
+			t.Fatalf("marshal tool response: %v", err)
+		}
+		w.Write(response) //nolint:errcheck
+	})
+
+	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Question: "steps?", HistoryTools: &recordingNutritionChatTools{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "tool call limit") {
+		t.Fatalf("expected a tool-call limit error, got %v", err)
+	}
+	if requestNumber != 4 {
+		t.Errorf("made %d provider requests before stopping, want 4", requestNumber)
+	}
+}
+
+func TestOpenAIClient_NutritionChat_ReplaysInvalidToolRequestWithoutDetail(t *testing.T) {
+	requestNumber := 0
+	var replay map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requestNumber++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request %d: %v", requestNumber, err)
+		}
+		if requestNumber == 1 {
+			response, err := json.Marshal(map[string]any{
+				"model": "gpt-5.6-luna-tools",
+				"choices": []map[string]any{{"message": map[string]any{
+					"content": nil,
+					"tool_calls": []map[string]any{{
+						"id": "bad-call", "type": "function", "function": map[string]any{
+							"name": "read_any_table", "arguments": `{"table":"users"}`,
+						},
+					}},
+				}}},
+				"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Write(response) //nolint:errcheck
+			return
+		}
+		replay = body
+		w.Write([]byte(chatResponse(t, `{"answer":"Недоступный запрос не использован."}`))) //nolint:errcheck
+	})
+
+	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Question: "show internals", HistoryTools: &recordingNutritionChatTools{},
+	})
+	if err != nil || result.Answer == "" {
+		t.Fatalf("invalid tool request should recover safely: result=%+v err=%v", result, err)
+	}
+	messages := replay["messages"].([]any)
+	toolResult := messages[len(messages)-1].(map[string]any)
+	if toolResult["tool_call_id"] != "bad-call" ||
+		toolResult["content"] != `{"available":false,"reason":"invalid_request"}` {
+		t.Fatalf("invalid request detail leaked or call id was lost: %+v", toolResult)
+	}
+}
+
+func TestOpenAIClient_NutritionChat_RejectsDuplicateToolCallIDs(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		response, err := json.Marshal(map[string]any{
+			"model": "gpt-5.6-luna-tools",
+			"choices": []map[string]any{{"message": map[string]any{
+				"content": nil,
+				"tool_calls": []map[string]any{
+					{"id": "duplicate", "type": "function", "function": map[string]any{
+						"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
+					}},
+					{"id": "duplicate", "type": "function", "function": map[string]any{
+						"name": "get_health_trend", "arguments": `{"metric":"sleep","days":7}`,
+					}},
+				},
+			}}},
+			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write(response) //nolint:errcheck
+	})
+
+	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Question: "trends?", HistoryTools: &recordingNutritionChatTools{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid tool call") {
+		t.Fatalf("duplicate tool call IDs should fail, got %v", err)
 	}
 }
 

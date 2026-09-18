@@ -33,13 +33,15 @@ export function resolveHealthinessWindow(windowLastDayOffset: number): Healthine
 }
 
 // One day's inputs to the label: DayWindowData's state/unconfirmedMeals (so `isValidDay` applies
-// unchanged) plus the four macro/sugar/sodium sums the daily-totals endpoint now carries.
+// unchanged) plus the macro, sugar, sodium and fiber sums the daily-totals endpoint carries.
 export interface HealthinessDayData extends DayWindowData {
   proteinGrams: number;
   carbsGrams: number;
   fatGrams: number;
   sugarGrams: number;
   sodiumGrams: number;
+  dietaryFiberGrams: number;
+  saturatedFatGrams: number;
 }
 
 export type HealthinessVerdict = 'ok' | 'off' | 'far';
@@ -54,7 +56,9 @@ export type HealthinessReasonCode =
   | 'fat_low'
   | 'fat_high'
   | 'sugar_high'
-  | 'sodium_high';
+  | 'sodium_high'
+  | 'fiber_low'
+  | 'saturated_fat_high';
 
 /** The unit a signal's measured value is in, so the reader knows what the number means. */
 export type HealthinessSignalUnit = 'share' | 'gramsPerDay';
@@ -62,11 +66,10 @@ export type HealthinessSignalUnit = 'share' | 'gramsPerDay';
 /**
  * One signal's workings, reported rather than dropped, so the card can show the user what a
  * flagged advice line was actually measuring. `reason` is the code this signal contributed when
- * it was flagged and `null` when the signal was `ok`. `offBoundary` and `farBoundary` are the two
- * boundaries the value was judged against on the side it fell: for a two-sided signal that is the
- * low pair when the value sits below the `ok` band and the high pair when it sits above, and for
- * an upper-only signal it is always the upper pair. A signal that is `ok` reports the boundary
- * pair it came closest to crossing, so a row can still say what the limit was.
+ * it was flagged and `null` when the signal was `ok`. `offBoundary` is the line where the signal
+ * stops being ok. `farBoundary` is the more severe line on the same side, or `null` when the
+ * evidence defines no separate far verdict. A signal that is `ok` reports the boundary pair it
+ * came closest to crossing, so a row can still say what the limit was.
  */
 export interface HealthinessSignal {
   code: HealthinessSignalCode;
@@ -75,19 +78,29 @@ export interface HealthinessSignal {
   verdict: HealthinessVerdict;
   reason: HealthinessReasonCode | null;
   offBoundary: number;
-  farBoundary: number;
+  farBoundary: number | null;
 }
 
-/** The five signals, in the fixed tie-break order they are evaluated in. */
-export type HealthinessSignalCode = 'protein' | 'sugar' | 'sodium' | 'fat' | 'carbs';
+/** The seven signals, preserving the original five-signal tie-break order. */
+export type HealthinessSignalCode =
+  | 'protein'
+  | 'sugar'
+  | 'sodium'
+  | 'fat'
+  | 'carbs'
+  | 'fiber'
+  | 'saturated_fat';
 
 export interface HealthinessResult {
   label: HealthinessLabel;
-  /** At most two, `far` before `off`, ties broken by signal order protein/sugar/sodium/fat/carbs. */
+  /**
+   * At most two, `far` before `off`, ties broken by
+   * protein/sugar/sodium/fat/carbs/fiber/saturated_fat order.
+   */
   reasons: HealthinessReasonCode[];
   /** How many of the seven days were eligible, and so how much the means rest on. */
   eligibleDays: number;
-  /** All five signals with their measured values and boundaries, in evaluation order. */
+  /** All seven signals with their measured values and boundaries, in evaluation order. */
   signals: HealthinessSignal[];
   /** Per eligible day, from the exact same filtered seven-day pool as the verdict. */
   means: {
@@ -97,6 +110,8 @@ export interface HealthinessResult {
     fatGrams: number;
     sugarGrams: number;
     sodiumGrams: number;
+    dietaryFiberGrams: number;
+    saturatedFatGrams: number;
   };
 }
 
@@ -112,10 +127,21 @@ interface UpperOnlyBands {
   farLow: number;
 }
 
+interface LowerOnlyBands {
+  offHigh: number;
+}
+
+/** One upper boundary and no `far` band — the mirror of LowerOnlyBands for a
+ * "too much is the problem" signal whose evidence defines only one line. */
+interface UpperBoundOnlyBands {
+  offHigh: number;
+}
+
 /**
- * Threshold bands for the five Healthiness Label signals (spec's "The heuristic" §"Five signals,
- * each with three verdicts"). Boundaries are inclusive on the `ok` side — and, between `off` and
- * `far`, inclusive on the `off` side — so a value exactly on a boundary is never the worse verdict.
+ * Threshold bands for the seven Healthiness Label signals. Boundaries are inclusive on the `ok`
+ * side — and, between `off` and `far`, inclusive on the `off` side — so a value exactly on a
+ * boundary is never the worse verdict. Fiber has one lower boundary and saturated fat has one
+ * upper boundary, so neither has a `far` band.
  * Exported constants, not configuration: nothing reads them from settings and nothing tunes them
  * per user (spec's "Deliberately not in scope").
  *
@@ -141,6 +167,13 @@ interface UpperOnlyBands {
  * boundary rather than lower because salt added while cooking is invisible to photo recognition and
  * to most reference rows, so this signal systematically under-reports. A sodium flag is strong
  * evidence; the absence of one is not a clean bill — the hint copy says so. One-sided, like sugar.
+ *
+ * **Saturated fat share** (`9 × satFat / M`), the same macro-energy-as-total-energy proxy sugar's
+ * share already uses. WHO's 2023 guideline ("Saturated Fatty Acid and Trans-Fatty Acid Intake for
+ * Adults and Children: WHO Guideline") recommends no more than 10% of total energy intake from
+ * saturated fat; that single line is the `ok` boundary. Like fiber, this signal has one
+ * evidence-backed line, so it is two-state (`ok`/`off`) rather than inventing a `far` band the
+ * source doesn't support.
  */
 export const HEALTHINESS_THRESHOLDS: {
   proteinShare: TwoSidedBands;
@@ -148,12 +181,20 @@ export const HEALTHINESS_THRESHOLDS: {
   fatShare: TwoSidedBands;
   sugarShare: UpperOnlyBands;
   sodiumGramsPerDay: UpperOnlyBands;
+  fiberGramsPerDay: LowerOnlyBands;
+  saturatedFatShare: UpperBoundOnlyBands;
 } = {
   proteinShare: { farLow: 0.1, offLow: 0.15, offHigh: 0.4, farHigh: 0.45 },
   carbShare: { farLow: 0.15, offLow: 0.25, offHigh: 0.65, farHigh: 0.72 },
   fatShare: { farLow: 0.15, offLow: 0.2, offHigh: 0.4, farHigh: 0.48 },
   sugarShare: { offLow: 0.15, farLow: 0.22 },
   sodiumGramsPerDay: { offLow: 2.3, farLow: 3.5 },
+  // EFSA defines one adult adequate-intake boundary (25 g/day), not a
+  // separate severe-deficiency threshold. Keep this signal two-state rather
+  // than manufacturing a `far` band the source does not support.
+  fiberGramsPerDay: { offHigh: 25 },
+  // WHO's single 10%-of-energy line — see the doc comment above.
+  saturatedFatShare: { offHigh: 0.1 },
 };
 
 function verdictTwoSided(value: number, bands: TwoSidedBands): HealthinessVerdict {
@@ -215,6 +256,44 @@ function evalUpperOnly(
   };
 }
 
+function evalLowerOnly(
+  code: HealthinessSignalCode,
+  value: number,
+  bands: LowerOnlyBands,
+  lowReason: HealthinessReasonCode,
+  unit: HealthinessSignalUnit
+): SignalEval {
+  const verdict: HealthinessVerdict = value >= bands.offHigh ? 'ok' : 'off';
+  return {
+    code,
+    value,
+    unit,
+    verdict,
+    reason: verdict === 'ok' ? null : lowReason,
+    offBoundary: bands.offHigh,
+    farBoundary: null,
+  };
+}
+
+function evalUpperBoundOnly(
+  code: HealthinessSignalCode,
+  value: number,
+  bands: UpperBoundOnlyBands,
+  highReason: HealthinessReasonCode,
+  unit: HealthinessSignalUnit
+): SignalEval {
+  const verdict: HealthinessVerdict = value <= bands.offHigh ? 'ok' : 'off';
+  return {
+    code,
+    value,
+    unit,
+    verdict,
+    reason: verdict === 'ok' ? null : highReason,
+    offBoundary: bands.offHigh,
+    farBoundary: null,
+  };
+}
+
 /**
  * The Healthiness Label over `perDayData` (all Healthiness-relevant days the card has fetched,
  * keyed by day offset), computed from the 7-day slice `window` selects out of it. `null` means the
@@ -255,8 +334,10 @@ export function computeHealthinessLabel(
       fat: acc.fat + d.fatGrams,
       sugar: acc.sugar + d.sugarGrams,
       sodium: acc.sodium + d.sodiumGrams,
+      fiber: acc.fiber + d.dietaryFiberGrams,
+      saturatedFat: acc.saturatedFat + d.saturatedFatGrams,
     }),
-    { calories: 0, protein: 0, carbs: 0, fat: 0, sugar: 0, sodium: 0 }
+    { calories: 0, protein: 0, carbs: 0, fat: 0, sugar: 0, sodium: 0, fiber: 0, saturatedFat: 0 }
   );
 
   const macroEnergy = 4 * pooled.protein + 4 * pooled.carbs + 9 * pooled.fat;
@@ -267,8 +348,11 @@ export function computeHealthinessLabel(
   const fatShare = (9 * pooled.fat) / macroEnergy;
   const sugarShare = (4 * pooled.sugar) / macroEnergy;
   const sodiumGramsPerDay = pooled.sodium / eligible.length;
+  const fiberGramsPerDay = pooled.fiber / eligible.length;
+  const saturatedFatShare = (9 * pooled.saturatedFat) / macroEnergy;
 
-  // Order is the fixed tie-break order the spec specifies: protein, sugar, sodium, fat, carbs.
+  // Order is the fixed tie-break order: the original five remain unchanged,
+  // fiber is appended after them, and saturated fat is appended after fiber.
   const evals: SignalEval[] = [
     evalTwoSided('protein', proteinShare, HEALTHINESS_THRESHOLDS.proteinShare, 'protein_low', 'protein_high'),
     evalUpperOnly('sugar', sugarShare, HEALTHINESS_THRESHOLDS.sugarShare, 'sugar_high', 'share'),
@@ -281,6 +365,17 @@ export function computeHealthinessLabel(
     ),
     evalTwoSided('fat', fatShare, HEALTHINESS_THRESHOLDS.fatShare, 'fat_low', 'fat_high'),
     evalTwoSided('carbs', carbShare, HEALTHINESS_THRESHOLDS.carbShare, 'carbs_low', 'carbs_high'),
+    // Appended so adding fiber never changes the established tie-break order
+    // among the original five signals.
+    evalLowerOnly('fiber', fiberGramsPerDay, HEALTHINESS_THRESHOLDS.fiberGramsPerDay, 'fiber_low', 'gramsPerDay'),
+    // Appended last for the same reason.
+    evalUpperBoundOnly(
+      'saturated_fat',
+      saturatedFatShare,
+      HEALTHINESS_THRESHOLDS.saturatedFatShare,
+      'saturated_fat_high',
+      'share'
+    ),
   ];
 
   const farCount = evals.filter(e => e.verdict === 'far').length;
@@ -309,6 +404,8 @@ export function computeHealthinessLabel(
       fatGrams: pooled.fat / eligible.length,
       sugarGrams: pooled.sugar / eligible.length,
       sodiumGrams: pooled.sodium / eligible.length,
+      dietaryFiberGrams: pooled.fiber / eligible.length,
+      saturatedFatGrams: pooled.saturatedFat / eligible.length,
     },
   };
 }
