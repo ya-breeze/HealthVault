@@ -297,6 +297,21 @@ const ru: Dictionary = {
   'loggingGap.adviceDetail':
     'Эти строки пишет ИИ на основе оценки, её кодов причин и вашей цели по питанию. Они кэшируются на текущий день и создаются заново, когда меняются эти данные. Это не медицинская рекомендация.',
 
+  'foodLogHistory.title': 'История питания',
+  'foodLogHistory.loading': 'Загрузка истории питания…',
+  'foodLogHistory.retrievalError': 'Временно недоступно',
+  'foodLogHistory.countedDays': 'Засчитано дней: {count} из 7',
+  'foodLogHistory.noFoodDays': 'Дней без записей о еде: {count}',
+  'foodLogHistory.needsAttentionDays': 'Требуют внимания: {count}',
+  'foodLogHistory.outcome.counted': 'день засчитан',
+  'foodLogHistory.outcome.noFood': 'еда не записана',
+  'foodLogHistory.outcome.needsAttention': 'требует внимания',
+  'foodLogHistory.dayDescription': '{date}: {outcome}; приёмов пищи: {occasions}.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.one': '{date}: {outcome}; приёмов пищи: {occasions}; неподтверждённый приём пищи: {unconfirmed}.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.few': '{date}: {outcome}; приёмов пищи: {occasions}; неподтверждённых приёма пищи: {unconfirmed}.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.many': '{date}: {outcome}; приёмов пищи: {occasions}; неподтверждённых приёмов пищи: {unconfirmed}.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.other': '{date}: {outcome}; приёмов пищи: {occasions}; неподтверждённых приёмов пищи: {unconfirmed}.',
+
   'stepsDiagnostics.hintToggle': 'Показать диагностику',
   'stepsDiagnostics.title': 'Диагностика шагов',
   'stepsDiagnostics.columnDay': 'День',

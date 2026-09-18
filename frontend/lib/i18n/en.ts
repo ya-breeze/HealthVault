@@ -6,8 +6,8 @@
 //
 // What is covered, precisely, so this doesn't quietly overstate itself:
 // the header/navigation — including the mobile bottom navigation bar and
-// the More sheet it opens — the dashboard (its vitals grid, meal-attention
-// line, log-food actions and secondary-metric links), the meal review screen
+// the More sheet it opens — the dashboard (its vitals and Food Card grid,
+// meal-attention line, log-food actions and secondary-metric links), the meal review screen
 // (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
 // custom-food catalog list, and the Expert Mode toggle.
 //
@@ -427,6 +427,23 @@ const en = {
   'nutritionChat.open': 'Why this advice?',
   'loggingGap.adviceDetail':
     'These lines are written by an AI model from the label, its reason codes and your Nutrition Target. They are cached for the current day and regenerate when those inputs change. They are not medical advice.',
+
+  'foodLogHistory.title': 'Food log history',
+  'foodLogHistory.loading': 'Loading food logging history…',
+  'foodLogHistory.retrievalError': 'Temporarily unavailable',
+  'foodLogHistory.countedDays': 'Days counted: {count} of 7',
+  'foodLogHistory.noFoodDays': 'No food logged: {count}',
+  'foodLogHistory.needsAttentionDays': 'Need attention: {count}',
+  'foodLogHistory.outcome.counted': 'counted',
+  'foodLogHistory.outcome.noFood': 'no food logged',
+  'foodLogHistory.outcome.needsAttention': 'needs attention',
+  'foodLogHistory.dayDescription': '{date}: {outcome}; {occasions} eating occasions.',
+  // Four plural forms because the dictionary type is shared with ru.ts,
+  // which needs all four — same reasoning as dashboard.needsAttention above.
+  'foodLogHistory.dayDescriptionWithUnconfirmed.one': '{date}: {outcome}; {occasions} eating occasions; {unconfirmed} unconfirmed meal.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.few': '{date}: {outcome}; {occasions} eating occasions; {unconfirmed} unconfirmed meals.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.many': '{date}: {outcome}; {occasions} eating occasions; {unconfirmed} unconfirmed meals.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.other': '{date}: {outcome}; {occasions} eating occasions; {unconfirmed} unconfirmed meals.',
 
   // The steps detail page's diagnostic disclosure (check-the-health-data
   // spec) — collapsed by default, same hint-then-detail pattern as the
