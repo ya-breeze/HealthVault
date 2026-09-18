@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.GlanceTheme
 import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
@@ -31,7 +32,6 @@ import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.width
-import androidx.glance.material3.GlanceTheme
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -86,7 +86,9 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
             .fillMaxSize()
             .background(GlanceTheme.colors.background)
             .padding(8.dp)
-            .clickable(actionStartActivity<MainActivity>()),
+            // 1.1.0's actionStartActivity has no reified-class overload, only
+            // the Intent-taking one — build the Intent explicitly.
+            .clickable(actionStartActivity(Intent(resourceContext, MainActivity::class.java))),
     ) {
         when (state) {
             is WidgetState.SignedOut -> SignedOutBody(resourceContext)
