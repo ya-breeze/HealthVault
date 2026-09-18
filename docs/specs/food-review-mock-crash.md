@@ -45,9 +45,9 @@ cd /data/HealthVault && make test-e2e BASE_URL=http://192.168.1.54:8892
 
 ### Task 1: Fix the locator collision
 
-- [ ] Change `food.spec.ts:883`'s locator from `page.locator('label:has-text("Fat (g)") input')`
+- [x] Change `food.spec.ts:883`'s locator from `page.locator('label:has-text("Fat (g)") input')`
       to `page.getByRole('spinbutton', { name: 'Fat (g)', exact: true })`
-- [ ] Change `food.spec.ts:968`'s locator the same way
-- [ ] Re-run the full E2E suite against `hcw-wip` and confirm 0 failures (272/272, minus the 1
+- [x] Change `food.spec.ts:968`'s locator the same way
+- [x] Re-run the full E2E suite against `hcw-wip` and confirm 0 failures (272/272, minus the 1
       pre-existing skip)
-- [ ] Mark completed
+- [x] Mark completed
