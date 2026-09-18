@@ -23,6 +23,7 @@ type customFoodRequest struct {
 	SugarPer100g        float64 `json:"sugar_per_100g"`
 	SodiumPer100g       float64 `json:"sodium_per_100g"`
 	DietaryFiberPer100g float64 `json:"dietary_fiber_per_100g"`
+	SaturatedFatPer100g float64 `json:"saturated_fat_per_100g"`
 }
 
 func (req customFoodRequest) applyTo(c *database.CustomFood) {
@@ -34,6 +35,7 @@ func (req customFoodRequest) applyTo(c *database.CustomFood) {
 	c.SugarPer100g = req.SugarPer100g
 	c.SodiumPer100g = req.SodiumPer100g
 	c.DietaryFiberPer100g = req.DietaryFiberPer100g
+	c.SaturatedFatPer100g = req.SaturatedFatPer100g
 }
 
 // isUniqueViolation reports whether err is a unique-constraint failure. GORM

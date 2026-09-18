@@ -161,6 +161,7 @@ func (h *foodHandlers) ConfirmMeal(w http.ResponseWriter, r *http.Request) {
 			"sugar_grams":         meal.SugarGrams,
 			"sodium_grams":        meal.SodiumGrams,
 			"dietary_fiber_grams": meal.DietaryFiberGrams,
+			"saturated_fat_grams": meal.SaturatedFatGrams,
 		}).Error
 	})
 	if errors.Is(err, errMealNoLongerEditable) {

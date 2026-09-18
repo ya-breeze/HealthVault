@@ -3,6 +3,16 @@
 ## Status
 Accepted
 
+> **Update (`docs/specs/saturated-fat-signal.md`, 2026-09-18):** saturated fat is now the seventh
+> deterministic signal, a share of pooled macro energy (`9 × saturatedFat / macroEnergy`), the same
+> proxy sugar's share uses. WHO's 2023 guideline ("Saturated Fatty Acid and Trans-Fatty Acid Intake
+> for Adults and Children: WHO Guideline") recommends no more than 10% of total energy intake from
+> saturated fat — one evidence-backed boundary, so like fiber it has no invented `far` verdict. It
+> is appended after fiber, preserving every earlier signal's reason precedence; saturated fat is now
+> last. Populated from both USDA and Open Food Facts reference data — no new provenance column was
+> needed, since a `FoodItem`'s `fdc_id`/`off_code` were already mutually exclusive per resolved
+> reference match.
+
 > **Update (`docs/specs/fiber-signal-actionable-chat-sources.md`, 2026-09-14):** dietary fiber is
 > now the sixth deterministic signal. Its pooled mean uses EFSA's adult adequate intake of
 > 25 g/day as a single lower boundary: below it is `off`, at or above it is `ok`, and fiber has no

@@ -97,6 +97,7 @@ type offNutriments struct {
 	Fiber100g         *float64 `json:"fiber_100g"`
 	Sodium100g        *float64 `json:"sodium_100g"`
 	Salt100g          *float64 `json:"salt_100g"`
+	SaturatedFat100g  *float64 `json:"saturated-fat_100g"`
 }
 
 // matchesCountry reports whether p is tagged Czech and/or Slovak.
@@ -115,10 +116,10 @@ func (p *offProduct) matchesCountry() bool {
 // energy-kj_100g, which are off by roughly 4x if misread as kcal); sodium
 // from sodium_100g, falling back to salt_100g/2.5 (the EU 2013 salt->sodium
 // labeling conversion) when only salt is present, defaulting to 0 when
-// neither is; sugar/fiber default to 0 when absent. ok is false when the
-// product is missing calories or any of protein/carbs/fat — the
-// completeness bar this import enforces. Sodium/sugar/fiber absence does
-// NOT exclude a product.
+// neither is; sugar/fiber/saturated fat default to 0 when absent. ok is false
+// when the product is missing calories or any of protein/carbs/fat — the
+// completeness bar this import enforces. Sodium/sugar/fiber/saturated fat
+// absence does NOT exclude a product.
 func (p *offProduct) toFood() (Food, bool) {
 	n := p.Nutriments
 	if n.EnergyKcal100g == nil || n.Proteins100g == nil || n.Carbohydrates100g == nil || n.Fat100g == nil {
@@ -135,6 +136,9 @@ func (p *offProduct) toFood() (Food, bool) {
 	}
 	if n.Fiber100g != nil {
 		profile.DietaryFiberPer100g = *n.Fiber100g
+	}
+	if n.SaturatedFat100g != nil {
+		profile.SaturatedFatPer100g = *n.SaturatedFat100g
 	}
 	switch {
 	case n.Sodium100g != nil:

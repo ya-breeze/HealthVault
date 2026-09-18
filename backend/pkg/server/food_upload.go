@@ -811,7 +811,7 @@ func (h *foodHandlers) persistAnalysis(
 	updates := map[string]any{
 		"status": status, "raw_response": rawResponse,
 		"calories": 0, "protein_grams": 0, "carbs_grams": 0, "fat_grams": 0,
-		"sugar_grams": 0, "sodium_grams": 0, "dietary_fiber_grams": 0,
+		"sugar_grams": 0, "sodium_grams": 0, "dietary_fiber_grams": 0, "saturated_fat_grams": 0,
 	}
 	if clarifyLog != nil {
 		updates["clarify_log"] = *clarifyLog
@@ -847,7 +847,7 @@ func (h *foodHandlers) persistAnalysis(
 	meal.RawResponse = rawResponse
 	meal.Items = items
 	meal.Calories, meal.ProteinGrams, meal.CarbsGrams, meal.FatGrams = 0, 0, 0, 0
-	meal.SugarGrams, meal.SodiumGrams, meal.DietaryFiberGrams = 0, 0, 0
+	meal.SugarGrams, meal.SodiumGrams, meal.DietaryFiberGrams, meal.SaturatedFatGrams = 0, 0, 0, 0
 	if clarifyLog != nil {
 		meal.ClarifyLog = *clarifyLog
 	}

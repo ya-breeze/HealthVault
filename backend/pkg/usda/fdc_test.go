@@ -43,7 +43,8 @@ const sampleFoodCSV = `"fdc_id","data_type","description","food_category_id","pu
 "169704","sr_legacy_food","Rice, white, long-grain, regular, cooked","20","2019-04-01"
 `
 
-// Energy 1008, protein 1003, carbs 1005, fat 1004, sugars 2000, sodium 1093 (mg), fiber 1079.
+// Energy 1008, protein 1003, carbs 1005, fat 1004, sugars 2000, sodium 1093 (mg), fiber 1079,
+// saturated fat 1258.
 const sampleNutrientCSV = `"id","fdc_id","nutrient_id","amount"
 "1","171077","1008","165"
 "2","171077","1003","31.02"
@@ -51,6 +52,7 @@ const sampleNutrientCSV = `"id","fdc_id","nutrient_id","amount"
 "4","169704","1008","130"
 "5","169704","1005","28.17"
 "6","169704","1079","0.4"
+"7","171077","1258","3.2"
 `
 
 func TestImportZip_ParsesFoodsAndNutrients(t *testing.T) {
@@ -108,6 +110,9 @@ func TestImportZip_SodiumConvertedToGrams(t *testing.T) {
 	}
 	if f.Profile.CaloriesPer100g != 165 || f.Profile.ProteinPer100g != 31.02 {
 		t.Errorf("profile = %+v, want 165 kcal / 31.02 g protein", f.Profile)
+	}
+	if f.Profile.SaturatedFatPer100g != 3.2 {
+		t.Errorf("SaturatedFatPer100g = %v, want 3.2 (FDC nutrient id 1258)", f.Profile.SaturatedFatPer100g)
 	}
 }
 

@@ -155,6 +155,7 @@ const en = {
   'item.editNutrients': 'Edit nutrients',
   'item.sodium': 'Sodium',
   'item.fiber': 'Fiber',
+  'item.saturatedFat': 'Saturated fat',
   'item.deleteTitle': 'Delete item',
   'item.confirm': 'Confirm',
   'item.cancel': 'Cancel',
@@ -230,6 +231,7 @@ const en = {
   'resolver.sugar': 'Sugar (g)',
   'resolver.sodium': 'Sodium (g)',
   'resolver.fiber': 'Fiber (g)',
+  'resolver.saturatedFat': 'Saturated fat (g)',
   'resolver.saveAsCustomFood': 'Save as a reusable food, so a future photo of this dish can match it automatically',
   'resolver.save': 'Save',
   'resolver.saving': 'Saving…',
@@ -392,8 +394,9 @@ const en = {
   'loggingGap.healthinessReason.sugar_high': 'sugar is high',
   'loggingGap.healthinessReason.sodium_high': 'sodium is high',
   'loggingGap.healthinessReason.fiber_low': 'fiber is low',
+  'loggingGap.healthinessReason.saturated_fat_high': 'saturated fat is high',
   'loggingGap.healthinessHintNote':
-    "The label covers macro balance, total sugars, sodium and fiber on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
+    "The label covers macro balance, total sugars, sodium, fiber and saturated fat on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
   'nutritionChat.title': 'About this advice',
   'nutritionChat.basisTitle': 'What this is based on',
   'nutritionChat.basis.off.above': '{signal}: {value} per day on average, above the {threshold} guideline.',
@@ -408,6 +411,7 @@ const en = {
   'nutritionChat.signal.sugar': 'Sugar share',
   'nutritionChat.signal.sodium': 'Sodium',
   'nutritionChat.signal.fiber': 'Fiber',
+  'nutritionChat.signal.saturated_fat': 'Saturated fat share',
   'nutritionChat.gramsPerDay': '{value} g',
   'nutritionChat.sourcesTitle': 'Records used in this answer',
   'nutritionChat.sourceContribution': '{signal}: {value} g · {date}',
@@ -503,6 +507,7 @@ const en = {
   'dataTable.column.sugarGrams': 'Sugar (g)',
   'dataTable.column.sodiumGrams': 'Sodium (g)',
   'dataTable.column.dietaryFiberGrams': 'Dietary fiber (g)',
+  'dataTable.column.saturatedFatGrams': 'Saturated fat (g)',
 
   // One per DATA_TYPES entry. Translated rather than derived from the type id:
   // the dashboard used to render a secondary metric's label by replacing
