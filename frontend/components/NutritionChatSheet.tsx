@@ -169,6 +169,7 @@ export default function NutritionChatSheet({
       case 'sugar': return t('nutritionChat.signal.sugar');
       case 'sodium': return t('nutritionChat.signal.sodium');
       case 'fiber': return t('nutritionChat.signal.fiber');
+      case 'saturated_fat': return t('nutritionChat.signal.saturated_fat');
       default: return signal;
     }
   }

@@ -1,15 +1,86 @@
 package off_test
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	_ "github.com/mattn/go-sqlite3" // sqlite3 driver
+
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/off"
 )
+
+// buildPreSaturatedFatIndex builds a promoted database using the schema this
+// package shipped before saturated_fat existed, to prove Open/Search/ByCode
+// still work against a file an operator hasn't reimported yet — see
+// docs/specs/saturated-fat-signal.md's blocking finding on this exact gap.
+func buildPreSaturatedFatIndex(t *testing.T, code, name, brands string, kcal float64) string {
+	t.Helper()
+	target := filepath.Join(t.TempDir(), "off.db")
+	db, err := sql.Open("sqlite3", target)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close() //nolint:errcheck
+	const legacySchema = `
+CREATE TABLE off_foods (
+  rowid        INTEGER PRIMARY KEY,
+  code         TEXT    NOT NULL UNIQUE,
+  product_name TEXT    NOT NULL,
+  brands       TEXT    NOT NULL DEFAULT '',
+  calories     REAL    NOT NULL DEFAULT 0,
+  protein      REAL    NOT NULL DEFAULT 0,
+  carbs        REAL    NOT NULL DEFAULT 0,
+  fat          REAL    NOT NULL DEFAULT 0,
+  sugar        REAL    NOT NULL DEFAULT 0,
+  sodium       REAL    NOT NULL DEFAULT 0,
+  fiber        REAL    NOT NULL DEFAULT 0
+);
+CREATE VIRTUAL TABLE off_foods_fts USING fts5(product_name, brands, content='off_foods', content_rowid='rowid');
+`
+	if _, err := db.Exec(legacySchema); err != nil {
+		t.Fatalf("create legacy schema (sqlite_fts5 build tag set?): %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO off_foods (code, product_name, brands, calories, protein) VALUES (?,?,?,?,?)`,
+		code, name, brands, kcal, 5.0,
+	); err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO off_foods_fts(off_foods_fts) VALUES('rebuild')`); err != nil {
+		t.Fatalf("rebuild fts: %v", err)
+	}
+	return target
+}
+
+func TestOpen_PreSaturatedFatDatabaseDegradesGracefully(t *testing.T) {
+	path := buildPreSaturatedFatIndex(t, "111", "Bílý jogurt", "Olma", 65)
+	idx, err := off.Open(path)
+	if err != nil {
+		t.Fatalf("Open on a pre-upgrade database must not fail: %v", err)
+	}
+	defer idx.Close() //nolint:errcheck
+
+	byCode, err := idx.ByCode("111")
+	if err != nil {
+		t.Fatalf("ByCode on a pre-upgrade database must not fail: %v", err)
+	}
+	if byCode == nil || byCode.Profile.CaloriesPer100g != 65 || byCode.Profile.SaturatedFatPer100g != 0 {
+		t.Fatalf("got %+v, want the yogurt profile with SaturatedFatPer100g 0", byCode)
+	}
+
+	results, err := idx.Search("jogurt", "Olma", off.DefaultCandidates)
+	if err != nil {
+		t.Fatalf("Search on a pre-upgrade database must not fail: %v", err)
+	}
+	if len(results) != 1 || results[0].Profile.SaturatedFatPer100g != 0 {
+		t.Fatalf("got %+v, want one result with SaturatedFatPer100g 0", results)
+	}
+}
 
 func product(code, name, brands string, kcal float64) off.Food {
 	return off.Food{

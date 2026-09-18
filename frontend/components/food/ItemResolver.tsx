@@ -14,6 +14,7 @@ export interface NutrientValues {
   sugar_grams: number;
   sodium_grams: number;
   dietary_fiber_grams: number;
+  saturated_fat_grams: number;
 }
 
 const EMPTY_NUTRIENTS: NutrientValues = {
@@ -24,6 +25,7 @@ const EMPTY_NUTRIENTS: NutrientValues = {
   sugar_grams: 0,
   sodium_grams: 0,
   dietary_fiber_grams: 0,
+  saturated_fat_grams: 0,
 };
 
 interface Props {
@@ -121,6 +123,7 @@ export default function ItemResolver({
     initialMacros?.sugar_grams,
     initialMacros?.sodium_grams,
     initialMacros?.dietary_fiber_grams,
+    initialMacros?.saturated_fat_grams,
   ]);
 
   const search = async () => {
@@ -309,6 +312,7 @@ export default function ItemResolver({
               ['carbs_grams', 'resolver.carbs'], ['fat_grams', 'resolver.fat'],
               ['sugar_grams', 'resolver.sugar'], ['sodium_grams', 'resolver.sodium'],
               ['dietary_fiber_grams', 'resolver.fiber'],
+              ['saturated_fat_grams', 'resolver.saturatedFat'],
             ] as const
           ).map(([key, labelKey]) => (
             <label key={key} className="text-xs text-gray-600 dark:text-gray-300">

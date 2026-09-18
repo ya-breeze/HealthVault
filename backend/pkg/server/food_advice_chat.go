@@ -29,7 +29,7 @@ const (
 	// The Healthiness Label's own window, restated here because the model is
 	// told what the means rest on and the server must not guess it.
 	nutritionChatWindowDays = 7
-	nutritionChatMaxSignals = 6
+	nutritionChatMaxSignals = 7
 	// A provider error can carry a whole response body, so the logged form is
 	// bounded as well as redacted.
 	nutritionChatMaxLoggedErrorRune = 300
@@ -162,6 +162,7 @@ func (h *foodHandlers) PostFoodAdviceChat(w http.ResponseWriter, r *http.Request
 		MeanCarbsGrams: *req.Window.MeanCarbsGrams, MeanFatGrams: *req.Window.MeanFatGrams,
 		MeanSugarGrams: *req.Window.MeanSugarGrams, MeanSodiumGrams: *req.Window.MeanSodiumGrams,
 		MeanDietaryFiberGrams: *req.Window.MeanDietaryFiberGrams,
+		MeanSaturatedFatGrams: *req.Window.MeanSaturatedFatGrams,
 		TargetCalories:        target.Calories, TargetProteinGrams: target.ProteinGrams,
 		TargetCarbsGrams: target.CarbsGrams, TargetFatGrams: target.FatGrams,
 		DisplayLanguage:  language,
@@ -228,10 +229,10 @@ func normalizeNutritionChatSignals(in []nutritionChatSignal) ([]vision.Nutrition
 				return nil, false
 			}
 		}
-		// Fiber has one evidence-backed adequate-intake boundary and no `far`
-		// verdict. Every other current signal has a real second boundary, and a
-		// far verdict can never arrive without the line it crossed.
-		if signal.Code == "fiber" {
+		// Fiber and saturated fat each have one evidence-backed boundary and no
+		// `far` verdict. Every other current signal has a real second boundary,
+		// and a far verdict can never arrive without the line it crossed.
+		if signal.Code == "fiber" || signal.Code == "saturated_fat" {
 			if signal.FarBoundary != nil || signal.Verdict == "far" {
 				return nil, false
 			}

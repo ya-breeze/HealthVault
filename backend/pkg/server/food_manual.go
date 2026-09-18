@@ -15,7 +15,7 @@ import (
 // manualMealItemRequest is one item in a POST /api/food/meals/manual request.
 // Source selects how the item's macros are determined:
 //   - "reference": scaled from a bound fdc_id or custom_food_id profile by WeightGrams.
-//   - "manual": the 7 macro fields are stored exactly as given.
+//   - "manual": the 8 macro fields are stored exactly as given.
 type manualMealItemRequest struct {
 	Name         string     `json:"name"`
 	Source       string     `json:"source"`
@@ -31,6 +31,7 @@ type manualMealItemRequest struct {
 	SugarGrams        float64 `json:"sugar_grams"`
 	SodiumGrams       float64 `json:"sodium_grams"`
 	DietaryFiberGrams float64 `json:"dietary_fiber_grams"`
+	SaturatedFatGrams float64 `json:"saturated_fat_grams"`
 }
 
 type manualMealRequest struct {
@@ -121,6 +122,7 @@ func (h *foodHandlers) CreateManualMeal(w http.ResponseWriter, r *http.Request) 
 			item.SugarGrams = itemReq.SugarGrams
 			item.SodiumGrams = itemReq.SodiumGrams
 			item.DietaryFiberGrams = itemReq.DietaryFiberGrams
+			item.SaturatedFatGrams = itemReq.SaturatedFatGrams
 		default:
 			http.Error(w, `item source must be "reference" or "manual"`, http.StatusBadRequest)
 			return

@@ -53,7 +53,7 @@ func chatBody(question string, turns []map[string]any) map[string]any {
 			"mean_calories": 1820.5, "mean_protein_grams": 74.25,
 			"mean_carbs_grams": 210.25, "mean_fat_grams": 62.5,
 			"mean_sugar_grams": 88.75, "mean_sodium_grams": 4.1,
-			"mean_dietary_fiber_grams": 12.5,
+			"mean_dietary_fiber_grams": 12.5, "mean_saturated_fat_grams": 8.5,
 		},
 		"signals": []map[string]any{
 			chatSignal("sodium", "gramsPerDay", "far", "sodium_high", 4.1, 2.3, 3.5),
@@ -196,6 +196,9 @@ func TestFoodAdviceChat_AnswersFromTheCallersOwnEvidence(t *testing.T) {
 	}
 	if in.MeanDietaryFiberGrams != 12.5 {
 		t.Errorf("expected the posted fiber mean, got %v", in.MeanDietaryFiberGrams)
+	}
+	if in.MeanSaturatedFatGrams != 8.5 {
+		t.Errorf("expected the posted saturated fat mean, got %v", in.MeanSaturatedFatGrams)
 	}
 }
 
@@ -453,6 +456,9 @@ func TestFoodAdviceChat_AuthenticationOriginAndInput(t *testing.T) {
 		"a missing fiber window mean": func(b map[string]any) {
 			delete(b["window"].(map[string]any), "mean_dietary_fiber_grams")
 		},
+		"a missing saturated fat window mean": func(b map[string]any) {
+			delete(b["window"].(map[string]any), "mean_saturated_fat_grams")
+		},
 		"an unknown verdict": func(b map[string]any) {
 			b["signals"] = []map[string]any{chatSignal("sodium", "gramsPerDay", "terrible", "sodium_high", 4.1, 2.3, 3.5)}
 		},
@@ -479,6 +485,14 @@ func TestFoodAdviceChat_AuthenticationOriginAndInput(t *testing.T) {
 		},
 		"a fiber signal with a far verdict": func(b map[string]any) {
 			s := chatSignal("fiber", "gramsPerDay", "far", "fiber_low", 5, 25, 10)
+			delete(s, "far_boundary")
+			b["signals"] = []map[string]any{s}
+		},
+		"a saturated_fat signal with an invented far boundary": func(b map[string]any) {
+			b["signals"] = []map[string]any{chatSignal("saturated_fat", "share", "off", "saturated_fat_high", 0.12, 0.1, 0.15)}
+		},
+		"a saturated_fat signal with a far verdict": func(b map[string]any) {
+			s := chatSignal("saturated_fat", "share", "far", "saturated_fat_high", 0.2, 0.1, 0.15)
 			delete(s, "far_boundary")
 			b["signals"] = []map[string]any{s}
 		},

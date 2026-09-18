@@ -17,8 +17,8 @@ import (
 type DailyTotal struct {
 	Date     string  `json:"date"`
 	Calories float64 `json:"calories"`
-	// ProteinGrams, CarbsGrams, FatGrams, SugarGrams, SodiumGrams and
-	// DietaryFiberGrams are summed
+	// ProteinGrams, CarbsGrams, FatGrams, SugarGrams, SodiumGrams,
+	// DietaryFiberGrams and SaturatedFatGrams are summed
 	// the same way, and over the same `confirmed`-status meals, as Calories.
 	// They carry no `omitempty`: a day with confirmed meals whose sum is
 	// exactly zero (or no confirmed meals at all) is a legitimate zero, not an
@@ -31,6 +31,7 @@ type DailyTotal struct {
 	SugarGrams        float64 `json:"sugar_grams"`
 	SodiumGrams       float64 `json:"sodium_grams"`
 	DietaryFiberGrams float64 `json:"dietary_fiber_grams"`
+	SaturatedFatGrams float64 `json:"saturated_fat_grams"`
 	UnconfirmedMeals  int     `json:"unconfirmed_meals"`
 }
 
@@ -75,7 +76,7 @@ func DailyTotalsRange(
 	var meals []FoodMeal
 	if err := db.Select(
 		"logged_at", "calories", "protein_grams", "carbs_grams", "fat_grams",
-		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "status",
+		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "saturated_fat_grams", "status",
 	).
 		Where("user_id = ? AND logged_at >= ? AND logged_at < ?",
 			userID, windowStart, windowEnd).
@@ -95,6 +96,7 @@ func DailyTotalsRange(
 			s.sugarGrams += m.SugarGrams
 			s.sodiumGrams += m.SodiumGrams
 			s.dietaryFiberGrams += m.DietaryFiberGrams
+			s.saturatedFatGrams += m.SaturatedFatGrams
 			sumsByDate[d] = s
 			continue
 		}
@@ -114,6 +116,7 @@ func DailyTotalsRange(
 			SugarGrams:        s.sugarGrams,
 			SodiumGrams:       s.sodiumGrams,
 			DietaryFiberGrams: s.dietaryFiberGrams,
+			SaturatedFatGrams: s.saturatedFatGrams,
 			UnconfirmedMeals:  unconfirmedByDate[dateStr],
 		})
 	}
@@ -132,4 +135,5 @@ type dailyMealSums struct {
 	sugarGrams        float64
 	sodiumGrams       float64
 	dietaryFiberGrams float64
+	saturatedFatGrams float64
 }

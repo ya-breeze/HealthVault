@@ -231,7 +231,8 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
           className="mt-1 text-xs text-gray-500 dark:text-gray-400"
         >
           {t('item.sodium')} {item.sodium_grams.toFixed(2)}{t('unit.grams')} ·{' '}
-          {t('item.fiber')} {item.dietary_fiber_grams.toFixed(1)}{t('unit.grams')}
+          {t('item.fiber')} {item.dietary_fiber_grams.toFixed(1)}{t('unit.grams')} ·{' '}
+          {t('item.saturatedFat')} {item.saturated_fat_grams.toFixed(1)}{t('unit.grams')}
         </div>
       )}
 
@@ -283,6 +284,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
             sugar_grams: item.sugar_grams,
             sodium_grams: item.sodium_grams,
             dietary_fiber_grams: item.dietary_fiber_grams,
+            saturated_fat_grams: item.saturated_fat_grams,
           }}
         />
       )}
