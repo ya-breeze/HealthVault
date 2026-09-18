@@ -182,6 +182,6 @@ existing `sugar_grams` field is untouched.
 
 - [x] Update ADR-004 and CONTEXT.md without rewriting any merged spec
 - [x] Run every validation command against the final branch and deployed WIP stack
-- [ ] Run the Review Gate and resolve every valid finding
-- [ ] Confirm that no task box remains unticked
+- [x] Run the Review Gate and resolve every valid finding
+- [x] Confirm that no task box remains unticked
 - [ ] Mark completed
