@@ -39,7 +39,7 @@ func adviceBody(label string, reasons []string, protein float64) map[string]any 
 			"mean_calories": 1820.5, "mean_protein_grams": protein,
 			"mean_carbs_grams": 210.25, "mean_fat_grams": 62.5,
 			"mean_sugar_grams": 88.75, "mean_sodium_grams": 3.1,
-			"mean_dietary_fiber_grams": 24.5,
+			"mean_dietary_fiber_grams": 24.5, "mean_saturated_fat_grams": 5.5,
 		},
 	}
 }
@@ -454,6 +454,11 @@ func TestFoodAdvice_FailureValidationOriginAndAuthStates(t *testing.T) {
 		{"missing fiber window figure", func() map[string]any {
 			body := adviceBody("fair", nil, 70)
 			delete(body["window"].(map[string]any), "mean_dietary_fiber_grams")
+			return body
+		}()},
+		{"missing saturated fat window figure", func() map[string]any {
+			body := adviceBody("fair", nil, 70)
+			delete(body["window"].(map[string]any), "mean_saturated_fat_grams")
 			return body
 		}()},
 	} {

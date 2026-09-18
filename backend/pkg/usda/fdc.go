@@ -24,16 +24,17 @@ var DefaultSources = []string{
 	"https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip",
 }
 
-// FDC nutrient IDs for the 7 macros HealthVault tracks.
+// FDC nutrient IDs for the 8 macros HealthVault tracks.
 const (
-	nutrientEnergyKcal = 1008
-	nutrientProtein    = 1003
-	nutrientCarbs      = 1005
-	nutrientFat        = 1004
-	nutrientSugars     = 2000 // "Sugars, total including NLEA"
-	nutrientSugarsAlt  = 1063
-	nutrientSodium     = 1093
-	nutrientFiber      = 1079
+	nutrientEnergyKcal   = 1008
+	nutrientProtein      = 1003
+	nutrientCarbs        = 1005
+	nutrientFat          = 1004
+	nutrientSugars       = 2000 // "Sugars, total including NLEA"
+	nutrientSugarsAlt    = 1063
+	nutrientSodium       = 1093
+	nutrientFiber        = 1079
+	nutrientSaturatedFat = 1258 // "Fatty acids, total saturated"
 )
 
 // Fetch returns a readable local copy of src, downloading it if it is a URL.
@@ -235,5 +236,7 @@ func assignNutrient(p *database.NutrientProfile, nutrientID int, amount float64)
 		p.SodiumPer100g = amount / 1000.0
 	case nutrientFiber:
 		p.DietaryFiberPer100g = amount
+	case nutrientSaturatedFat:
+		p.SaturatedFatPer100g = amount
 	}
 }

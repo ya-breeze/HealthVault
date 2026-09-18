@@ -283,13 +283,24 @@ func TestFoodItem_ApplyProfileScalesByWeight(t *testing.T) {
 	}
 }
 
+// Saturated fat scales by weight the same way every other per-100g nutrient
+// does — the 8th field must not have been missed in applyScaledProfile.
+func TestFoodItem_ApplyProfileScalesSaturatedFatByWeight(t *testing.T) {
+	it := database.FoodItem{WeightGrams: 200}
+	it.ApplyProfile(database.NutrientProfile{SaturatedFatPer100g: 4})
+
+	if math.Abs(it.SaturatedFatGrams-8) > 1e-9 {
+		t.Errorf("SaturatedFatGrams = %v, want 8", it.SaturatedFatGrams)
+	}
+}
+
 // The bug this guards: aggregating only reference-bound items zeroes out a meal
 // logged entirely from package labels.
 func TestFoodMeal_AggregateIncludesManualItems(t *testing.T) {
 	items := []database.FoodItem{
-		{MacroSource: database.MacroSourceReference, Calories: 100, ProteinGrams: 10},
-		{MacroSource: database.MacroSourceManual, Calories: 250, ProteinGrams: 5},
-		{MacroSource: database.MacroSourceNone, Calories: 999, ProteinGrams: 999},
+		{MacroSource: database.MacroSourceReference, Calories: 100, ProteinGrams: 10, SaturatedFatGrams: 2},
+		{MacroSource: database.MacroSourceManual, Calories: 250, ProteinGrams: 5, SaturatedFatGrams: 3},
+		{MacroSource: database.MacroSourceNone, Calories: 999, ProteinGrams: 999, SaturatedFatGrams: 999},
 	}
 	var m database.FoodMeal
 	m.Aggregate(items)
@@ -299,6 +310,9 @@ func TestFoodMeal_AggregateIncludesManualItems(t *testing.T) {
 	}
 	if m.ProteinGrams != 15 {
 		t.Errorf("ProteinGrams = %v, want 15", m.ProteinGrams)
+	}
+	if m.SaturatedFatGrams != 5 {
+		t.Errorf("SaturatedFatGrams = %v, want 5 (reference + manual, excluding none)", m.SaturatedFatGrams)
 	}
 }
 
@@ -465,6 +479,29 @@ func TestFoodItem_PlausibleEstimatedProfile_SugarPlusFiberBoundaryPasses(t *test
 	}
 }
 
+// Saturated fat cannot legitimately exceed total fat — it's a subset by
+// definition.
+func TestFoodItem_PlausibleEstimatedProfile_SaturatedFatExceedingFatRejected(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 310, ProteinPer100g: 25, CarbsPer100g: 30, FatPer100g: 10, SaturatedFatPer100g: 13,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Error("expected saturated fat 13 against total fat 10 (past the 2g tolerance) to be rejected")
+	}
+}
+
+// Saturated fat exactly at the fat+2g tolerance boundary is still usable.
+func TestFoodItem_PlausibleEstimatedProfile_SaturatedFatAtBoundaryPasses(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 310, ProteinPer100g: 25, CarbsPer100g: 30, FatPer100g: 10, SaturatedFatPer100g: 12,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); !ok {
+		t.Error("expected saturated fat 12 against total fat 10 (exactly fat+2g) to be usable")
+	}
+}
+
 // Declared calories below the one-sided Atwater threshold are rejected.
 func TestFoodItem_PlausibleEstimatedProfile_CaloriesBelowAtwaterThresholdRejected(t *testing.T) {
 	it := database.FoodItem{}
@@ -602,7 +639,7 @@ func TestFoodMeal_JSONFieldsAreSnakeCase(t *testing.T) {
 	for _, key := range []string{
 		"id", "family_id", "user_id", "status", "logged_at", "name",
 		"clarify_round", "calories", "protein_grams", "carbs_grams", "fat_grams",
-		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "items",
+		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "saturated_fat_grams", "items",
 	} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("expected JSON key %q, got keys %v", key, keysOf(raw))

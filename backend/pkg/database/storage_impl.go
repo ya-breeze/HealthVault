@@ -63,7 +63,7 @@ var columnAllowlist = map[string][]string{
 	"food_meals": {
 		"id", "logged_at", "name", "status",
 		"calories", "protein_grams", "carbs_grams", "fat_grams",
-		"sugar_grams", "sodium_grams", "dietary_fiber_grams",
+		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "saturated_fat_grams",
 	},
 }
 

@@ -113,6 +113,7 @@ func (t *nutritionChatHistoryTools) Execute(
 
 var nutritionHistorySignals = map[string]bool{
 	"protein": true, "carbs": true, "fat": true, "sugar": true, "sodium": true, "fiber": true,
+	"saturated_fat": true,
 }
 
 var nutritionHistoryMetrics = map[string]bool{"steps": true, "sleep": true, "weight": true}
@@ -238,6 +239,8 @@ func nutritionSignalMealValue(meal database.FoodMeal, signal string) float64 {
 		return meal.SodiumGrams
 	case "fiber":
 		return meal.DietaryFiberGrams
+	case "saturated_fat":
+		return meal.SaturatedFatGrams
 	default:
 		return 0
 	}
@@ -257,6 +260,8 @@ func nutritionSignalItemValue(item database.FoodItem, signal string) float64 {
 		return item.SodiumGrams
 	case "fiber":
 		return item.DietaryFiberGrams
+	case "saturated_fat":
+		return item.SaturatedFatGrams
 	default:
 		return 0
 	}
@@ -478,6 +483,7 @@ type nutritionDayItemResult struct {
 	SugarGrams        float64 `json:"sugar_grams"`
 	SodiumGrams       float64 `json:"sodium_grams"`
 	DietaryFiberGrams float64 `json:"dietary_fiber_grams"`
+	SaturatedFatGrams float64 `json:"saturated_fat_grams"`
 	MacroSource       string  `json:"macro_source"`
 	Confidence        float64 `json:"confidence"`
 }
@@ -493,6 +499,7 @@ type nutritionDayMealResult struct {
 	SugarGrams        float64                  `json:"sugar_grams"`
 	SodiumGrams       float64                  `json:"sodium_grams"`
 	DietaryFiberGrams float64                  `json:"dietary_fiber_grams"`
+	SaturatedFatGrams float64                  `json:"saturated_fat_grams"`
 	Items             []nutritionDayItemResult `json:"items"`
 }
 
@@ -540,7 +547,8 @@ func (t *nutritionChatHistoryTools) getDayDetails(
 			LoggedAt: meal.LoggedAt.In(t.loc).Format(time.RFC3339), Name: meal.Name, Status: meal.Status,
 			Calories: meal.Calories, ProteinGrams: meal.ProteinGrams, CarbsGrams: meal.CarbsGrams,
 			FatGrams: meal.FatGrams, SugarGrams: meal.SugarGrams, SodiumGrams: meal.SodiumGrams,
-			DietaryFiberGrams: meal.DietaryFiberGrams, Items: make([]nutritionDayItemResult, 0),
+			DietaryFiberGrams: meal.DietaryFiberGrams, SaturatedFatGrams: meal.SaturatedFatGrams,
+				Items: make([]nutritionDayItemResult, 0),
 		}
 		for _, item := range meal.Items {
 			if itemCount >= nutritionChatMaxDayItems {
@@ -556,7 +564,8 @@ func (t *nutritionChatHistoryTools) getDayDetails(
 				ProteinGrams: item.ProteinGrams, CarbsGrams: item.CarbsGrams,
 				FatGrams: item.FatGrams, SugarGrams: item.SugarGrams,
 				SodiumGrams: item.SodiumGrams, DietaryFiberGrams: item.DietaryFiberGrams,
-				MacroSource: item.MacroSource, Confidence: item.Confidence,
+				SaturatedFatGrams: item.SaturatedFatGrams,
+				MacroSource:       item.MacroSource, Confidence: item.Confidence,
 			})
 			itemCount++
 		}

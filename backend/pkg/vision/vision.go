@@ -162,6 +162,7 @@ type AdviceInput struct {
 	MeanSugarGrams        float64             `json:"mean_sugar_grams"`
 	MeanSodiumGrams       float64             `json:"mean_sodium_grams"`
 	MeanDietaryFiberGrams float64             `json:"mean_dietary_fiber_grams"`
+	MeanSaturatedFatGrams float64             `json:"mean_saturated_fat_grams"`
 	TargetCalories        int                 `json:"target_calories"`
 	TargetProteinGrams    int                 `json:"target_protein_grams"`
 	TargetCarbsGrams      int                 `json:"target_carbs_grams"`
@@ -248,6 +249,7 @@ type NutritionChatInput struct {
 	MeanSugarGrams        float64               `json:"mean_sugar_grams"`
 	MeanSodiumGrams       float64               `json:"mean_sodium_grams"`
 	MeanDietaryFiberGrams float64               `json:"mean_dietary_fiber_grams"`
+	MeanSaturatedFatGrams float64               `json:"mean_saturated_fat_grams"`
 	TargetCalories        int                   `json:"target_calories"`
 	TargetProteinGrams    int                   `json:"target_protein_grams"`
 	TargetCarbsGrams      int                   `json:"target_carbs_grams"`

@@ -32,6 +32,7 @@ type foodAdviceWindow struct {
 	MeanSugarGrams        *float64 `json:"mean_sugar_grams"`
 	MeanSodiumGrams       *float64 `json:"mean_sodium_grams"`
 	MeanDietaryFiberGrams *float64 `json:"mean_dietary_fiber_grams"`
+	MeanSaturatedFatGrams *float64 `json:"mean_saturated_fat_grams"`
 }
 
 type foodAdviceRequest struct {
@@ -127,6 +128,7 @@ func (h *foodHandlers) PostFoodAdvice(w http.ResponseWriter, r *http.Request) {
 		MeanCarbsGrams: *req.Window.MeanCarbsGrams, MeanFatGrams: *req.Window.MeanFatGrams,
 		MeanSugarGrams: *req.Window.MeanSugarGrams, MeanSodiumGrams: *req.Window.MeanSodiumGrams,
 		MeanDietaryFiberGrams: *req.Window.MeanDietaryFiberGrams,
+		MeanSaturatedFatGrams: *req.Window.MeanSaturatedFatGrams,
 		TargetCalories:        target.Calories, TargetProteinGrams: target.ProteinGrams,
 		TargetCarbsGrams: target.CarbsGrams, TargetFatGrams: target.FatGrams,
 		DisplayLanguage: language, HealthContext: healthContext,
@@ -235,7 +237,7 @@ func normalizeAdviceRequest(req *foodAdviceRequest) ([]string, bool) {
 	figures := [...]*float64{
 		req.Window.MeanCalories, req.Window.MeanProteinGrams, req.Window.MeanCarbsGrams,
 		req.Window.MeanFatGrams, req.Window.MeanSugarGrams, req.Window.MeanSodiumGrams,
-		req.Window.MeanDietaryFiberGrams,
+		req.Window.MeanDietaryFiberGrams, req.Window.MeanSaturatedFatGrams,
 	}
 	for _, figure := range figures {
 		if figure == nil || math.IsNaN(*figure) || math.IsInf(*figure, 0) || *figure < 0 || *figure > 100000 {
