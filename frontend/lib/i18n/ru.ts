@@ -106,6 +106,7 @@ const ru: Dictionary = {
   'unit.h': 'ч',
   'unit.ms': 'мс',
   'unit.kg': 'кг',
+  'unit.m': 'м',
   'unit.percent': '%',
   'unit.kcal': 'ккал',
   'unit.kcalPer100g': 'ккал/100 г',
@@ -433,6 +434,16 @@ const ru: Dictionary = {
   'dataDetail.projectionInsufficientData': 'Пока недостаточно данных для прогноза',
   'dataDetail.projectionLoadFailed': 'Не удалось загрузить историю веса',
   'dataDetail.loading': 'Загрузка…',
+
+  'addRecord.value': 'Значение',
+  'addRecord.valueWithUnit': 'Значение ({unit})',
+  'addRecord.time': 'Время (необязательно)',
+  'addRecord.positiveNumber': 'Введите положительное число',
+  'addRecord.range': 'Введите значение от {min} до {max} {unit}',
+  'addRecord.add': 'Добавить',
+  'addRecord.saving': 'Сохранение…',
+  'addRecord.cancel': 'Отмена',
+  'addRecord.saveFailed': 'Не удалось сохранить запись. Попробуйте ещё раз.',
 };
 
 export default ru;
