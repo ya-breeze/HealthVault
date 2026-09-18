@@ -180,6 +180,92 @@ func TestOpenAIClient_Recognize_EstimatedProfileParsed(t *testing.T) {
 	}
 }
 
+func TestOpenAIClient_Recognize_IngredientsParsed(t *testing.T) {
+	var capturedBody map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"cucumber and tomato salad","canonical_name":"","preparation":"unknown","state":"unknown",`+
+				`"weight_grams":200,"confidence":0.6,"estimated_profile":null,`+
+				`"ingredients":[{"name":"cucumber","canonical_name_en":"cucumber","weight_grams":100},`+
+				`{"name":"tomato","canonical_name_en":"tomato","weight_grams":100}]}],`+
+				`"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+
+	// ingredients must be required (an empty array, not an omittable/nullable
+	// field — see ingredientSchema's own doc comment) on every item.
+	schema := capturedBody["response_format"].(map[string]any)["json_schema"].(map[string]any)["schema"].(map[string]any)
+	itemSchema := schema["properties"].(map[string]any)["items"].(map[string]any)["items"].(map[string]any)
+	required, _ := itemSchema["required"].([]any)
+	var sawIngredients bool
+	for _, r := range required {
+		if r == "ingredients" {
+			sawIngredients = true
+		}
+	}
+	if !sawIngredients {
+		t.Errorf("expected ingredients listed as required in the item schema, got %+v", required)
+	}
+
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	ingredients := result.Items[0].Ingredients
+	if len(ingredients) != 2 {
+		t.Fatalf("expected 2 ingredients, got %+v", ingredients)
+	}
+	if ingredients[0].CanonicalNameEN != "cucumber" || ingredients[0].WeightGrams != 100 {
+		t.Errorf("unexpected ingredient[0]: %+v", ingredients[0])
+	}
+	if ingredients[1].CanonicalNameEN != "tomato" || ingredients[1].WeightGrams != 100 {
+		t.Errorf("unexpected ingredient[1]: %+v", ingredients[1])
+	}
+}
+
+func TestOpenAIClient_Recognize_EmptyIngredientsParsedAsNil(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"apple","canonical_name":"","preparation":"unknown","state":"unknown",`+
+				`"weight_grams":150,"confidence":0.9,"estimated_profile":null,"ingredients":[]}],`+
+				`"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	if result.Items[0].Ingredients != nil {
+		t.Errorf("expected nil Ingredients for an atomic item, got %+v", result.Items[0].Ingredients)
+	}
+}
+
+func TestOpenAIClient_Recognize_IngredientWithBlankCanonicalNameIsDropped(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(chatResponse(t, //nolint:errcheck
+			`{"items":[{"display_name":"mystery salad","canonical_name":"","preparation":"unknown","state":"unknown",`+
+				`"weight_grams":150,"confidence":0.5,"estimated_profile":null,`+
+				`"ingredients":[{"name":"?","canonical_name_en":"  ","weight_grams":50}]}],`+
+				`"clarification_questions":[]}`)))
+	})
+
+	result, err := c.Recognize(context.Background(), []byte{1}, "image/jpeg", "", "en")
+	if err != nil {
+		t.Fatalf("Recognize: %v", err)
+	}
+	// A blank canonical_name_en can never be searched against USDA/OFF, so
+	// toIngredientEstimates drops it rather than keeping an unsearchable entry.
+	if result.Items[0].Ingredients != nil {
+		t.Errorf("expected the blank-canonical-name ingredient to be dropped, got %+v", result.Items[0].Ingredients)
+	}
+}
+
 func TestOpenAIClient_Recognize_NullEstimatedProfileParsedAsNil(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(chatResponse(t, //nolint:errcheck

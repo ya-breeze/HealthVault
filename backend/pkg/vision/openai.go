@@ -85,6 +85,20 @@ converted to grams (divide by 1000) before reporting it here. Set
 estimated_profile to null only if you genuinely cannot make any reasonable
 estimate for that item.
 
+When an item is itself a composite or merged dish (its ingredients were
+mixed, chopped, tossed, or cooked/sauced together — the same test used above
+to decide it stays one item), also break it into a rough ingredients list:
+each with its own name in the display language, its standard English name as
+canonical_name_en, and an estimated weight in grams, so its parts can be
+searched against a nutrition database individually. For example "cucumber
+and tomato salad" returns ingredients [{"canonical_name_en": "cucumber",
+"weight_grams": 100}, {"canonical_name_en": "tomato", "weight_grams": 100}]
+(plus each one's display-language name). This is a rough breakdown for
+database lookup, not a precise recipe — approximate proportions are fine.
+Leave ingredients empty for an item that is already a single atomic food
+(e.g. one apple, one chicken breast): do not decompose something that has no
+parts to break into.
+
 If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
 instead of guessing. Otherwise leave clarification_questions empty.`
@@ -143,6 +157,20 @@ dietary_fiber, saturated_fat) is grams per 100g — sodium included: a
 milligram sodium value must be converted to grams (divide by 1000) before
 reporting it here. Set estimated_profile to null only if you genuinely
 cannot make any reasonable estimate for that item.
+
+When an item is itself a composite or merged dish (its ingredients were
+mixed, chopped, tossed, or cooked/sauced together — the same test used above
+to decide it stays one item), also break it into a rough ingredients list:
+each with its own name in the display language, its standard English name as
+canonical_name_en, and an estimated weight in grams, so its parts can be
+searched against a nutrition database individually. For example "cucumber
+and tomato salad" returns ingredients [{"canonical_name_en": "cucumber",
+"weight_grams": 100}, {"canonical_name_en": "tomato", "weight_grams": 100}]
+(plus each one's display-language name). This is a rough breakdown for
+database lookup, not a precise recipe — approximate proportions are fine.
+Leave ingredients empty for an item that is already a single atomic food
+(e.g. one apple, one chicken breast): do not decompose something that has no
+parts to break into.
 
 If the description is too vague to size or identify an item confidently,
 list one or two short clarification_questions for the user instead of
@@ -303,6 +331,22 @@ var estimatedProfileSchema = map[string]any{
 	"additionalProperties": false,
 }
 
+// ingredientSchema is one entry in a composite item's optional ingredient
+// breakdown — see Item.Ingredients and IngredientEstimate. Not nullable:
+// unlike estimated_profile (one optional value per item), this is an array
+// property, and an atomic item signals "no breakdown" with an empty array
+// rather than a null one.
+var ingredientSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"name":              map[string]any{"type": "string"},
+		"canonical_name_en": map[string]any{"type": "string"},
+		"weight_grams":      map[string]any{"type": "number"},
+	},
+	"required":             []string{"name", "canonical_name_en", "weight_grams"},
+	"additionalProperties": false,
+}
+
 var recognizeJSONSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -319,10 +363,11 @@ var recognizeJSONSchema = map[string]any{
 					"weight_grams":      map[string]any{"type": "number"},
 					"confidence":        map[string]any{"type": "number"},
 					"estimated_profile": estimatedProfileSchema,
+					"ingredients":       map[string]any{"type": "array", "items": ingredientSchema},
 				},
 				"required": []string{
 					"display_name", "canonical_name", "preparation", "state", "brand", "weight_grams",
-					"confidence", "estimated_profile",
+					"confidence", "estimated_profile", "ingredients",
 				},
 				"additionalProperties": false,
 			},
@@ -353,6 +398,12 @@ type recognizeSchemaEstimatedProfile struct {
 	SaturatedFatPer100g float64 `json:"saturated_fat_per_100g"`
 }
 
+type recognizeSchemaIngredient struct {
+	Name            string  `json:"name"`
+	CanonicalNameEN string  `json:"canonical_name_en"`
+	WeightGrams     float64 `json:"weight_grams"`
+}
+
 type recognizeSchemaItem struct {
 	DisplayName      string                           `json:"display_name"`
 	CanonicalName    string                           `json:"canonical_name"`
@@ -362,6 +413,7 @@ type recognizeSchemaItem struct {
 	WeightGrams      float64                          `json:"weight_grams"`
 	Confidence       float64                          `json:"confidence"`
 	EstimatedProfile *recognizeSchemaEstimatedProfile `json:"estimated_profile"`
+	Ingredients      []recognizeSchemaIngredient      `json:"ingredients"`
 }
 
 type recognizeSchemaResponse struct {
@@ -386,6 +438,34 @@ func toEstimatedProfile(p *recognizeSchemaEstimatedProfile) *database.NutrientPr
 		DietaryFiberPer100g: p.DietaryFiberPer100g,
 		SaturatedFatPer100g: p.SaturatedFatPer100g,
 	}
+}
+
+// toIngredientEstimates converts the schema's ingredient breakdown to the
+// shared vision.IngredientEstimate shape, trimming whitespace and dropping
+// any entry with no usable English name — a blank canonical_name_en cannot
+// be searched against USDA/OFF regardless of how the model filled the rest
+// of the entry in. Returns nil (not an empty non-nil slice) for an atomic
+// item, matching Ingredients' "empty means no breakdown" contract.
+func toIngredientEstimates(entries []recognizeSchemaIngredient) []IngredientEstimate {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]IngredientEstimate, 0, len(entries))
+	for _, e := range entries {
+		canonical := strings.TrimSpace(e.CanonicalNameEN)
+		if canonical == "" {
+			continue
+		}
+		out = append(out, IngredientEstimate{
+			Name:            strings.TrimSpace(e.Name),
+			CanonicalNameEN: canonical,
+			WeightGrams:     e.WeightGrams,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // unknownToEmpty maps the model's explicit "unknown" enum value to "", the
@@ -487,6 +567,7 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration, disp
 			WeightGrams:      it.WeightGrams,
 			Confidence:       it.Confidence,
 			EstimatedProfile: toEstimatedProfile(it.EstimatedProfile),
+			Ingredients:      toIngredientEstimates(it.Ingredients),
 		}
 	}
 
