@@ -900,6 +900,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
       sugar_grams: 6,
       sodium_grams: 0.18,
       dietary_fiber_grams: 9.5,
+      saturated_fat_grams: 1,
     });
     await expect(nutrientLine).toContainText('Sodium 0.18g');
     await expect(nutrientLine).toContainText('Fiber 9.5g');
@@ -981,6 +982,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
       sugar_grams: 12,
       sodium_grams: 0.5,
       dietary_fiber_grams: 17,
+      saturated_fat_grams: 1,
     });
   });
 
@@ -1684,6 +1686,7 @@ function mockFoodMeal(overrides: Record<string, unknown> = {}) {
     sugar_grams: 1,
     sodium_grams: 1,
     dietary_fiber_grams: 1,
+    saturated_fat_grams: 1,
     items: [
       {
         id: 'item-1',
@@ -1701,6 +1704,7 @@ function mockFoodMeal(overrides: Record<string, unknown> = {}) {
         sugar_grams: 1,
         sodium_grams: 1,
         dietary_fiber_grams: 1,
+        saturated_fat_grams: 1,
       },
     ],
     ...overrides,
@@ -1834,6 +1838,7 @@ test.describe('Reanalyze with a hint — mocked UI behavior (deterministic)', ()
       sugar_grams: 0,
       sodium_grams: 0,
       dietary_fiber_grams: 0,
+      saturated_fat_grams: 0,
       items: [{ ...mockFoodMeal().items[0], id: 'item-2', name: 'New Item', macro_source: 'none', calories: 0 }],
     });
 
