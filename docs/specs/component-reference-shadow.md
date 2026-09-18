@@ -186,4 +186,4 @@ schema change needed to run it.
 - [x] Run every validation command against the final branch and deployed WIP stack
 - [x] Run the Review Gate and resolve every valid finding
 - [x] Confirm that no task box remains unticked
-- [ ] Mark completed
+- [x] Mark completed

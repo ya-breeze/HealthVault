@@ -1,7 +1,7 @@
 # ADR-014: A deterministic, per-ingredient USDA reference sum as a background comparison field
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
