@@ -293,11 +293,11 @@ test.describe('Food log history card', () => {
       await expect(markers.last()).toHaveAttribute('data-testid', `food-log-history-day-${fixture.dates[6]}`);
       expect(await markers.evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')!.slice('food-log-history-day-'.length)))).toEqual(fixture.dates);
 
-      // Complete/Confirmed Complete days with unresolved meals are attention
+      // Complete/Confirmed Complete days with unconfirmed meals are attention
       // days, not counted days, and their accessible labels expose both causes.
       await expect(card.getByTestId(`food-log-history-day-${fixture.dates[4]}`)).toHaveAttribute('data-outcome', 'needs_attention');
-      await expect(card.getByTestId(`food-log-history-day-${fixture.dates[4]}`)).toHaveAttribute('aria-label', /needs attention; 3 eating occasions; 1 unresolved meal/);
-      await expect(card.getByTestId(`food-log-history-day-${fixture.dates[5]}`)).toHaveAttribute('aria-label', /needs attention; 3 eating occasions; 2 unresolved meals/);
+      await expect(card.getByTestId(`food-log-history-day-${fixture.dates[4]}`)).toHaveAttribute('aria-label', /needs attention; 3 eating occasions; 1 unconfirmed meal/);
+      await expect(card.getByTestId(`food-log-history-day-${fixture.dates[5]}`)).toHaveAttribute('aria-label', /needs attention; 3 eating occasions; 2 unconfirmed meals/);
 
       const expected = { from: fixture.dates[0], to: fixture.dates[6] };
       const historyRequests = requests.filter(request => request.from === expected.from && request.to === expected.to);

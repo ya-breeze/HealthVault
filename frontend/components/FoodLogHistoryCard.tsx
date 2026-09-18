@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Dictionary, LanguageCode } from '@/lib/i18n';
-import { interpolate } from '@/lib/i18n';
+import { interpolate, pluralForm } from '@/lib/i18n';
 import { api } from '@/lib/api';
 import {
   FOOD_LOG_HISTORY_WINDOW_DAYS,
+  addDays,
   resolveFoodLogHistoryWindow,
   summarizeFoodLogHistory,
   type FoodLogHistoryDay,
@@ -35,36 +36,14 @@ type ContentState =
   | { kind: 'retrieval_error' };
 
 function expectedDates(from: string): string[] {
-  const cursor = new Date(`${from}T00:00:00.000Z`);
-  if (Number.isNaN(cursor.getTime())) throw new Error('Invalid food history window start');
-  return Array.from({ length: FOOD_LOG_HISTORY_WINDOW_DAYS }, () => {
-    const date = cursor.toISOString().slice(0, 10);
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-    return date;
-  });
+  return Array.from({ length: FOOD_LOG_HISTORY_WINDOW_DAYS }, (_, i) => addDays(from, i));
 }
 
-function outcomeLabelKey(outcome: FoodLogHistoryOutcome): keyof Dictionary {
-  switch (outcome) {
-    case 'counted':
-      return 'foodLogHistory.outcome.counted';
-    case 'no_food':
-      return 'foodLogHistory.outcome.noFood';
-    case 'needs_attention':
-      return 'foodLogHistory.outcome.needsAttention';
-  }
-}
-
-function statusSymbol(outcome: FoodLogHistoryOutcome): string {
-  switch (outcome) {
-    case 'counted':
-      return '✓';
-    case 'no_food':
-      return '∅';
-    case 'needs_attention':
-      return '!';
-  }
-}
+const OUTCOME_DISPLAY: Record<FoodLogHistoryOutcome, { labelKey: keyof Dictionary; symbol: string }> = {
+  counted: { labelKey: 'foodLogHistory.outcome.counted', symbol: '✓' },
+  no_food: { labelKey: 'foodLogHistory.outcome.noFood', symbol: '∅' },
+  needs_attention: { labelKey: 'foodLogHistory.outcome.needsAttention', symbol: '!' },
+};
 
 function weekdayLabel(date: string, language: LanguageCode): string {
   return new Intl.DateTimeFormat(language === 'ru' ? 'ru' : undefined, { weekday: 'short', timeZone: 'UTC' }).format(
@@ -118,17 +97,25 @@ export default function FoodLogHistoryCard({
   }, [timezone]);
 
   function dayDescription(day: FoodLogHistoryDay): string {
-    const outcome = t(outcomeLabelKey(day.outcome));
-    const key = day.unconfirmedMeals === 1
-      ? 'foodLogHistory.dayDescriptionWithOneUnresolved'
-      : day.unconfirmedMeals > 1
-        ? 'foodLogHistory.dayDescriptionWithUnresolved'
-        : 'foodLogHistory.dayDescription';
-    return interpolate(t(key), {
+    const outcome = t(OUTCOME_DISPLAY[day.outcome].labelKey);
+    if (day.unconfirmedMeals === 0) {
+      return interpolate(t('foodLogHistory.dayDescription'), {
+        date: day.date,
+        outcome,
+        occasions: day.occasionCount,
+      });
+    }
+    const template = pluralForm(language, day.unconfirmedMeals, {
+      one: t('foodLogHistory.dayDescriptionWithUnconfirmed.one'),
+      few: t('foodLogHistory.dayDescriptionWithUnconfirmed.few'),
+      many: t('foodLogHistory.dayDescriptionWithUnconfirmed.many'),
+      other: t('foodLogHistory.dayDescriptionWithUnconfirmed.other'),
+    });
+    return interpolate(template, {
       date: day.date,
       outcome,
       occasions: day.occasionCount,
-      unresolved: day.unconfirmedMeals,
+      unconfirmed: day.unconfirmedMeals,
     });
   }
 
@@ -145,7 +132,7 @@ export default function FoodLogHistoryCard({
       >
         <span className="text-[11px] text-text-muted">{weekdayLabel(day.date, language)}</span>
         <span className="font-[family-name:var(--font-data)] text-base font-bold" aria-hidden="true">
-          {statusSymbol(day.outcome)}
+          {OUTCOME_DISPLAY[day.outcome].symbol}
         </span>
       </div>
     );

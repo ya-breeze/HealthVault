@@ -438,8 +438,12 @@ const en = {
   'foodLogHistory.outcome.noFood': 'no food logged',
   'foodLogHistory.outcome.needsAttention': 'needs attention',
   'foodLogHistory.dayDescription': '{date}: {outcome}; {occasions} eating occasions.',
-  'foodLogHistory.dayDescriptionWithOneUnresolved': '{date}: {outcome}; {occasions} eating occasions; 1 unresolved meal.',
-  'foodLogHistory.dayDescriptionWithUnresolved': '{date}: {outcome}; {occasions} eating occasions; {unresolved} unresolved meals.',
+  // Four plural forms because the dictionary type is shared with ru.ts,
+  // which needs all four — same reasoning as dashboard.needsAttention above.
+  'foodLogHistory.dayDescriptionWithUnconfirmed.one': '{date}: {outcome}; {occasions} eating occasions; {unconfirmed} unconfirmed meal.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.few': '{date}: {outcome}; {occasions} eating occasions; {unconfirmed} unconfirmed meals.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.many': '{date}: {outcome}; {occasions} eating occasions; {unconfirmed} unconfirmed meals.',
+  'foodLogHistory.dayDescriptionWithUnconfirmed.other': '{date}: {outcome}; {occasions} eating occasions; {unconfirmed} unconfirmed meals.',
 
   // The steps detail page's diagnostic disclosure (check-the-health-data
   // spec) — collapsed by default, same hint-then-detail pattern as the

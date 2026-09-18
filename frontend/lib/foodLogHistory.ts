@@ -36,7 +36,7 @@ function formatISODate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function addDays(date: string, amount: number): string {
+export function addDays(date: string, amount: number): string {
   const parsed = parseISODate(date);
   if (Number.isNaN(parsed.getTime())) throw new Error(`Invalid calendar date: ${date}`);
   parsed.setUTCDate(parsed.getUTCDate() + amount);
