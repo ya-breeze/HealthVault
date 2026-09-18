@@ -576,12 +576,18 @@ func (h *foodHandlers) rankedCustomFoodCandidates(
 // for a brandless query. See design.md "OFF queried only when a brand was
 // extracted, USDA as the fallback".
 //
-// When displayLanguage is not English, Open Food Facts and USDA are not
-// queried at all, regardless of brand — both are English-vocabulary
-// reference databases and no attempt is made to translate the Display Name
-// back to English for matching. See design.md decision 4. The fuzzy
-// custom-food match above is unaffected by language: it matches against the
-// user's own catalog, not an English-vocabulary reference database.
+// When displayLanguage is not English, Open Food Facts and USDA are queried
+// by ri.CanonicalName (Recognize's own English identity for the item — see
+// languageDirective) instead of the localized ri.Name, since both are
+// English-vocabulary reference databases. Search is skipped entirely only
+// when CanonicalName is empty — an item recognized before that field
+// existed, or one Recognize genuinely couldn't translate — narrowing
+// design.md decision 4's original "not queried at all" to that residual
+// case (see ya-breeze/idea-forge#640: the original blanket skip zeroed out
+// reference matching for every non-English account for weeks before this
+// fix). The fuzzy custom-food match above is unaffected by language: it
+// matches against the user's own catalog, not an English-vocabulary
+// reference database.
 //
 // The bool return is true only for the fuzzy-name custom-food short-circuit
 // — see fuzzyMatchThreshold and design.md decision 5 for why a fuzzy hit is
@@ -612,12 +618,18 @@ func (h *foodHandlers) retrieveCandidates(
 		return []vision.Candidate{{CustomFoodID: &id, Description: best.Name}}, true
 	}
 
+	// See the doc comment above for why a non-English display language
+	// searches by CanonicalName instead of the localized Name.
+	searchName := ri.Name
 	if !vision.IsEnglishDisplayLanguage(displayLanguage) {
-		return ranked, false
+		if ri.CanonicalName == "" {
+			return ranked, false
+		}
+		searchName = ri.CanonicalName
 	}
 
 	if ri.Brand != "" && h.off != nil {
-		foods, offErr := h.off.Search(ri.Name, ri.Brand, off.DefaultCandidates)
+		foods, offErr := h.off.Search(searchName, ri.Brand, off.DefaultCandidates)
 		if offErr == nil && len(foods) > 0 {
 			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
 			out = append(out, ranked...)
@@ -630,7 +642,7 @@ func (h *foodHandlers) retrieveCandidates(
 	}
 
 	if h.usda != nil {
-		term := usda.QueryFor(ri.Name, ri.Preparation, ri.State)
+		term := usda.QueryFor(searchName, ri.Preparation, ri.State)
 		foods, usdaErr := h.usda.Search(term, usda.DefaultCandidates)
 		if usdaErr == nil {
 			out := make([]vision.Candidate, 0, len(ranked)+len(foods))
