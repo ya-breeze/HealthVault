@@ -479,6 +479,29 @@ func TestFoodItem_PlausibleEstimatedProfile_SugarPlusFiberBoundaryPasses(t *test
 	}
 }
 
+// Saturated fat cannot legitimately exceed total fat — it's a subset by
+// definition.
+func TestFoodItem_PlausibleEstimatedProfile_SaturatedFatExceedingFatRejected(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 310, ProteinPer100g: 25, CarbsPer100g: 30, FatPer100g: 10, SaturatedFatPer100g: 13,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); ok {
+		t.Error("expected saturated fat 13 against total fat 10 (past the 2g tolerance) to be rejected")
+	}
+}
+
+// Saturated fat exactly at the fat+2g tolerance boundary is still usable.
+func TestFoodItem_PlausibleEstimatedProfile_SaturatedFatAtBoundaryPasses(t *testing.T) {
+	it := database.FoodItem{}
+	it.SetEstimatedProfile(&database.NutrientProfile{
+		CaloriesPer100g: 310, ProteinPer100g: 25, CarbsPer100g: 30, FatPer100g: 10, SaturatedFatPer100g: 12,
+	})
+	if _, ok := it.PlausibleEstimatedProfile(); !ok {
+		t.Error("expected saturated fat 12 against total fat 10 (exactly fat+2g) to be usable")
+	}
+}
+
 // Declared calories below the one-sided Atwater threshold are rejected.
 func TestFoodItem_PlausibleEstimatedProfile_CaloriesBelowAtwaterThresholdRejected(t *testing.T) {
 	it := database.FoodItem{}

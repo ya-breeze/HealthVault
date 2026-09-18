@@ -970,7 +970,7 @@ test.describe('Healthiness Label (nutrition card middle row)', () => {
       await expect(hint).toBeHidden();
       await card.getByTestId('logging-gap-hint-toggle').click();
       await expect(hint).toBeVisible();
-      await expect(hint).toContainText('The label covers macro balance, total sugars, sodium and fiber');
+      await expect(hint).toContainText('The label covers macro balance, total sugars, sodium, fiber and saturated fat');
     } finally {
       await putSettings(request, cookies, original);
     }

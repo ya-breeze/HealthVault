@@ -223,6 +223,12 @@ func (i FoodItem) PlausibleEstimatedProfile() (NutrientProfile, bool) {
 	if p.SugarPer100g+p.DietaryFiberPer100g > p.CarbsPer100g+macroRoundingTolerance {
 		return NutrientProfile{}, false
 	}
+	// Saturated fat is a subset of total fat by definition; an estimate
+	// claiming more is physically impossible and must not outrank a matched
+	// reference candidate.
+	if p.SaturatedFatPer100g > p.FatPer100g+macroRoundingTolerance {
+		return NutrientProfile{}, false
+	}
 
 	atwater := p.ProteinPer100g*4 + p.CarbsPer100g*4 + p.FatPer100g*9
 	calorieTolerance := math.Max(25.0, atwater*0.15)

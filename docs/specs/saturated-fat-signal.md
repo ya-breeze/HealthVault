@@ -75,8 +75,24 @@ into a label. Add it to `MealItemRow`'s existing sodium/fiber review line (`item
 'none'`) rather than a new line, and to all three manual-nutrient-entry tuple arrays
 (`ManualItemEditor`, `ItemResolver`, `CustomFoodModal`) and their TS interfaces in `api.ts`
 (`NutrientValues`, `ManualMealItemInput`, `PatchItemInput`, `CreateItemInput`, `CustomFood`).
-Extend the generic data-table/chart macro selector (`dataColumnMeta.ts`, `dataTypeMeta.ts`) the
-same way fiber already is, for consistency with the rest of the generic `/api/data/food_meal` path.
+Extend the generic raw-record-table column label (`dataColumnMeta.ts`'s `SHARED_COLUMN_LABEL_KEYS`)
+the same way fiber already is. `dataTypeMeta.ts`'s `NUTRITION_MACROS` chart-series selector is a
+different, narrower thing — checked during review and confirmed it drives only the `type ===
+'nutrition'` wearable-ingestion chart (`models.go`'s `Nutrition` struct), never `food_meal`, so a
+`saturated_fat_grams` entry there would offer a chart series ingestion never populates. Not added.
+
+### Legacy rows read as zero, not "unmeasured"
+
+Every meal logged before this change reads `saturated_fat_grams = 0` once the migration backfills
+it — the same `NOT NULL DEFAULT 0` convention sugar/sodium/fiber already established, with no
+"unknown" state of its own (see the `models_food.go` comment above). For the Healthiness Label this
+is asymmetric with fiber: fiber's same default reads as *low* fiber (flagged `off`), while
+saturated fat's default reads as *zero* saturated fat (trivially `ok`) — so a user's first 7-day
+window after rollout can look reassuring on this one signal specifically because it was never
+measured, not because it was actually low. Accepted rather than built around: it ages out of the
+rolling 7-day window within a week, and a separate "was this ever measured" state would be new
+machinery this app's `MacroSource`/`HasEstimate` fields don't otherwise carry for any of the other
+7 nutrients either.
 
 ### Comparing USDA vs. OFF accuracy later
 
@@ -111,55 +127,61 @@ existing `sugar_grams` field is untouched.
 
 ### Task 1: Track saturated fat as the 8th nutrient field
 
-- [ ] Add `SaturatedFatGrams`/`SaturatedFatPer100g` to `FoodMeal`, `FoodItem` (incl. the
+- [x] Add `SaturatedFatGrams`/`SaturatedFatPer100g` to `FoodMeal`, `FoodItem` (incl. the
       `EstimatedSaturatedFatPer100g` shadow copy), `CustomFood`, and `NutrientProfile`, and wire
       every helper method that already carries the existing 7 fields
-- [ ] Extend the USDA and OFF local SQLite schemas, builders, and queries; map FDC nutrient id
-      1258 and OFF's `saturated-fat_100g` (optional at source, non-gating)
-- [ ] Extend `DailyTotal`/`DailyTotalsRange`, the `food_meals` column allowlist, and the two
+- [x] Extend the USDA and OFF local SQLite schemas, builders, and queries; map FDC nutrient id
+      1258 and OFF's `saturated-fat_100g` (optional at source, non-gating). A database promoted by
+      an import that ran before this column existed is detected at `Open()` (`PRAGMA table_info`)
+      and degrades to serving every other field with `saturated_fat` read as 0, rather than every
+      search 500ing until an operator reimports — found blocking in the Review Gate, fixed, and
+      covered by a regression test building the pre-upgrade schema by hand in both packages
+- [x] Extend `DailyTotal`/`DailyTotalsRange`, the `food_meals` column allowlist, and the two
       zero-reset call sites in `food_upload.go`/`food_meal_detail.go`
-- [ ] Extend all four request DTOs (`manualMealItemRequest`, `patchItemRequest`,
+- [x] Extend all four request DTOs (`manualMealItemRequest`, `patchItemRequest`,
       `createItemRequest`, `customFoodRequest`) and their handler bodies
-- [ ] Cover the new field in existing model/import/aggregation Go tests
-- [ ] Mark completed
+- [x] Cover the new field in existing model/import/aggregation Go tests
+- [x] Mark completed
 
 ### Task 2: Feed it to Luna and the Healthiness Label
 
-- [ ] Add `saturated_fat_per_100g` to the Recognize/Describe prompts and
+- [x] Add `saturated_fat_per_100g` to the Recognize/Describe prompts and
       `estimatedProfileSchema`/`recognizeSchemaEstimatedProfile`/`toEstimatedProfile`
-- [ ] Add the saturated-fat share signal to `healthiness.ts`: new single-upper-boundary band type,
+- [x] Add the saturated-fat share signal to `healthiness.ts`: new single-upper-boundary band type,
       WHO's 10%-of-energy boundary, appended after fiber in the fixed `evals` order
-- [ ] Extend `HealthinessDayData`/`HealthinessResult.means`/`HealthinessSignalCode`/
+- [x] Extend `HealthinessDayData`/`HealthinessResult.means`/`HealthinessSignalCode`/
       `HealthinessReasonCode`, and `LoggingGapCard`'s day-data and advice-window building
-- [ ] Cover the boundary, the appended tie-break order, and the combination rule in
+- [x] Cover the boundary, the appended tie-break order, and the combination rule in
       `healthiness.test.ts`
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 3: Carry it through advice, chat, and cache invalidation
 
-- [ ] Add the saturated-fat mean to `AdviceInput`, `NutritionChatInput`, `foodAdviceWindow`,
+- [x] Add the saturated-fat mean to `AdviceInput`, `NutritionChatInput`, `foodAdviceWindow`,
       `normalizeAdviceRequest`, and `nutritionAdviceSignature`
-- [ ] Extend `explain_nutrition_signal`'s enum, `nutritionHistorySignals`,
+- [x] Extend `explain_nutrition_signal`'s enum, `nutritionHistorySignals`,
       `nutritionSignalMealValue`/`nutritionSignalItemValue`, and the no-`far`-boundary exception in
       `normalizeNutritionChatSignals`; raise `nutritionChatMaxSignals` to 7
-- [ ] Cover request validation, the cache-hash change, and the chat signal's no-`far` rule in Go
+- [x] Cover request validation, the cache-hash change, and the chat signal's no-`far` rule in Go
       tests
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 4: Surface it in review and manual entry
 
-- [ ] Add saturated fat to `MealItemRow`'s existing sodium/fiber review line
-- [ ] Add it to `ManualItemEditor`, `ItemResolver`, `CustomFoodModal`, and their TS interfaces in
+- [x] Add saturated fat to `MealItemRow`'s existing sodium/fiber review line
+- [x] Add it to `ManualItemEditor`, `ItemResolver`, `CustomFoodModal`, and their TS interfaces in
       `api.ts`
-- [ ] Add it to the generic data-table/chart macro selector (`dataColumnMeta.ts`,
-      `dataTypeMeta.ts`) and its i18n keys (`item.*`, `resolver.*`, `dataTable.column.*`,
-      `dataDetail.macro*`, `loggingGap.healthinessReason.saturated_fat_high`) in `en.ts`/`ru.ts`
-- [ ] Mark completed
+- [x] Add it to the generic raw-record-table column label (`dataColumnMeta.ts`) and its i18n keys
+      (`item.*`, `resolver.*`, `dataTable.column.*`, `loggingGap.healthinessReason.saturated_fat_high`,
+      `loggingGap.healthinessHintNote`) in `en.ts`/`ru.ts` — not `dataTypeMeta.ts`'s
+      `NUTRITION_MACROS`, which is scoped to the unrelated wearable-ingestion chart (see "Legacy
+      rows read as zero" section above)
+- [x] Mark completed
 
 ### Task 5: Record and validate the result
 
-- [ ] Update ADR-004 and CONTEXT.md without rewriting any merged spec
-- [ ] Run every validation command against the final branch and deployed WIP stack
+- [x] Update ADR-004 and CONTEXT.md without rewriting any merged spec
+- [x] Run every validation command against the final branch and deployed WIP stack
 - [ ] Run the Review Gate and resolve every valid finding
 - [ ] Confirm that no task box remains unticked
 - [ ] Mark completed

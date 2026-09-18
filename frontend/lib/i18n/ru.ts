@@ -264,7 +264,7 @@ const ru: Dictionary = {
   'loggingGap.healthinessReason.fiber_low': 'мало клетчатки',
   'loggingGap.healthinessReason.saturated_fat_high': 'много насыщенных жиров',
   'loggingGap.healthinessHintNote':
-    'Оценка учитывает баланс БЖУ, общий сахар, натрий и клетчатку только за полностью заполненные дни. Общий сахар включает сахар из фруктов и молочных продуктов. Соль, добавленная при готовке, обычно не попадает в дневник, поэтому отсутствие отметки о натрии — это не то же самое, что низкий натрий.',
+    'Оценка учитывает баланс БЖУ, общий сахар, натрий, клетчатку и насыщенные жиры только за полностью заполненные дни. Общий сахар включает сахар из фруктов и молочных продуктов. Соль, добавленная при готовке, обычно не попадает в дневник, поэтому отсутствие отметки о натрии — это не то же самое, что низкий натрий.',
   'nutritionChat.title': 'Об этом совете',
   'nutritionChat.basisTitle': 'На чём это основано',
   'nutritionChat.basis.off.above': '{signal}: в среднем {value} в день, выше ориентира {threshold}.',
@@ -411,7 +411,6 @@ const ru: Dictionary = {
   'dataDetail.macroSugar': 'Сахар',
   'dataDetail.macroSodium': 'Натрий',
   'dataDetail.macroFiber': 'Клетчатка',
-  'dataDetail.macroSaturatedFat': 'Насыщенные жиры',
   'dataDetail.systolic': 'Систолическое',
   'dataDetail.diastolic': 'Диастолическое',
   'dataDetail.systolicRange': 'Диапазон систолического давления',

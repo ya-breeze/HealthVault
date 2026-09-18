@@ -121,7 +121,6 @@ export const NUTRITION_MACROS: { key: string; label: keyof Dictionary }[] = [
   { key: 'sugar_grams', label: 'dataDetail.macroSugar' },
   { key: 'sodium_grams', label: 'dataDetail.macroSodium' },
   { key: 'dietary_fiber_grams', label: 'dataDetail.macroFiber' },
-  { key: 'saturated_fat_grams', label: 'dataDetail.macroSaturatedFat' },
 ] as const;
 
 /**

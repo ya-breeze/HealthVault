@@ -57,6 +57,10 @@ type Food struct {
 type Index struct {
 	db   *sql.DB
 	path string
+	// hasSaturatedFat is false for a database built by an import that ran
+	// before this column existed — see the identical field on usda.Index for
+	// why an old file degrades gracefully rather than failing every search.
+	hasSaturatedFat bool
 }
 
 // Open opens the Open Food Facts database at path. A missing file is
@@ -69,7 +73,37 @@ func Open(path string) (*Index, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open off db: %w", err)
 	}
-	return &Index{db: db, path: path}, nil
+	hasSaturatedFat, err := hasColumn(db, "off_foods", "saturated_fat")
+	if err != nil {
+		db.Close() //nolint:errcheck
+		return nil, fmt.Errorf("inspect off db schema: %w", err)
+	}
+	return &Index{db: db, path: path, hasSaturatedFat: hasSaturatedFat}, nil
+}
+
+// hasColumn reports whether table has a column named name, via PRAGMA
+// table_info. Duplicated from usda.hasColumn rather than shared, mirroring
+// this package's existing deliberate non-abstraction from pkg/usda (see the
+// package doc comment above).
+func hasColumn(db *sql.DB, table, name string) (bool, error) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close() //nolint:errcheck
+	for rows.Next() {
+		var cid int
+		var colName, colType string
+		var notNull, pk int
+		var dfltValue any
+		if err := rows.Scan(&cid, &colName, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if colName == name {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // Close releases the database handle.
@@ -114,7 +148,7 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 	}
 	rows, err := i.db.Query(`
 		SELECT f.code, f.product_name, f.brands,
-		       f.calories, f.protein, f.carbs, f.fat, f.sugar, f.sodium, f.fiber, f.saturated_fat
+		       f.calories, f.protein, f.carbs, f.fat, f.sugar, f.sodium, f.fiber` + i.saturatedFatSelect() + `
 		FROM off_foods_fts fts
 		JOIN off_foods f ON f.rowid = fts.rowid
 		WHERE off_foods_fts MATCH ?
@@ -128,10 +162,13 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 	for rows.Next() {
 		var f Food
 		var p database.NutrientProfile
-		if err := rows.Scan(&f.Code, &f.ProductName, &f.Brands,
+		dest := []any{&f.Code, &f.ProductName, &f.Brands,
 			&p.CaloriesPer100g, &p.ProteinPer100g, &p.CarbsPer100g,
-			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g,
-			&p.SaturatedFatPer100g); err != nil {
+			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g}
+		if i.hasSaturatedFat {
+			dest = append(dest, &p.SaturatedFatPer100g)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("scan off row: %w", err)
 		}
 		f.Profile = p
@@ -146,6 +183,15 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// saturatedFatSelect is the extra select-list fragment for the saturated_fat
+// column, empty when the open database predates it (see hasSaturatedFat).
+func (i *Index) saturatedFatSelect() string {
+	if i.hasSaturatedFat {
+		return ", f.saturated_fat"
+	}
+	return ""
 }
 
 // rankByNameOverlap stable-sorts foods (already brand-matched by SQL) by how
@@ -190,10 +236,14 @@ func (i *Index) ByCode(code string) (*Food, error) {
 	if i == nil || i.db == nil {
 		return nil, ErrNoDatabase
 	}
+	col := "saturated_fat"
+	if !i.hasSaturatedFat {
+		col = "0 AS saturated_fat"
+	}
 	var f Food
 	var p database.NutrientProfile
 	err := i.db.QueryRow(`
-		SELECT code, product_name, brands, calories, protein, carbs, fat, sugar, sodium, fiber, saturated_fat
+		SELECT code, product_name, brands, calories, protein, carbs, fat, sugar, sodium, fiber, `+col+`
 		FROM off_foods WHERE code = ?`, code).
 		Scan(&f.Code, &f.ProductName, &f.Brands,
 			&p.CaloriesPer100g, &p.ProteinPer100g, &p.CarbsPer100g,

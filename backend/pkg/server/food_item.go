@@ -18,7 +18,7 @@ import (
 // patchItemRequest is the JSON body for PATCH /api/food/meals/{id}/items/{item_id}.
 // Exactly one of Manual/FdcID-or-CustomFoodID/WeightGrams-alone applies, in
 // this precedence:
-//  1. Manual: the 7 macro fields are stored as given, macro_source = manual.
+//  1. Manual: the 8 macro fields are stored as given, macro_source = manual.
 //  2. FdcID or CustomFoodID: bound to that reference food, macro_source =
 //     reference, macros scaled from its profile by WeightGrams.
 //  3. WeightGrams alone: rescales the item from its existing binding, if

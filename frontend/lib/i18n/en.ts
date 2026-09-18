@@ -396,7 +396,7 @@ const en = {
   'loggingGap.healthinessReason.fiber_low': 'fiber is low',
   'loggingGap.healthinessReason.saturated_fat_high': 'saturated fat is high',
   'loggingGap.healthinessHintNote':
-    "The label covers macro balance, total sugars, sodium and fiber on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
+    "The label covers macro balance, total sugars, sodium, fiber and saturated fat on fully-logged days only. Total sugars includes the sugars in fruit and dairy. Salt added while cooking is usually missing from the log, so no sodium flag isn't the same as low sodium.",
   'nutritionChat.title': 'About this advice',
   'nutritionChat.basisTitle': 'What this is based on',
   'nutritionChat.basis.off.above': '{signal}: {value} per day on average, above the {threshold} guideline.',
@@ -560,7 +560,6 @@ const en = {
   'dataDetail.macroSugar': 'Sugar',
   'dataDetail.macroSodium': 'Sodium',
   'dataDetail.macroFiber': 'Fiber',
-  'dataDetail.macroSaturatedFat': 'Saturated fat',
   'dataDetail.systolic': 'Systolic',
   'dataDetail.diastolic': 'Diastolic',
   'dataDetail.systolicRange': 'Systolic range',

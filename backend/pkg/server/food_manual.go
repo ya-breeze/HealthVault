@@ -15,7 +15,7 @@ import (
 // manualMealItemRequest is one item in a POST /api/food/meals/manual request.
 // Source selects how the item's macros are determined:
 //   - "reference": scaled from a bound fdc_id or custom_food_id profile by WeightGrams.
-//   - "manual": the 7 macro fields are stored exactly as given.
+//   - "manual": the 8 macro fields are stored exactly as given.
 type manualMealItemRequest struct {
 	Name         string     `json:"name"`
 	Source       string     `json:"source"`

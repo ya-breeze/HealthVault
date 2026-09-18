@@ -482,7 +482,7 @@ export interface DailyTotal {
   dietary_fiber_grams: number;
   saturated_fat_grams: number;
   // How many of that day's meals are in a status other than `confirmed`, and
-  // so contributed nothing to `calories` or the six fields above. Non-zero
+  // so contributed nothing to `calories` or the seven fields above. Non-zero
   // means the day's total is under-counted by an unknown amount, which is
   // not the same thing as a low total — see database.DailyTotal's own
   // comment.

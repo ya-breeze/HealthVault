@@ -80,9 +80,10 @@ best guess from the photo, even for an item you expect will be matched to a
 known food or product afterward, since this is only used as a fallback if no
 match is found later. Units: calories_per_100g is kcal; every other field
 (protein, carbs, fat, sugar, sodium, dietary_fiber, saturated_fat) is grams
-per 100g — sodium included: a food label's milligram sodium value must be converted to
-grams (divide by 1000) before reporting it here. Set estimated_profile to
-null only if you genuinely cannot make any reasonable estimate for that item.
+per 100g — sodium included: a food label's milligram sodium value must be
+converted to grams (divide by 1000) before reporting it here. Set
+estimated_profile to null only if you genuinely cannot make any reasonable
+estimate for that item.
 
 If you cannot confidently identify the items or their preparation well enough
 to proceed, list one or two short clarification_questions for the user
@@ -139,9 +140,9 @@ source of macros for the item, so make your best estimate rather than
 leaving it null whenever you can reasonably guess. Units: calories_per_100g
 is kcal; every other field (protein, carbs, fat, sugar, sodium,
 dietary_fiber, saturated_fat) is grams per 100g — sodium included: a
-milligram sodium value must be converted to grams (divide by 1000) before reporting it here. Set
-estimated_profile to null only if you genuinely cannot make any reasonable
-estimate for that item.
+milligram sodium value must be converted to grams (divide by 1000) before
+reporting it here. Set estimated_profile to null only if you genuinely
+cannot make any reasonable estimate for that item.
 
 If the description is too vague to size or identify an item confidently,
 list one or two short clarification_questions for the user instead of
