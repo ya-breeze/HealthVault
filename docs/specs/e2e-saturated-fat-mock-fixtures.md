@@ -40,9 +40,11 @@ loudly the way it just did).
   objects. The other two `dietary_fiber_grams` mocks in this file use `items: []` — nothing for
   `MealItemRow` to render, so they were already safe and are untouched.
 - `e2e/tests/data-types.spec.ts` has two unrelated `dietary_fiber_grams` mocks: one is a
-  `food_meal` record consumed only by the generic `/data/[type]` table, whose cell formatter
-  (`DataTypeClient.tsx`, `Number(v ?? 0)`) already coerces a missing value to 0 rather than
-  crashing — confirmed safe, left alone. The other is the wearable-ingestion `nutrition` type
+  `food_meal` record consumed only by the generic `/data/[type]` table. Its cell renderer
+  (`DataTypeClient.tsx:997`, `String(r[k] ?? '')`) already coerces a missing value to an empty
+  string rather than crashing — confirmed safe, left alone. (The file's `num()` helper,
+  `Number(v ?? 0)`, is a different code path used only for chart aggregates, not this table.) The
+  other is the wearable-ingestion `nutrition` type
   (`models.go`'s unrelated `Nutrition` struct), which PR #80's own spec explicitly scoped
   saturated fat out of (`NUTRITION_MACROS` drives only that chart, never `food_meal`) — correctly
   untouched.
