@@ -95,5 +95,7 @@ answers what the Idea asked for.
       (height's own downstream BMI readout needs a weight record too, which is out of this test's
       scope to also set up — the direct record check already proves the write path). Confirms the
       fix from the read path a real user would actually notice, not just that a button renders.
-- [ ] Run every command in `## Validation Commands` and resolve all failures.
-- [ ] Mark completed
+- [x] Run every command in `## Validation Commands` and resolve all failures. `make lint`,
+      `make test` (backend go test + 249 frontend vitest), and `make test-e2e` (full suite, 283
+      passed / 1 unrelated skip) all pass against the deployed `hcw-wip` stack.
+- [x] Mark completed
