@@ -880,7 +880,8 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(page.locator('label:has-text("Calories") input')).toHaveValue('312');
     await expect(page.locator('label:has-text("Protein (g)") input')).toHaveValue('14');
     await expect(page.locator('label:has-text("Carbs (g)") input')).toHaveValue('27');
-    await expect(page.locator('label:has-text("Fat (g)") input')).toHaveValue('9');
+    // Exact match: 'label:has-text("Fat (g)")' also substring-matches "Saturated fat (g)".
+    await expect(page.getByRole('spinbutton', { name: 'Fat (g)', exact: true })).toHaveValue('9');
     await expect(page.locator('label:has-text("Sugar (g)") input')).toHaveValue('6');
     await expect(page.locator('label:has-text("Sodium (g)") input')).toHaveValue('0.42');
     await expect(page.locator('label:has-text("Fiber (g)") input')).toHaveValue('8.5');
@@ -965,7 +966,8 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(caloriesInput).toHaveValue('624');
     await expect(page.locator('label:has-text("Protein (g)") input')).toHaveValue('28');
     await expect(page.locator('label:has-text("Carbs (g)") input')).toHaveValue('54');
-    await expect(page.locator('label:has-text("Fat (g)") input')).toHaveValue('18');
+    // Exact match: 'label:has-text("Fat (g)")' also substring-matches "Saturated fat (g)".
+    await expect(page.getByRole('spinbutton', { name: 'Fat (g)', exact: true })).toHaveValue('18');
     await expect(page.locator('label:has-text("Sugar (g)") input')).toHaveValue('12');
     await expect(fiberInput).toHaveValue('17');
     await expect(sodiumInput).toHaveValue('0.5');
