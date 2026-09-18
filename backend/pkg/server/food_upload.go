@@ -618,12 +618,8 @@ func (h *foodHandlers) retrieveCandidates(
 		return []vision.Candidate{{CustomFoodID: &id, Description: best.Name}}, true
 	}
 
-	// USDA/OFF are English-language datasets, so a non-English display
-	// language searches by CanonicalName (Recognize's own English identity
-	// for the item — see languageDirective in vision/openai.go) instead of
-	// the localized Name. Only skip search entirely when there is no English
-	// text to search with at all: an item recognized before CanonicalName
-	// existed, or one Recognize genuinely couldn't translate.
+	// See the doc comment above for why a non-English display language
+	// searches by CanonicalName instead of the localized Name.
 	searchName := ri.Name
 	if !vision.IsEnglishDisplayLanguage(displayLanguage) {
 		if ri.CanonicalName == "" {
