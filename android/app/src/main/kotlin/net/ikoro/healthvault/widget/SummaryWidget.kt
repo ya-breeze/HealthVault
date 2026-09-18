@@ -86,8 +86,9 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
             .fillMaxSize()
             .background(GlanceTheme.colors.background)
             .padding(8.dp)
-            // 1.1.0's actionStartActivity has no reified-class overload, only
-            // the Intent-taking one — build the Intent explicitly.
+            // The reified actionStartActivity<T>() lives in androidx.glance.action; this file
+            // imports androidx.glance.appwidget.action, whose actionStartActivity only takes an
+            // Intent — build it explicitly rather than switching import packages.
             .clickable(actionStartActivity(Intent(resourceContext, MainActivity::class.java))),
     ) {
         when (state) {
