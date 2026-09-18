@@ -61,6 +61,7 @@ type FoodMeal struct {
 	SugarGrams        float64 `gorm:"not null;default:0" json:"sugar_grams"`
 	SodiumGrams       float64 `gorm:"not null;default:0" json:"sodium_grams"`
 	DietaryFiberGrams float64 `gorm:"not null;default:0" json:"dietary_fiber_grams"`
+	SaturatedFatGrams float64 `gorm:"not null;default:0" json:"saturated_fat_grams"`
 
 	Items []FoodItem `gorm:"foreignKey:MealID" json:"items,omitempty"`
 }
@@ -116,6 +117,7 @@ type FoodItem struct {
 	SugarGrams        float64 `gorm:"not null" json:"sugar_grams"`
 	SodiumGrams       float64 `gorm:"not null" json:"sodium_grams"`
 	DietaryFiberGrams float64 `gorm:"not null" json:"dietary_fiber_grams"`
+	SaturatedFatGrams float64 `gorm:"not null" json:"saturated_fat_grams"`
 
 	// HasEstimate and the EstimatedXPer100g fields are Recognize's own
 	// per-100g macro estimate for this item (see vision.Item.EstimatedProfile),
@@ -134,6 +136,7 @@ type FoodItem struct {
 	EstimatedSugarPer100g        float64 `gorm:"not null;default:0" json:"estimated_sugar_per_100g,omitempty"`
 	EstimatedSodiumPer100g       float64 `gorm:"not null;default:0" json:"estimated_sodium_per_100g,omitempty"`
 	EstimatedDietaryFiberPer100g float64 `gorm:"not null;default:0" json:"estimated_dietary_fiber_per_100g,omitempty"`
+	EstimatedSaturatedFatPer100g float64 `gorm:"not null;default:0" json:"estimated_saturated_fat_per_100g,omitempty"`
 }
 
 // HasMacros reports whether the item contributes to its meal's aggregate.
@@ -158,6 +161,7 @@ func (i *FoodItem) SetEstimatedProfile(p *NutrientProfile) {
 	i.EstimatedSugarPer100g = p.SugarPer100g
 	i.EstimatedSodiumPer100g = p.SodiumPer100g
 	i.EstimatedDietaryFiberPer100g = p.DietaryFiberPer100g
+	i.EstimatedSaturatedFatPer100g = p.SaturatedFatPer100g
 }
 
 // EstimatedProfile returns the item's persisted per-100g estimate and
@@ -176,9 +180,10 @@ func (i FoodItem) EstimatedProfile() (NutrientProfile, bool) {
 		SugarPer100g:        i.EstimatedSugarPer100g,
 		SodiumPer100g:       i.EstimatedSodiumPer100g,
 		DietaryFiberPer100g: i.EstimatedDietaryFiberPer100g,
+		SaturatedFatPer100g: i.EstimatedSaturatedFatPer100g,
 	}
 	if p.CaloriesPer100g < 0 || p.ProteinPer100g < 0 || p.CarbsPer100g < 0 || p.FatPer100g < 0 ||
-		p.SugarPer100g < 0 || p.SodiumPer100g < 0 || p.DietaryFiberPer100g < 0 {
+		p.SugarPer100g < 0 || p.SodiumPer100g < 0 || p.DietaryFiberPer100g < 0 || p.SaturatedFatPer100g < 0 {
 		return NutrientProfile{}, false
 	}
 	return p, true
@@ -241,6 +246,7 @@ type CustomFood struct {
 	SugarPer100g        float64 `gorm:"not null" json:"sugar_per_100g"`
 	SodiumPer100g       float64 `gorm:"not null" json:"sodium_per_100g"`
 	DietaryFiberPer100g float64 `gorm:"not null" json:"dietary_fiber_per_100g"`
+	SaturatedFatPer100g float64 `gorm:"not null" json:"saturated_fat_per_100g"`
 }
 
 // FoodSearchTranslation is a user's cached free-text-to-USDA-vocabulary
@@ -323,6 +329,7 @@ type NutrientProfile struct {
 	SugarPer100g        float64 `json:"sugar_per_100g"`
 	SodiumPer100g       float64 `json:"sodium_per_100g"`
 	DietaryFiberPer100g float64 `json:"dietary_fiber_per_100g"`
+	SaturatedFatPer100g float64 `json:"saturated_fat_per_100g"`
 }
 
 // Profile returns the custom food's per-100g values.
@@ -335,6 +342,7 @@ func (c CustomFood) Profile() NutrientProfile {
 		SugarPer100g:        c.SugarPer100g,
 		SodiumPer100g:       c.SodiumPer100g,
 		DietaryFiberPer100g: c.DietaryFiberPer100g,
+		SaturatedFatPer100g: c.SaturatedFatPer100g,
 	}
 }
 
@@ -375,14 +383,15 @@ func (i *FoodItem) applyScaledProfile(p NutrientProfile, source string) {
 	i.SugarGrams = p.SugarPer100g * f
 	i.SodiumGrams = p.SodiumPer100g * f
 	i.DietaryFiberGrams = p.DietaryFiberPer100g * f
+	i.SaturatedFatGrams = p.SaturatedFatPer100g * f
 	i.MacroSource = source
 }
 
-// Aggregate sums the 7 macros over items that have usable macros. Items with
+// Aggregate sums the 8 macros over items that have usable macros. Items with
 // MacroSource none are excluded rather than counted as zero-value foods.
 func (m *FoodMeal) Aggregate(items []FoodItem) {
 	m.Calories, m.ProteinGrams, m.CarbsGrams, m.FatGrams = 0, 0, 0, 0
-	m.SugarGrams, m.SodiumGrams, m.DietaryFiberGrams = 0, 0, 0
+	m.SugarGrams, m.SodiumGrams, m.DietaryFiberGrams, m.SaturatedFatGrams = 0, 0, 0, 0
 	for _, it := range items {
 		if !it.HasMacros() {
 			continue
@@ -394,5 +403,6 @@ func (m *FoodMeal) Aggregate(items []FoodItem) {
 		m.SugarGrams += it.SugarGrams
 		m.SodiumGrams += it.SodiumGrams
 		m.DietaryFiberGrams += it.DietaryFiberGrams
+		m.SaturatedFatGrams += it.SaturatedFatGrams
 	}
 }

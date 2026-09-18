@@ -114,7 +114,7 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 	}
 	rows, err := i.db.Query(`
 		SELECT f.code, f.product_name, f.brands,
-		       f.calories, f.protein, f.carbs, f.fat, f.sugar, f.sodium, f.fiber
+		       f.calories, f.protein, f.carbs, f.fat, f.sugar, f.sodium, f.fiber, f.saturated_fat
 		FROM off_foods_fts fts
 		JOIN off_foods f ON f.rowid = fts.rowid
 		WHERE off_foods_fts MATCH ?
@@ -130,7 +130,8 @@ func (i *Index) Search(name, brand string, limit int) ([]Food, error) {
 		var p database.NutrientProfile
 		if err := rows.Scan(&f.Code, &f.ProductName, &f.Brands,
 			&p.CaloriesPer100g, &p.ProteinPer100g, &p.CarbsPer100g,
-			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g); err != nil {
+			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g,
+			&p.SaturatedFatPer100g); err != nil {
 			return nil, fmt.Errorf("scan off row: %w", err)
 		}
 		f.Profile = p
@@ -192,11 +193,12 @@ func (i *Index) ByCode(code string) (*Food, error) {
 	var f Food
 	var p database.NutrientProfile
 	err := i.db.QueryRow(`
-		SELECT code, product_name, brands, calories, protein, carbs, fat, sugar, sodium, fiber
+		SELECT code, product_name, brands, calories, protein, carbs, fat, sugar, sodium, fiber, saturated_fat
 		FROM off_foods WHERE code = ?`, code).
 		Scan(&f.Code, &f.ProductName, &f.Brands,
 			&p.CaloriesPer100g, &p.ProteinPer100g, &p.CarbsPer100g,
-			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g)
+			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g,
+			&p.SaturatedFatPer100g)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -231,7 +233,8 @@ CREATE TABLE off_foods (
   fat          REAL    NOT NULL DEFAULT 0,
   sugar        REAL    NOT NULL DEFAULT 0,
   sodium       REAL    NOT NULL DEFAULT 0,
-  fiber        REAL    NOT NULL DEFAULT 0
+  fiber        REAL    NOT NULL DEFAULT 0,
+  saturated_fat REAL   NOT NULL DEFAULT 0
 );
 CREATE VIRTUAL TABLE off_foods_fts USING fts5(product_name, brands, content='off_foods', content_rowid='rowid');
 `
@@ -274,8 +277,8 @@ func NewBuilder(target string) (*Builder, error) {
 	}
 	stmt, err := tx.Prepare(`
 		INSERT OR REPLACE INTO off_foods
-		  (code, product_name, brands, calories, protein, carbs, fat, sugar, sodium, fiber)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`)
+		  (code, product_name, brands, calories, protein, carbs, fat, sugar, sodium, fiber, saturated_fat)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		tx.Rollback() //nolint:errcheck
 		db.Close()    //nolint:errcheck
@@ -290,7 +293,7 @@ func (b *Builder) Add(f Food) error {
 		f.Code, f.ProductName, f.Brands,
 		f.Profile.CaloriesPer100g, f.Profile.ProteinPer100g, f.Profile.CarbsPer100g,
 		f.Profile.FatPer100g, f.Profile.SugarPer100g, f.Profile.SodiumPer100g,
-		f.Profile.DietaryFiberPer100g)
+		f.Profile.DietaryFiberPer100g, f.Profile.SaturatedFatPer100g)
 	if err != nil {
 		return fmt.Errorf("insert off food %s: %w", f.Code, err)
 	}

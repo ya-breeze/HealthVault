@@ -238,6 +238,7 @@ export interface NutrientProfile {
   sugar_per_100g: number;
   sodium_per_100g: number;
   dietary_fiber_per_100g: number;
+  saturated_fat_per_100g: number;
 }
 
 export interface FoodSearchResult {
@@ -272,6 +273,7 @@ export interface CustomFood {
   sugar_per_100g: number;
   sodium_per_100g: number;
   dietary_fiber_per_100g: number;
+  saturated_fat_per_100g: number;
 }
 
 export type CustomFoodInput = Omit<CustomFood, 'id'>;
@@ -303,6 +305,7 @@ export interface FoodItem {
   sugar_grams: number;
   sodium_grams: number;
   dietary_fiber_grams: number;
+  saturated_fat_grams: number;
 }
 
 export interface FoodMeal {
@@ -321,6 +324,7 @@ export interface FoodMeal {
   sugar_grams: number;
   sodium_grams: number;
   dietary_fiber_grams: number;
+  saturated_fat_grams: number;
   items: FoodItem[] | null;
 }
 
@@ -356,6 +360,7 @@ export interface ManualMealItemInput {
   sugar_grams?: number;
   sodium_grams?: number;
   dietary_fiber_grams?: number;
+  saturated_fat_grams?: number;
 }
 
 export interface PatchItemInput {
@@ -377,6 +382,7 @@ export interface PatchItemInput {
   sugar_grams?: number;
   sodium_grams?: number;
   dietary_fiber_grams?: number;
+  saturated_fat_grams?: number;
 }
 
 export interface ExpertComponentInput {
@@ -463,10 +469,10 @@ export interface DayCompleteness {
 export interface DailyTotal {
   date: string;
   calories: number;
-  // protein_grams, carbs_grams, fat_grams, sugar_grams, sodium_grams and
-  // dietary_fiber_grams mirror
+  // protein_grams, carbs_grams, fat_grams, sugar_grams, sodium_grams,
+  // dietary_fiber_grams and saturated_fat_grams mirror
   // database.DailyTotal (food_daily_totals.go) — required, not optional. The
-  // backend serializes all six with no `omitempty`, so a zero sum always
+  // backend serializes all seven with no `omitempty`, so a zero sum always
   // arrives as the number 0, never an absent key.
   protein_grams: number;
   carbs_grams: number;
@@ -474,6 +480,7 @@ export interface DailyTotal {
   sugar_grams: number;
   sodium_grams: number;
   dietary_fiber_grams: number;
+  saturated_fat_grams: number;
   // How many of that day's meals are in a status other than `confirmed`, and
   // so contributed nothing to `calories` or the six fields above. Non-zero
   // means the day's total is under-counted by an unknown amount, which is
@@ -610,6 +617,7 @@ export interface NutritionAdviceWindow {
   mean_sugar_grams: number;
   mean_sodium_grams: number;
   mean_dietary_fiber_grams: number;
+  mean_saturated_fat_grams: number;
 }
 
 export interface NutritionAdviceRequest {

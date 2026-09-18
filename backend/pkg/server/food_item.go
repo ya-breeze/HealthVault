@@ -71,6 +71,7 @@ type patchItemRequest struct {
 	SugarGrams        float64 `json:"sugar_grams,omitempty"`
 	SodiumGrams       float64 `json:"sodium_grams,omitempty"`
 	DietaryFiberGrams float64 `json:"dietary_fiber_grams,omitempty"`
+	SaturatedFatGrams float64 `json:"saturated_fat_grams,omitempty"`
 }
 
 // editableMealStatus reports whether a meal's items (and its name/logged_at)
@@ -196,6 +197,7 @@ func (h *foodHandlers) applyItemMutation(
 				"sugar_grams":         agg.SugarGrams,
 				"sodium_grams":        agg.SodiumGrams,
 				"dietary_fiber_grams": agg.DietaryFiberGrams,
+				"saturated_fat_grams": agg.SaturatedFatGrams,
 			}).Error
 		})
 		if err == nil {
@@ -360,6 +362,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 			item.SugarGrams = req.SugarGrams
 			item.SodiumGrams = req.SodiumGrams
 			item.DietaryFiberGrams = req.DietaryFiberGrams
+			item.SaturatedFatGrams = req.SaturatedFatGrams
 			// A manual correction alongside a name change fully replaces the
 			// item's identity by hand — the AI-recognized Canonical Name no
 			// longer describes it, and carrying it forward would pair the new
@@ -477,6 +480,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				SugarPer100g:        item.SugarGrams * scale,
 				SodiumPer100g:       item.SodiumGrams * scale,
 				DietaryFiberPer100g: item.DietaryFiberGrams * scale,
+				SaturatedFatPer100g: item.SaturatedFatGrams * scale,
 			}
 			cf := database.CustomFood{UserID: claims.UserID}
 			cf.ID = uuid.New()
@@ -520,6 +524,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				"sugar_grams":         item.SugarGrams,
 				"sodium_grams":        item.SodiumGrams,
 				"dietary_fiber_grams": item.DietaryFiberGrams,
+				"saturated_fat_grams": item.SaturatedFatGrams,
 			})
 		if res.Error != nil {
 			// A concurrent write landing between this transaction's read and
@@ -593,6 +598,7 @@ type createItemRequest struct {
 	SugarGrams        float64 `json:"sugar_grams,omitempty"`
 	SodiumGrams       float64 `json:"sodium_grams,omitempty"`
 	DietaryFiberGrams float64 `json:"dietary_fiber_grams,omitempty"`
+	SaturatedFatGrams float64 `json:"saturated_fat_grams,omitempty"`
 }
 
 // CreateMealItem handles POST /api/food/meals/{id}/items: add a new item to
@@ -671,6 +677,7 @@ func (h *foodHandlers) CreateMealItem(w http.ResponseWriter, r *http.Request) {
 		item.SugarGrams = req.SugarGrams
 		item.SodiumGrams = req.SodiumGrams
 		item.DietaryFiberGrams = req.DietaryFiberGrams
+		item.SaturatedFatGrams = req.SaturatedFatGrams
 	case hasReference:
 		if req.WeightGrams == nil || *req.WeightGrams <= 0 {
 			http.Error(w, "weight_grams must be positive for a reference item", http.StatusBadRequest)

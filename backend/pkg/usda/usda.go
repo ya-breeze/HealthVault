@@ -95,7 +95,7 @@ func (i *Index) Search(term string, limit int) ([]Food, error) {
 	}
 	rows, err := i.db.Query(`
 		SELECT f.fdc_id, f.description, f.data_type,
-		       f.calories, f.protein, f.carbs, f.fat, f.sugar, f.sodium, f.fiber
+		       f.calories, f.protein, f.carbs, f.fat, f.sugar, f.sodium, f.fiber, f.saturated_fat
 		FROM usda_foods_fts fts
 		JOIN usda_foods f ON f.rowid = fts.rowid
 		WHERE usda_foods_fts MATCH ?
@@ -112,7 +112,8 @@ func (i *Index) Search(term string, limit int) ([]Food, error) {
 		var p database.NutrientProfile
 		if err := rows.Scan(&f.FdcID, &f.Description, &f.DataType,
 			&p.CaloriesPer100g, &p.ProteinPer100g, &p.CarbsPer100g,
-			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g); err != nil {
+			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g,
+			&p.SaturatedFatPer100g); err != nil {
 			return nil, fmt.Errorf("scan usda row: %w", err)
 		}
 		f.Profile = p
@@ -132,11 +133,12 @@ func (i *Index) ByFdcID(id int64) (*Food, error) {
 	var f Food
 	var p database.NutrientProfile
 	err := i.db.QueryRow(`
-		SELECT fdc_id, description, data_type, calories, protein, carbs, fat, sugar, sodium, fiber
+		SELECT fdc_id, description, data_type, calories, protein, carbs, fat, sugar, sodium, fiber, saturated_fat
 		FROM usda_foods WHERE fdc_id = ?`, id).
 		Scan(&f.FdcID, &f.Description, &f.DataType,
 			&p.CaloriesPer100g, &p.ProteinPer100g, &p.CarbsPer100g,
-			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g)
+			&p.FatPer100g, &p.SugarPer100g, &p.SodiumPer100g, &p.DietaryFiberPer100g,
+			&p.SaturatedFatPer100g)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -171,7 +173,8 @@ CREATE TABLE usda_foods (
   fat         REAL    NOT NULL DEFAULT 0,
   sugar       REAL    NOT NULL DEFAULT 0,
   sodium      REAL    NOT NULL DEFAULT 0,
-  fiber       REAL    NOT NULL DEFAULT 0
+  fiber       REAL    NOT NULL DEFAULT 0,
+  saturated_fat REAL  NOT NULL DEFAULT 0
 );
 CREATE VIRTUAL TABLE usda_foods_fts USING fts5(description, content='usda_foods', content_rowid='rowid');
 `
@@ -214,8 +217,8 @@ func NewBuilder(target string) (*Builder, error) {
 	}
 	stmt, err := tx.Prepare(`
 		INSERT OR REPLACE INTO usda_foods
-		  (fdc_id, description, data_type, calories, protein, carbs, fat, sugar, sodium, fiber)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`)
+		  (fdc_id, description, data_type, calories, protein, carbs, fat, sugar, sodium, fiber, saturated_fat)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		tx.Rollback() //nolint:errcheck
 		db.Close()    //nolint:errcheck
@@ -230,7 +233,7 @@ func (b *Builder) Add(f Food) error {
 		f.FdcID, f.Description, f.DataType,
 		f.Profile.CaloriesPer100g, f.Profile.ProteinPer100g, f.Profile.CarbsPer100g,
 		f.Profile.FatPer100g, f.Profile.SugarPer100g, f.Profile.SodiumPer100g,
-		f.Profile.DietaryFiberPer100g)
+		f.Profile.DietaryFiberPer100g, f.Profile.SaturatedFatPer100g)
 	if err != nil {
 		return fmt.Errorf("insert usda food %d: %w", f.FdcID, err)
 	}

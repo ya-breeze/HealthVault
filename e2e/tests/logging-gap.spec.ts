@@ -125,9 +125,11 @@ interface LoggingGapFixture {
   // numbers they don't care about.
   today?: { calories: number; protein: number; carbs: number; fat: number };
   completeness?: { date: string; state: string }[];
-  // The six Healthiness Label fields are optional. Macros/sugar/sodium default
-  // to zero; fiber defaults to its 25 g adequate boundary so fixtures that
-  // predate this signal do not acquire an unrelated low-fiber verdict.
+  // The seven Healthiness Label fields are optional. Macros/sugar/sodium
+  // default to zero; fiber defaults to its 25 g adequate boundary so fixtures
+  // that predate this signal do not acquire an unrelated low-fiber verdict.
+  // Saturated fat defaults to zero like sugar/sodium — it's an upper-only
+  // signal, so zero is trivially on the ok side and needs no special default.
   // (filled in by mockLoggingGapApis below) — every fixture that predates
   // the label leaves them unset, which pools to zero macro energy and so,
   // correctly, produces no label at all.
@@ -141,6 +143,7 @@ interface LoggingGapFixture {
     sugar_grams?: number;
     sodium_grams?: number;
     dietary_fiber_grams?: number;
+    saturated_fat_grams?: number;
   }[];
 }
 
@@ -219,6 +222,7 @@ async function mockLoggingGapApis(
           sugar_grams: d.sugar_grams ?? 0,
           sodium_grams: d.sodium_grams ?? 0,
           dietary_fiber_grams: d.dietary_fiber_grams ?? 25,
+          saturated_fat_grams: d.saturated_fat_grams ?? 0,
           unconfirmed_meals: d.unconfirmed_meals,
         })),
       })

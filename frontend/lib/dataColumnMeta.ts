@@ -43,6 +43,7 @@ const SHARED_COLUMN_LABEL_KEYS: Readonly<Record<string, ColumnLabelKey>> = {
   sugar_grams: 'dataTable.column.sugarGrams',
   sodium_grams: 'dataTable.column.sodiumGrams',
   dietary_fiber_grams: 'dataTable.column.dietaryFiberGrams',
+  saturated_fat_grams: 'dataTable.column.saturatedFatGrams',
 };
 
 // These raw names occur in more than one schema and do not describe the

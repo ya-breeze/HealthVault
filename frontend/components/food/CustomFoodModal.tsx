@@ -17,6 +17,7 @@ const FIELDS: [keyof CustomFoodInput, string][] = [
   ['sugar_per_100g', 'Sugar (g)'],
   ['sodium_per_100g', 'Sodium (g)'],
   ['dietary_fiber_per_100g', 'Fiber (g)'],
+  ['saturated_fat_per_100g', 'Saturated fat (g)'],
 ];
 
 export default function CustomFoodModal({ initial, onSave, onClose }: Props) {
@@ -29,6 +30,7 @@ export default function CustomFoodModal({ initial, onSave, onClose }: Props) {
     sugar_per_100g: initial?.sugar_per_100g ?? 0,
     sodium_per_100g: initial?.sodium_per_100g ?? 0,
     dietary_fiber_per_100g: initial?.dietary_fiber_per_100g ?? 0,
+    saturated_fat_per_100g: initial?.saturated_fat_per_100g ?? 0,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +52,7 @@ export default function CustomFoodModal({ initial, onSave, onClose }: Props) {
         sugar_per_100g: values.sugar_per_100g,
         sodium_per_100g: values.sodium_per_100g,
         dietary_fiber_per_100g: values.dietary_fiber_per_100g,
+        saturated_fat_per_100g: values.saturated_fat_per_100g,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');

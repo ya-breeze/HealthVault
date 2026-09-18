@@ -83,6 +83,7 @@ function nutritionAdviceSignature(
     request.window.mean_sugar_grams,
     request.window.mean_sodium_grams,
     request.window.mean_dietary_fiber_grams,
+    request.window.mean_saturated_fat_grams,
     context.target_calories,
     context.target_protein_grams,
     context.target_carbs_grams,
@@ -328,6 +329,7 @@ export default function LoggingGapCard({
             sugarGrams: total.sugar_grams,
             sodiumGrams: total.sodium_grams,
             dietaryFiberGrams: total.dietary_fiber_grams,
+            saturatedFatGrams: total.saturated_fat_grams,
           };
         }
 
@@ -427,6 +429,7 @@ export default function LoggingGapCard({
         mean_sugar_grams: healthiness.means.sugarGrams,
         mean_sodium_grams: healthiness.means.sodiumGrams,
         mean_dietary_fiber_grams: healthiness.means.dietaryFiberGrams,
+        mean_saturated_fat_grams: healthiness.means.saturatedFatGrams,
       },
     };
     const context: NutritionAdviceContext = {

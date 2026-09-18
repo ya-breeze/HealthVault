@@ -79,8 +79,8 @@ Also estimate each item's own per-100g nutrition as estimated_profile — your
 best guess from the photo, even for an item you expect will be matched to a
 known food or product afterward, since this is only used as a fallback if no
 match is found later. Units: calories_per_100g is kcal; every other field
-(protein, carbs, fat, sugar, sodium, dietary_fiber) is grams per 100g —
-sodium included: a food label's milligram sodium value must be converted to
+(protein, carbs, fat, sugar, sodium, dietary_fiber, saturated_fat) is grams
+per 100g — sodium included: a food label's milligram sodium value must be converted to
 grams (divide by 1000) before reporting it here. Set estimated_profile to
 null only if you genuinely cannot make any reasonable estimate for that item.
 
@@ -138,8 +138,8 @@ to a known food or product afterward. On this path there is usually no other
 source of macros for the item, so make your best estimate rather than
 leaving it null whenever you can reasonably guess. Units: calories_per_100g
 is kcal; every other field (protein, carbs, fat, sugar, sodium,
-dietary_fiber) is grams per 100g — sodium included: a milligram sodium value
-must be converted to grams (divide by 1000) before reporting it here. Set
+dietary_fiber, saturated_fat) is grams per 100g — sodium included: a
+milligram sodium value must be converted to grams (divide by 1000) before reporting it here. Set
 estimated_profile to null only if you genuinely cannot make any reasonable
 estimate for that item.
 
@@ -293,10 +293,11 @@ var estimatedProfileSchema = map[string]any{
 		"sugar_per_100g":         map[string]any{"type": "number"},
 		"sodium_per_100g":        map[string]any{"type": "number"},
 		"dietary_fiber_per_100g": map[string]any{"type": "number"},
+		"saturated_fat_per_100g": map[string]any{"type": "number"},
 	},
 	"required": []string{
 		"calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g",
-		"sugar_per_100g", "sodium_per_100g", "dietary_fiber_per_100g",
+		"sugar_per_100g", "sodium_per_100g", "dietary_fiber_per_100g", "saturated_fat_per_100g",
 	},
 	"additionalProperties": false,
 }
@@ -348,6 +349,7 @@ type recognizeSchemaEstimatedProfile struct {
 	SugarPer100g        float64 `json:"sugar_per_100g"`
 	SodiumPer100g       float64 `json:"sodium_per_100g"`
 	DietaryFiberPer100g float64 `json:"dietary_fiber_per_100g"`
+	SaturatedFatPer100g float64 `json:"saturated_fat_per_100g"`
 }
 
 type recognizeSchemaItem struct {
@@ -381,6 +383,7 @@ func toEstimatedProfile(p *recognizeSchemaEstimatedProfile) *database.NutrientPr
 		SugarPer100g:        p.SugarPer100g,
 		SodiumPer100g:       p.SodiumPer100g,
 		DietaryFiberPer100g: p.DietaryFiberPer100g,
+		SaturatedFatPer100g: p.SaturatedFatPer100g,
 	}
 }
 
@@ -924,7 +927,7 @@ var nutritionChatTools = []chatTool{
 				"type": "object",
 				"properties": map[string]any{
 					"signal": map[string]any{
-						"type": "string", "enum": []string{"protein", "carbs", "fat", "sugar", "sodium", "fiber"},
+						"type": "string", "enum": []string{"protein", "carbs", "fat", "sugar", "sodium", "fiber", "saturated_fat"},
 					},
 				},
 				"required": []string{"signal"}, "additionalProperties": false,

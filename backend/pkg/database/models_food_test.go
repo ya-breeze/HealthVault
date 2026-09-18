@@ -283,13 +283,24 @@ func TestFoodItem_ApplyProfileScalesByWeight(t *testing.T) {
 	}
 }
 
+// Saturated fat scales by weight the same way every other per-100g nutrient
+// does — the 8th field must not have been missed in applyScaledProfile.
+func TestFoodItem_ApplyProfileScalesSaturatedFatByWeight(t *testing.T) {
+	it := database.FoodItem{WeightGrams: 200}
+	it.ApplyProfile(database.NutrientProfile{SaturatedFatPer100g: 4})
+
+	if math.Abs(it.SaturatedFatGrams-8) > 1e-9 {
+		t.Errorf("SaturatedFatGrams = %v, want 8", it.SaturatedFatGrams)
+	}
+}
+
 // The bug this guards: aggregating only reference-bound items zeroes out a meal
 // logged entirely from package labels.
 func TestFoodMeal_AggregateIncludesManualItems(t *testing.T) {
 	items := []database.FoodItem{
-		{MacroSource: database.MacroSourceReference, Calories: 100, ProteinGrams: 10},
-		{MacroSource: database.MacroSourceManual, Calories: 250, ProteinGrams: 5},
-		{MacroSource: database.MacroSourceNone, Calories: 999, ProteinGrams: 999},
+		{MacroSource: database.MacroSourceReference, Calories: 100, ProteinGrams: 10, SaturatedFatGrams: 2},
+		{MacroSource: database.MacroSourceManual, Calories: 250, ProteinGrams: 5, SaturatedFatGrams: 3},
+		{MacroSource: database.MacroSourceNone, Calories: 999, ProteinGrams: 999, SaturatedFatGrams: 999},
 	}
 	var m database.FoodMeal
 	m.Aggregate(items)
@@ -299,6 +310,9 @@ func TestFoodMeal_AggregateIncludesManualItems(t *testing.T) {
 	}
 	if m.ProteinGrams != 15 {
 		t.Errorf("ProteinGrams = %v, want 15", m.ProteinGrams)
+	}
+	if m.SaturatedFatGrams != 5 {
+		t.Errorf("SaturatedFatGrams = %v, want 5 (reference + manual, excluding none)", m.SaturatedFatGrams)
 	}
 }
 
@@ -602,7 +616,7 @@ func TestFoodMeal_JSONFieldsAreSnakeCase(t *testing.T) {
 	for _, key := range []string{
 		"id", "family_id", "user_id", "status", "logged_at", "name",
 		"clarify_round", "calories", "protein_grams", "carbs_grams", "fat_grams",
-		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "items",
+		"sugar_grams", "sodium_grams", "dietary_fiber_grams", "saturated_fat_grams", "items",
 	} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("expected JSON key %q, got keys %v", key, keysOf(raw))
