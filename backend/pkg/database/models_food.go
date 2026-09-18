@@ -117,7 +117,13 @@ type FoodItem struct {
 	SugarGrams        float64 `gorm:"not null" json:"sugar_grams"`
 	SodiumGrams       float64 `gorm:"not null" json:"sodium_grams"`
 	DietaryFiberGrams float64 `gorm:"not null" json:"dietary_fiber_grams"`
-	SaturatedFatGrams float64 `gorm:"not null" json:"saturated_fat_grams"`
+	// default:0 (unlike its siblings above): this column is new against an
+	// already-populated table, and SQLite's ALTER TABLE ADD COLUMN refuses a
+	// NOT NULL column with no default when the table has existing rows
+	// ("Cannot add a NOT NULL column with default value NULL") — see
+	// docs/specs/saturated-fat-signal.md. The siblings above never hit this
+	// because they were present since this table's original schema.
+	SaturatedFatGrams float64 `gorm:"not null;default:0" json:"saturated_fat_grams"`
 
 	// HasEstimate and the EstimatedXPer100g fields are Recognize's own
 	// per-100g macro estimate for this item (see vision.Item.EstimatedProfile),
@@ -246,7 +252,9 @@ type CustomFood struct {
 	SugarPer100g        float64 `gorm:"not null" json:"sugar_per_100g"`
 	SodiumPer100g       float64 `gorm:"not null" json:"sodium_per_100g"`
 	DietaryFiberPer100g float64 `gorm:"not null" json:"dietary_fiber_per_100g"`
-	SaturatedFatPer100g float64 `gorm:"not null" json:"saturated_fat_per_100g"`
+	// default:0: see the identical note on FoodItem.SaturatedFatGrams above —
+	// this column is new against an already-populated table.
+	SaturatedFatPer100g float64 `gorm:"not null;default:0" json:"saturated_fat_per_100g"`
 }
 
 // FoodSearchTranslation is a user's cached free-text-to-USDA-vocabulary
