@@ -198,3 +198,13 @@ The owner accepted variant A from `https://artifacts.ikoro.in/healthvault/widget
 - [x] Update summary contract/parsing tests, picker previews, localized accessibility strings, and source guards for the accepted layout and self-replacing refresh ordering
 - [x] Build, test, lint, and assemble a new owner-acceptance APK without merging or deploying production
 - [x] Mark completed
+
+### Task 16: Preserve colored rails against the pre-pacing server contract
+
+The owner acceptance screenshot showed neutral orange rails and no pace glyphs because the installed app still used a production response that predates Task 15's two pacing fields. Until that server contract is deployed, Android must approximate the same calculation from the legacy raw `meal_count` and the domain default of three usual meals per day. Once both exact fields arrive, they must take precedence automatically; the fallback is compatibility behavior, not a replacement for ten-minute Eating Occasion clustering or the user's setting.
+
+- [ ] Add a red regression test using the owner's calorie and macro values in a summary response without pacing fields
+- [ ] Resolve pace inputs centrally so exact server values win and only a missing/invalid usual-meals value activates the legacy `meal_count / 3` fallback
+- [ ] Keep the fallback visible across every home-screen and FlexWindow breakpoint through the existing shared `paceFor` path
+- [ ] Build, test, lint, review, and publish a replacement owner-acceptance APK without merging or deploying production
+- [ ] Mark completed
