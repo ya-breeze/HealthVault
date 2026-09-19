@@ -87,6 +87,13 @@ func TestDashboardHandler_ContractIncludesOpaqueSettingsPresenceAllAggregatesAnd
 	if err := storage.DB().Create(&weight).Error; err != nil {
 		t.Fatalf("weight: %v", err)
 	}
+	bloodPressure := database.BloodPressure{
+		UserID: userID, SourcePayloadID: uuid.New(), Time: now.Add(-90 * time.Minute), Systolic: 120, Diastolic: 80,
+	}
+	bloodPressure.ID, bloodPressure.FamilyID = uuid.New(), familyID
+	if err := storage.DB().Create(&bloodPressure).Error; err != nil {
+		t.Fatalf("blood pressure: %v", err)
+	}
 	createMealAt(t, storage, userID, familyID, database.MealStatusPendingReview, now.Add(-3*time.Hour))
 
 	w := httptest.NewRecorder()
@@ -118,6 +125,39 @@ func TestDashboardHandler_ContractIncludesOpaqueSettingsPresenceAllAggregatesAnd
 		} else if rows == nil {
 			t.Errorf("aggregate %q rows serialized null, want []", metric)
 		}
+	}
+	requireAggregateRow := func(metric string, fields ...string) map[string]any {
+		t.Helper()
+		rows := aggregates[metric].(map[string]any)["rows"].([]any)
+		if len(rows) != 1 {
+			t.Fatalf("aggregate %q rows = %#v, want one seeded row", metric, rows)
+		}
+		row, ok := rows[0].(map[string]any)
+		if !ok {
+			t.Fatalf("aggregate %q row = %#v, want object", metric, rows[0])
+		}
+		for _, field := range fields {
+			if _, ok := row[field]; !ok {
+				t.Errorf("aggregate %q row = %#v, missing field %q", metric, row, field)
+			}
+		}
+		return row
+	}
+	stepsRow := requireAggregateRow("steps", "bucket_start", "count", "sum")
+	if stepsRow["count"] != float64(1) || stepsRow["sum"] != float64(100) {
+		t.Errorf("steps row = %#v, want count 1 and sum 100", stepsRow)
+	}
+	weightRow := requireAggregateRow("weight", "bucket_start", "count", "avg", "min", "max")
+	if weightRow["avg"] != float64(70) || weightRow["min"] != float64(70) || weightRow["max"] != float64(70) {
+		t.Errorf("weight row = %#v, want avg/min/max 70", weightRow)
+	}
+	bloodPressureRow := requireAggregateRow(
+		"blood_pressure", "bucket_start", "count",
+		"systolic_avg", "systolic_min", "systolic_max",
+		"diastolic_avg", "diastolic_min", "diastolic_max",
+	)
+	if bloodPressureRow["systolic_avg"] != float64(120) || bloodPressureRow["diastolic_avg"] != float64(80) {
+		t.Errorf("blood pressure row = %#v, want systolic 120 and diastolic 80", bloodPressureRow)
 	}
 	needs := body["needs_attention"].(map[string]any)
 	if needs["status"] != "ok" || needs["count"] != float64(1) {

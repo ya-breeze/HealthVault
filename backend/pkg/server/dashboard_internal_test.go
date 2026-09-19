@@ -173,13 +173,32 @@ func TestBuildDashboardReadModel_AggregateFailuresAreMetricIsolated(t *testing.T
 			if err := storage.UpsertUserSettings(userID, familyID, `{}`); err != nil {
 				t.Fatalf("settings: %v", err)
 			}
-			if err := storage.DB().Exec("DROP TABLE " + tc.table).Error; err != nil {
-				t.Fatalf("drop %s: %v", tc.table, err)
+			db := storage.DB()
+			const callbackName = "test:dashboard:aggregate-failure"
+			injectFailure := func(tx *gorm.DB) {
+				sql := strings.ToUpper(tx.Statement.SQL.String())
+				tableMatches := strings.EqualFold(tx.Statement.Table, tc.table) || strings.Contains(sql, strings.ToUpper(tc.table))
+				if !strings.Contains(sql, "UNION ALL") && tableMatches {
+					tx.AddError(errors.New("injected aggregate failure"))
+				}
+			}
+			if tc.metric == "steps" {
+				db.Callback().Row().Before("gorm:row").Register(callbackName, injectFailure)
+				t.Cleanup(func() { _ = db.Callback().Row().Remove(callbackName) })
+			} else {
+				db.Callback().Query().After("gorm:query").Register(callbackName, injectFailure)
+				t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
 			}
 
 			model := buildDashboardReadModel(storage, userID, time.Now().UTC())
 			if model.Aggregates[tc.metric].Status != dashboardStatusError {
 				t.Errorf("aggregate %q status = %q, want error", tc.metric, model.Aggregates[tc.metric].Status)
+			}
+			if model.Settings.Status != dashboardStatusOK || model.Presence.Status != dashboardStatusOK || model.NeedsAttention.Status != dashboardStatusOK {
+				t.Errorf(
+					"independent top-level sections changed: settings=%q presence=%q needs=%q",
+					model.Settings.Status, model.Presence.Status, model.NeedsAttention.Status,
+				)
 			}
 			for _, metric := range dashboardPrimaryMetrics {
 				if metric != tc.metric && model.Aggregates[metric].Status != dashboardStatusOK {
