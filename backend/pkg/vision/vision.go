@@ -51,6 +51,24 @@ type Item struct {
 	// finds no match — see
 	// openspec/changes/composite-food-recognition/design.md decision 4.
 	EstimatedProfile *database.NutrientProfile `json:"estimated_profile,omitempty"`
+	// Ingredients is Recognize's own ingredient breakdown of this item, asked
+	// for only when the item is itself a composite/merged dish (see
+	// recognizeSystemPrompt). Empty for an atomic item (a single apple) —
+	// Recognize is not asked to decompose those. Purely for later
+	// USDA/OFF-grounded comparison against EstimatedProfile; never used to
+	// resolve the item itself. See docs/specs/component-reference-shadow.md.
+	Ingredients []IngredientEstimate `json:"ingredients,omitempty"`
+}
+
+// IngredientEstimate is one ingredient of a composite Item, as Recognize
+// estimated it — a rough breakdown for reference-database lookup, not a
+// precise recipe. CanonicalNameEN is always in English (the only thing ever
+// searched against USDA/OFF), regardless of the display language Name is
+// written in — mirroring Item.CanonicalName's own English-identity role.
+type IngredientEstimate struct {
+	Name            string  `json:"name"`
+	CanonicalNameEN string  `json:"canonical_name_en"`
+	WeightGrams     float64 `json:"weight_grams"`
 }
 
 // RecognizeResult is the outcome of the first call: what foods are in the

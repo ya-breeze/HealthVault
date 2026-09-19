@@ -678,13 +678,13 @@ test.describe('a toast does not occlude a page\'s own bottom action bar', () => 
       id: 'nav-bar-mock-item', meal_id: MEAL_ID, name: 'Nav Bar Mock Item',
       macro_source: 'reference', weight_grams: 150, confidence: 1,
       calories: 200, protein_grams: 5, carbs_grams: 20, fat_grams: 5,
-      sugar_grams: 1, sodium_grams: 1, dietary_fiber_grams: 1,
+      sugar_grams: 1, sodium_grams: 1, dietary_fiber_grams: 1, saturated_fat_grams: 1,
     };
     const meal = {
       id: MEAL_ID, photo_path: 'fake/path.jpg', status: 'pending_review',
       logged_at: new Date().toISOString(), name: 'Nav Bar Mock Meal', clarify_round: 0, clarify_log: '',
       calories: 200, protein_grams: 5, carbs_grams: 20, fat_grams: 5,
-      sugar_grams: 1, sodium_grams: 1, dietary_fiber_grams: 1, items: [item],
+      sugar_grams: 1, sodium_grams: 1, dietary_fiber_grams: 1, saturated_fat_grams: 1, items: [item],
     };
     await page.route(`**/api/food/meals/${MEAL_ID}`, route =>
       route.request().method() === 'GET' ? route.fulfill({ json: meal }) : route.continue()

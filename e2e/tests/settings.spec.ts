@@ -277,3 +277,137 @@ test.describe('Profile form', () => {
     await expect(page.getByLabel('Activity level')).toHaveValue('active');
   });
 });
+
+// The Weight page's own "Set height"/"Set goal" shortcuts (data-types.spec.ts) exist for a
+// narrower purpose and are unchanged by this: height's retires forever after its first use,
+// proving the read path a user with an *existing* record would actually hit needs a different,
+// permanent affordance -- this section (docs/specs/a-permanent-way-to-change-height-and-go.md).
+test.describe('Body measurements (Settings)', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  // Unlike data-types.spec.ts's own same-named helper (which deletes every record of the type
+  // -- fine there, since each of its tests owns the whole account for the duration and always
+  // clears first), this suite's tests seed a *pre-existing* record deliberately, specifically to
+  // prove the button survives one already being on file. A blanket delete-everything cleanup
+  // would also erase whatever a concurrently running suite invocation against the same shared
+  // 'alice' account created in the meantime (a real risk Codex's peer review caught) -- so
+  // cleanup here deletes only the exact record IDs this test itself created, tracked from each
+  // write's own response, never a wildcard sweep of the type.
+  async function postRecord(page: Page, type: string, value: number): Promise<string> {
+    const result = await page.evaluate(async ({ t, value }) => {
+      const r = await fetch(`/api/data/${t}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      });
+      if (!r.ok) throw new Error(`POST /api/data/${t} failed: ${r.status}`);
+      return r.json();
+    }, { t: type, value });
+    return (result as { id: string }).id;
+  }
+
+  async function deleteRecord(page: Page, type: string, id: string): Promise<void> {
+    const ok = await page.evaluate(async ({ t, id }) => {
+      const r = await fetch(`/api/data/${t}/${id}`, { method: 'DELETE', credentials: 'include' });
+      return r.ok;
+    }, { t: type, id });
+    if (!ok) throw new Error(`DELETE /api/data/${type}/${id} failed`);
+  }
+
+  // The latest record by `time`, exactly as `latestByTime` in DataTypeClient.tsx picks the one
+  // that actually feeds the chart/BMI/goal-line -- so asserting against this, not merely that
+  // *some* row with the new value exists somewhere in the table, is what proves the button's
+  // write became authoritative rather than just accepted.
+  async function latestRecord(page: Page, type: string): Promise<{ id: string; time: string; [key: string]: unknown }> {
+    const records = await page.evaluate(async (t) => {
+      const r = await fetch(`/api/data/${t}?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`, {
+        credentials: 'include',
+      });
+      return r.json();
+    }, type);
+    const list = records as Array<{ id: string; time: string; [key: string]: unknown }>;
+    return list.reduce((latest, r) => (new Date(r.time) > new Date(latest.time) ? r : latest));
+  }
+
+  test('the height shortcut stays visible and usable in Settings after a height record already exists', async ({ page }) => {
+    let seedId: string | undefined;
+    let newId: string | undefined;
+    try {
+      seedId = await postRecord(page, 'height', 1.7);
+      await page.goto('/settings');
+      // The equivalent shortcut on /data/weight/ would already be gone at this point
+      // (data-types.spec.ts's own "shortcut retires once it has served its purpose") -- this one
+      // must not be.
+      const setHeight = page.getByTestId('settings-set-height');
+      await expect(setHeight).toBeVisible();
+      await setHeight.click();
+
+      const heightForm = page.getByTestId('add-record-height');
+      await heightForm.getByLabel(/^Value/).fill('1.82');
+      // Capture the id from this form's own POST response, not from a later GET's "latest" guess
+      // -- on the shared 'alice' account, a concurrent writer could otherwise own the record this
+      // test deletes, or (if values differ) make the assertion below throw before newId is ever
+      // set, leaking this test's own write. See docs/specs/a-permanent-way-to-change-height-and-go.md.
+      const [response] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/data/height') && r.request().method() === 'POST'),
+        heightForm.getByRole('button', { name: 'Add', exact: true }).click(),
+      ]);
+      const created = await response.json() as { id: string; meters: number };
+      newId = created.id;
+      expect(created.meters).toBe(1.82);
+      await expect(heightForm).not.toBeVisible();
+
+      // The new value actually became the latest record -- not just that the form accepted a
+      // submission, and not just that a '1.82' cell exists somewhere alongside the seed row.
+      // Checked directly via the API rather than the BMI readout it also feeds on the weight
+      // page: that needs a weight record too, out of this test's own scope (see this section's
+      // spec).
+      const latest = await latestRecord(page, 'height');
+      expect(latest.id).toBe(newId);
+      expect(latest.meters).toBe(1.82);
+    } finally {
+      if (seedId) await deleteRecord(page, 'height', seedId);
+      if (newId) await deleteRecord(page, 'height', newId);
+    }
+  });
+
+  test('the goal shortcut stays visible and usable in Settings after a goal record already exists', async ({ page }) => {
+    let seedId: string | undefined;
+    let newId: string | undefined;
+    try {
+      seedId = await postRecord(page, 'weight_goal', 70);
+      await page.goto('/settings');
+      const setGoal = page.getByTestId('settings-set-goal');
+      await expect(setGoal).toBeVisible();
+      await setGoal.click();
+
+      const goalForm = page.getByTestId('add-record-weight_goal');
+      await goalForm.getByLabel(/^Value/).fill('68');
+      // Same id-from-the-real-response reasoning as the height test above.
+      const [response] = await Promise.all([
+        page.waitForResponse(r => r.url().includes('/api/data/weight_goal') && r.request().method() === 'POST'),
+        goalForm.getByRole('button', { name: 'Add', exact: true }).click(),
+      ]);
+      const created = await response.json() as { id: string; kilograms: number };
+      newId = created.id;
+      expect(created.kilograms).toBe(68);
+      await expect(goalForm).not.toBeVisible();
+
+      // Same "actually the latest record" proof as the height test above.
+      const latest = await latestRecord(page, 'weight_goal');
+      expect(latest.id).toBe(newId);
+      expect(latest.kilograms).toBe(68);
+
+      // And that the new goal, not the seed, is what the goal ReferenceLine on the weight page
+      // now reflects.
+      await page.goto('/data/weight/');
+      await expect(page.getByText('Goal', { exact: true })).toBeVisible();
+    } finally {
+      if (seedId) await deleteRecord(page, 'weight_goal', seedId);
+      if (newId) await deleteRecord(page, 'weight_goal', newId);
+    }
+  });
+});

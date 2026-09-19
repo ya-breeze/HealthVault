@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	kinmodels "github.com/ya-breeze/kin-core/models"
 	"github.com/ya-breeze/healthvault/pkg/database"
 	photostorage "github.com/ya-breeze/healthvault/pkg/storage"
+	kinmodels "github.com/ya-breeze/kin-core/models"
 	"gorm.io/gorm"
 )
 
@@ -430,13 +432,63 @@ func summaryHandler(storage database.Storage) http.HandlerFunc {
 	}
 }
 
+type presenceProbeRow struct {
+	TypeName string `gorm:"column:type_name"`
+	Present  int64  `gorm:"column:present"`
+}
+
+// dataTypesPresence probes every registered table in one statement. The table
+// identifiers are taken only from the server-owned registry; all values that
+// cross the SQL boundary remain bind parameters. EXISTS plus LIMIT 1 keeps
+// each arm bounded at the first matching per-user index entry.
+func dataTypesPresence(db *gorm.DB, userID uuid.UUID) (map[string]bool, error) {
+	typeNames := make([]string, 0, len(typeRegistry))
+	for name := range typeRegistry {
+		typeNames = append(typeNames, name)
+	}
+	sort.Strings(typeNames)
+
+	arms := make([]string, 0, len(typeNames))
+	args := make([]any, 0, len(typeNames)*2)
+	for _, name := range typeNames {
+		info := typeRegistry[name]
+		arms = append(arms, fmt.Sprintf(
+			"SELECT ? AS type_name, EXISTS(SELECT 1 FROM %s WHERE user_id = ? LIMIT 1) AS present",
+			info.table,
+		))
+		args = append(args, name, userID)
+	}
+
+	var rows []presenceProbeRow
+	if err := db.Raw(strings.Join(arms, " UNION ALL "), args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) != len(typeNames) {
+		return nil, fmt.Errorf("presence returned %d rows, want %d", len(rows), len(typeNames))
+	}
+
+	presence := make(map[string]bool, len(typeNames))
+	for _, row := range rows {
+		if _, ok := typeRegistry[row.TypeName]; !ok {
+			return nil, fmt.Errorf("presence returned unknown type %q", row.TypeName)
+		}
+		if _, duplicate := presence[row.TypeName]; duplicate {
+			return nil, fmt.Errorf("presence returned duplicate type %q", row.TypeName)
+		}
+		if row.Present != 0 && row.Present != 1 {
+			return nil, fmt.Errorf("presence returned invalid boolean %d for %q", row.Present, row.TypeName)
+		}
+		presence[row.TypeName] = row.Present == 1
+	}
+	return presence, nil
+}
+
 // DataTypesPresenceHandler returns, for every type in typeRegistry, whether
 // the resolved user has ever recorded at least one row of it — the signal the
 // dashboard uses to hide types with no data at all (as opposed to the
-// existing 7-day recency window, which is unrelated). One indexed COUNT
-// round-trip per type against storage.DB() directly, mirroring
-// NeedsAttentionCount's precedent; see design.md for why this is fine at this
-// project's scale. Exported for use in tests.
+// existing 7-day recency window, which is unrelated). The complete response
+// comes from one bounded-probe statement against storage.DB(). Exported for
+// use in tests.
 func DataTypesPresenceHandler(storage database.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims := ClaimsFromCtx(r)
@@ -452,16 +504,10 @@ func DataTypesPresenceHandler(storage database.Storage) http.HandlerFunc {
 			return
 		}
 
-		presence := make(map[string]bool, len(typeRegistry))
-		for name, info := range typeRegistry {
-			var count int64
-			if err := storage.DB().Table(info.table).
-				Where("user_id = ?", targetUser.ID).
-				Count(&count).Error; err != nil {
-				http.Error(w, "query error", http.StatusInternalServerError)
-				return
-			}
-			presence[name] = count > 0
+		presence, err := dataTypesPresence(storage.DB(), targetUser.ID)
+		if err != nil {
+			http.Error(w, "query error", http.StatusInternalServerError)
+			return
 		}
 
 		writeJSON(w, presence)

@@ -84,7 +84,7 @@ func TestFoodItem_CarriesUserID(t *testing.T) {
 // created, because creating it through the current schema is not the case
 // that could actually break: AutoMigrate adds the column to existing tables
 // without backfilling it, so a genuinely pre-change row holds NULL, whereas a
-// row written by today's code holds ''. Scanning '' into a string can never
+// row written by today's code holds ”. Scanning ” into a string can never
 // fail; scanning NULL into a non-pointer string is the case worth a
 // regression test. Both the direct read and the Preload path used by the meal
 // detail endpoint are exercised, since they build different queries. Test
@@ -694,4 +694,75 @@ func keysOf(m map[string]any) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func TestFoodItem_SetIngredients_EmptyClearsRatherThanStoringEmptyArray(t *testing.T) {
+	item := database.FoodItem{}
+	item.SetIngredients([]database.IngredientReferenceEntry{{Name: "a", CanonicalNameEN: "a", WeightGrams: 1}})
+	if item.IngredientsJSON == "" {
+		t.Fatal("expected a non-empty IngredientsJSON after setting one entry")
+	}
+
+	item.SetIngredients(nil)
+	if item.IngredientsJSON != "" {
+		t.Errorf("expected SetIngredients(nil) to clear IngredientsJSON, got %q", item.IngredientsJSON)
+	}
+}
+
+func TestFoodItem_Ingredients_RoundTrip(t *testing.T) {
+	fdcID := int64(1234)
+	want := []database.IngredientReferenceEntry{
+		{Name: "огурец", CanonicalNameEN: "cucumber", WeightGrams: 100, Resolved: true, FdcID: &fdcID},
+		{Name: "помидор", CanonicalNameEN: "tomato", WeightGrams: 100},
+	}
+
+	item := database.FoodItem{}
+	item.SetIngredients(want)
+
+	got, ok := item.Ingredients()
+	if !ok {
+		t.Fatal("Ingredients() ok=false for a freshly-set value")
+	}
+	if len(got) != 2 {
+		t.Fatalf("Ingredients() = %+v, want 2 entries", got)
+	}
+	if got[0].CanonicalNameEN != "cucumber" || !got[0].Resolved || got[0].FdcID == nil || *got[0].FdcID != fdcID {
+		t.Errorf("entry 0 = %+v, want a resolved cucumber entry with FdcID %d", got[0], fdcID)
+	}
+	if got[1].CanonicalNameEN != "tomato" || got[1].Resolved || got[1].FdcID != nil {
+		t.Errorf("entry 1 = %+v, want an unresolved tomato entry", got[1])
+	}
+}
+
+func TestFoodItem_Ingredients_EmptyMeansAtomicItem(t *testing.T) {
+	item := database.FoodItem{} // never had SetIngredients called — an atomic item
+	got, ok := item.Ingredients()
+	if !ok {
+		t.Fatal("Ingredients() ok=false for an item that was simply never given a breakdown")
+	}
+	if got != nil {
+		t.Errorf("Ingredients() = %+v, want nil for an atomic item", got)
+	}
+}
+
+func TestFoodItem_Ingredients_CorruptJSONReportsNotOK(t *testing.T) {
+	item := database.FoodItem{IngredientsJSON: "{not valid json"}
+	got, ok := item.Ingredients()
+	if ok {
+		t.Errorf("Ingredients() ok=true for corrupt JSON, want false; got %+v", got)
+	}
+}
+
+func TestFoodItem_SetIngredientReferenceProfile(t *testing.T) {
+	item := database.FoodItem{}
+	item.SetIngredientReferenceProfile(database.NutrientProfile{
+		CaloriesPer100g: 50, ProteinPer100g: 2, CarbsPer100g: 8, FatPer100g: 1,
+		SugarPer100g: 3, SodiumPer100g: 0.1, DietaryFiberPer100g: 1.5, SaturatedFatPer100g: 0.3,
+	})
+	if !item.HasIngredientReference {
+		t.Fatal("expected HasIngredientReference=true after SetIngredientReferenceProfile")
+	}
+	if item.IngredientReferenceCaloriesPer100g != 50 || item.IngredientReferenceSaturatedFatPer100g != 0.3 {
+		t.Errorf("unexpected stored profile: %+v", item)
+	}
 }

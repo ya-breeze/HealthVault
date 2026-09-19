@@ -4,19 +4,28 @@ import { formatMetricValue, toDisplayUnit } from './dataTypeMeta';
 
 /**
  * A dashboard card's identifier: either a `DataType`-backed Vital Card, or a
- * card with no presence signal of its own — currently just the Logging Gap
- * Card (design.md decision 8). This union is a small, additive widening over
- * the old `DataType`-only registry, kept deliberately narrow rather than a
- * general "card kind" system: if a future card needs a third shape, the union
- * grows again then.
+ * Food Card with no presence signal of its own (design.md decision 8). This
+ * union is a small, additive widening over the old `DataType`-only registry,
+ * kept deliberately narrow rather than a general "card kind" system.
  */
-export type CardId = DataType | 'logging_gap';
+export type FoodCardId = 'logging_gap' | 'food_log_history';
+export type CardId = DataType | FoodCardId;
+
+/** The registry entries that have their own data-fetch/rendering lifecycle. */
+export function isFoodCard(type: CardId): type is FoodCardId {
+  return type === 'logging_gap' || type === 'food_log_history';
+}
+
+/** Narrows a registry id to the real `DataType` values accepted by `api.data`. */
+export function isDataTypeCard(type: CardId): type is DataType {
+  return !isFoodCard(type);
+}
 
 /**
  * The metrics shown as full vitals-grid cards on the dashboard, in display
- * order. Includes the Logging Gap Card, the registry's first non-`DataType`
- * entry (design.md decision 8) — it has no `/api/data/{type}` presence to
- * gate on, so it's always eligible to render, subject only to the user's own
+ * order. Includes the Food Cards, the registry's non-`DataType` entries
+ * (design.md decision 8) — they have no `/api/data/{type}` presence to gate
+ * on, so they're always eligible to render, subject only to the user's own
  * hidden/visible choice (see `hasCardPresence`).
  *
  * Type only, no label: display names now come from the `metric.<type>` keys in
@@ -34,6 +43,7 @@ export const PRIMARY_METRICS: { type: CardId }[] = [
   { type: 'blood_pressure' },
   { type: 'oxygen_saturation' },
   { type: 'logging_gap' },
+  { type: 'food_log_history' },
 ];
 
 /**
@@ -111,15 +121,14 @@ export function hasPresence(presence: Record<string, boolean> | null, type: stri
 }
 
 /**
- * Presence gate for a dashboard card (`CardId`, not just `DataType`).
- * `'logging_gap'` has no presence signal of its own (design.md decision 8) —
- * this SHALL NOT fall through to `hasPresence` for it, so a presence
- * response that omits it, or one that (incorrectly) returns `false` for it,
- * has no effect on whether the card is eligible to render. Every other
- * `CardId` delegates to `hasPresence` unchanged.
+ * Presence gate for a dashboard card (`CardId`, not just `DataType`). Food
+ * Cards have no presence signal of their own (design.md decision 8), so a
+ * presence response that omits them, or one that incorrectly returns `false`
+ * for them, has no effect on whether they're eligible to render. Every real
+ * `DataType` delegates to `hasPresence` unchanged.
  */
 export function hasCardPresence(presence: Record<string, boolean> | null, type: CardId): boolean {
-  if (type === 'logging_gap') return true;
+  if (isFoodCard(type)) return true;
   return hasPresence(presence, type);
 }
 
@@ -127,9 +136,9 @@ export function hasCardPresence(presence: Record<string, boolean> | null, type: 
  * The non-primary data types shown in the dashboard's "More Data" section:
  * every `DataType` not already registered as a primary vitals-grid card.
  * Takes the full `DataType` list as a parameter (rather than importing
- * `DATA_TYPES` itself) purely so callers can pass a fixture in tests;
- * `'logging_gap'` is never a candidate since it isn't a member of `allTypes`
- * to begin with — this filter can't accidentally surface it as a secondary
+ * `DATA_TYPES` itself) purely so callers can pass a fixture in tests; Food
+ * Cards are never candidates since they aren't members of `allTypes` to
+ * begin with — this filter can't accidentally surface one as a secondary
  * type.
  */
 export function secondaryTypes(allTypes: readonly DataType[]): DataType[] {

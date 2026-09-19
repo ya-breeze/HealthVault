@@ -24,6 +24,128 @@ async function withSettingsSave(page: Page, action: () => Promise<unknown>): Pro
   return saved;
 }
 
+type WritableFormType = 'weight' | 'height' | 'weight_goal';
+
+interface WritableRecordBody {
+  value: number;
+  time?: string;
+}
+
+interface WritableFormState {
+  records: Record<string, unknown>[];
+  postedBodies: WritableRecordBody[];
+  nextFailureBody?: string;
+  holdNextPost: boolean;
+  postStarted?: () => void;
+  releasePost?: () => void;
+}
+
+interface WritableFormFixtures {
+  postedBodies: (type: WritableFormType) => WritableRecordBody[];
+  failNextPost: (type: WritableFormType, body: string) => void;
+  holdNextPost: (type: WritableFormType) => void;
+  waitForPost: (type: WritableFormType) => Promise<void>;
+  releasePost: (type: WritableFormType) => void;
+}
+
+function writableRecordValueKey(type: WritableFormType): string {
+  return type === 'height' ? 'meters' : 'kilograms';
+}
+
+// The write-form tests use only this fixture route. It deliberately does not
+// share mockDataDetail's chart fixtures or the persistent seeded account: raw
+// GETs return each fixture's mutable records, bucketed GETs are empty, and
+// successful POSTs append a record before the form's refresh-key refetch.
+// POST failures and delays are armed explicitly by each test, so the response
+// timing is part of the assertion rather than an accidental network race.
+async function mockWritableRecordForms(page: Page): Promise<WritableFormFixtures> {
+  const states = new Map<WritableFormType, WritableFormState>(
+    (['weight', 'height', 'weight_goal'] as WritableFormType[]).map(type => [type, {
+      records: [],
+      postedBodies: [],
+      holdNextPost: false,
+    }]),
+  );
+
+  const stateFor = (type: WritableFormType): WritableFormState => {
+    const state = states.get(type);
+    if (!state) throw new Error(`Missing writable fixture for ${type}`);
+    return state;
+  };
+
+  await page.route('**/api/data/**', async route => {
+    const url = new URL(route.request().url());
+    const type = url.pathname.split('/').filter(Boolean).pop() as WritableFormType;
+    if (!states.has(type)) return route.fallback();
+    const state = stateFor(type);
+
+    if (route.request().method() === 'GET') {
+      // DataTypeClient asks for bucketed chart data as well as raw records.
+      // Keeping the chart response empty prevents raw record fields from
+      // being mistaken for bucket rows while the table still gets the
+      // mutable raw result that proves refresh happened.
+      return route.fulfill({ json: url.searchParams.has('bucket') ? [] : state.records });
+    }
+    if (route.request().method() !== 'POST') return route.fallback();
+
+    const body = route.request().postDataJSON() as WritableRecordBody;
+    state.postedBodies.push(body);
+    state.postStarted?.();
+    state.postStarted = undefined;
+
+    if (state.nextFailureBody !== undefined) {
+      const failureBody = state.nextFailureBody;
+      state.nextFailureBody = undefined;
+      return route.fulfill({ status: 500, contentType: 'text/plain', body: failureBody });
+    }
+
+    if (state.holdNextPost) {
+      state.holdNextPost = false;
+      await new Promise<void>(resolve => { state.releasePost = resolve; });
+      state.releasePost = undefined;
+    }
+
+    const record = {
+      id: `${type}-fixture-${state.records.length + 1}`,
+      [writableRecordValueKey(type)]: body.value,
+      time: body.time ?? new Date().toISOString(),
+    };
+    state.records = [...state.records, record];
+    return route.fulfill({ json: record });
+  });
+
+  return {
+    postedBodies: type => stateFor(type).postedBodies,
+    failNextPost: (type, body) => { stateFor(type).nextFailureBody = body; },
+    holdNextPost: type => { stateFor(type).holdNextPost = true; },
+    waitForPost: type => new Promise(resolve => { stateFor(type).postStarted = resolve; }),
+    releasePost: type => {
+      const state = stateFor(type);
+      if (!state.releasePost) throw new Error(`No held POST for ${type}`);
+      state.releasePost();
+    },
+  };
+}
+
+const WRITABLE_FORM_CASES: {
+  type: WritableFormType;
+  unit: 'kg' | 'm';
+  min: number;
+  max: number;
+  successValue: number;
+  blankTimeValue: number;
+}[] = [
+  { type: 'weight', unit: 'kg', min: 20, max: 500, successValue: 81.5, blankTimeValue: 82 },
+  { type: 'height', unit: 'm', min: 0.5, max: 2.5, successValue: 1.82, blankTimeValue: 1.83 },
+  { type: 'weight_goal', unit: 'kg', min: 20, max: 500, successValue: 74.5, blankTimeValue: 74 },
+];
+
+function dispatchFormSubmit(form: Locator): Promise<void> {
+  return form.evaluate(element => {
+    element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+}
+
 async function mockHeartRateRecords(page: Page) {
   const now = new Date().toISOString();
   await page.route('**/api/data/heart_rate?*', route => {
@@ -729,6 +851,331 @@ test.describe('Manual record writes: weight_goal, height, write allowlist', () =
       return r.status;
     });
     expect(status).toBe(403);
+  });
+});
+
+test.describe('Writable form localization — English', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('direct forms use the localized unit labels, actions, and exact bounds', async ({ page }) => {
+    await mockWritableRecordForms(page);
+
+    for (const formCase of WRITABLE_FORM_CASES) {
+      await page.goto(`/data/${formCase.type}/`);
+      const form = page.getByTestId(`add-record-${formCase.type}`);
+      await expect(form).toBeVisible();
+      await expect(form.getByText(`Value (${formCase.unit})`, { exact: true })).toBeVisible();
+      await expect(form.getByText('Time (optional)', { exact: true })).toBeVisible();
+      await expect(form.getByRole('button', { name: 'Add', exact: true })).toBeVisible();
+      await expect(form.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+
+      const input = form.getByLabel(/^Value/);
+      await expect(input).toHaveAttribute('min', String(formCase.min));
+      await expect(input).toHaveAttribute('max', String(formCase.max));
+    }
+  });
+
+  test('invalid values take both client-validation paths without sending POSTs', async ({ page }) => {
+    const fixtures = await mockWritableRecordForms(page);
+
+    for (const formCase of WRITABLE_FORM_CASES) {
+      await page.goto(`/data/${formCase.type}/`);
+      const form = page.getByTestId(`add-record-${formCase.type}`);
+      const input = form.getByLabel(/^Value/);
+
+      await input.fill('');
+      await dispatchFormSubmit(form);
+      await expect(form.getByText('Enter a positive number', { exact: true })).toBeVisible();
+
+      const belowMinimum = formCase.type === 'height' ? 0.4 : formCase.min - 1;
+      await input.fill(String(belowMinimum));
+      await dispatchFormSubmit(form);
+      await expect(
+        form.getByText(
+          `Enter a value between ${formCase.min} and ${formCase.max} ${formCase.unit}`,
+          { exact: true },
+        ),
+      ).toBeVisible();
+      expect(fixtures.postedBodies(formCase.type)).toHaveLength(0);
+    }
+  });
+
+  test('failed saves show only the stable operation message and retain usable fields', async ({ page }) => {
+    const fixtures = await mockWritableRecordForms(page);
+
+    for (const formCase of WRITABLE_FORM_CASES) {
+      await page.goto(`/data/${formCase.type}/`);
+      const form = page.getByTestId(`add-record-${formCase.type}`);
+      const input = form.getByLabel(/^Value/);
+      const time = form.getByLabel('Time (optional)');
+      const submit = form.locator('button[type="submit"]');
+      const value = formCase.min + (formCase.type === 'height' ? 0.75 : 2.5);
+      const localTime = '2026-09-10T12:34';
+      const serverBody = `distinctive ${formCase.type} backend failure`;
+
+      await input.fill(String(value));
+      await time.fill(localTime);
+      fixtures.failNextPost(formCase.type, serverBody);
+      await submit.click();
+
+      await expect(form.getByText('Could not save the record. Try again.', { exact: true })).toBeVisible();
+      await expect(page.getByText(serverBody, { exact: true })).toHaveCount(0);
+      await expect(input).toHaveValue(String(value));
+      await expect(time).toHaveValue(localTime);
+      await expect(submit).toBeEnabled();
+      expect(fixtures.postedBodies(formCase.type)).toHaveLength(1);
+    }
+  });
+
+  test('delayed successful saves show Saving, reset fields, capture request semantics, and refresh records', async ({ page }) => {
+    const fixtures = await mockWritableRecordForms(page);
+
+    for (const formCase of WRITABLE_FORM_CASES) {
+      await page.goto(`/data/${formCase.type}/`);
+      const form = page.getByTestId(`add-record-${formCase.type}`);
+      const input = form.getByLabel(/^Value/);
+      const time = form.getByLabel('Time (optional)');
+      const submit = form.locator('button[type="submit"]');
+      const localTime = '2026-09-11T12:34';
+
+      await input.fill(String(formCase.successValue));
+      await time.fill(localTime);
+      fixtures.holdNextPost(formCase.type);
+      const postStarted = fixtures.waitForPost(formCase.type);
+      await submit.click();
+      await postStarted;
+
+      await expect(submit).toHaveText('Saving…');
+      await expect(submit).toBeDisabled();
+      fixtures.releasePost(formCase.type);
+
+      await expect(submit).toHaveText('Add');
+      await expect(submit).toBeEnabled();
+      await expect(input).toHaveValue('');
+      await expect(time).toHaveValue('');
+      await expect(page.getByRole('cell', { name: String(formCase.successValue), exact: true })).toBeVisible();
+
+      const expectedIso = await page.evaluate(value => new Date(value).toISOString(), localTime);
+      expect(fixtures.postedBodies(formCase.type)).toEqual([
+        { value: formCase.successValue, time: expectedIso },
+      ]);
+
+      // A second write without a time proves the optional field is omitted,
+      // rather than sent as an empty string, and the returned row proves the
+      // refresh-key fetch saw the fixture's updated GET result.
+      await input.fill(String(formCase.blankTimeValue));
+      await submit.click();
+      await expect(page.getByRole('cell', { name: String(formCase.blankTimeValue), exact: true })).toBeVisible();
+      expect(fixtures.postedBodies(formCase.type)[1]).toEqual({ value: formCase.blankTimeValue });
+    }
+  });
+
+  test('shortcut cancellation is owner-only, sends no POST, and restores both shortcuts', async ({ page }) => {
+    const fixtures = await mockWritableRecordForms(page);
+    await page.goto('/data/weight/');
+
+    const setGoal = page.getByRole('button', { name: 'Set goal', exact: true });
+    const setHeight = page.getByRole('button', { name: 'Set height', exact: true });
+    await expect(setGoal).toBeVisible();
+    await expect(setHeight).toBeVisible();
+
+    await setGoal.click();
+    const goalForm = page.getByTestId('add-record-weight_goal');
+    await expect(goalForm.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+    await goalForm.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(goalForm).toHaveCount(0);
+    await expect(setGoal).toBeVisible();
+
+    await setHeight.click();
+    const heightForm = page.getByTestId('add-record-height');
+    await expect(heightForm.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+    await heightForm.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(heightForm).toHaveCount(0);
+    await expect(setHeight).toBeVisible();
+
+    for (const formCase of WRITABLE_FORM_CASES) {
+      expect(fixtures.postedBodies(formCase.type)).toHaveLength(0);
+    }
+
+    await page.goto('/data/weight/?user=bob');
+    for (const formCase of WRITABLE_FORM_CASES) {
+      await expect(page.getByTestId(`add-record-${formCase.type}`)).toHaveCount(0);
+    }
+    await expect(page.getByRole('button', { name: 'Set goal', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Set height', exact: true })).toHaveCount(0);
+  });
+});
+
+test.describe('Writable form localization — Russian', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('direct forms use Russian labels, units, actions, and unchanged bounds', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      await mockWritableRecordForms(page);
+
+      for (const formCase of WRITABLE_FORM_CASES) {
+        const unit = formCase.unit === 'kg' ? 'кг' : 'м';
+        await page.goto(`/data/${formCase.type}/`);
+        const form = page.getByTestId(`add-record-${formCase.type}`);
+        await expect(form).toBeVisible();
+        await expect(form.getByText(`Значение (${unit})`, { exact: true })).toBeVisible();
+        await expect(form.getByText('Время (необязательно)', { exact: true })).toBeVisible();
+        await expect(form.getByRole('button', { name: 'Добавить', exact: true })).toBeVisible();
+        await expect(form.getByRole('button', { name: 'Отмена', exact: true })).toHaveCount(0);
+
+        const input = form.getByLabel(/^Значение/);
+        await expect(input).toHaveAttribute('min', String(formCase.min));
+        await expect(input).toHaveAttribute('max', String(formCase.max));
+      }
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
+  });
+
+  test('Russian client-validation paths do not send POSTs', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      const fixtures = await mockWritableRecordForms(page);
+
+      for (const formCase of WRITABLE_FORM_CASES) {
+        const unit = formCase.unit === 'kg' ? 'кг' : 'м';
+        await page.goto(`/data/${formCase.type}/`);
+        const form = page.getByTestId(`add-record-${formCase.type}`);
+        const input = form.getByLabel(/^Значение/);
+
+        await input.fill('');
+        await dispatchFormSubmit(form);
+        await expect(form.getByText('Введите положительное число', { exact: true })).toBeVisible();
+
+        const belowMinimum = formCase.type === 'height' ? 0.4 : formCase.min - 1;
+        await input.fill(String(belowMinimum));
+        await dispatchFormSubmit(form);
+        await expect(
+          form.getByText(
+            `Введите значение от ${formCase.min} до ${formCase.max} ${unit}`,
+            { exact: true },
+          ),
+        ).toBeVisible();
+        expect(fixtures.postedBodies(formCase.type)).toHaveLength(0);
+      }
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
+  });
+
+  test('Russian failed saves hide backend text, retain fields, and restore Добавить', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      const fixtures = await mockWritableRecordForms(page);
+
+      for (const formCase of WRITABLE_FORM_CASES) {
+        await page.goto(`/data/${formCase.type}/`);
+        const form = page.getByTestId(`add-record-${formCase.type}`);
+        const input = form.getByLabel(/^Значение/);
+        const time = form.getByLabel('Время (необязательно)');
+        const submit = form.locator('button[type="submit"]');
+        const value = formCase.min + (formCase.type === 'height' ? 0.75 : 2.5);
+        const localTime = '2026-09-10T12:34';
+        const serverBody = `distinctive ${formCase.type} English backend failure`;
+
+        await input.fill(String(value));
+        await time.fill(localTime);
+        fixtures.failNextPost(formCase.type, serverBody);
+        await submit.click();
+
+        await expect(form.getByText('Не удалось сохранить запись. Попробуйте ещё раз.', { exact: true })).toBeVisible();
+        await expect(page.getByText(serverBody, { exact: true })).toHaveCount(0);
+        await expect(input).toHaveValue(String(value));
+        await expect(time).toHaveValue(localTime);
+        await expect(submit).toBeEnabled();
+        expect(fixtures.postedBodies(formCase.type)).toHaveLength(1);
+      }
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
+  });
+
+  test('Russian delayed successful saves show Сохранение, reset fields, and refresh records', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      const fixtures = await mockWritableRecordForms(page);
+
+      for (const formCase of WRITABLE_FORM_CASES) {
+        await page.goto(`/data/${formCase.type}/`);
+        const form = page.getByTestId(`add-record-${formCase.type}`);
+        const input = form.getByLabel(/^Значение/);
+        const time = form.getByLabel('Время (необязательно)');
+        const submit = form.locator('button[type="submit"]');
+        const localTime = '2026-09-11T12:34';
+
+        await input.fill(String(formCase.successValue));
+        await time.fill(localTime);
+        fixtures.holdNextPost(formCase.type);
+        const postStarted = fixtures.waitForPost(formCase.type);
+        await submit.click();
+        await postStarted;
+
+        await expect(submit).toHaveText('Сохранение…');
+        await expect(submit).toBeDisabled();
+        fixtures.releasePost(formCase.type);
+
+        await expect(submit).toHaveText('Добавить');
+        await expect(submit).toBeEnabled();
+        await expect(input).toHaveValue('');
+        await expect(time).toHaveValue('');
+        await expect(page.getByRole('cell', { name: String(formCase.successValue), exact: true })).toBeVisible();
+
+        const expectedIso = await page.evaluate(value => new Date(value).toISOString(), localTime);
+        expect(fixtures.postedBodies(formCase.type)).toEqual([
+          { value: formCase.successValue, time: expectedIso },
+        ]);
+      }
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
+  });
+
+  test('Russian shortcut cancellation stays owner-only and sends no POST', async ({ page }) => {
+    try {
+      await selectRussianDisplayLanguage(page);
+      const fixtures = await mockWritableRecordForms(page);
+      await page.goto('/data/weight/');
+
+      const setGoal = page.getByRole('button', { name: 'Задать цель', exact: true });
+      const setHeight = page.getByRole('button', { name: 'Указать рост', exact: true });
+      await expect(setGoal).toBeVisible();
+      await expect(setHeight).toBeVisible();
+
+      await setGoal.click();
+      const goalForm = page.getByTestId('add-record-weight_goal');
+      await goalForm.getByRole('button', { name: 'Отмена', exact: true }).click();
+      await expect(goalForm).toHaveCount(0);
+      await expect(setGoal).toBeVisible();
+
+      await setHeight.click();
+      const heightForm = page.getByTestId('add-record-height');
+      await heightForm.getByRole('button', { name: 'Отмена', exact: true }).click();
+      await expect(heightForm).toHaveCount(0);
+      await expect(setHeight).toBeVisible();
+
+      for (const formCase of WRITABLE_FORM_CASES) {
+        expect(fixtures.postedBodies(formCase.type)).toHaveLength(0);
+      }
+
+      await page.goto('/data/weight/?user=bob');
+      for (const formCase of WRITABLE_FORM_CASES) {
+        await expect(page.getByTestId(`add-record-${formCase.type}`)).toHaveCount(0);
+      }
+      await expect(page.getByRole('button', { name: 'Задать цель', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Указать рост', exact: true })).toHaveCount(0);
+    } finally {
+      await restoreEnglishDisplayLanguage(page);
+    }
   });
 });
 

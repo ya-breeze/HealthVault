@@ -34,6 +34,7 @@ function mockFoodMeal(overrides: Record<string, unknown> = {}) {
     sugar_grams: 1,
     sodium_grams: 1,
     dietary_fiber_grams: 1,
+    saturated_fat_grams: 1,
     items: [
       {
         id: 'item-1',
@@ -51,6 +52,7 @@ function mockFoodMeal(overrides: Record<string, unknown> = {}) {
         sugar_grams: 1,
         sodium_grams: 1,
         dietary_fiber_grams: 1,
+        saturated_fat_grams: 1,
       },
     ],
     ...overrides,

@@ -1009,13 +1009,14 @@ func TestCreateMeal_FuzzyNearMissNameMatchesCustomFood(t *testing.T) {
 }
 
 // When the recognizing user's Display Language is non-English, Open Food
-// Facts and USDA are never queried, even when the recognized item carries a
-// brand — see openspec/specs/usda-nutrition-database "A non-English Display
-// Language skips Open Food Facts and USDA entirely".
-func TestCreateMeal_NonEnglishDisplayLanguageSkipsUSDA(t *testing.T) {
+// Facts and USDA are searched by the item's CanonicalName (Recognize's own
+// English identity for it) rather than skipped — see
+// ya-breeze/idea-forge#640: they used to be skipped entirely, which zeroed
+// out reference matching for every non-English account.
+func TestCreateMeal_NonEnglishDisplayLanguageSearchesByCanonicalName(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, _ := seedFoodUser(t, st)
-	idx := buildUSDAIndex(t, usdaFood(100, "Vareniki", 200))
+	idx := buildUSDAIndex(t, usdaFood(100, "Dumplings, dough with fruit filling", 200))
 
 	putH := server.PutUserSettingsHandler(st)
 	w := httptest.NewRecorder()
@@ -1030,6 +1031,50 @@ func TestCreateMeal_NonEnglishDisplayLanguageSkipsUSDA(t *testing.T) {
 				Name: "вареники", CanonicalName: "dumplings", WeightGrams: 180, Confidence: 0.9,
 			}},
 		},
+		SelectResult: &vision.SelectResult{
+			Selections: []vision.Selection{{ItemIndex: 0, CandidateIndex: 0}},
+		},
+	}
+	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
+
+	w2 := httptest.NewRecorder()
+	h.CreateMeal(w2, withClaims(newMealUploadRequest(t, "photo.jpg", fakeJPEGBytes), userID))
+	var meal database.FoodMeal
+	json.NewDecoder(w2.Body).Decode(&meal) //nolint:errcheck
+	item := meal.Items[0]
+	if item.FdcID == nil || *item.FdcID != 100 {
+		t.Fatalf("expected the CanonicalName-matched USDA candidate to bind, got %+v", item)
+	}
+	if item.MacroSource != database.MacroSourceReference {
+		t.Errorf("expected macro_source reference, got %q", item.MacroSource)
+	}
+	if item.CanonicalName != "dumplings" {
+		t.Errorf("expected CanonicalName persisted on the item, got %q", item.CanonicalName)
+	}
+}
+
+// A non-English item with no CanonicalName (recognized before that field
+// existed, or one Recognize genuinely couldn't translate) still has nothing
+// safe to search USDA/OFF with, so search is skipped exactly as before this
+// change — only the CanonicalName-populated case changed.
+func TestCreateMeal_NonEnglishDisplayLanguageWithoutCanonicalNameSkipsUSDA(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	idx := buildUSDAIndex(t, usdaFood(100, "Dumplings, dough with fruit filling", 200))
+
+	putH := server.PutUserSettingsHandler(st)
+	w := httptest.NewRecorder()
+	putH.ServeHTTP(w, withClaims(httptest.NewRequest(http.MethodPut, "/api/users/me/settings", strings.NewReader(`{"display_language":"ru"}`)), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT settings: expected 200, got %d", w.Code)
+	}
+
+	fake := &vision.Fake{
+		RecognizeResult: &vision.RecognizeResult{
+			Items: []vision.Item{{
+				Name: "вареники", WeightGrams: 180, Confidence: 0.9, // no CanonicalName
+			}},
+		},
 	}
 	h := server.NewFoodHandlers(st, idx, t.TempDir()).WithVision(fake, 10<<20, time.Second)
 
@@ -1039,13 +1084,10 @@ func TestCreateMeal_NonEnglishDisplayLanguageSkipsUSDA(t *testing.T) {
 	json.NewDecoder(w2.Body).Decode(&meal) //nolint:errcheck
 	item := meal.Items[0]
 	if item.FdcID != nil {
-		t.Errorf("expected no USDA candidate offered for a non-English item, got fdc_id %v", *item.FdcID)
+		t.Errorf("expected no USDA candidate without a CanonicalName to search with, got fdc_id %v", *item.FdcID)
 	}
 	if len(fake.SelectCalls) != 0 {
 		t.Errorf("expected Select never called (empty candidate shortlist), got %d calls", len(fake.SelectCalls))
-	}
-	if item.CanonicalName != "dumplings" {
-		t.Errorf("expected CanonicalName persisted on the item, got %q", item.CanonicalName)
 	}
 }
 

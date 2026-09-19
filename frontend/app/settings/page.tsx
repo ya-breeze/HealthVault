@@ -3,6 +3,7 @@ import { ChangeEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, UserSettings } from '@/lib/api';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
+import AddRecordForm from '@/components/AddRecordForm';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
 import { SUPPORTED_LANGUAGES, LanguageCode } from '@/lib/i18n';
@@ -88,6 +89,13 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [changingLanguage, setChangingLanguage] = useState(false);
+  // Unlike the Weight page's own "Set height"/"Set goal" shortcuts (task 4.2), neither toggle
+  // here is gated on whether a record already exists — this section's whole purpose is to stay
+  // available after that one-time onboarding shortcut has already served its purpose and retired
+  // (height) or regardless of it (goal weight, which never had that gate). See
+  // docs/specs/a-permanent-way-to-change-height-and-go.md's Why.
+  const [showHeightForm, setShowHeightForm] = useState(false);
+  const [showGoalForm, setShowGoalForm] = useState(false);
 
   const handleLanguageChange = async (code: LanguageCode) => {
     if (code === language) return;
@@ -231,6 +239,54 @@ export default function SettingsPage() {
               </TapTarget>
             </div>
           )}
+        </section>
+
+        {/*
+          A permanent counterpart to the Weight page's "Set height"/"Set goal" shortcuts
+          (task 4.2) — those exist to help a user with zero records discover the write path
+          once, and the height one deliberately retires after its first use (see
+          e2e/tests/data-types.spec.ts and this section's own spec). Neither toggle here is
+          gated on whether a record already exists: this section's whole point is to stay
+          reachable afterward, and independently of the profile fetch above.
+        */}
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold text-text mb-4">Body measurements</h2>
+
+          <div className="space-y-3">
+            {showHeightForm ? (
+              <AddRecordForm
+                type="height"
+                onSuccess={() => setShowHeightForm(false)}
+                onCancel={() => setShowHeightForm(false)}
+              />
+            ) : (
+              <TapTarget
+                type="button"
+                onClick={() => setShowHeightForm(true)}
+                data-testid="settings-set-height"
+                className="rounded-md text-sm font-medium bg-border text-text px-4 py-1.5"
+              >
+                {t('dataDetail.setHeight')}
+              </TapTarget>
+            )}
+
+            {showGoalForm ? (
+              <AddRecordForm
+                type="weight_goal"
+                onSuccess={() => setShowGoalForm(false)}
+                onCancel={() => setShowGoalForm(false)}
+              />
+            ) : (
+              <TapTarget
+                type="button"
+                onClick={() => setShowGoalForm(true)}
+                data-testid="settings-set-goal"
+                className="rounded-md text-sm font-medium bg-border text-text px-4 py-1.5"
+              >
+                {t('dataDetail.setGoal')}
+              </TapTarget>
+            )}
+          </div>
         </section>
       </main>
     </AuthenticatedShell>
