@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  updatePeriodMillis is 0: every update comes from WorkManager
+  (work/RefreshScheduler.kt), not from this platform-floor mechanism (which
+  cannot go below 15 minutes and cannot honour Retry-After on a 429). This
+  file only declares layout bounds, initial layout, and preview.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:targetApi="s"
+    android:minWidth="110dp"
+    android:minHeight="48dp"
+    android:minResizeWidth="48dp"
+    android:minResizeHeight="48dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:maxResizeWidth="624dp"
+    android:maxResizeHeight="276dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_description"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:previewLayout="@layout/summary_widget_preview" />
