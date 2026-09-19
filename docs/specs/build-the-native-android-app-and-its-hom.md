@@ -206,5 +206,5 @@ The owner acceptance screenshot showed neutral orange rails and no pace glyphs b
 - [x] Add a red regression test using the owner's calorie and macro values in a summary response without pacing fields
 - [x] Resolve pace inputs centrally so exact server values win and only a missing/invalid usual-meals value activates the legacy `meal_count / 3` fallback
 - [x] Keep the fallback visible across every home-screen and FlexWindow breakpoint through the existing shared `paceFor` path
-- [ ] Build, test, lint, review, and publish a replacement owner-acceptance APK without merging or deploying production
-- [ ] Mark completed
+- [x] Build, test, lint, review, and publish a replacement owner-acceptance APK without merging or deploying production
+- [x] Mark completed
