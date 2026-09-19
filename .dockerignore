@@ -4,3 +4,4 @@ frontend/out
 backend/bin
 hcw.db
 *.db
+android/

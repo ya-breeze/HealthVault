@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      The supplied PNG's farthest opaque pixel is about 36.7% of its canvas
+      from center. An 88dp layer keeps that radius below Android's 33dp safe
+      radius, including the heart's upper lobes.
+    -->
+    <item
+        android:width="88dp"
+        android:height="88dp"
+        android:gravity="center">
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/healthvault_mark" />
+    </item>
+</layer-list>
