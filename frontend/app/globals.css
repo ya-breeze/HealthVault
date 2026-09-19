@@ -14,7 +14,7 @@
 
   /* Food log history outcomes: counted day / needs attention / no food logged. */
   --outcome-counted: #167a4b;
-  --outcome-attention: #a85a0c;
+  --outcome-attention: #9a520a;
   --outcome-empty: #5b6470;
 
   /* One accent per registered type (27), shared by the dashboard vitals

@@ -137,7 +137,7 @@ export default function FoodLogHistoryCard({
         className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md border px-1.5 py-2 text-center"
         style={{
           borderColor: color,
-          backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)`,
+          backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
         }}
         data-testid={`food-log-history-day-${day.date}`}
         data-outcome={day.outcome}
