@@ -71,4 +71,16 @@ class WidgetStateTest {
         assertTrue(state is WidgetState.Stale)
         assertEquals(SAMPLE_SUMMARY, (state as WidgetState.Stale).summary)
     }
+
+    @Test
+    fun `loaded and stale surfaces log food directly`() {
+        assertEquals(WidgetTapTarget.LOG_FOOD, widgetTapTarget(WidgetState.Loaded(SAMPLE_SUMMARY, 0L)))
+        assertEquals(WidgetTapTarget.LOG_FOOD, widgetTapTarget(WidgetState.Stale(SAMPLE_SUMMARY, 0L)))
+    }
+
+    @Test
+    fun `signed-out and error surfaces open the native app`() {
+        assertEquals(WidgetTapTarget.OPEN_APP, widgetTapTarget(WidgetState.SignedOut))
+        assertEquals(WidgetTapTarget.OPEN_APP, widgetTapTarget(WidgetState.Error))
+    }
 }

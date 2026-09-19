@@ -4,37 +4,50 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_preview_background"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:gravity="center_vertical"
+    android:padding="4dp">
 
-    <TextView
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/app_name"
-        android:textColor="@color/widget_preview_on_surface_variant"
-        android:textSize="11sp"
-        android:textStyle="bold" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:text="@string/widget_preview_consumed"
-        android:textColor="@color/widget_preview_on_surface"
-        android:textSize="30sp"
-        android:textStyle="bold" />
+        <ImageView
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:contentDescription="@string/app_name"
+            android:src="@mipmap/ic_launcher" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/widget_preview_target"
-        android:textColor="@color/widget_preview_on_surface_variant"
-        android:textSize="11sp" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:maxLines="1"
+            android:text="@string/widget_preview_consumed"
+            android:textColor="@color/widget_preview_on_surface"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="@string/widget_preview_percent"
+            android:textColor="@color/widget_preview_on_surface_variant"
+            android:textSize="11sp" />
+    </LinearLayout>
 
     <ProgressBar
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="6dp"
-        android:layout_marginTop="5dp"
+        android:layout_height="4dp"
+        android:layout_marginTop="1dp"
         android:indeterminate="false"
         android:max="100"
         android:progress="72"
