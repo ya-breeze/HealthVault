@@ -5,11 +5,14 @@
     <string name="widget_sign_in">Sign in</string>
     <string name="widget_open_to_sign_in">Open HealthVault to sign in</string>
     <string name="widget_no_data">No data yet — tap to open HealthVault</string>
-    <string name="widget_stale">Last updated a while ago</string>
+    <string name="widget_title_stale">%1$s · old</string>
+    <string name="widget_description">Today’s calories and macros with quick actions</string>
     <string name="widget_log_food">Log food</string>
     <string name="widget_refresh">Refresh</string>
-    <string name="widget_calories_of_target">%1$d / %2$d kcal</string>
-    <string name="widget_calories_consumed">%1$d kcal</string>
+    <string name="widget_calorie_target_progress">of %1$d kcal · %2$d%%</string>
+    <string name="widget_calories_today">kcal today</string>
+    <string name="widget_preview_consumed">1546</string>
+    <string name="widget_preview_target">of 2139 kcal · 72%</string>
     <string name="widget_protein_short">P</string>
     <string name="widget_carbs_short">C</string>
     <string name="widget_fat_short">F</string>

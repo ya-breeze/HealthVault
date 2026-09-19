@@ -4,26 +4,33 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
+import androidx.glance.ImageProvider
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.LinearProgressIndicator
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.appWidgetBackground
+import androidx.glance.appwidget.components.CircleIconButton
+import androidx.glance.appwidget.components.SquareIconButton
+import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
+import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
@@ -38,6 +45,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import java.util.Locale
+import kotlin.math.roundToInt
 import net.ikoro.healthvault.HealthVaultApp
 import net.ikoro.healthvault.R
 import net.ikoro.healthvault.api.TodaySummary
@@ -45,18 +53,18 @@ import net.ikoro.healthvault.ui.MainActivity
 import net.ikoro.healthvault.ui.shippedDisplayLanguage
 
 private val COMPACT_SIZE = DpSize(110.dp, 110.dp)
-private val WIDE_SIZE = DpSize(250.dp, 110.dp)
-private val MACRO_BAR_WIDTH = 90.dp
+private val WIDE_SIZE = DpSize(230.dp, 110.dp)
 
 /** Glance defaults Text to black; always pair widget text with an explicit theme foreground. */
 @Composable
 internal fun WidgetText(
     text: String,
-    color: ColorProvider = GlanceTheme.colors.onBackground,
+    color: ColorProvider = GlanceTheme.colors.onSurface,
     fontSize: TextUnit? = null,
     fontWeight: FontWeight? = null,
+    maxLines: Int = Int.MAX_VALUE,
 ) {
-    Text(text = text, style = widgetTextStyle(color, fontSize, fontWeight))
+    Text(text = text, style = widgetTextStyle(color, fontSize, fontWeight), maxLines = maxLines)
 }
 
 internal fun widgetTextStyle(
@@ -64,6 +72,16 @@ internal fun widgetTextStyle(
     fontSize: TextUnit? = null,
     fontWeight: FontWeight? = null,
 ) = TextStyle(color = color, fontSize = fontSize, fontWeight = fontWeight)
+
+internal fun progressFraction(consumed: Int, target: Int): Float {
+    if (target <= 0) return 0f
+    return (consumed.coerceAtLeast(0).toFloat() / target).coerceIn(0f, 1f)
+}
+
+internal fun progressPercent(consumed: Int, target: Int): Int? {
+    if (target <= 0) return null
+    return (consumed.coerceAtLeast(0).toDouble() * 100 / target).roundToInt()
+}
 
 /**
  * Single Glance widget, one placement resized between a compact (~110x110dp,
@@ -99,11 +117,21 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
     val size = LocalSize.current
     val isWide = size.width >= WIDE_SIZE.width
 
+    val backgroundModifier = GlanceModifier
+        .fillMaxSize()
+        .appWidgetBackground()
+
+    val cardModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        backgroundModifier
+            .background(GlanceTheme.colors.widgetBackground)
+            .cornerRadius(R.dimen.widget_corner_radius)
+    } else {
+        backgroundModifier.background(ImageProvider(R.drawable.widget_background))
+    }
+
     Box(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(GlanceTheme.colors.background)
-            .padding(8.dp)
+        modifier = cardModifier
+            .padding(if (isWide) 7.dp else 10.dp)
             // The reified actionStartActivity<T>() lives in androidx.glance.action; this file
             // imports androidx.glance.appwidget.action, whose actionStartActivity only takes an
             // Intent — build it explicitly rather than switching import packages.
@@ -133,83 +161,167 @@ private fun ErrorBody(resourceContext: Context) {
 
 @Composable
 private fun SummaryBody(resourceContext: Context, summary: TodaySummary, isWide: Boolean, isStale: Boolean) {
+    if (isWide) {
+        WideSummary(resourceContext, summary, isStale)
+    } else {
+        CompactSummary(resourceContext, summary, isStale)
+    }
+}
+
+@Composable
+private fun CompactSummary(resourceContext: Context, summary: TodaySummary, isStale: Boolean) {
+    val consumed = summary.caloriesConsumed.toInt()
+    val target = summary.target.takeIf { it.available && it.calories > 0 }
+
     Column(modifier = GlanceModifier.fillMaxSize()) {
-        val target = summary.target
-        val caloriesLine = if (target.available) {
-            resourceContext.getString(
-                R.string.widget_calories_of_target,
-                summary.caloriesConsumed.toInt(),
-                target.calories,
-            )
-        } else {
-            resourceContext.getString(R.string.widget_calories_consumed, summary.caloriesConsumed.toInt())
-        }
-        WidgetText(text = caloriesLine, fontWeight = FontWeight.Bold, fontSize = if (isWide) 20.sp else 16.sp)
-
-        if (isStale) {
-            WidgetText(text = resourceContext.getString(R.string.widget_stale), fontSize = 10.sp)
-        }
-
-        if (isWide) {
-            Spacer(modifier = GlanceModifier.height(4.dp))
-            MacroBar(resourceContext, R.string.widget_protein_short, summary.proteinGramsConsumed.toInt(), target.proteinGrams)
-            MacroBar(resourceContext, R.string.widget_carbs_short, summary.carbsGramsConsumed.toInt(), target.carbsGrams)
-            MacroBar(resourceContext, R.string.widget_fat_short, summary.fatGramsConsumed.toInt(), target.fatGrams)
-
-            Spacer(modifier = GlanceModifier.height(4.dp))
-            Row {
-                Box(
-                    modifier = GlanceModifier
-                        .background(GlanceTheme.colors.primary)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .clickable(actionRunCallback<LogFoodAction>()),
-                ) {
-                    WidgetText(
-                        text = resourceContext.getString(R.string.widget_log_food),
-                        color = GlanceTheme.colors.onPrimary,
-                    )
-                }
-                Spacer(modifier = GlanceModifier.width(8.dp))
-                Box(
-                    modifier = GlanceModifier
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .clickable(actionRunCallback<RefreshAction>()),
-                ) {
-                    WidgetText(text = resourceContext.getString(R.string.widget_refresh))
-                }
-            }
+        WidgetHeader(resourceContext, isStale)
+        Spacer(modifier = GlanceModifier.height(2.dp))
+        WidgetText(text = consumed.toString(), fontWeight = FontWeight.Bold, fontSize = 30.sp, maxLines = 1)
+        WidgetText(
+            text = target?.let {
+                resourceContext.getString(
+                    R.string.widget_calorie_target_progress,
+                    it.calories,
+                    progressPercent(consumed, it.calories),
+                )
+            } ?: resourceContext.getString(R.string.widget_calories_today),
+            color = GlanceTheme.colors.onSurfaceVariant,
+            fontSize = 11.sp,
+            maxLines = 1,
+        )
+        if (target != null) {
+            Spacer(modifier = GlanceModifier.height(5.dp))
+            CalorieProgress(consumed, target.calories)
         }
     }
 }
 
 @Composable
-private fun MacroBar(resourceContext: Context, labelRes: Int, consumedGrams: Int, targetGrams: Int) {
-    val fraction = if (targetGrams > 0) (consumedGrams.toFloat() / targetGrams).coerceIn(0f, 1f) else 0f
-    Column(modifier = GlanceModifier.padding(vertical = 1.dp)) {
-        val label = resourceContext.getString(labelRes)
-        val text = if (targetGrams > 0) {
-            resourceContext.getString(R.string.widget_macro_of_target, label, consumedGrams, targetGrams)
-        } else {
-            resourceContext.getString(R.string.widget_macro_consumed, label, consumedGrams)
-        }
-        WidgetText(
-            text = text,
-            fontSize = 9.sp,
-        )
-        Box(
-            modifier = GlanceModifier
-                .width(MACRO_BAR_WIDTH)
-                .height(4.dp)
-                .background(ColorProvider(Color(0xFFE0E0E0))),
-        ) {
-            if (fraction > 0f) {
-                Box(
-                    modifier = GlanceModifier
-                        .width(MACRO_BAR_WIDTH * fraction)
-                        .height(4.dp)
-                        .background(ColorProvider(Color(0xFF4CAF50))),
-                ) {}
+private fun WideSummary(resourceContext: Context, summary: TodaySummary, isStale: Boolean) {
+    val consumed = summary.caloriesConsumed.toInt()
+    val target = summary.target.takeIf { it.available && it.calories > 0 }
+
+    Column(modifier = GlanceModifier.fillMaxSize()) {
+        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = GlanceModifier.defaultWeight()) {
+                WidgetHeader(resourceContext, isStale)
+                WidgetText(text = consumed.toString(), fontWeight = FontWeight.Bold, fontSize = 24.sp, maxLines = 1)
+                WidgetText(
+                    text = target?.let {
+                        resourceContext.getString(
+                            R.string.widget_calorie_target_progress,
+                            it.calories,
+                            progressPercent(consumed, it.calories),
+                        )
+                    } ?: resourceContext.getString(R.string.widget_calories_today),
+                    color = GlanceTheme.colors.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                )
             }
+            SquareIconButton(
+                imageProvider = ImageProvider(R.drawable.ic_add_24),
+                contentDescription = resourceContext.getString(R.string.widget_log_food),
+                onClick = actionRunCallback<LogFoodAction>(),
+            )
+            CircleIconButton(
+                imageProvider = ImageProvider(R.drawable.ic_refresh_24),
+                contentDescription = resourceContext.getString(R.string.widget_refresh),
+                onClick = actionRunCallback<RefreshAction>(),
+                backgroundColor = null,
+                contentColor = GlanceTheme.colors.onSurfaceVariant,
+            )
+        }
+
+        if (target != null) {
+            CalorieProgress(consumed, target.calories)
+            Spacer(modifier = GlanceModifier.height(3.dp))
+        }
+
+        MacroStrip(resourceContext, summary)
+    }
+}
+
+@Composable
+private fun WidgetHeader(resourceContext: Context, isStale: Boolean) {
+    val appName = resourceContext.getString(R.string.app_name)
+    WidgetText(
+        text = if (isStale) {
+            resourceContext.getString(R.string.widget_title_stale, appName)
+        } else {
+            appName
+        },
+        color = GlanceTheme.colors.onSurfaceVariant,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+    )
+}
+
+@Composable
+private fun CalorieProgress(consumed: Int, target: Int) {
+    LinearProgressIndicator(
+        progress = progressFraction(consumed, target),
+        modifier = GlanceModifier.fillMaxWidth().height(6.dp),
+        color = GlanceTheme.colors.primary,
+        backgroundColor = GlanceTheme.colors.surfaceVariant,
+    )
+}
+
+@Composable
+private fun MacroStrip(resourceContext: Context, summary: TodaySummary) {
+    val target = summary.target.takeIf { it.available }
+    Row(modifier = GlanceModifier.fillMaxWidth()) {
+        MacroItem(
+            resourceContext,
+            R.string.widget_protein_short,
+            summary.proteinGramsConsumed.toInt(),
+            target?.proteinGrams ?: 0,
+        )
+        Spacer(modifier = GlanceModifier.width(6.dp))
+        MacroItem(
+            resourceContext,
+            R.string.widget_carbs_short,
+            summary.carbsGramsConsumed.toInt(),
+            target?.carbsGrams ?: 0,
+        )
+        Spacer(modifier = GlanceModifier.width(6.dp))
+        MacroItem(
+            resourceContext,
+            R.string.widget_fat_short,
+            summary.fatGramsConsumed.toInt(),
+            target?.fatGrams ?: 0,
+        )
+    }
+}
+
+@Composable
+private fun androidx.glance.layout.RowScope.MacroItem(
+    resourceContext: Context,
+    labelRes: Int,
+    consumedGrams: Int,
+    targetGrams: Int,
+) {
+    Column(modifier = GlanceModifier.defaultWeight()) {
+        val label = resourceContext.getString(labelRes)
+        WidgetText(
+            text = if (targetGrams > 0) {
+                resourceContext.getString(R.string.widget_macro_of_target, label, consumedGrams, targetGrams)
+            } else {
+                resourceContext.getString(R.string.widget_macro_consumed, label, consumedGrams)
+            },
+            color = GlanceTheme.colors.onSurfaceVariant,
+            fontSize = 11.sp,
+            maxLines = 1,
+        )
+        Spacer(modifier = GlanceModifier.height(2.dp))
+        if (targetGrams > 0) {
+            LinearProgressIndicator(
+                progress = progressFraction(consumedGrams, targetGrams),
+                modifier = GlanceModifier.fillMaxWidth().height(3.dp),
+                color = GlanceTheme.colors.primary,
+                backgroundColor = GlanceTheme.colors.surfaceVariant,
+            )
         }
     }
 }
