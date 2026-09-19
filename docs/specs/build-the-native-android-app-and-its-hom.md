@@ -164,7 +164,7 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Add a dedicated FlexWindow Glance widget, receiver, picker preview, `keyguard` provider metadata, and Samsung `sub_screen` metadata using the documented full-screen bounds
 - [x] Keep update-all, placement counting, periodic refresh, sign-out, and failure states correct when either or both widget providers are placed
 - [x] Add red-capable regression tests for the white-dot source, 2x2 empty-gap source, FlexWindow registration/layout, and dual-provider refresh lifecycle
-- [ ] Build, test, lint, and assemble the Android app; publish a new owner-acceptance APK without merging or deploying production
-- [ ] Mark completed
+- [x] Build, test, lint, and assemble the Android app; publish a new owner-acceptance APK without merging or deploying production
+- [x] Mark completed
 
 Owner acceptance follows through the prerelease APK after this automated task. It includes checking both sizes on the owner's launcher and is deliberately not an automated completion checkbox, because this environment has no Android device or emulator.
