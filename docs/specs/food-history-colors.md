@@ -34,4 +34,4 @@ Frontend only. No API, data-model or copy change.
 - [x] Style the day tiles and the summary dots per outcome in `frontend/components/FoodLogHistoryCard.tsx`
 - [x] Add a unit test that each outcome maps to a distinct theme token, and that `globals.css` defines each token for light and dark
 - [x] Verify in a browser against WIP, light and dark
-- [ ] Mark completed
+- [x] Mark completed
