@@ -32,6 +32,7 @@ import androidx.glance.appwidget.components.CircleIconButton
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
+import androidx.glance.color.ColorProvider as DayNightColorProvider
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
@@ -63,9 +64,18 @@ private val TALL_NARROW_SIZE = DpSize(48.dp, 110.dp)
 private val COMPACT_SIZE = DpSize(110.dp, 110.dp)
 private val WIDE_SIZE = DpSize(230.dp, 110.dp)
 
-private val PACE_GOOD = ColorProvider(Color(0xFF69D68B))
-private val PACE_WARNING = ColorProvider(Color(0xFFF3C75D))
-private val PACE_BAD = ColorProvider(Color(0xFFFF453A))
+private val PACE_GOOD: ColorProvider = DayNightColorProvider(
+    day = Color(0xFF2E7D32),
+    night = Color(0xFF69D68B),
+)
+private val PACE_WARNING: ColorProvider = DayNightColorProvider(
+    day = Color(0xFF8A5A00),
+    night = Color(0xFFF3C75D),
+)
+private val PACE_BAD: ColorProvider = DayNightColorProvider(
+    day = Color(0xFFD93025),
+    night = Color(0xFFFF453A),
+)
 
 internal enum class SummaryWidgetLayout {
     MICRO,
@@ -180,7 +190,7 @@ internal fun CalorieValue(
 }
 
 @Composable
-private fun PaceGlyph(summary: TodaySummary, consumed: Double, target: Int, fontSize: TextUnit) {
+internal fun PaceGlyph(summary: TodaySummary, consumed: Double, target: Int, fontSize: TextUnit) {
     val signal = paceFor(summary, consumed, target) ?: return
     WidgetText(
         text = signal.direction.glyph,
@@ -199,11 +209,12 @@ internal fun PaceProgress(
     height: Int,
     modifier: GlanceModifier = GlanceModifier.fillMaxWidth(),
 ) {
-    val signal = paceFor(summary, consumed, target) ?: return
+    if (target <= 0) return
+    val signal = paceFor(summary, consumed, target)
     LinearProgressIndicator(
         progress = progressFraction(consumed.toInt(), target),
         modifier = modifier.height(height.dp),
-        color = paceColor(signal.level),
+        color = signal?.let { paceColor(it.level) } ?: GlanceTheme.colors.primary,
         backgroundColor = GlanceTheme.colors.surfaceVariant,
     )
 }
@@ -275,7 +286,7 @@ private fun androidx.glance.layout.RowScope.MiniMacroRail(
                 )
             }
         }
-        if (signal != null) {
+        if (target > 0) {
             PaceProgress(summary, consumed, target, height = 2)
         }
     }
@@ -576,10 +587,20 @@ private fun ShortSummary(
                             caloriePace != null -> "${caloriePace.direction.glyph} ${caloriePace.actualPercent}%"
                             else -> resourceContext.getString(R.string.widget_calories_unit)
                         },
-                        color = caloriePace?.let { paceColor(it.level) } ?: GlanceTheme.colors.onSurfaceVariant,
+                        color = if (isStale) {
+                            GlanceTheme.colors.onSurfaceVariant
+                        } else {
+                            caloriePace?.let { paceColor(it.level) } ?: GlanceTheme.colors.onSurfaceVariant
+                        },
                         fontSize = 11.sp,
                         maxLines = 1,
                     )
+                }
+                if (caloriePace != null && (useReducedContent || isStale)) {
+                    target?.let {
+                        Spacer(modifier = GlanceModifier.width(3.dp))
+                        PaceGlyph(summary, summary.caloriesConsumed, it.calories, fontSize = 9.sp)
+                    }
                 }
             }
             if (target != null) {
@@ -627,6 +648,9 @@ private fun WideShortSummary(
                         fontSize = 11.sp,
                         maxLines = 1,
                     )
+                } else if (target != null) {
+                    Spacer(modifier = GlanceModifier.width(3.dp))
+                    PaceGlyph(summary, summary.caloriesConsumed, target.calories, fontSize = 9.sp)
                 }
             }
             if (target != null) {
@@ -662,6 +686,9 @@ private fun TallSummary(
             valueSize = if (useReducedContent) 12.sp else 15.sp,
             unitSize = 6.sp,
         )
+        if (useReducedContent && target != null) {
+            PaceGlyph(summary, summary.caloriesConsumed, target.calories, fontSize = 9.sp)
+        }
         Spacer(modifier = GlanceModifier.defaultWeight())
         if (!useReducedContent && target != null) {
             WidgetText(
@@ -707,6 +734,9 @@ private fun CompactSummary(
                     valueSize = if (useReducedContent) 17.sp else 26.sp,
                     unitSize = if (useReducedContent) 8.sp else 11.sp,
                 )
+                if (useReducedContent && target != null) {
+                    PaceGlyph(summary, summary.caloriesConsumed, target.calories, fontSize = 10.sp)
+                }
                 if (!useReducedContent) {
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         WidgetText(
@@ -769,6 +799,9 @@ private fun WideSummary(
                     valueSize = if (useReducedContent) 14.sp else 24.sp,
                     unitSize = if (useReducedContent) 7.sp else 10.sp,
                 )
+                if (useReducedContent && target != null) {
+                    PaceGlyph(summary, summary.caloriesConsumed, target.calories, fontSize = 9.sp)
+                }
                 if (!useReducedContent) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         WidgetText(

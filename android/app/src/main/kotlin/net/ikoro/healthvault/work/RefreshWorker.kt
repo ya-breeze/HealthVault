@@ -40,8 +40,8 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                 // respects the same persisted server holdoff. Re-enqueueing
                 // also restores the delayed one-off if another trigger used
                 // REPLACE to wake this worker before Retry-After elapsed.
-                RefreshScheduler.enqueueOneOff(applicationContext, (nextRefreshAt - now).milliseconds)
                 WidgetUpdater.updateAll(applicationContext)
+                RefreshScheduler.enqueueOneOff(applicationContext, (nextRefreshAt - now).milliseconds)
                 return Result.success()
             }
 
@@ -72,7 +72,13 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                             expectedSessionGeneration = sessionGeneration,
                         )
                     ) {
+                        // REPLACE uses the same unique-work name as this run,
+                        // so scheduling can cancel this worker. Redraw first;
+                        // otherwise a 429 can leave the visible widget looking
+                        // current until the delayed replacement eventually runs.
+                        WidgetUpdater.updateAll(applicationContext)
                         RefreshScheduler.enqueueOneOff(applicationContext, delayMillis.milliseconds)
+                        return Result.success()
                     }
                 }
                 is ApiResult.Unauthenticated -> {

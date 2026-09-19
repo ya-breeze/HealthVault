@@ -18,6 +18,8 @@ class PaceSignalTest {
     fun `ten points is green and twenty points is amber`() {
         assertEquals(PaceLevel.GOOD, paceSignal(1200.0, 2000, 1, 2)?.level)
         assertEquals(PaceLevel.WARNING, paceSignal(1400.0, 2000, 1, 2)?.level)
+        assertEquals(PaceLevel.WARNING, paceSignal(1200.2, 2000, 1, 2)?.level)
+        assertEquals(PaceLevel.BAD, paceSignal(1400.2, 2000, 1, 2)?.level)
     }
 
     @Test

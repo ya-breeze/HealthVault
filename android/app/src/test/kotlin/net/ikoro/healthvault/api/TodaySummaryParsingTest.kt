@@ -2,6 +2,7 @@ package net.ikoro.healthvault.api
 
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import net.ikoro.healthvault.widget.paceSignal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -96,5 +97,23 @@ class TodaySummaryParsingTest {
         """.trimIndent()
         val summary = json.decodeFromString<TodaySummary>(body)
         assertNull(summary.lastLoggedAt)
+    }
+
+    @Test
+    fun `a pre-pacing response keeps neutral backwards-compatible defaults`() {
+        val body = """
+            {
+              "date": "2026-09-02", "calories_consumed": 500, "protein_grams_consumed": 40,
+              "carbs_grams_consumed": 50, "fat_grams_consumed": 20, "meal_count": 1,
+              "last_logged_at": "2026-09-02T08:00:00Z", "display_language": "en",
+              "target": {"available": true, "calories": 1800, "protein_grams": 160, "carbs_grams": 180, "fat_grams": 60}
+            }
+        """.trimIndent()
+
+        val summary = json.decodeFromString<TodaySummary>(body)
+
+        assertEquals(0, summary.eatingOccasionsToday)
+        assertEquals(0, summary.usualMealsPerDay)
+        assertNull(paceSignal(500.0, 1800, summary.eatingOccasionsToday, summary.usualMealsPerDay))
     }
 }

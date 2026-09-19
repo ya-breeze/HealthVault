@@ -143,18 +143,24 @@ private fun FlexWindowSummary(
                     valueSize = 48.sp,
                     unitSize = 16.sp,
                 )
-                WidgetText(
-                    text = target?.let {
-                        resourceContext.getString(
-                            R.string.widget_calorie_target_progress,
-                            it.calories,
-                            progressPercent(consumed, it.calories),
-                        )
-                    } ?: resourceContext.getString(R.string.widget_calories_today),
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    WidgetText(
+                        text = target?.let {
+                            resourceContext.getString(
+                                R.string.widget_calorie_target_progress,
+                                it.calories,
+                                progressPercent(consumed, it.calories),
+                            )
+                        } ?: resourceContext.getString(R.string.widget_calories_today),
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                    )
+                    if (target != null) {
+                        Spacer(modifier = GlanceModifier.width(6.dp))
+                        PaceGlyph(summary, summary.caloriesConsumed, target.calories, fontSize = 14.sp)
+                    }
+                }
             }
             SquareIconButton(
                 imageProvider = ImageProvider(R.drawable.ic_add_24),

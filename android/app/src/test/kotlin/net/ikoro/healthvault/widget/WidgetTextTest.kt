@@ -79,7 +79,9 @@ class WidgetTextTest {
         assertTrue(source.contains("private fun MacroRow"))
         assertTrue(source.contains("internal fun PaceProgress"))
         assertTrue(source.contains("MiniMacroRails(resourceContext, summary)"))
-        assertTrue(source.contains("ColorProvider(Color(0xFFFF453A))"))
+        assertTrue(source.contains("DayNightColorProvider("))
+        listOf("0xFF2E7D32", "0xFF69D68B", "0xFF8A5A00", "0xFFF3C75D", "0xFFD93025", "0xFFFF453A")
+            .forEach { assertTrue("missing theme-aware pace color $it", source.contains(it)) }
         assertTrue(source.contains("accessibleCardModifier.clickable(actionRunCallback<LogFoodAction>())"))
         assertTrue(source.contains("accessibleCardModifier.clickable(actionStartActivity("))
         assertTrue(source.contains("semantics {"))
@@ -292,6 +294,25 @@ class WidgetTextTest {
         ).forEach { placement ->
             assertTrue(placement.total > 0)
             assertFalse(placement.shouldCancelPeriodic)
+        }
+    }
+
+    @Test
+    fun refreshWorker_redrawsBeforeReplacingItsOwnOneOffWork() {
+        val source = appSource("src/main/kotlin/net/ikoro/healthvault/work/RefreshWorker.kt").readText()
+        val persistedHoldoff = source
+            .substringAfter("if (nextRefreshAt > now)")
+            .substringBefore("when (val result")
+        val newRateLimit = source
+            .substringAfter("is ApiResult.RateLimited")
+            .substringBefore("is ApiResult.Unauthenticated")
+
+        listOf(persistedHoldoff, newRateLimit).forEach { branch ->
+            val redraw = branch.indexOf("WidgetUpdater.updateAll(applicationContext)")
+            val replace = branch.indexOf("RefreshScheduler.enqueueOneOff(applicationContext")
+            assertTrue("expected a widget redraw in the refresh branch", redraw >= 0)
+            assertTrue("expected a replacement one-off in the refresh branch", replace >= 0)
+            assertTrue("redraw must finish before REPLACE can cancel this worker", redraw < replace)
         }
     }
 
