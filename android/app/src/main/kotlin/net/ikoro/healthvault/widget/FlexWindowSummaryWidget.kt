@@ -108,7 +108,11 @@ private fun FlexWindowContent(state: WidgetState, resourceContext: Context) {
 @Composable
 private fun FlexWindowMessage(title: String, message: String) {
     Column(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-        WidgetText(text = title, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            WidgetBrandMark(size = 28)
+            Spacer(modifier = GlanceModifier.width(4.dp))
+            WidgetText(text = title, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
         Spacer(modifier = GlanceModifier.height(8.dp))
         WidgetText(
             text = message,
@@ -131,17 +135,7 @@ private fun FlexWindowSummary(
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = GlanceModifier.defaultWeight()) {
-                WidgetText(
-                    text = if (isStale) {
-                        resourceContext.getString(R.string.widget_title_stale, resourceContext.getString(R.string.app_name))
-                    } else {
-                        resourceContext.getString(R.string.app_name)
-                    },
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                )
+                WidgetHeader(resourceContext, isStale, markSize = 24, fontSize = 14.sp)
                 WidgetText(
                     text = consumed.toString(),
                     fontSize = 48.sp,

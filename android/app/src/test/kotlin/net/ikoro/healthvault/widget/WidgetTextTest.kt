@@ -7,6 +7,7 @@ import androidx.compose.ui.unit.sp
 import androidx.glance.text.FontWeight
 import androidx.glance.unit.ColorProvider
 import java.io.File
+import java.security.MessageDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -81,6 +82,8 @@ class WidgetTextTest {
         assertTrue(source.contains("accessibleCardModifier.clickable(actionStartActivity("))
         assertTrue(source.contains("semantics {"))
         assertTrue(!source.contains("R.mipmap.ic_launcher"))
+        assertTrue(source.contains("ImageProvider(R.drawable.healthvault_mark)"))
+        assertFalse(source.contains("widget_identity_short"))
         assertTrue(source.contains("useReducedWidgetContent(fontScale, layout)"))
         assertTrue(source.contains("useMinimalMicroContent(fontScale)"))
         assertTrue(source.contains("fontSize = 11.sp"))
@@ -122,6 +125,9 @@ class WidgetTextTest {
         val micro = functionBody(source, "MicroSummary")
         val short = functionBody(source, "ShortSummary")
         val tall = functionBody(source, "TallSummary")
+        val minimalMicro = micro.substringAfter("if (useMinimalContent) {").substringBefore("\n    Column(")
+        val brandMark = source.substringAfter("internal fun WidgetBrandMark(").substringBefore("\n@Composable\ninternal fun WidgetHeader")
+        val header = source.substringAfter("internal fun WidgetHeader(").substringBefore("\n@Composable\nprivate fun CalorieProgress")
 
         compactFunctions.forEach { body ->
             assertTrue(!body.contains("SquareIconButton("))
@@ -131,15 +137,19 @@ class WidgetTextTest {
         assertTrue(!compact.contains("Spacer(modifier = GlanceModifier.defaultWeight())"))
         assertTrue(compact.contains("contentAlignment = Alignment.CenterStart"))
         listOf(micro, short, tall).forEach { body ->
-            assertTrue(body.contains("R.string.widget_identity_short"))
+            assertTrue(body.contains("WidgetBrandMark("))
         }
         listOf(micro, tall).forEach { body ->
-            assertTrue(body.contains("R.string.widget_identity_short_stale"))
-            assertTrue(body.contains("if (isStale)"))
+            assertTrue(body.contains("isStale = isStale"))
         }
         assertTrue(micro.contains("if (useMinimalContent)"))
         assertTrue(micro.contains("fontSize = 9.sp"))
         assertTrue(micro.contains("return"))
+        assertFalse(minimalMicro.contains("WidgetBrandMark("))
+        assertTrue(micro.indexOf("return") < micro.indexOf("WidgetBrandMark("))
+        assertTrue(brandMark.contains("if (isStale)"))
+        assertTrue(brandMark.contains("text = \"!\""))
+        assertTrue(header.contains("WidgetBrandMark(markSize, isStale = isStale)"))
         assertTrue(wide.contains("SquareIconButton("))
         assertTrue(wide.contains("CircleIconButton("))
         assertTrue(wide.contains("MacroRows(resourceContext, summary)"))
@@ -179,9 +189,20 @@ class WidgetTextTest {
         assertTrue(provider.contains("android:resizeMode=\"horizontal|vertical\""))
         assertTrue(preview.contains("android:text=\"@string/widget_preview_consumed\""))
         assertTrue(preview.contains("android:text=\"@string/widget_preview_percent\""))
-        assertTrue(preview.contains("android:text=\"@string/widget_identity_short\""))
+        assertTrue(preview.contains("android:src=\"@drawable/healthvault_mark\""))
+        assertFalse(preview.contains("widget_identity_short"))
         assertTrue(!preview.contains("@mipmap/ic_launcher"))
         assertTrue(preview.contains("<ProgressBar"))
+    }
+
+    @Test
+    fun widgetBrandMark_matchesTheOwnerSelectedWebArtworkSha256() {
+        val widgetMark = appSource("src/main/res/drawable-nodpi/healthvault_mark.png")
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(widgetMark.readBytes())
+            .joinToString("") { byte -> "%02x".format(byte) }
+
+        assertEquals("9f63311ce0667e7581fc6e05b95ae6ec115afe0485d6e9a535aece57f5e6d661", digest)
     }
 
     @Test
@@ -191,6 +212,7 @@ class WidgetTextTest {
         val samsungProvider = appSource("src/main/res/xml/flex_window_samsung_info.xml").readText()
         val source = appSource("src/main/kotlin/net/ikoro/healthvault/widget/FlexWindowSummaryWidget.kt").readText()
         val preview = appSource("src/main/res/layout/flex_window_widget_preview.xml").readText()
+        val message = functionBody(source, "FlexWindowMessage")
         val receiverBlock = manifest
             .substringAfter("android:name=\".widget.FlexWindowSummaryWidgetReceiver\"")
             .substringBefore("</receiver>")
@@ -206,10 +228,13 @@ class WidgetTextTest {
         assertTrue(source.contains("class FlexWindowSummaryWidget"))
         assertTrue(source.contains("actionRunCallback<FlexWindowLogFoodAction>()"))
         assertTrue(source.contains("private fun FlexWindowMacroRow"))
+        assertTrue(source.contains("WidgetHeader(resourceContext, isStale, markSize = 24"))
+        assertTrue(message.contains("WidgetBrandMark(size = 28)"))
         assertFalse(source.contains("fontScale"))
         assertTrue(source.contains("modifier = GlanceModifier.defaultWeight()"))
         assertTrue(preview.contains("android:src=\"@drawable/ic_add_24\""))
         assertTrue(preview.contains("android:src=\"@drawable/ic_refresh_24\""))
+        assertTrue(preview.contains("android:src=\"@drawable/healthvault_mark\""))
         assertTrue(preview.contains("android:text=\"@string/widget_preview_target\""))
         val homeSource = summaryWidgetSource().readText()
         assertTrue(homeSource.contains("launchLogFood(context, MAIN_DISPLAY_ID)"))

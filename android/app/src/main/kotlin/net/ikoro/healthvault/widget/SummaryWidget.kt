@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
+import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -359,14 +360,7 @@ private fun MicroSummary(
     }
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
-        WidgetText(
-            text = resourceContext.getString(
-                if (isStale) R.string.widget_identity_short_stale else R.string.widget_identity_short,
-            ),
-            color = GlanceTheme.colors.onSurfaceVariant,
-            fontSize = 11.sp,
-            maxLines = 1,
-        )
+        WidgetBrandMark(size = 18, isStale = isStale)
         Spacer(modifier = GlanceModifier.defaultWeight())
         WidgetText(
             text = consumed.toString(),
@@ -393,13 +387,7 @@ private fun ShortSummary(
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            WidgetText(
-                text = resourceContext.getString(R.string.widget_identity_short),
-                color = GlanceTheme.colors.onSurfaceVariant,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-            )
+            WidgetBrandMark(size = 20)
             Spacer(modifier = GlanceModifier.width(4.dp))
             WidgetText(
                 text = calorieHeroText(consumed, isStale, useReducedContent),
@@ -477,14 +465,7 @@ private fun TallSummary(
     val target = summary.target.takeIf { it.available && it.calories > 0 }
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
-        WidgetText(
-            text = resourceContext.getString(
-                if (isStale) R.string.widget_identity_short_stale else R.string.widget_identity_short,
-            ),
-            color = GlanceTheme.colors.onSurfaceVariant,
-            fontSize = 11.sp,
-            maxLines = 1,
-        )
+        WidgetBrandMark(size = 20, isStale = isStale)
         Spacer(modifier = GlanceModifier.defaultWeight())
         WidgetText(
             text = consumed.toString(),
@@ -614,19 +595,49 @@ private fun WideSummary(
 }
 
 @Composable
-private fun WidgetHeader(resourceContext: Context, isStale: Boolean) {
+internal fun WidgetBrandMark(size: Int, isStale: Boolean = false) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Image(
+            provider = ImageProvider(R.drawable.healthvault_mark),
+            contentDescription = null,
+            modifier = GlanceModifier.width(size.dp).height(size.dp),
+        )
+        if (isStale) {
+            Spacer(modifier = GlanceModifier.width(1.dp))
+            WidgetText(
+                text = "!",
+                color = GlanceTheme.colors.onSurfaceVariant,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun WidgetHeader(
+    resourceContext: Context,
+    isStale: Boolean,
+    markSize: Int = 18,
+    fontSize: TextUnit = 11.sp,
+) {
     val appName = resourceContext.getString(R.string.app_name)
-    WidgetText(
-        text = if (isStale) {
-            resourceContext.getString(R.string.widget_title_stale, appName)
-        } else {
-            appName
-        },
-        color = GlanceTheme.colors.onSurfaceVariant,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Medium,
-        maxLines = 1,
-    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        WidgetBrandMark(markSize, isStale = isStale)
+        Spacer(modifier = GlanceModifier.width(4.dp))
+        WidgetText(
+            text = if (isStale) {
+                resourceContext.getString(R.string.widget_title_stale, appName)
+            } else {
+                appName
+            },
+            color = GlanceTheme.colors.onSurfaceVariant,
+            fontSize = fontSize,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
