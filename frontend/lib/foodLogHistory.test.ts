@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyTotal, DayCompleteness } from './api';
 import {
+  OUTCOME_COLOR,
   resolveFoodLogHistoryWindow,
   summarizeFoodLogHistory,
   type FoodLogHistoryDay,
@@ -119,5 +120,12 @@ describe('summarizeFoodLogHistory', () => {
     const input = rows();
     expect(() => summarizeFoodLogHistory(input.completeness, input.dailyTotals, [...DATES.slice(0, 6), '2026-03-09'])).toThrow();
     expect(() => summarizeFoodLogHistory(input.completeness, input.dailyTotals, [...DATES].reverse())).not.toThrow();
+  });
+});
+
+describe('OUTCOME_COLOR', () => {
+  it('gives every outcome its own color', () => {
+    const colors = Object.values(OUTCOME_COLOR);
+    expect(new Set(colors).size).toBe(3);
   });
 });

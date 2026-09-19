@@ -13,6 +13,13 @@ export interface FoodLogHistoryWindow {
 
 export type FoodLogHistoryOutcome = 'counted' | 'no_food' | 'needs_attention';
 
+/** Theme color (a CSS variable defined in globals.css) that marks each outcome. */
+export const OUTCOME_COLOR: Record<FoodLogHistoryOutcome, string> = {
+  counted: 'var(--outcome-counted)',
+  no_food: 'var(--outcome-empty)',
+  needs_attention: 'var(--outcome-attention)',
+};
+
 export interface FoodLogHistoryDay {
   date: string;
   state: DayCompletenessState;
