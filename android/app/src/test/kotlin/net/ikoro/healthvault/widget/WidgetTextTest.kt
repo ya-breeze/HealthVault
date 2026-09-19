@@ -70,14 +70,16 @@ class WidgetTextTest {
         assertTrue(source.contains("private fun CompactSummary"))
         assertTrue(source.contains("private fun WideSummary"))
         assertTrue(source.contains("LinearProgressIndicator("))
-        assertTrue(source.contains("SquareIconButton("))
+        assertFalse(source.contains("SquareIconButton("))
         assertTrue(source.contains("CircleIconButton("))
         assertTrue(source.contains("GlanceTheme.colors.widgetBackground"))
         assertTrue(source.contains("cornerRadius(R.dimen.widget_corner_radius)"))
         assertTrue(source.contains("background(ImageProvider(R.drawable.widget_background))"))
         assertTrue(source.contains(".MacroRows("))
         assertTrue(source.contains("private fun MacroRow"))
-        assertTrue(source.contains("GlanceModifier.defaultWeight().height(5.dp)"))
+        assertTrue(source.contains("internal fun PaceProgress"))
+        assertTrue(source.contains("MiniMacroRails(resourceContext, summary)"))
+        assertTrue(source.contains("ColorProvider(Color(0xFFFF453A))"))
         assertTrue(source.contains("accessibleCardModifier.clickable(actionRunCallback<LogFoodAction>())"))
         assertTrue(source.contains("accessibleCardModifier.clickable(actionStartActivity("))
         assertTrue(source.contains("semantics {"))
@@ -87,7 +89,7 @@ class WidgetTextTest {
         assertTrue(source.contains("useReducedWidgetContent(fontScale, layout)"))
         assertTrue(source.contains("useMinimalMicroContent(fontScale)"))
         assertTrue(source.contains("fontSize = 11.sp"))
-        assertTrue(source.contains("fontSize = 9.sp"))
+        assertTrue(source.contains("valueSize = 9.sp"))
         assertTrue(source.contains("DpSize(48.dp, 48.dp)"))
         assertTrue(source.contains("DpSize(109.dp, 48.dp)"))
         assertTrue(source.contains("DpSize(48.dp, 110.dp)"))
@@ -128,16 +130,16 @@ class WidgetTextTest {
         val tall = functionBody(source, "TallSummary")
         val minimalMicro = micro.substringAfter("if (useMinimalContent) {").substringBefore("\n        return")
         val brandMark = source.substringAfter("internal fun WidgetBrandMark(").substringBefore("\n@Composable\ninternal fun WidgetHeader")
-        val header = source.substringAfter("internal fun WidgetHeader(").substringBefore("\n@Composable\nprivate fun CalorieProgress")
+        val header = source.substringAfter("internal fun WidgetHeader(").substringBefore("\n@Composable\nprivate fun androidx.glance.layout.ColumnScope.MacroRows")
 
         compactFunctions.forEach { body ->
             assertTrue(!body.contains("SquareIconButton("))
             assertTrue(!body.contains("CircleIconButton("))
             assertTrue(!body.contains("MacroRows("))
         }
-        assertTrue(!compact.contains("Spacer(modifier = GlanceModifier.defaultWeight())"))
+        assertTrue(compact.contains("MiniMacroRails(resourceContext, summary, showValues = true)"))
         assertTrue(compact.contains("contentAlignment = Alignment.CenterStart"))
-        listOf(micro, short, wideShort).forEach { body ->
+        listOf(short, wideShort).forEach { body ->
             assertFalse(
                 Regex(
                     """if \(target != null\) \{\s*Spacer\(modifier = GlanceModifier\.defaultWeight\(\)\)""",
@@ -145,25 +147,26 @@ class WidgetTextTest {
             )
             assertTrue(body.contains("contentAlignment = Alignment.Center"))
         }
-        assertFalse(micro.contains("Spacer(modifier = GlanceModifier.defaultWeight())"))
+        assertTrue(micro.contains("contentAlignment = Alignment.Center"))
         listOf(short, wideShort).forEach { body ->
             assertTrue(body.contains("Spacer(modifier = GlanceModifier.height(3.dp))"))
         }
-        listOf(micro, short, tall).forEach { body ->
+        listOf(short, tall).forEach { body ->
             assertTrue(body.contains("WidgetBrandMark("))
         }
-        listOf(micro, tall).forEach { body ->
+        assertFalse(micro.contains("WidgetBrandMark("))
+        listOf(tall).forEach { body ->
             assertTrue(body.contains("isStale = isStale"))
         }
         assertTrue(micro.contains("if (useMinimalContent)"))
-        assertTrue(micro.contains("fontSize = 9.sp"))
+        assertTrue(micro.contains("valueSize = 9.sp"))
         assertTrue(micro.contains("return"))
         assertFalse(minimalMicro.contains("WidgetBrandMark("))
-        assertTrue(micro.indexOf("return") < micro.indexOf("WidgetBrandMark("))
+        assertTrue(micro.contains("MiniMacroRails(resourceContext, summary)"))
         assertTrue(brandMark.contains("if (isStale)"))
         assertTrue(brandMark.contains("text = \"!\""))
         assertTrue(header.contains("WidgetBrandMark(markSize, isStale = isStale)"))
-        assertTrue(wide.contains("SquareIconButton("))
+        assertFalse(wide.contains("SquareIconButton("))
         assertTrue(wide.contains("CircleIconButton("))
         assertTrue(wide.contains("MacroRows(resourceContext, summary)"))
         assertTrue(wide.contains("if (useReducedContent)"))

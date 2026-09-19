@@ -45,6 +45,10 @@ test.describe('GET /api/summary/today — Android widget contract', () => {
     expect(typeof body.carbs_grams_consumed).toBe('number');
     expect(typeof body.fat_grams_consumed).toBe('number');
     expectKotlinInt(body.meal_count);
+    expectKotlinInt(body.eating_occasions_today);
+    expect(body.eating_occasions_today).toBeGreaterThanOrEqual(0);
+    expectKotlinInt(body.usual_meals_per_day);
+    expect(body.usual_meals_per_day).toBeGreaterThan(0);
     expect(typeof body.display_language).toBe('string');
 
     // last_logged_at: null, or a string TodaySummary.kt's lastLoggedAt (a

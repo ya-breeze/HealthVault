@@ -23,6 +23,8 @@ class TodaySummaryParsingTest {
               "carbs_grams_consumed": 120.0,
               "fat_grams_consumed": 40.0,
               "meal_count": 3,
+              "eating_occasions_today": 2,
+              "usual_meals_per_day": 3,
               "last_logged_at": "2026-09-02T14:05:00Z",
               "display_language": "en",
               "target": {"available": true, "calories": 2000, "protein_grams": 150, "carbs_grams": 200, "fat_grams": 70}
@@ -35,6 +37,8 @@ class TodaySummaryParsingTest {
         assertEquals(150, summary.target.proteinGrams)
         assertEquals("2026-09-02T14:05:00Z", summary.lastLoggedAt)
         assertEquals(3, summary.mealCount)
+        assertEquals(2, summary.eatingOccasionsToday)
+        assertEquals(3, summary.usualMealsPerDay)
     }
 
     @Test
@@ -47,6 +51,7 @@ class TodaySummaryParsingTest {
                 {
                   "date": "2026-09-02", "calories_consumed": 0, "protein_grams_consumed": 0,
                   "carbs_grams_consumed": 0, "fat_grams_consumed": 0, "meal_count": 0,
+                  "eating_occasions_today": 0, "usual_meals_per_day": 3,
                   "last_logged_at": null, "display_language": "en",
                   "target": {"available": false, "reason": "$reason", "calories": 0, "protein_grams": 0, "carbs_grams": 0, "fat_grams": 0}
                 }
@@ -67,6 +72,7 @@ class TodaySummaryParsingTest {
             {
               "date": "2026-09-02", "calories_consumed": 500, "protein_grams_consumed": 40,
               "carbs_grams_consumed": 0, "fat_grams_consumed": 30, "meal_count": 1,
+              "eating_occasions_today": 1, "usual_meals_per_day": 3,
               "last_logged_at": "2026-09-02T08:00:00Z", "display_language": "en",
               "target": {"available": true, "calories": 1800, "protein_grams": 160, "carbs_grams": 0, "fat_grams": 60}
             }
@@ -83,6 +89,7 @@ class TodaySummaryParsingTest {
             {
               "date": "2026-09-02", "calories_consumed": 0, "protein_grams_consumed": 0,
               "carbs_grams_consumed": 0, "fat_grams_consumed": 0, "meal_count": 0,
+              "eating_occasions_today": 0, "usual_meals_per_day": 3,
               "last_logged_at": null, "display_language": "en",
               "target": {"available": false, "reason": "missing_profile", "calories": 0, "protein_grams": 0, "carbs_grams": 0, "fat_grams": 0}
             }

@@ -4,5 +4,8 @@
     <color name="widget_preview_on_surface">@android:color/system_neutral1_900</color>
     <color name="widget_preview_on_surface_variant">@android:color/system_neutral2_700</color>
     <color name="widget_preview_primary">@android:color/system_accent1_600</color>
+    <color name="widget_preview_good">#2E7D32</color>
+    <color name="widget_preview_warning">#8A5A00</color>
+    <color name="widget_preview_bad">#D93025</color>
     <color name="widget_preview_track">@android:color/system_neutral2_100</color>
 </resources>

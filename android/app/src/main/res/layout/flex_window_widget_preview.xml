@@ -45,14 +45,31 @@
                     android:textStyle="bold" />
             </LinearLayout>
 
-            <TextView
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:maxLines="1"
-                android:text="@string/widget_preview_consumed"
-                android:textColor="@color/widget_preview_on_surface"
-                android:textSize="48sp"
-                android:textStyle="bold" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:text="@string/widget_preview_consumed"
+                    android:textColor="@color/widget_preview_on_surface"
+                    android:textSize="48sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="3dp"
+                    android:maxLines="1"
+                    android:text="@string/widget_calories_unit"
+                    android:textColor="@color/widget_preview_on_surface_variant"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="wrap_content"
@@ -92,7 +109,7 @@
         android:max="100"
         android:progress="72"
         android:progressBackgroundTint="@color/widget_preview_track"
-        android:progressTint="@color/widget_preview_primary" />
+        android:progressTint="@color/widget_preview_good" />
 
     <Space
         android:layout_width="0dp"
@@ -115,7 +132,7 @@
         android:max="100"
         android:progress="80"
         android:progressBackgroundTint="@color/widget_preview_track"
-        android:progressTint="@color/widget_preview_primary" />
+        android:progressTint="@color/widget_preview_good" />
 
     <Space
         android:layout_width="0dp"
@@ -138,7 +155,7 @@
         android:max="100"
         android:progress="70"
         android:progressBackgroundTint="@color/widget_preview_track"
-        android:progressTint="@color/widget_preview_primary" />
+        android:progressTint="@color/widget_preview_warning" />
 
     <Space
         android:layout_width="0dp"
@@ -161,6 +178,6 @@
         android:max="100"
         android:progress="83"
         android:progressBackgroundTint="@color/widget_preview_track"
-        android:progressTint="@color/widget_preview_primary" />
+        android:progressTint="@color/widget_preview_good" />
 
 </LinearLayout>

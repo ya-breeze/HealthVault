@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -28,7 +29,6 @@ import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.components.CircleIconButton
-import androidx.glance.appwidget.components.SquareIconButton
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
@@ -62,6 +62,10 @@ private val WIDE_SHORT_SIZE = DpSize(230.dp, 48.dp)
 private val TALL_NARROW_SIZE = DpSize(48.dp, 110.dp)
 private val COMPACT_SIZE = DpSize(110.dp, 110.dp)
 private val WIDE_SIZE = DpSize(230.dp, 110.dp)
+
+private val PACE_GOOD = ColorProvider(Color(0xFF69D68B))
+private val PACE_WARNING = ColorProvider(Color(0xFFF3C75D))
+private val PACE_BAD = ColorProvider(Color(0xFFFF453A))
 
 internal enum class SummaryWidgetLayout {
     MICRO,
@@ -133,6 +137,148 @@ internal fun progressFraction(consumed: Int, target: Int): Float {
 internal fun progressPercent(consumed: Int, target: Int): Int? {
     if (target <= 0) return null
     return (consumed.coerceAtLeast(0).toDouble() * 100 / target).roundToInt()
+}
+
+internal fun paceColor(level: PaceLevel): ColorProvider = when (level) {
+    PaceLevel.GOOD -> PACE_GOOD
+    PaceLevel.WARNING -> PACE_WARNING
+    PaceLevel.BAD -> PACE_BAD
+}
+
+internal fun paceFor(summary: TodaySummary, consumed: Double, target: Int): PaceSignal? = paceSignal(
+    consumed = consumed,
+    target = target,
+    eatingOccasionsToday = summary.eatingOccasionsToday,
+    usualMealsPerDay = summary.usualMealsPerDay,
+)
+
+@Composable
+internal fun CalorieValue(
+    resourceContext: Context,
+    consumed: Int,
+    isStale: Boolean,
+    useReducedContent: Boolean,
+    valueSize: TextUnit,
+    unitSize: TextUnit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        WidgetText(
+            text = calorieHeroText(consumed, isStale, useReducedContent),
+            fontWeight = FontWeight.Bold,
+            fontSize = valueSize,
+            maxLines = 1,
+        )
+        Spacer(modifier = GlanceModifier.width(2.dp))
+        WidgetText(
+            text = resourceContext.getString(R.string.widget_calories_unit),
+            color = GlanceTheme.colors.onSurfaceVariant,
+            fontSize = unitSize,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun PaceGlyph(summary: TodaySummary, consumed: Double, target: Int, fontSize: TextUnit) {
+    val signal = paceFor(summary, consumed, target) ?: return
+    WidgetText(
+        text = signal.direction.glyph,
+        color = paceColor(signal.level),
+        fontSize = fontSize,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+    )
+}
+
+@Composable
+internal fun PaceProgress(
+    summary: TodaySummary,
+    consumed: Double,
+    target: Int,
+    height: Int,
+    modifier: GlanceModifier = GlanceModifier.fillMaxWidth(),
+) {
+    val signal = paceFor(summary, consumed, target) ?: return
+    LinearProgressIndicator(
+        progress = progressFraction(consumed.toInt(), target),
+        modifier = modifier.height(height.dp),
+        color = paceColor(signal.level),
+        backgroundColor = GlanceTheme.colors.surfaceVariant,
+    )
+}
+
+@Composable
+private fun MiniMacroRails(resourceContext: Context, summary: TodaySummary, showValues: Boolean = false) {
+    val target = summary.target.takeIf { it.available } ?: return
+    Row(modifier = GlanceModifier.fillMaxWidth()) {
+        MiniMacroRail(
+            resourceContext,
+            summary,
+            R.string.widget_protein_short,
+            summary.proteinGramsConsumed,
+            target.proteinGrams,
+            showValues,
+        )
+        Spacer(modifier = GlanceModifier.width(3.dp))
+        MiniMacroRail(
+            resourceContext,
+            summary,
+            R.string.widget_carbs_short,
+            summary.carbsGramsConsumed,
+            target.carbsGrams,
+            showValues,
+        )
+        Spacer(modifier = GlanceModifier.width(3.dp))
+        MiniMacroRail(
+            resourceContext,
+            summary,
+            R.string.widget_fat_short,
+            summary.fatGramsConsumed,
+            target.fatGrams,
+            showValues,
+        )
+    }
+}
+
+@Composable
+private fun androidx.glance.layout.RowScope.MiniMacroRail(
+    resourceContext: Context,
+    summary: TodaySummary,
+    labelRes: Int,
+    consumed: Double,
+    target: Int,
+    showValue: Boolean,
+) {
+    val signal = paceFor(summary, consumed, target)
+    Column(modifier = GlanceModifier.defaultWeight()) {
+        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            WidgetText(
+                text = if (showValue) {
+                    resourceContext.getString(R.string.widget_macro_compact_value, resourceContext.getString(labelRes), consumed.toInt())
+                } else {
+                    resourceContext.getString(labelRes)
+                },
+                color = GlanceTheme.colors.onSurfaceVariant,
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
+            if (signal != null) {
+                Spacer(modifier = GlanceModifier.defaultWeight())
+                WidgetText(
+                    text = signal.direction.glyph,
+                    color = paceColor(signal.level),
+                    fontSize = 7.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (signal != null) {
+            PaceProgress(summary, consumed, target, height = 2)
+        }
+    }
 }
 
 /**
@@ -237,14 +383,27 @@ internal fun widgetContentDescription(resourceContext: Context, state: WidgetSta
         R.string.widget_loaded_action_description,
         resourceContext.getString(R.string.app_name),
         state.summary.caloriesConsumed.toInt(),
+        caloriePaceDescription(resourceContext, state.summary),
     )
     is WidgetState.Stale -> resourceContext.getString(
         R.string.widget_stale_action_description,
         resourceContext.getString(R.string.app_name),
         state.summary.caloriesConsumed.toInt(),
+        caloriePaceDescription(resourceContext, state.summary),
     )
     is WidgetState.SignedOut -> resourceContext.getString(R.string.widget_open_to_sign_in)
     is WidgetState.Error -> resourceContext.getString(R.string.widget_no_data)
+}
+
+private fun caloriePaceDescription(resourceContext: Context, summary: TodaySummary): String {
+    val target = summary.target.takeIf { it.available && it.calories > 0 }
+        ?: return resourceContext.getString(R.string.widget_pace_unavailable)
+    return when (paceFor(summary, summary.caloriesConsumed, target.calories)?.direction) {
+        PaceDirection.ON_PACE -> resourceContext.getString(R.string.widget_pace_on)
+        PaceDirection.BELOW -> resourceContext.getString(R.string.widget_pace_below)
+        PaceDirection.ABOVE -> resourceContext.getString(R.string.widget_pace_above)
+        null -> resourceContext.getString(R.string.widget_pace_unavailable)
+    }
 }
 
 @Composable
@@ -345,16 +504,17 @@ private fun MicroSummary(
     val target = summary.target.takeIf { it.available && it.calories > 0 }
 
     if (useMinimalContent) {
-        // At >= 1.4x, the mark, calorie line, and progress no longer fit the
-        // launcher's 48dp cell with a safe vertical margin. Keep the value visible;
-        // the card semantics retain
-        // HealthVault identity, the kcal unit, and the Log food action.
+        // At >= 1.4x, secondary rails no longer fit the launcher's 48dp cell
+        // with a safe vertical margin. Keep the value and explicit unit visible;
+        // the card semantics retain HealthVault identity and the Log food action.
         Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            WidgetText(
-                text = calorieHeroText(consumed, isStale, useReducedContent),
-                fontWeight = FontWeight.Bold,
-                fontSize = 9.sp,
-                maxLines = 1,
+            CalorieValue(
+                resourceContext,
+                consumed,
+                isStale,
+                useReducedContent,
+                valueSize = 9.sp,
+                unitSize = 5.sp,
             )
         }
         return
@@ -362,16 +522,23 @@ private fun MicroSummary(
 
     Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
-            WidgetBrandMark(size = 18, isStale = isStale)
-            WidgetText(
-                text = consumed.toString(),
-                fontWeight = FontWeight.Bold,
-                fontSize = if (useReducedContent) 11.sp else 14.sp,
-                maxLines = 1,
-            )
-            if (target != null) {
-                Spacer(modifier = GlanceModifier.height(1.dp))
-                CalorieProgress(consumed, target.calories, height = 3)
+            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                CalorieValue(
+                    resourceContext,
+                    consumed,
+                    isStale,
+                    useReducedContent,
+                    valueSize = if (useReducedContent) 10.sp else 12.sp,
+                    unitSize = 6.sp,
+                )
+                if (target != null) {
+                    Spacer(modifier = GlanceModifier.defaultWeight())
+                    PaceGlyph(summary, summary.caloriesConsumed, target.calories, fontSize = 8.sp)
+                }
+            }
+            if (!useReducedContent && target != null) {
+                Spacer(modifier = GlanceModifier.height(2.dp))
+                MiniMacroRails(resourceContext, summary)
             }
         }
     }
@@ -386,27 +553,30 @@ private fun ShortSummary(
 ) {
     val consumed = summary.caloriesConsumed.toInt()
     val target = summary.target.takeIf { it.available && it.calories > 0 }
+    val caloriePace = target?.let { paceFor(summary, summary.caloriesConsumed, it.calories) }
 
     Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 WidgetBrandMark(size = 20)
                 Spacer(modifier = GlanceModifier.width(4.dp))
-                WidgetText(
-                    text = calorieHeroText(consumed, isStale, useReducedContent),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (useReducedContent) 14.sp else 18.sp,
-                    maxLines = 1,
+                CalorieValue(
+                    resourceContext,
+                    consumed,
+                    isStale,
+                    useReducedContent,
+                    valueSize = if (useReducedContent) 12.sp else 16.sp,
+                    unitSize = if (useReducedContent) 6.sp else 8.sp,
                 )
                 if (!useReducedContent) {
                     Spacer(modifier = GlanceModifier.defaultWeight())
                     WidgetText(
                         text = when {
                             isStale -> resourceContext.getString(R.string.widget_stale_short)
-                            target != null -> "${progressPercent(consumed, target.calories)}%"
+                            caloriePace != null -> "${caloriePace.direction.glyph} ${caloriePace.actualPercent}%"
                             else -> resourceContext.getString(R.string.widget_calories_unit)
                         },
-                        color = GlanceTheme.colors.onSurfaceVariant,
+                        color = caloriePace?.let { paceColor(it.level) } ?: GlanceTheme.colors.onSurfaceVariant,
                         fontSize = 11.sp,
                         maxLines = 1,
                     )
@@ -414,7 +584,11 @@ private fun ShortSummary(
             }
             if (target != null) {
                 Spacer(modifier = GlanceModifier.height(3.dp))
-                CalorieProgress(consumed, target.calories, height = 4)
+                PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 4)
+                if (!useReducedContent) {
+                    Spacer(modifier = GlanceModifier.height(2.dp))
+                    MiniMacroRails(resourceContext, summary)
+                }
             }
         }
     }
@@ -429,24 +603,27 @@ private fun WideShortSummary(
 ) {
     val consumed = summary.caloriesConsumed.toInt()
     val target = summary.target.takeIf { it.available && it.calories > 0 }
+    val caloriePace = target?.let { paceFor(summary, summary.caloriesConsumed, it.calories) }
 
     Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 WidgetHeader(resourceContext, isStale)
                 Spacer(modifier = GlanceModifier.defaultWeight())
-                WidgetText(
-                    text = calorieHeroText(consumed, isStale, useReducedContent),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (useReducedContent) 14.sp else 18.sp,
-                    maxLines = 1,
+                CalorieValue(
+                    resourceContext,
+                    consumed,
+                    isStale,
+                    useReducedContent,
+                    valueSize = if (useReducedContent) 13.sp else 17.sp,
+                    unitSize = if (useReducedContent) 6.sp else 8.sp,
                 )
                 if (!useReducedContent) {
                     Spacer(modifier = GlanceModifier.width(8.dp))
                     WidgetText(
-                        text = target?.let { "${progressPercent(consumed, it.calories)}%" }
+                        text = caloriePace?.let { "${it.direction.glyph} ${it.actualPercent}%" }
                             ?: resourceContext.getString(R.string.widget_calories_unit),
-                        color = GlanceTheme.colors.onSurfaceVariant,
+                        color = caloriePace?.let { paceColor(it.level) } ?: GlanceTheme.colors.onSurfaceVariant,
                         fontSize = 11.sp,
                         maxLines = 1,
                     )
@@ -454,7 +631,11 @@ private fun WideShortSummary(
             }
             if (target != null) {
                 Spacer(modifier = GlanceModifier.height(3.dp))
-                CalorieProgress(consumed, target.calories, height = 4)
+                PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 4)
+                if (!useReducedContent) {
+                    Spacer(modifier = GlanceModifier.height(2.dp))
+                    MiniMacroRails(resourceContext, summary)
+                }
             }
         }
     }
@@ -473,24 +654,29 @@ private fun TallSummary(
     Column(modifier = GlanceModifier.fillMaxSize()) {
         WidgetBrandMark(size = 20, isStale = isStale)
         Spacer(modifier = GlanceModifier.defaultWeight())
-        WidgetText(
-            text = consumed.toString(),
-            fontWeight = FontWeight.Bold,
-            fontSize = if (useReducedContent) 14.sp else 16.sp,
-            maxLines = 1,
+        CalorieValue(
+            resourceContext,
+            consumed,
+            isStale,
+            useReducedContent,
+            valueSize = if (useReducedContent) 12.sp else 15.sp,
+            unitSize = 6.sp,
         )
         Spacer(modifier = GlanceModifier.defaultWeight())
         if (!useReducedContent && target != null) {
             WidgetText(
-                text = "${progressPercent(consumed, target.calories)}%",
-                color = GlanceTheme.colors.onSurfaceVariant,
+                text = paceFor(summary, summary.caloriesConsumed, target.calories)?.let {
+                    "${it.direction.glyph} ${it.actualPercent}%"
+                } ?: "",
+                color = paceFor(summary, summary.caloriesConsumed, target.calories)?.let { paceColor(it.level) }
+                    ?: GlanceTheme.colors.onSurfaceVariant,
                 fontSize = 11.sp,
                 maxLines = 1,
             )
         }
         if (target != null) {
             Spacer(modifier = GlanceModifier.defaultWeight())
-            CalorieProgress(consumed, target.calories, height = 4)
+            PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 4)
         }
     }
 }
@@ -504,6 +690,7 @@ private fun CompactSummary(
 ) {
     val consumed = summary.caloriesConsumed.toInt()
     val target = summary.target.takeIf { it.available && it.calories > 0 }
+    val caloriePace = target?.let { paceFor(summary, summary.caloriesConsumed, it.calories) }
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
         WidgetHeader(resourceContext, isStale)
@@ -512,29 +699,47 @@ private fun CompactSummary(
             contentAlignment = Alignment.CenterStart,
         ) {
             Column(modifier = GlanceModifier.fillMaxWidth()) {
-                WidgetText(
-                    text = calorieHeroText(consumed, isStale, useReducedContent),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (useReducedContent) 18.sp else 30.sp,
-                    maxLines = 1,
+                CalorieValue(
+                    resourceContext,
+                    consumed,
+                    isStale,
+                    useReducedContent,
+                    valueSize = if (useReducedContent) 17.sp else 26.sp,
+                    unitSize = if (useReducedContent) 8.sp else 11.sp,
                 )
                 if (!useReducedContent) {
-                    WidgetText(
-                        text = target?.let {
+                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        WidgetText(
+                            text = target?.let {
                             resourceContext.getString(
                                 R.string.widget_calorie_target_progress,
                                 it.calories,
                                 progressPercent(consumed, it.calories),
                             )
-                        } ?: resourceContext.getString(R.string.widget_calories_today),
-                        color = GlanceTheme.colors.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                    )
+                            } ?: resourceContext.getString(R.string.widget_calories_today),
+                            color = GlanceTheme.colors.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                        )
+                        if (caloriePace != null) {
+                            Spacer(modifier = GlanceModifier.defaultWeight())
+                            WidgetText(
+                                text = caloriePace.direction.glyph,
+                                color = paceColor(caloriePace.level),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                        }
+                    }
                 }
                 if (target != null) {
-                    Spacer(modifier = GlanceModifier.height(5.dp))
-                    CalorieProgress(consumed, target.calories)
+                    Spacer(modifier = GlanceModifier.height(3.dp))
+                    PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 6)
+                    if (!useReducedContent) {
+                        Spacer(modifier = GlanceModifier.height(4.dp))
+                        MiniMacroRails(resourceContext, summary, showValues = true)
+                    }
                 }
             }
         }
@@ -550,37 +755,47 @@ private fun WideSummary(
 ) {
     val consumed = summary.caloriesConsumed.toInt()
     val target = summary.target.takeIf { it.available && it.calories > 0 }
+    val caloriePace = target?.let { paceFor(summary, summary.caloriesConsumed, it.calories) }
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = GlanceModifier.defaultWeight()) {
                 WidgetHeader(resourceContext, isStale)
-                WidgetText(
-                    text = calorieHeroText(consumed, isStale, useReducedContent),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (useReducedContent) 14.sp else 24.sp,
-                    maxLines = 1,
+                CalorieValue(
+                    resourceContext,
+                    consumed,
+                    isStale,
+                    useReducedContent,
+                    valueSize = if (useReducedContent) 14.sp else 24.sp,
+                    unitSize = if (useReducedContent) 7.sp else 10.sp,
                 )
                 if (!useReducedContent) {
-                    WidgetText(
-                        text = target?.let {
-                        resourceContext.getString(
-                            R.string.widget_calorie_target_progress,
-                            it.calories,
-                            progressPercent(consumed, it.calories),
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        WidgetText(
+                            text = target?.let {
+                                resourceContext.getString(
+                                    R.string.widget_calorie_target_progress,
+                                    it.calories,
+                                    progressPercent(consumed, it.calories),
+                                )
+                            } ?: resourceContext.getString(R.string.widget_calories_today),
+                            color = GlanceTheme.colors.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            maxLines = 1,
                         )
-                        } ?: resourceContext.getString(R.string.widget_calories_today),
-                        color = GlanceTheme.colors.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                    )
+                        if (caloriePace != null) {
+                            Spacer(modifier = GlanceModifier.width(4.dp))
+                            WidgetText(
+                                text = caloriePace.direction.glyph,
+                                color = paceColor(caloriePace.level),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                        }
+                    }
                 }
             }
-            SquareIconButton(
-                imageProvider = ImageProvider(R.drawable.ic_add_24),
-                contentDescription = resourceContext.getString(R.string.widget_log_food),
-                onClick = actionRunCallback<LogFoodAction>(),
-            )
             CircleIconButton(
                 imageProvider = ImageProvider(R.drawable.ic_refresh_24),
                 contentDescription = resourceContext.getString(R.string.widget_refresh),
@@ -590,7 +805,7 @@ private fun WideSummary(
             )
         }
 
-        if (target != null) CalorieProgress(consumed, target.calories)
+        if (target != null) PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 6)
 
         if (useReducedContent) {
             Spacer(modifier = GlanceModifier.defaultWeight())
@@ -647,41 +862,37 @@ internal fun WidgetHeader(
 }
 
 @Composable
-private fun CalorieProgress(consumed: Int, target: Int, height: Int = 6) {
-    LinearProgressIndicator(
-        progress = progressFraction(consumed, target),
-        modifier = GlanceModifier.fillMaxWidth().height(height.dp),
-        color = GlanceTheme.colors.primary,
-        backgroundColor = GlanceTheme.colors.surfaceVariant,
-    )
-}
-
-@Composable
 private fun androidx.glance.layout.ColumnScope.MacroRows(resourceContext: Context, summary: TodaySummary) {
     val target = summary.target.takeIf { it.available }
     Spacer(modifier = GlanceModifier.defaultWeight())
-    MacroRow(resourceContext, R.string.widget_protein_short, summary.proteinGramsConsumed.toInt(), target?.proteinGrams ?: 0)
+    MacroRow(resourceContext, summary, R.string.widget_protein_short, summary.proteinGramsConsumed, target?.proteinGrams ?: 0)
     Spacer(modifier = GlanceModifier.defaultWeight())
-    MacroRow(resourceContext, R.string.widget_carbs_short, summary.carbsGramsConsumed.toInt(), target?.carbsGrams ?: 0)
+    MacroRow(resourceContext, summary, R.string.widget_carbs_short, summary.carbsGramsConsumed, target?.carbsGrams ?: 0)
     Spacer(modifier = GlanceModifier.defaultWeight())
-    MacroRow(resourceContext, R.string.widget_fat_short, summary.fatGramsConsumed.toInt(), target?.fatGrams ?: 0)
+    MacroRow(resourceContext, summary, R.string.widget_fat_short, summary.fatGramsConsumed, target?.fatGrams ?: 0)
 }
 
 @Composable
 private fun MacroRow(
     resourceContext: Context,
+    summary: TodaySummary,
     labelRes: Int,
-    consumedGrams: Int,
+    consumedGrams: Double,
     targetGrams: Int,
 ) {
-    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    val consumed = consumedGrams.toInt()
+    val signal = paceFor(summary, consumedGrams, targetGrams)
+    Row(
+        modifier = GlanceModifier.fillMaxWidth().padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         val label = resourceContext.getString(labelRes)
         Box(modifier = GlanceModifier.width(86.dp)) {
             WidgetText(
                 text = if (targetGrams > 0) {
-                    resourceContext.getString(R.string.widget_macro_of_target, label, consumedGrams, targetGrams)
+                    resourceContext.getString(R.string.widget_macro_of_target, label, consumed, targetGrams)
                 } else {
-                    resourceContext.getString(R.string.widget_macro_consumed, label, consumedGrams)
+                    resourceContext.getString(R.string.widget_macro_consumed, label, consumed)
                 },
                 color = GlanceTheme.colors.onSurfaceVariant,
                 fontSize = 11.sp,
@@ -690,12 +901,23 @@ private fun MacroRow(
         }
         if (targetGrams > 0) {
             Spacer(modifier = GlanceModifier.width(8.dp))
-            LinearProgressIndicator(
-                progress = progressFraction(consumedGrams, targetGrams),
-                modifier = GlanceModifier.defaultWeight().height(5.dp),
-                color = GlanceTheme.colors.primary,
-                backgroundColor = GlanceTheme.colors.surfaceVariant,
+            PaceProgress(
+                summary,
+                consumedGrams,
+                targetGrams,
+                height = 5,
+                modifier = GlanceModifier.defaultWeight(),
             )
+            if (signal != null) {
+                Spacer(modifier = GlanceModifier.width(6.dp))
+                WidgetText(
+                    text = signal.direction.glyph,
+                    color = paceColor(signal.level),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

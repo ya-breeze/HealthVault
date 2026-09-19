@@ -4,5 +4,8 @@
     <color name="widget_preview_on_surface">#1D1B20</color>
     <color name="widget_preview_on_surface_variant">#49454F</color>
     <color name="widget_preview_primary">#6750A4</color>
+    <color name="widget_preview_good">#2E7D32</color>
+    <color name="widget_preview_warning">#8A5A00</color>
+    <color name="widget_preview_bad">#D93025</color>
     <color name="widget_preview_track">#E7E0EC</color>
 </resources>

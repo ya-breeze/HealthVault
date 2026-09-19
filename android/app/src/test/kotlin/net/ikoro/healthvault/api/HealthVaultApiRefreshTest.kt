@@ -20,6 +20,7 @@ private val VALID_SUMMARY_JSON = """
     {
       "date": "2026-09-02", "calories_consumed": 500, "protein_grams_consumed": 30,
       "carbs_grams_consumed": 50, "fat_grams_consumed": 20, "meal_count": 1,
+      "eating_occasions_today": 1, "usual_meals_per_day": 3,
       "last_logged_at": null, "display_language": "en",
       "target": {"available": true, "calories": 2000, "protein_grams": 150, "carbs_grams": 200, "fat_grams": 70}
     }

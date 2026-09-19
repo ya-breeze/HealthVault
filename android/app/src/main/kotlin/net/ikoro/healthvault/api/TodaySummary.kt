@@ -34,6 +34,8 @@ data class TodaySummary(
     @SerialName("carbs_grams_consumed") val carbsGramsConsumed: Double,
     @SerialName("fat_grams_consumed") val fatGramsConsumed: Double,
     @SerialName("meal_count") val mealCount: Int,
+    @SerialName("eating_occasions_today") val eatingOccasionsToday: Int,
+    @SerialName("usual_meals_per_day") val usualMealsPerDay: Int,
     @SerialName("last_logged_at") val lastLoggedAt: String? = null,
     @SerialName("display_language") val displayLanguage: String,
     val target: TodaySummaryTarget,

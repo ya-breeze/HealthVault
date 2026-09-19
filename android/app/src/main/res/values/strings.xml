@@ -10,25 +10,33 @@
     <string name="widget_no_data_short">No data</string>
     <string name="widget_title_stale">%1$s · old</string>
     <string name="widget_stale_short">old</string>
-    <string name="widget_loaded_action_description">%1$s: %2$d kcal today. Log food.</string>
-    <string name="widget_stale_action_description">%1$s: %2$d kcal today. Saved data may be old. Log food.</string>
-    <string name="widget_description">Today’s calories; tap to log food</string>
+    <string name="widget_loaded_action_description">%1$s: %2$d kcal today. %3$s. Log food.</string>
+    <string name="widget_stale_action_description">%1$s: %2$d kcal today. %3$s. Saved data may be old. Log food.</string>
+    <string name="widget_pace_on">On pace</string>
+    <string name="widget_pace_below">Below the expected pace</string>
+    <string name="widget_pace_above">Above the expected pace</string>
+    <string name="widget_pace_unavailable">Pace unavailable</string>
+    <string name="widget_description">Today’s calorie and nutrient pace; tap to log food</string>
     <string name="widget_log_food">Log food</string>
     <string name="widget_refresh">Refresh</string>
     <string name="widget_calorie_target_progress">of %1$d kcal · %2$d%%</string>
     <string name="widget_calories_today">kcal today</string>
     <string name="widget_calories_unit">kcal</string>
     <string name="widget_preview_consumed">1546</string>
-    <string name="widget_preview_percent">72%</string>
+    <string name="widget_preview_percent">✓ 72%</string>
     <string name="widget_preview_target">of 2139 kcal · 72%</string>
     <string name="widget_preview_protein">P 109g/136g</string>
     <string name="widget_preview_carbs">C 140g/199g</string>
     <string name="widget_preview_fat">F 74g/89g</string>
+    <string name="widget_preview_protein_status">P ✓</string>
+    <string name="widget_preview_carbs_status">C ↓</string>
+    <string name="widget_preview_fat_status">F ✓</string>
     <string name="widget_protein_short">P</string>
     <string name="widget_carbs_short">C</string>
     <string name="widget_fat_short">F</string>
     <string name="widget_macro_of_target">%1$s %2$dg/%3$dg</string>
     <string name="widget_macro_consumed">%1$s %2$dg</string>
+    <string name="widget_macro_compact_value">%1$s%2$d</string>
 
     <!-- Setup / sign-in -->
     <string name="setup_title">Connect to HealthVault</string>

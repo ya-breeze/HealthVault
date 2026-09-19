@@ -13,6 +13,8 @@ private val SAMPLE_SUMMARY = TodaySummary(
     carbsGramsConsumed = 120.0,
     fatGramsConsumed = 40.0,
     mealCount = 2,
+    eatingOccasionsToday = 2,
+    usualMealsPerDay = 3,
     lastLoggedAt = "2026-09-02T12:00:00Z",
     displayLanguage = "en",
     target = TodaySummaryTarget(available = true, calories = 2000, proteinGrams = 150, carbsGrams = 200, fatGrams = 70),

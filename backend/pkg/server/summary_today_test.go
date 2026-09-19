@@ -28,6 +28,8 @@ type summaryTodayTestResponse struct {
 	CarbsGramsConsumed   float64    `json:"carbs_grams_consumed"`
 	FatGramsConsumed     float64    `json:"fat_grams_consumed"`
 	MealCount            int        `json:"meal_count"`
+	EatingOccasionsToday int        `json:"eating_occasions_today"`
+	UsualMealsPerDay     int        `json:"usual_meals_per_day"`
 	LastLoggedAt         *time.Time `json:"last_logged_at"`
 	DisplayLanguage      string     `json:"display_language"`
 	Target               struct {
@@ -298,6 +300,7 @@ func TestSummaryToday_UnavailableTargetHasZeroDerivationFields(t *testing.T) {
 func TestSummaryToday_ReflectsCallersOwnMeals(t *testing.T) {
 	st := newFoodTestStorage(t)
 	userID, familyID := seedFoodUser(t, st)
+	setProfile(t, st, userID, `{"usual_meals_per_day":4}`)
 
 	// Anchored at today's UTC noon rather than time.Now().Add(-1*time.Hour):
 	// the latter crosses midnight — landing the meal in *yesterday's* window
@@ -337,6 +340,12 @@ func TestSummaryToday_ReflectsCallersOwnMeals(t *testing.T) {
 	resp := decodeSummaryToday(t, w)
 	if resp.MealCount != 2 {
 		t.Errorf("meal_count = %d, want 2 (both statuses count)", resp.MealCount)
+	}
+	if resp.EatingOccasionsToday != 1 {
+		t.Errorf("eating_occasions_today = %d, want 1 (rows one minute apart collapse)", resp.EatingOccasionsToday)
+	}
+	if resp.UsualMealsPerDay != 4 {
+		t.Errorf("usual_meals_per_day = %d, want stored setting 4", resp.UsualMealsPerDay)
 	}
 	if resp.CaloriesConsumed != 500 || resp.ProteinGramsConsumed != 30 ||
 		resp.CarbsGramsConsumed != 40 || resp.FatGramsConsumed != 15 {

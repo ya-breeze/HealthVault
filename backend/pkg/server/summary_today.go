@@ -68,6 +68,8 @@ type summaryTodayResponse struct {
 	CarbsGramsConsumed   float64              `json:"carbs_grams_consumed"`
 	FatGramsConsumed     float64              `json:"fat_grams_consumed"`
 	MealCount            int                  `json:"meal_count"`
+	EatingOccasionsToday int                  `json:"eating_occasions_today"`
+	UsualMealsPerDay     int                  `json:"usual_meals_per_day"`
 	LastLoggedAt         *time.Time           `json:"last_logged_at"`
 	DisplayLanguage      string               `json:"display_language"`
 	Target               summaryTargetPayload `json:"target"`
@@ -145,6 +147,8 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 			CarbsGramsConsumed:   summary.CarbsGramsConsumed,
 			FatGramsConsumed:     summary.FatGramsConsumed,
 			MealCount:            summary.MealCount,
+			EatingOccasionsToday: summary.EatingOccasionsToday,
+			UsualMealsPerDay:     database.ResolveUsualMealsPerDay(settingsJSON),
 			LastLoggedAt:         lastLoggedAt,
 			DisplayLanguage:      displayLanguageFromSettings(settingsJSON),
 			Target:               target,

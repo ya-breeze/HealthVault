@@ -191,10 +191,10 @@ Owner acceptance follows through the prerelease APK after this automated task. I
 
 The owner accepted variant A from `https://artifacts.ikoro.in/healthvault/widget-pacing-v2/`. The expected share of each daily target is `min(eating occasions today / usual meals per day, 1)`. A metric is green within 10 percentage points of that share, amber within 20, and bright red beyond 20; an arrow or check must preserve the meaning without color. This is a pacing signal, not a judgment of food quality.
 
-- [ ] Extend `GET /api/summary/today` with `eating_occasions_today`, collapsed from today's logged meal timestamps through the existing ten-minute occasion rule, and `usual_meals_per_day`, resolved from the caller's existing setting
-- [ ] Add a pure Android pacing model with boundary coverage for green, amber, red, below/above direction, over-target progress, and unavailable targets
-- [ ] Implement the accepted colored-rail composition at every home-screen breakpoint: no logo on 1x1, explicit `ккал` beside every calorie hero, compact nutrient rails on 1x1/2x1/2x2, inset macro labels on 4x2, and no redundant add button on 4x2
-- [ ] Apply the same calorie and macro pacing colors to the FlexWindow surface while preserving its dedicated Samsung provider behavior and non-color status semantics
-- [ ] Update summary contract/parsing tests, picker previews, localized accessibility strings, and source guards for the accepted layout
-- [ ] Build, test, lint, and assemble a new owner-acceptance APK without merging or deploying production
+- [x] Extend `GET /api/summary/today` with `eating_occasions_today`, collapsed from today's logged meal timestamps through the existing ten-minute occasion rule, and `usual_meals_per_day`, resolved from the caller's existing setting
+- [x] Add a pure Android pacing model with boundary coverage for green, amber, red, below/above direction, over-target progress, and unavailable targets
+- [x] Implement the accepted colored-rail composition at every home-screen breakpoint: no logo on 1x1, explicit `ккал` beside every calorie hero, compact nutrient rails on 1x1/2x1/2x2, inset macro labels on 4x2, and no redundant add button on 4x2
+- [x] Apply the same calorie and macro pacing colors to the FlexWindow surface while preserving its dedicated Samsung provider behavior and non-color status semantics
+- [x] Update summary contract/parsing tests, picker previews, localized accessibility strings, and source guards for the accepted layout
+- [x] Build, test, lint, and assemble a new owner-acceptance APK without merging or deploying production
 - [ ] Mark completed

@@ -10,25 +10,33 @@
     <string name="widget_no_data_short">Нет данных</string>
     <string name="widget_title_stale">%1$s · давно</string>
     <string name="widget_stale_short">давно</string>
-    <string name="widget_loaded_action_description">%1$s: %2$d ккал сегодня. Добавить еду.</string>
-    <string name="widget_stale_action_description">%1$s: %2$d ккал сегодня. Сохранённые данные могут быть устаревшими. Добавить еду.</string>
-    <string name="widget_description">Калории за сегодня; нажмите, чтобы добавить еду</string>
+    <string name="widget_loaded_action_description">%1$s: %2$d ккал сегодня. %3$s. Добавить еду.</string>
+    <string name="widget_stale_action_description">%1$s: %2$d ккал сегодня. %3$s. Сохранённые данные могут быть устаревшими. Добавить еду.</string>
+    <string name="widget_pace_on">В темпе</string>
+    <string name="widget_pace_below">Ниже ожидаемого темпа</string>
+    <string name="widget_pace_above">Выше ожидаемого темпа</string>
+    <string name="widget_pace_unavailable">Темп недоступен</string>
+    <string name="widget_description">Темп калорий и нутриентов за сегодня; нажмите, чтобы добавить еду</string>
     <string name="widget_log_food">Добавить еду</string>
     <string name="widget_refresh">Обновить</string>
     <string name="widget_calorie_target_progress">из %1$d ккал · %2$d%%</string>
     <string name="widget_calories_today">ккал сегодня</string>
     <string name="widget_calories_unit">ккал</string>
     <string name="widget_preview_consumed">1546</string>
-    <string name="widget_preview_percent">72%</string>
+    <string name="widget_preview_percent">✓ 72%</string>
     <string name="widget_preview_target">из 2139 ккал · 72%</string>
     <string name="widget_preview_protein">Б 109г/136г</string>
     <string name="widget_preview_carbs">У 140г/199г</string>
     <string name="widget_preview_fat">Ж 74г/89г</string>
+    <string name="widget_preview_protein_status">Б ✓</string>
+    <string name="widget_preview_carbs_status">У ↓</string>
+    <string name="widget_preview_fat_status">Ж ✓</string>
     <string name="widget_protein_short">Б</string>
     <string name="widget_carbs_short">У</string>
     <string name="widget_fat_short">Ж</string>
     <string name="widget_macro_of_target">%1$s %2$dг/%3$dг</string>
     <string name="widget_macro_consumed">%1$s %2$dг</string>
+    <string name="widget_macro_compact_value">%1$s%2$d</string>
 
     <!-- Setup / sign-in -->
     <string name="setup_title">Подключение к HealthVault</string>

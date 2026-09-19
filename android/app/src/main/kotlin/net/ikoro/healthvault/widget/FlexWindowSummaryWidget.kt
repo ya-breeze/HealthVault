@@ -12,7 +12,6 @@ import androidx.glance.GlanceTheme
 import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.LinearProgressIndicator
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.appWidgetBackground
@@ -136,11 +135,13 @@ private fun FlexWindowSummary(
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = GlanceModifier.defaultWeight()) {
                 WidgetHeader(resourceContext, isStale, markSize = 24, fontSize = 14.sp)
-                WidgetText(
-                    text = consumed.toString(),
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                CalorieValue(
+                    resourceContext,
+                    consumed,
+                    isStale,
+                    useReducedContent = false,
+                    valueSize = 48.sp,
+                    unitSize = 16.sp,
                 )
                 WidgetText(
                     text = target?.let {
@@ -171,33 +172,31 @@ private fun FlexWindowSummary(
 
         if (target != null) {
             Spacer(modifier = GlanceModifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = progressFraction(consumed, target.calories),
-                modifier = GlanceModifier.fillMaxWidth().height(8.dp),
-                color = GlanceTheme.colors.primary,
-                backgroundColor = GlanceTheme.colors.surfaceVariant,
-            )
+            PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 8)
         }
 
         Spacer(modifier = GlanceModifier.defaultWeight())
         FlexWindowMacroRow(
             resourceContext,
+            summary,
             R.string.widget_protein_short,
-            summary.proteinGramsConsumed.toInt(),
+            summary.proteinGramsConsumed,
             summary.target.takeIf { it.available }?.proteinGrams ?: 0,
         )
         Spacer(modifier = GlanceModifier.defaultWeight())
         FlexWindowMacroRow(
             resourceContext,
+            summary,
             R.string.widget_carbs_short,
-            summary.carbsGramsConsumed.toInt(),
+            summary.carbsGramsConsumed,
             summary.target.takeIf { it.available }?.carbsGrams ?: 0,
         )
         Spacer(modifier = GlanceModifier.defaultWeight())
         FlexWindowMacroRow(
             resourceContext,
+            summary,
             R.string.widget_fat_short,
-            summary.fatGramsConsumed.toInt(),
+            summary.fatGramsConsumed,
             summary.target.takeIf { it.available }?.fatGrams ?: 0,
         )
     }
@@ -206,24 +205,27 @@ private fun FlexWindowSummary(
 @Composable
 private fun FlexWindowMacroRow(
     resourceContext: Context,
+    summary: TodaySummary,
     labelRes: Int,
-    consumedGrams: Int,
+    consumedGrams: Double,
     targetGrams: Int,
 ) {
+    val consumed = consumedGrams.toInt()
+    val signal = paceFor(summary, consumedGrams, targetGrams)
     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         WidgetText(
             text = if (targetGrams > 0) {
                 resourceContext.getString(
                     R.string.widget_macro_of_target,
                     resourceContext.getString(labelRes),
-                    consumedGrams,
+                    consumed,
                     targetGrams,
                 )
             } else {
                 resourceContext.getString(
                     R.string.widget_macro_consumed,
                     resourceContext.getString(labelRes),
-                    consumedGrams,
+                    consumed,
                 )
             },
             color = GlanceTheme.colors.onSurfaceVariant,
@@ -233,12 +235,23 @@ private fun FlexWindowMacroRow(
         )
         if (targetGrams > 0) {
             Spacer(modifier = GlanceModifier.width(12.dp))
-            LinearProgressIndicator(
-                progress = progressFraction(consumedGrams, targetGrams),
-                modifier = GlanceModifier.defaultWeight().height(7.dp),
-                color = GlanceTheme.colors.primary,
-                backgroundColor = GlanceTheme.colors.surfaceVariant,
+            PaceProgress(
+                summary,
+                consumedGrams,
+                targetGrams,
+                height = 7,
+                modifier = GlanceModifier.defaultWeight(),
             )
+            if (signal != null) {
+                Spacer(modifier = GlanceModifier.width(8.dp))
+                WidgetText(
+                    text = signal.direction.glyph,
+                    color = paceColor(signal.level),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
