@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { Dictionary, LanguageCode } from '@/lib/i18n';
 import { interpolate, pluralForm } from '@/lib/i18n';
@@ -49,6 +49,15 @@ const OUTCOME_DISPLAY: Record<FoodLogHistoryOutcome, { labelKey: keyof Dictionar
 function weekdayLabel(date: string, language: LanguageCode): string {
   return new Intl.DateTimeFormat(language === 'ru' ? 'ru' : undefined, { weekday: 'short', timeZone: 'UTC' }).format(
     new Date(`${date}T12:00:00.000Z`),
+  );
+}
+
+function SummaryCount({ testId, outcome, children }: { testId: string; outcome: FoodLogHistoryOutcome; children: ReactNode }) {
+  return (
+    <span className="flex items-center gap-1.5" data-testid={testId}>
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: OUTCOME_COLOR[outcome] }} aria-hidden="true" />
+      {children}
+    </span>
   );
 }
 
@@ -154,9 +163,9 @@ export default function FoodLogHistoryCard({
         return (
           <>
             <div className={`grid grid-cols-3 gap-x-3 gap-y-1 text-xs tabular-nums${dim}`} data-testid="food-log-history-summary">
-              <span className="flex items-center gap-1.5" data-testid="food-log-history-counted"><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: OUTCOME_COLOR.counted }} aria-hidden="true" />{interpolate(t('foodLogHistory.countedDays'), { count: state.summary.countedDays })}</span>
-              <span className="flex items-center gap-1.5" data-testid="food-log-history-no-food"><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: OUTCOME_COLOR.no_food }} aria-hidden="true" />{interpolate(t('foodLogHistory.noFoodDays'), { count: state.summary.noFoodDays })}</span>
-              <span className="flex items-center gap-1.5" data-testid="food-log-history-needs-attention"><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: OUTCOME_COLOR.needs_attention }} aria-hidden="true" />{interpolate(t('foodLogHistory.needsAttentionDays'), { count: state.summary.needsAttentionDays })}</span>
+              <SummaryCount testId="food-log-history-counted" outcome="counted">{interpolate(t('foodLogHistory.countedDays'), { count: state.summary.countedDays })}</SummaryCount>
+              <SummaryCount testId="food-log-history-no-food" outcome="no_food">{interpolate(t('foodLogHistory.noFoodDays'), { count: state.summary.noFoodDays })}</SummaryCount>
+              <SummaryCount testId="food-log-history-needs-attention" outcome="needs_attention">{interpolate(t('foodLogHistory.needsAttentionDays'), { count: state.summary.needsAttentionDays })}</SummaryCount>
             </div>
             <div className={`mt-3 flex gap-1.5${dim}`} data-testid="food-log-history-strip">
               {state.summary.days.map(renderDay)}

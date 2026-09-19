@@ -13,9 +13,9 @@
   --accent: #0f9c8c;
 
   /* Food log history outcomes: counted day / needs attention / no food logged. */
-  --outcome-counted: #1f9d63;
-  --outcome-attention: #c2701a;
-  --outcome-empty: #6b7280;
+  --outcome-counted: #167a4b;
+  --outcome-attention: #a85a0c;
+  --outcome-empty: #5b6470;
 
   /* One accent per registered type (27), shared by the dashboard vitals
      grid and every data page's own chart — see dashboard-ui's "Consistent
