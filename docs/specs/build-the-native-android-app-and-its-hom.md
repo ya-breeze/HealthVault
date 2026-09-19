@@ -175,5 +175,5 @@ Owner acceptance follows through the prerelease APK after this automated task. I
 - [x] Replace compact `HV` identity with the web mark, add it beside full HealthVault headers on home and FlexWindow layouts, and preserve visible stale treatment
 - [x] Keep the extreme large-text 1x1 composition calorie-only so its 48dp cell remains uncropped, with app identity retained in semantics
 - [x] Update both picker previews to show the same mark and add regression coverage that rejects the old text/adaptive-icon identity paths
-- [ ] Build, test, lint, and assemble a new owner-acceptance APK without merging or deploying production
-- [ ] Mark completed
+- [x] Build, test, lint, and assemble a new owner-acceptance APK without merging or deploying production
+- [x] Mark completed
