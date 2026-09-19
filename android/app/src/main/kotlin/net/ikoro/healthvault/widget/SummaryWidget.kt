@@ -155,12 +155,19 @@ internal fun paceColor(level: PaceLevel): ColorProvider = when (level) {
     PaceLevel.BAD -> PACE_BAD
 }
 
-internal fun paceFor(summary: TodaySummary, consumed: Double, target: Int): PaceSignal? = paceSignal(
-    consumed = consumed,
-    target = target,
-    eatingOccasionsToday = summary.eatingOccasionsToday,
-    usualMealsPerDay = summary.usualMealsPerDay,
-)
+internal fun paceFor(summary: TodaySummary, consumed: Double, target: Int): PaceSignal? {
+    val inputs = resolvePaceInputs(
+        eatingOccasionsToday = summary.eatingOccasionsToday,
+        usualMealsPerDay = summary.usualMealsPerDay,
+        legacyMealCount = summary.mealCount,
+    )
+    return paceSignal(
+        consumed = consumed,
+        target = target,
+        eatingOccasionsToday = inputs.eatingOccasionsToday,
+        usualMealsPerDay = inputs.usualMealsPerDay,
+    )
+}
 
 @Composable
 internal fun CalorieValue(

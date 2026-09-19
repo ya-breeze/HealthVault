@@ -7,6 +7,22 @@ import org.junit.Test
 class PaceSignalTest {
 
     @Test
+    fun `exact server pace inputs win over the legacy meal count`() {
+        val inputs = resolvePaceInputs(eatingOccasionsToday = 2, usualMealsPerDay = 4, legacyMealCount = 7)
+
+        assertEquals(2, inputs.eatingOccasionsToday)
+        assertEquals(4, inputs.usualMealsPerDay)
+    }
+
+    @Test
+    fun `legacy summary falls back to raw meal count and the three meal default`() {
+        val inputs = resolvePaceInputs(eatingOccasionsToday = 0, usualMealsPerDay = 0, legacyMealCount = 2)
+
+        assertEquals(2, inputs.eatingOccasionsToday)
+        assertEquals(3, inputs.usualMealsPerDay)
+    }
+
+    @Test
     fun `three meals make the expected shares 33 67 and 100 percent`() {
         assertEquals(33, paceSignal(660.0, 2000, 1, 3)?.expectedPercent)
         assertEquals(67, paceSignal(1340.0, 2000, 2, 3)?.expectedPercent)

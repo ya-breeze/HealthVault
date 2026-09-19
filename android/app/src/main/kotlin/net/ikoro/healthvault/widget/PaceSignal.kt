@@ -22,6 +22,28 @@ internal data class PaceSignal(
     val direction: PaceDirection,
 )
 
+internal data class PaceInputs(
+    val eatingOccasionsToday: Int,
+    val usualMealsPerDay: Int,
+)
+
+private const val LEGACY_USUAL_MEALS_PER_DAY = 3
+
+/**
+ * Prefers the exact server-side Eating Occasion inputs. A pre-pacing server or
+ * cache has no usable usual-meal value, so approximate with its raw meal count
+ * and the domain default until the upgraded contract is available.
+ */
+internal fun resolvePaceInputs(
+    eatingOccasionsToday: Int,
+    usualMealsPerDay: Int,
+    legacyMealCount: Int,
+): PaceInputs = if (usualMealsPerDay > 0) {
+    PaceInputs(eatingOccasionsToday.coerceAtLeast(0), usualMealsPerDay)
+} else {
+    PaceInputs(legacyMealCount.coerceAtLeast(0), LEGACY_USUAL_MEALS_PER_DAY)
+}
+
 /**
  * Compares one consumed daily metric with the share expected after the
  * caller's current eating occasion. Ten percentage points is on pace,

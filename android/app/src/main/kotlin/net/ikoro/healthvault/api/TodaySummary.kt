@@ -35,9 +35,9 @@ data class TodaySummary(
     @SerialName("fat_grams_consumed") val fatGramsConsumed: Double,
     @SerialName("meal_count") val mealCount: Int,
     // Defaults keep an acceptance APK usable against an older server and let
-    // an already-cached pre-pacing snapshot survive an app upgrade. A zero
-    // usual-meal count deliberately disables pace judgement while retaining
-    // neutral progress rails until the upgraded API is available.
+    // an already-cached pre-pacing snapshot survive an app upgrade. The widget
+    // recognizes a missing/invalid usual-meal count and temporarily falls back
+    // to the legacy raw meal count with the domain default of three meals.
     @SerialName("eating_occasions_today") val eatingOccasionsToday: Int = 0,
     @SerialName("usual_meals_per_day") val usualMealsPerDay: Int = 0,
     @SerialName("last_logged_at") val lastLoggedAt: String? = null,

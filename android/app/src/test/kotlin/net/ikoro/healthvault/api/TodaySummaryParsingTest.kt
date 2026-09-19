@@ -2,7 +2,8 @@ package net.ikoro.healthvault.api
 
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
-import net.ikoro.healthvault.widget.paceSignal
+import net.ikoro.healthvault.widget.PaceLevel
+import net.ikoro.healthvault.widget.paceFor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -100,13 +101,13 @@ class TodaySummaryParsingTest {
     }
 
     @Test
-    fun `a pre-pacing response keeps neutral backwards-compatible defaults`() {
+    fun `a pre-pacing response still produces colored rails from legacy meal count`() {
         val body = """
             {
-              "date": "2026-09-02", "calories_consumed": 500, "protein_grams_consumed": 40,
-              "carbs_grams_consumed": 50, "fat_grams_consumed": 20, "meal_count": 1,
-              "last_logged_at": "2026-09-02T08:00:00Z", "display_language": "en",
-              "target": {"available": true, "calories": 1800, "protein_grams": 160, "carbs_grams": 180, "fat_grams": 60}
+              "date": "2026-09-02", "calories_consumed": 2198, "protein_grams_consumed": 136,
+              "carbs_grams_consumed": 162, "fat_grams_consumed": 85, "meal_count": 3,
+              "last_logged_at": "2026-09-02T20:00:00Z", "display_language": "en",
+              "target": {"available": true, "calories": 2139, "protein_grams": 136, "carbs_grams": 199, "fat_grams": 89}
             }
         """.trimIndent()
 
@@ -114,6 +115,7 @@ class TodaySummaryParsingTest {
 
         assertEquals(0, summary.eatingOccasionsToday)
         assertEquals(0, summary.usualMealsPerDay)
-        assertNull(paceSignal(500.0, 1800, summary.eatingOccasionsToday, summary.usualMealsPerDay))
+        assertEquals(PaceLevel.GOOD, paceFor(summary, summary.caloriesConsumed, summary.target.calories)?.level)
+        assertEquals(PaceLevel.WARNING, paceFor(summary, summary.carbsGramsConsumed, summary.target.carbsGrams)?.level)
     }
 }
