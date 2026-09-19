@@ -177,3 +177,12 @@ Owner acceptance follows through the prerelease APK after this automated task. I
 - [x] Update both picker previews to show the same mark and add regression coverage that rejects the old text/adaptive-icon identity paths
 - [x] Build, test, lint, and assemble a new owner-acceptance APK without merging or deploying production
 - [x] Mark completed
+
+### Task 14: Repair launcher identity and one-row widget rhythm
+
+- [ ] Replace the generic plus-in-circle adaptive launcher foreground with the owner-selected web mark, sized inside Android's adaptive-icon safe zone and contrasted against a neutral background
+- [ ] Recompose the 1x1, 2x1, and 4x1 loaded states as vertically centered content groups, keeping each progress bar close to its calorie row instead of stretching the group across the full height
+- [ ] Preserve the calorie-only extreme large-text 1x1 state and leave the deliberate 1x2, 2x2, and 4x2 compositions unchanged
+- [ ] Update the 2x1 picker preview to match the tighter vertical rhythm and add red-capable regression coverage for launcher identity and weighted gaps in one-row layouts
+- [ ] Build, test, lint, and assemble a new owner-acceptance APK without merging or deploying production
+- [ ] Mark completed
