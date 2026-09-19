@@ -231,7 +231,8 @@ func DayRange(
 
 // TodaySummaryRow is one user's aggregated "today" activity for
 // GET /api/summary/today (design.md §1): consumed macro sums restricted to
-// confirmed meals, a raw row count and max LoggedAt across every status.
+// confirmed meals, a raw row count, collapsed Eating Occasion count, and
+// max LoggedAt across every status.
 // HasLastLoggedAt is false (LastLoggedAt the zero time.Time) when there are
 // no rows at all for today.
 type TodaySummaryRow struct {
@@ -241,6 +242,7 @@ type TodaySummaryRow struct {
 	CarbsGramsConsumed   float64
 	FatGramsConsumed     float64
 	MealCount            int
+	EatingOccasionsToday int
 	LastLoggedAt         time.Time
 	HasLastLoggedAt      bool
 }
@@ -252,7 +254,8 @@ type TodaySummaryRow struct {
 // stale, per `Aggregate()` in models_food.go, so summing across all statuses
 // would silently show a partial or zero-inflated number), a row count and max
 // LoggedAt across every status (design.md: "a processing row still means the
-// user just took a photo").
+// user just took a photo"). The same all-status timestamps are collapsed
+// through CollapseOccasions for the widget's meal-paced target signal.
 //
 // `now` is threaded in explicitly rather than calling time.Now() internally,
 // matching computeUserNutritionTarget's pattern, so a caller can pass the
@@ -278,8 +281,10 @@ func TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now time.Ti
 	}
 
 	row := TodaySummaryRow{Date: dateStr}
+	loggedAt := make([]time.Time, 0, len(meals))
 	for _, m := range meals {
 		row.MealCount++
+		loggedAt = append(loggedAt, m.LoggedAt)
 		if m.LoggedAt.After(row.LastLoggedAt) {
 			row.LastLoggedAt = m.LoggedAt
 		}
@@ -290,6 +295,7 @@ func TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now time.Ti
 			row.FatGramsConsumed += m.FatGrams
 		}
 	}
+	row.EatingOccasionsToday = CollapseOccasions(loggedAt)
 	row.HasLastLoggedAt = row.MealCount > 0
 
 	return row, nil

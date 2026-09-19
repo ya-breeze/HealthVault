@@ -376,6 +376,9 @@ func TestTodaySummary_ConfirmedOnlySumsAllStatusCountAndMaxLoggedAt(t *testing.T
 	if got.MealCount != 3 {
 		t.Errorf("MealCount = %d, want 3 (all statuses today)", got.MealCount)
 	}
+	if got.EatingOccasionsToday != 3 {
+		t.Errorf("EatingOccasionsToday = %d, want 3 (all rows are more than ten minutes apart)", got.EatingOccasionsToday)
+	}
 	if !got.HasLastLoggedAt || !got.LastLoggedAt.Equal(now) {
 		t.Errorf("LastLoggedAt = %v (has=%v), want %v", got.LastLoggedAt, got.HasLastLoggedAt, now)
 	}
