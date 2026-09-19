@@ -342,6 +342,17 @@ type needsAttentionCountResponse struct {
 	Count int64 `json:"count"`
 }
 
+// needsAttentionCount is the shared Food Meal count query used by both the
+// standalone endpoint and the dashboard read model. Keeping the status set in
+// needsAttentionStatuses makes both callers follow the same definition.
+func needsAttentionCount(db *gorm.DB, userID uuid.UUID) (int64, error) {
+	var count int64
+	err := db.Model(&database.FoodMeal{}).
+		Where("user_id = ? AND status IN ?", userID, needsAttentionStatuses).
+		Count(&count).Error
+	return count, err
+}
+
 // NeedsAttentionCount handles GET /api/food/meals/needs-attention-count: a
 // single count of the caller's own meals in needsAttentionStatuses — every
 // status short of `confirmed`, i.e. meals with no finished nutrition totals
@@ -356,10 +367,8 @@ func (h *foodHandlers) NeedsAttentionCount(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var count int64
-	if err := h.storage.DB().Model(&database.FoodMeal{}).
-		Where("user_id = ? AND status IN ?", claims.UserID, needsAttentionStatuses).
-		Count(&count).Error; err != nil {
+	count, err := needsAttentionCount(h.storage.DB(), claims.UserID)
+	if err != nil {
 		http.Error(w, "query error", http.StatusInternalServerError)
 		return
 	}

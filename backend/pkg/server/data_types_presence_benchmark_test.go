@@ -311,10 +311,8 @@ func benchmarkDashboardDailyAggregate(fixture dashboardBenchmarkFixture, typeNam
 }
 
 func benchmarkNeedsAttentionCount(db *gorm.DB, userID uuid.UUID) error {
-	var count int64
-	return db.Model(&database.FoodMeal{}).
-		Where("user_id = ? AND status IN ?", userID, needsAttentionStatuses).
-		Count(&count).Error
+	_, err := needsAttentionCount(db, userID)
+	return err
 }
 
 func benchmarkLegacyFreshLoad(fixture dashboardBenchmarkFixture) error {

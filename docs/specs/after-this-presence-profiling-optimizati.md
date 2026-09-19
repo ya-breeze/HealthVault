@@ -36,11 +36,11 @@ Tick the boxes in this file as the work is completed; they are the record of pro
 Out of scope, deliberately: do NOT mark the pull request ready for review and do NOT call a forge merge API. Implementation marks the pull request ready only after the task list is complete. Afterward Completion may ask the Store to perform Automatic Merge only when the planner and final implementation agent authorized the exact result. Leave the pull request in a state worth reading.
 
 ### Task 1: Define the shared backend read-model primitives
-- [ ] Add `backend/pkg/server/dashboard.go` with the fixed eight-metric dashboard registry and response types for the four explicitly discriminated sections, including an aggregate entry for every metric even when settings or queries fail.
-- [ ] Represent successful settings with `json.RawMessage` or an equivalent opaque-object mechanism so unknown keys survive unchanged, while normalizing the no-row case from `readUserSettingsJSON` to `{}`.
-- [ ] Extract a `needsAttentionCount` helper from `backend/pkg/server/food_meal_detail.go` that uses `needsAttentionStatuses`, route `foodHandlers.NeedsAttentionCount` through it, and update `backend/pkg/server/data_types_presence_benchmark_test.go` to use the production helper instead of its duplicate count query.
-- [ ] Keep `dataTypesPresence` and `queryBucketed` as the sole Presence and daily-aggregate implementations rather than adding dashboard-specific calculations.
-- [ ] Mark completed
+- [x] Add `backend/pkg/server/dashboard.go` with the fixed eight-metric dashboard registry and response types for the four explicitly discriminated sections, including an aggregate entry for every metric even when settings or queries fail.
+- [x] Represent successful settings with `json.RawMessage` or an equivalent opaque-object mechanism so unknown keys survive unchanged, while normalizing the no-row case from `readUserSettingsJSON` to `{}`.
+- [x] Extract a `needsAttentionCount` helper from `backend/pkg/server/food_meal_detail.go` that uses `needsAttentionStatuses`, route `foodHandlers.NeedsAttentionCount` through it, and update `backend/pkg/server/data_types_presence_benchmark_test.go` to use the production helper instead of its duplicate count query.
+- [x] Keep `dataTypesPresence` and `queryBucketed` as the sole Presence and daily-aggregate implementations rather than adding dashboard-specific calculations.
+- [x] Mark completed
 
 ### Task 2: Implement the authenticated dashboard endpoint
 - [ ] Implement `DashboardHandler` and an internal builder that accepts the authenticated user ID and one captured `now`, then register `GET /api/dashboard` on the protected router in `backend/pkg/server/server.go`.
