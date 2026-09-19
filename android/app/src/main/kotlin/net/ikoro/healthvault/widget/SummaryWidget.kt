@@ -91,7 +91,7 @@ internal fun useReducedWidgetContent(fontScale: Float, layout: SummaryWidgetLayo
     else -> fontScale >= 1.3f
 }
 
-internal fun useMinimalMicroContent(fontScale: Float): Boolean = fontScale >= 1.5f
+internal fun useMinimalMicroContent(fontScale: Float): Boolean = fontScale >= 1.4f
 
 internal fun calorieHeroText(consumed: Int, isStale: Boolean, useReducedContent: Boolean): String =
     if (isStale && useReducedContent) "$consumed!" else consumed.toString()
@@ -345,8 +345,9 @@ private fun MicroSummary(
     val target = summary.target.takeIf { it.available && it.calories > 0 }
 
     if (useMinimalContent) {
-        // At >= 1.5x, even two 11sp rows cannot fit the launcher's 48dp cell.
-        // Keep the calorie/stale value visible; the card semantics retain
+        // At >= 1.4x, the mark, calorie line, and progress no longer fit the
+        // launcher's 48dp cell with a safe vertical margin. Keep the value visible;
+        // the card semantics retain
         // HealthVault identity, the kcal unit, and the Log food action.
         Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             WidgetText(
@@ -359,18 +360,19 @@ private fun MicroSummary(
         return
     }
 
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        WidgetBrandMark(size = 18, isStale = isStale)
-        Spacer(modifier = GlanceModifier.defaultWeight())
-        WidgetText(
-            text = consumed.toString(),
-            fontWeight = FontWeight.Bold,
-            fontSize = if (useReducedContent) 11.sp else 14.sp,
-            maxLines = 1,
-        )
-        Spacer(modifier = GlanceModifier.defaultWeight())
-        if (target != null && !useMinimalContent) {
-            CalorieProgress(consumed, target.calories, height = 3)
+    Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(modifier = GlanceModifier.fillMaxWidth()) {
+            WidgetBrandMark(size = 18, isStale = isStale)
+            WidgetText(
+                text = consumed.toString(),
+                fontWeight = FontWeight.Bold,
+                fontSize = if (useReducedContent) 11.sp else 14.sp,
+                maxLines = 1,
+            )
+            if (target != null) {
+                Spacer(modifier = GlanceModifier.height(1.dp))
+                CalorieProgress(consumed, target.calories, height = 3)
+            }
         }
     }
 }
@@ -385,33 +387,35 @@ private fun ShortSummary(
     val consumed = summary.caloriesConsumed.toInt()
     val target = summary.target.takeIf { it.available && it.calories > 0 }
 
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            WidgetBrandMark(size = 20)
-            Spacer(modifier = GlanceModifier.width(4.dp))
-            WidgetText(
-                text = calorieHeroText(consumed, isStale, useReducedContent),
-                fontWeight = FontWeight.Bold,
-                fontSize = if (useReducedContent) 14.sp else 18.sp,
-                maxLines = 1,
-            )
-            if (!useReducedContent) {
-                Spacer(modifier = GlanceModifier.defaultWeight())
+    Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(modifier = GlanceModifier.fillMaxWidth()) {
+            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                WidgetBrandMark(size = 20)
+                Spacer(modifier = GlanceModifier.width(4.dp))
                 WidgetText(
-                    text = when {
-                        isStale -> resourceContext.getString(R.string.widget_stale_short)
-                        target != null -> "${progressPercent(consumed, target.calories)}%"
-                        else -> resourceContext.getString(R.string.widget_calories_unit)
-                    },
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 11.sp,
+                    text = calorieHeroText(consumed, isStale, useReducedContent),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (useReducedContent) 14.sp else 18.sp,
                     maxLines = 1,
                 )
+                if (!useReducedContent) {
+                    Spacer(modifier = GlanceModifier.defaultWeight())
+                    WidgetText(
+                        text = when {
+                            isStale -> resourceContext.getString(R.string.widget_stale_short)
+                            target != null -> "${progressPercent(consumed, target.calories)}%"
+                            else -> resourceContext.getString(R.string.widget_calories_unit)
+                        },
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                    )
+                }
             }
-        }
-        if (target != null) {
-            Spacer(modifier = GlanceModifier.defaultWeight())
-            CalorieProgress(consumed, target.calories, height = 4)
+            if (target != null) {
+                Spacer(modifier = GlanceModifier.height(3.dp))
+                CalorieProgress(consumed, target.calories, height = 4)
+            }
         }
     }
 }
@@ -426,30 +430,32 @@ private fun WideShortSummary(
     val consumed = summary.caloriesConsumed.toInt()
     val target = summary.target.takeIf { it.available && it.calories > 0 }
 
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            WidgetHeader(resourceContext, isStale)
-            Spacer(modifier = GlanceModifier.defaultWeight())
-            WidgetText(
-                text = calorieHeroText(consumed, isStale, useReducedContent),
-                fontWeight = FontWeight.Bold,
-                fontSize = if (useReducedContent) 14.sp else 18.sp,
-                maxLines = 1,
-            )
-            if (!useReducedContent) {
-                Spacer(modifier = GlanceModifier.width(8.dp))
+    Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(modifier = GlanceModifier.fillMaxWidth()) {
+            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                WidgetHeader(resourceContext, isStale)
+                Spacer(modifier = GlanceModifier.defaultWeight())
                 WidgetText(
-                    text = target?.let { "${progressPercent(consumed, it.calories)}%" }
-                        ?: resourceContext.getString(R.string.widget_calories_unit),
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 11.sp,
+                    text = calorieHeroText(consumed, isStale, useReducedContent),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (useReducedContent) 14.sp else 18.sp,
                     maxLines = 1,
                 )
+                if (!useReducedContent) {
+                    Spacer(modifier = GlanceModifier.width(8.dp))
+                    WidgetText(
+                        text = target?.let { "${progressPercent(consumed, it.calories)}%" }
+                            ?: resourceContext.getString(R.string.widget_calories_unit),
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                    )
+                }
             }
-        }
-        if (target != null) {
-            Spacer(modifier = GlanceModifier.defaultWeight())
-            CalorieProgress(consumed, target.calories, height = 4)
+            if (target != null) {
+                Spacer(modifier = GlanceModifier.height(3.dp))
+                CalorieProgress(consumed, target.calories, height = 4)
+            }
         }
     }
 }

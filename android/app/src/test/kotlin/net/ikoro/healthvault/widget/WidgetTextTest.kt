@@ -124,8 +124,9 @@ class WidgetTextTest {
         val wide = functionBody(source, "WideSummary")
         val micro = functionBody(source, "MicroSummary")
         val short = functionBody(source, "ShortSummary")
+        val wideShort = functionBody(source, "WideShortSummary")
         val tall = functionBody(source, "TallSummary")
-        val minimalMicro = micro.substringAfter("if (useMinimalContent) {").substringBefore("\n    Column(")
+        val minimalMicro = micro.substringAfter("if (useMinimalContent) {").substringBefore("\n        return")
         val brandMark = source.substringAfter("internal fun WidgetBrandMark(").substringBefore("\n@Composable\ninternal fun WidgetHeader")
         val header = source.substringAfter("internal fun WidgetHeader(").substringBefore("\n@Composable\nprivate fun CalorieProgress")
 
@@ -136,6 +137,18 @@ class WidgetTextTest {
         }
         assertTrue(!compact.contains("Spacer(modifier = GlanceModifier.defaultWeight())"))
         assertTrue(compact.contains("contentAlignment = Alignment.CenterStart"))
+        listOf(micro, short, wideShort).forEach { body ->
+            assertFalse(
+                Regex(
+                    """if \(target != null\) \{\s*Spacer\(modifier = GlanceModifier\.defaultWeight\(\)\)""",
+                ).containsMatchIn(body),
+            )
+            assertTrue(body.contains("contentAlignment = Alignment.Center"))
+        }
+        assertFalse(micro.contains("Spacer(modifier = GlanceModifier.defaultWeight())"))
+        listOf(short, wideShort).forEach { body ->
+            assertTrue(body.contains("Spacer(modifier = GlanceModifier.height(3.dp))"))
+        }
         listOf(micro, short, tall).forEach { body ->
             assertTrue(body.contains("WidgetBrandMark("))
         }
@@ -163,7 +176,8 @@ class WidgetTextTest {
         assertTrue(!useReducedWidgetContent(1.29f, SummaryWidgetLayout.SHORT))
         assertTrue(useReducedWidgetContent(1.3f, SummaryWidgetLayout.SHORT))
         assertTrue(useReducedWidgetContent(2f, SummaryWidgetLayout.WIDE))
-        assertTrue(!useMinimalMicroContent(1.49f))
+        assertTrue(!useMinimalMicroContent(1.39f))
+        assertTrue(useMinimalMicroContent(1.4f))
         assertTrue(useMinimalMicroContent(1.5f))
         assertTrue(useMinimalMicroContent(2f))
         assertEquals("1928", calorieHeroText(1928, isStale = false, useReducedContent = true))
@@ -193,6 +207,7 @@ class WidgetTextTest {
         assertFalse(preview.contains("widget_identity_short"))
         assertTrue(!preview.contains("@mipmap/ic_launcher"))
         assertTrue(preview.contains("<ProgressBar"))
+        assertTrue(preview.contains("android:layout_marginTop=\"3dp\""))
     }
 
     @Test
@@ -203,6 +218,19 @@ class WidgetTextTest {
             .joinToString("") { byte -> "%02x".format(byte) }
 
         assertEquals("9f63311ce0667e7581fc6e05b95ae6ec115afe0485d6e9a535aece57f5e6d661", digest)
+    }
+
+    @Test
+    fun launcherIcon_usesTheOwnerSelectedMarkInsteadOfTheGenericWhiteCircle() {
+        val foreground = appSource("src/main/res/drawable/ic_launcher_foreground.xml").readText()
+        val background = appSource("src/main/res/drawable/ic_launcher_background.xml").readText()
+
+        assertTrue(foreground.contains("@drawable/healthvault_mark"))
+        assertTrue(foreground.contains("android:width=\"88dp\""))
+        assertTrue(foreground.contains("android:height=\"88dp\""))
+        assertFalse(foreground.contains("plus-in-circle"))
+        assertFalse(foreground.contains("android:pathData"))
+        assertTrue(background.contains("android:fillColor=\"#F7F8FA\""))
     }
 
     @Test
