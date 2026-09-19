@@ -43,26 +43,26 @@ Out of scope, deliberately: do NOT mark the pull request ready for review and do
 - [x] Mark completed
 
 ### Task 2: Implement the authenticated dashboard endpoint
-- [ ] Implement `DashboardHandler` and an internal builder that accepts the authenticated user ID and one captured `now`, then register `GET /api/dashboard` on the protected router in `backend/pkg/server/server.go`.
-- [ ] Scope every section directly to `claims.UserID`; prove by construction that `?user=` cannot switch the target, while a request without claims returns 401 instead of a partial envelope.
-- [ ] Read settings once, resolve its timezone, construct the current eight-day over-fetch range, and filter each successful daily result to the seven saved-timezone Logged Days before placing it in the response.
-- [ ] Attempt Presence and needs-attention independently; after successful settings, attempt all eight aggregates independently so one query error cannot suppress a sibling section.
-- [ ] On a settings read error, emit `settings.status = "error"`, mark all aggregates as errors without guessing a timezone, and still return the independently obtained Presence and needs-attention states.
-- [ ] Log internal section errors with enough section/type context to diagnose them, but return only the stable status contract and HTTP 200 for authenticated partial failures.
-- [ ] Mark completed
+- [x] Implement `DashboardHandler` and an internal builder that accepts the authenticated user ID and one captured `now`, then register `GET /api/dashboard` on the protected router in `backend/pkg/server/server.go`.
+- [x] Scope every section directly to `claims.UserID`; prove by construction that `?user=` cannot switch the target, while a request without claims returns 401 instead of a partial envelope.
+- [x] Read settings once, resolve its timezone, construct the current eight-day over-fetch range, and filter each successful daily result to the seven saved-timezone Logged Days before placing it in the response.
+- [x] Attempt Presence and needs-attention independently; after successful settings, attempt all eight aggregates independently so one query error cannot suppress a sibling section.
+- [x] On a settings read error, emit `settings.status = "error"`, mark all aggregates as errors without guessing a timezone, and still return the independently obtained Presence and needs-attention states.
+- [x] Log internal section errors with enough section/type context to diagnose them, but return only the stable status contract and HTTP 200 for authenticated partial failures.
+- [x] Mark completed
 
 ### Task 3: Pin the backend contract and failure isolation
-- [ ] Add handler contract tests in `backend/pkg/server/dashboard_handler_test.go` covering unauthenticated rejection, self-only scoping despite a `user` query parameter, missing settings as `{}`, opaque settings keys, a complete Presence map, all eight aggregate keys and row shapes, successful empty arrays, and the needs-attention count.
-- [ ] Add fixed-clock internal tests in `backend/pkg/server/dashboard_internal_test.go` with records around UTC and non-UTC day boundaries, proving the handler uses one instant, saved-timezone bucket labels, the extra-day over-fetch, and exactly the latest seven Logged Days.
-- [ ] Inject a settings read failure and assert a 200 response with settings and all aggregates in error while Presence and needs-attention still succeed.
-- [ ] Inject a combined Presence query failure and assert only the Presence section is in error, with the settings, aggregates, and needs-attention sections intact.
-- [ ] Inject failures for the generic aggregate path and the special steps and blood-pressure paths, asserting each time that only the named Vital Card's aggregate is in error and every sibling aggregate remains usable.
-- [ ] Inject a Food Meal count failure and assert only `needs_attention` is in error; retain the existing standalone needs-attention endpoint tests to prove the extracted helper did not change its status set or caller scoping.
-- [ ] Mark completed
+- [x] Add handler contract tests in `backend/pkg/server/dashboard_handler_test.go` covering unauthenticated rejection, self-only scoping despite a `user` query parameter, missing settings as `{}`, opaque settings keys, a complete Presence map, all eight aggregate keys and row shapes, successful empty arrays, and the needs-attention count.
+- [x] Add fixed-clock internal tests in `backend/pkg/server/dashboard_internal_test.go` with records around UTC and non-UTC day boundaries, proving the handler uses one instant, saved-timezone bucket labels, the extra-day over-fetch, and exactly the latest seven Logged Days.
+- [x] Inject a settings read failure and assert a 200 response with settings and all aggregates in error while Presence and needs-attention still succeed.
+- [x] Inject a combined Presence query failure and assert only the Presence section is in error, with the settings, aggregates, and needs-attention sections intact.
+- [x] Inject failures for the generic aggregate path and the special steps and blood-pressure paths, asserting each time that only the named Vital Card's aggregate is in error and every sibling aggregate remains usable.
+- [x] Inject a Food Meal count failure and assert only `needs_attention` is in error; retain the existing standalone needs-attention endpoint tests to prove the extracted helper did not change its status set or caller scoping.
+- [x] Mark completed
 
 ### Task 4: Add the typed frontend client contract
-- [ ] In `frontend/lib/api.ts`, add a `DashboardPrimaryMetric` literal union, reusable `{status: "ok", ...} | {status: "error"}` section types, and a `DashboardReadModel` interface matching the backend envelope without weakening aggregate rows or settings to `any`.
-- [ ] Add `api.getDashboardReadModel()` using the existing authenticated `apiFetch` path so transparent refresh and Cf-Access recovery continue to apply to the endpoint's overall 401 response.
-- [ ] Do not coalesce or cache the read model and do not remove the existing settings, Presence, aggregate, or needs-attention methods before their remaining callers are migrated.
-- [ ] Extend `frontend/lib/api.test.ts` to assert the exact `GET /api/dashboard` path and successful decoding of both success and error section variants, including opaque settings keys and a single failed aggregate alongside successful siblings.
-- [ ] Mark completed
+- [x] In `frontend/lib/api.ts`, add a `DashboardPrimaryMetric` literal union, reusable `{status: "ok", ...} | {status: "error"}` section types, and a `DashboardReadModel` interface matching the backend envelope without weakening aggregate rows or settings to `any`.
+- [x] Add `api.getDashboardReadModel()` using the existing authenticated `apiFetch` path so transparent refresh and Cf-Access recovery continue to apply to the endpoint's overall 401 response.
+- [x] Do not coalesce or cache the read model and do not remove the existing settings, Presence, aggregate, or needs-attention methods before their remaining callers are migrated.
+- [x] Extend `frontend/lib/api.test.ts` to assert the exact `GET /api/dashboard` path and successful decoding of both success and error section variants, including opaque settings keys and a single failed aggregate alongside successful siblings.
+- [x] Mark completed
