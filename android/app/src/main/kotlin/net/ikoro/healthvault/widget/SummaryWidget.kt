@@ -8,6 +8,7 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -46,6 +47,23 @@ import net.ikoro.healthvault.ui.shippedDisplayLanguage
 private val COMPACT_SIZE = DpSize(110.dp, 110.dp)
 private val WIDE_SIZE = DpSize(250.dp, 110.dp)
 private val MACRO_BAR_WIDTH = 90.dp
+
+/** Glance defaults Text to black; always pair widget text with an explicit theme foreground. */
+@Composable
+internal fun WidgetText(
+    text: String,
+    color: ColorProvider = GlanceTheme.colors.onBackground,
+    fontSize: TextUnit? = null,
+    fontWeight: FontWeight? = null,
+) {
+    Text(text = text, style = widgetTextStyle(color, fontSize, fontWeight))
+}
+
+internal fun widgetTextStyle(
+    color: ColorProvider,
+    fontSize: TextUnit? = null,
+    fontWeight: FontWeight? = null,
+) = TextStyle(color = color, fontSize = fontSize, fontWeight = fontWeight)
 
 /**
  * Single Glance widget, one placement resized between a compact (~110x110dp,
@@ -103,14 +121,14 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
 @Composable
 private fun SignedOutBody(resourceContext: Context) {
     Column {
-        Text(text = resourceContext.getString(R.string.widget_sign_in), style = TextStyle(fontWeight = FontWeight.Bold))
-        Text(text = resourceContext.getString(R.string.widget_open_to_sign_in), style = TextStyle(fontSize = 11.sp))
+        WidgetText(text = resourceContext.getString(R.string.widget_sign_in), fontWeight = FontWeight.Bold)
+        WidgetText(text = resourceContext.getString(R.string.widget_open_to_sign_in), fontSize = 11.sp)
     }
 }
 
 @Composable
 private fun ErrorBody(resourceContext: Context) {
-    Text(text = resourceContext.getString(R.string.widget_no_data))
+    WidgetText(text = resourceContext.getString(R.string.widget_no_data))
 }
 
 @Composable
@@ -126,10 +144,10 @@ private fun SummaryBody(resourceContext: Context, summary: TodaySummary, isWide:
         } else {
             resourceContext.getString(R.string.widget_calories_consumed, summary.caloriesConsumed.toInt())
         }
-        Text(text = caloriesLine, style = TextStyle(fontWeight = FontWeight.Bold, fontSize = if (isWide) 20.sp else 16.sp))
+        WidgetText(text = caloriesLine, fontWeight = FontWeight.Bold, fontSize = if (isWide) 20.sp else 16.sp)
 
         if (isStale) {
-            Text(text = resourceContext.getString(R.string.widget_stale), style = TextStyle(fontSize = 10.sp))
+            WidgetText(text = resourceContext.getString(R.string.widget_stale), fontSize = 10.sp)
         }
 
         if (isWide) {
@@ -146,9 +164,9 @@ private fun SummaryBody(resourceContext: Context, summary: TodaySummary, isWide:
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .clickable(actionRunCallback<LogFoodAction>()),
                 ) {
-                    Text(
+                    WidgetText(
                         text = resourceContext.getString(R.string.widget_log_food),
-                        style = TextStyle(color = GlanceTheme.colors.onPrimary),
+                        color = GlanceTheme.colors.onPrimary,
                     )
                 }
                 Spacer(modifier = GlanceModifier.width(8.dp))
@@ -157,7 +175,7 @@ private fun SummaryBody(resourceContext: Context, summary: TodaySummary, isWide:
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .clickable(actionRunCallback<RefreshAction>()),
                 ) {
-                    Text(text = resourceContext.getString(R.string.widget_refresh))
+                    WidgetText(text = resourceContext.getString(R.string.widget_refresh))
                 }
             }
         }
@@ -174,9 +192,9 @@ private fun MacroBar(resourceContext: Context, labelRes: Int, consumedGrams: Int
         } else {
             resourceContext.getString(R.string.widget_macro_consumed, label, consumedGrams)
         }
-        Text(
+        WidgetText(
             text = text,
-            style = TextStyle(fontSize = 9.sp),
+            fontSize = 9.sp,
         )
         Box(
             modifier = GlanceModifier
