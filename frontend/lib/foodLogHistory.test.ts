@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { DailyTotal, DayCompleteness } from './api';
 import {
+  OUTCOME_COLOR,
   resolveFoodLogHistoryWindow,
   summarizeFoodLogHistory,
   type FoodLogHistoryDay,
@@ -119,5 +122,21 @@ describe('summarizeFoodLogHistory', () => {
     const input = rows();
     expect(() => summarizeFoodLogHistory(input.completeness, input.dailyTotals, [...DATES.slice(0, 6), '2026-03-09'])).toThrow();
     expect(() => summarizeFoodLogHistory(input.completeness, input.dailyTotals, [...DATES].reverse())).not.toThrow();
+  });
+});
+
+describe('OUTCOME_COLOR', () => {
+  const css = readFileSync(resolve(__dirname, '../app/globals.css'), 'utf8');
+
+  it('gives every outcome its own color', () => {
+    expect(new Set(Object.values(OUTCOME_COLOR)).size).toBe(3);
+  });
+
+  it('points at tokens that globals.css defines for both light and dark', () => {
+    for (const color of Object.values(OUTCOME_COLOR)) {
+      const name = color.replace(/^var\((.*)\)$/, '$1');
+      const definitions = css.match(new RegExp(`^\\s*${name}:`, 'gm')) ?? [];
+      expect(definitions, name).toHaveLength(2);
+    }
   });
 });
