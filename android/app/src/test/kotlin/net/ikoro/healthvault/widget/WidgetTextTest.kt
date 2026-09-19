@@ -8,10 +8,12 @@ import androidx.glance.text.FontWeight
 import androidx.glance.unit.ColorProvider
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.test.runTest
 
 class WidgetTextTest {
     @Test
@@ -78,11 +80,11 @@ class WidgetTextTest {
         assertTrue(source.contains("accessibleCardModifier.clickable(actionRunCallback<LogFoodAction>())"))
         assertTrue(source.contains("accessibleCardModifier.clickable(actionStartActivity("))
         assertTrue(source.contains("semantics {"))
-        assertTrue(source.contains("private fun AppIdentity"))
+        assertTrue(!source.contains("R.mipmap.ic_launcher"))
         assertTrue(source.contains("useReducedWidgetContent(fontScale, layout)"))
         assertTrue(source.contains("useMinimalMicroContent(fontScale)"))
         assertTrue(source.contains("fontSize = 11.sp"))
-        assertTrue(!Regex("""fontSize = (9|10)\.sp""").containsMatchIn(source))
+        assertTrue(source.contains("fontSize = 9.sp"))
         assertTrue(source.contains("DpSize(48.dp, 48.dp)"))
         assertTrue(source.contains("DpSize(109.dp, 48.dp)"))
         assertTrue(source.contains("DpSize(48.dp, 110.dp)"))
@@ -117,13 +119,27 @@ class WidgetTextTest {
             .map { functionBody(source, it) }
         val compact = functionBody(source, "CompactSummary")
         val wide = functionBody(source, "WideSummary")
+        val micro = functionBody(source, "MicroSummary")
+        val short = functionBody(source, "ShortSummary")
+        val tall = functionBody(source, "TallSummary")
 
         compactFunctions.forEach { body ->
             assertTrue(!body.contains("SquareIconButton("))
             assertTrue(!body.contains("CircleIconButton("))
             assertTrue(!body.contains("MacroRows("))
         }
-        assertTrue(compact.indexOf("GlanceModifier.defaultWeight()") < compact.indexOf("calorieHeroText("))
+        assertTrue(!compact.contains("Spacer(modifier = GlanceModifier.defaultWeight())"))
+        assertTrue(compact.contains("contentAlignment = Alignment.CenterStart"))
+        listOf(micro, short, tall).forEach { body ->
+            assertTrue(body.contains("R.string.widget_identity_short"))
+        }
+        listOf(micro, tall).forEach { body ->
+            assertTrue(body.contains("R.string.widget_identity_short_stale"))
+            assertTrue(body.contains("if (isStale)"))
+        }
+        assertTrue(micro.contains("if (useMinimalContent)"))
+        assertTrue(micro.contains("fontSize = 9.sp"))
+        assertTrue(micro.contains("return"))
         assertTrue(wide.contains("SquareIconButton("))
         assertTrue(wide.contains("CircleIconButton("))
         assertTrue(wide.contains("MacroRows(resourceContext, summary)"))
@@ -137,8 +153,9 @@ class WidgetTextTest {
         assertTrue(!useReducedWidgetContent(1.29f, SummaryWidgetLayout.SHORT))
         assertTrue(useReducedWidgetContent(1.3f, SummaryWidgetLayout.SHORT))
         assertTrue(useReducedWidgetContent(2f, SummaryWidgetLayout.WIDE))
-        assertTrue(!useMinimalMicroContent(1.79f))
-        assertTrue(useMinimalMicroContent(1.8f))
+        assertTrue(!useMinimalMicroContent(1.49f))
+        assertTrue(useMinimalMicroContent(1.5f))
+        assertTrue(useMinimalMicroContent(2f))
         assertEquals("1928", calorieHeroText(1928, isStale = false, useReducedContent = true))
         assertEquals("1928", calorieHeroText(1928, isStale = true, useReducedContent = false))
         assertEquals("1928!", calorieHeroText(1928, isStale = true, useReducedContent = true))
@@ -162,8 +179,106 @@ class WidgetTextTest {
         assertTrue(provider.contains("android:resizeMode=\"horizontal|vertical\""))
         assertTrue(preview.contains("android:text=\"@string/widget_preview_consumed\""))
         assertTrue(preview.contains("android:text=\"@string/widget_preview_percent\""))
-        assertTrue(preview.contains("android:src=\"@mipmap/ic_launcher\""))
+        assertTrue(preview.contains("android:text=\"@string/widget_identity_short\""))
+        assertTrue(!preview.contains("@mipmap/ic_launcher"))
         assertTrue(preview.contains("<ProgressBar"))
+    }
+
+    @Test
+    fun flexWindowWidget_registersASeparateSamsungSurface() {
+        val manifest = appSource("src/main/AndroidManifest.xml").readText()
+        val provider = appSource("src/main/res/xml/flex_window_widget_info.xml").readText()
+        val samsungProvider = appSource("src/main/res/xml/flex_window_samsung_info.xml").readText()
+        val source = appSource("src/main/kotlin/net/ikoro/healthvault/widget/FlexWindowSummaryWidget.kt").readText()
+        val preview = appSource("src/main/res/layout/flex_window_widget_preview.xml").readText()
+        val receiverBlock = manifest
+            .substringAfter("android:name=\".widget.FlexWindowSummaryWidgetReceiver\"")
+            .substringBefore("</receiver>")
+
+        assertTrue(manifest.contains(".widget.FlexWindowSummaryWidgetReceiver"))
+        assertTrue(receiverBlock.contains("android:name=\"com.samsung.android.appwidget.provider\""))
+        assertTrue(receiverBlock.contains("android:resource=\"@xml/flex_window_samsung_info\""))
+        assertTrue(provider.contains("android:minWidth=\"352dp\""))
+        assertTrue(provider.contains("android:minHeight=\"339dp\""))
+        assertTrue(provider.contains("android:widgetCategory=\"keyguard\""))
+        assertTrue(provider.contains("android:previewLayout=\"@layout/flex_window_widget_preview\""))
+        assertTrue(samsungProvider.contains("display=\"sub_screen\""))
+        assertTrue(source.contains("class FlexWindowSummaryWidget"))
+        assertTrue(source.contains("actionRunCallback<FlexWindowLogFoodAction>()"))
+        assertTrue(source.contains("private fun FlexWindowMacroRow"))
+        assertFalse(source.contains("fontScale"))
+        assertTrue(source.contains("modifier = GlanceModifier.defaultWeight()"))
+        assertTrue(preview.contains("android:src=\"@drawable/ic_add_24\""))
+        assertTrue(preview.contains("android:src=\"@drawable/ic_refresh_24\""))
+        assertTrue(preview.contains("android:text=\"@string/widget_preview_target\""))
+        val homeSource = summaryWidgetSource().readText()
+        assertTrue(homeSource.contains("launchLogFood(context, MAIN_DISPLAY_ID)"))
+        assertTrue(homeSource.contains("setLaunchDisplayId(displayId)"))
+    }
+
+    @Test
+    fun widgetLifecycle_updatesAndCountsBothProviders() {
+        val source = appSource("src/main/kotlin/net/ikoro/healthvault/widget/SummaryWidgetReceiver.kt").readText()
+
+        assertTrue(source.contains("class FlexWindowSummaryWidgetReceiver"))
+        assertTrue(source.contains("getGlanceIds(FlexWindowSummaryWidget::class.java)"))
+        assertTrue(source.contains("WidgetUpdater.placementCounts(context).shouldCancelPeriodic"))
+        assertTrue(source.contains("RefreshScheduler.ensurePeriodic(context)"))
+        assertTrue(source.contains("RefreshScheduler.enqueueOneOff(context)"))
+
+        val none = WidgetPlacementCounts(home = 0, flexWindow = 0)
+        assertEquals(0, none.total)
+        assertTrue(none.shouldCancelPeriodic)
+        listOf(
+            WidgetPlacementCounts(home = 1, flexWindow = 0),
+            WidgetPlacementCounts(home = 0, flexWindow = 1),
+            WidgetPlacementCounts(home = 1, flexWindow = 1),
+        ).forEach { placement ->
+            assertTrue(placement.total > 0)
+            assertFalse(placement.shouldCancelPeriodic)
+        }
+    }
+
+    @Test
+    fun widgetLifecycle_attemptsBothProviderUpdatesAndPreservesFailures() = runTest {
+        var homeUpdates = 0
+        var flexUpdates = 0
+        val homeFailure = IllegalStateException("home")
+        var thrown: Throwable? = null
+
+        try {
+            updateBothWidgetProviders(
+                updateHome = {
+                    homeUpdates++
+                    throw homeFailure
+                },
+                updateFlexWindow = { flexUpdates++ },
+            )
+        } catch (failure: Throwable) {
+            thrown = failure
+        }
+
+        assertSame(homeFailure, thrown)
+        assertEquals(1, homeUpdates)
+        assertEquals(1, flexUpdates)
+
+        val flexFailure = IllegalArgumentException("flex")
+        thrown = null
+        try {
+            updateBothWidgetProviders(
+                updateHome = { homeUpdates++ },
+                updateFlexWindow = {
+                    flexUpdates++
+                    throw flexFailure
+                },
+            )
+        } catch (failure: Throwable) {
+            thrown = failure
+        }
+
+        assertSame(flexFailure, thrown)
+        assertEquals(2, homeUpdates)
+        assertEquals(2, flexUpdates)
     }
 
     @Test

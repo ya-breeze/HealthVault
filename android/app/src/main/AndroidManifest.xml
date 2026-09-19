@@ -50,6 +50,21 @@
                 android:resource="@xml/summary_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.FlexWindowSummaryWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_flex_window_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/flex_window_widget_info" />
+            <meta-data
+                android:name="com.samsung.android.appwidget.provider"
+                android:resource="@xml/flex_window_samsung_info" />
+        </receiver>
+
     </application>
 
 </manifest>

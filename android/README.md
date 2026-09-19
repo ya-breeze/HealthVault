@@ -1,6 +1,6 @@
 # HealthVault Android client
 
-A thin, read-only native client (`net.ikoro.healthvault`) plus a home-screen widget, both reading
+A thin, read-only native client (`net.ikoro.healthvault`) plus home-screen and Samsung FlexWindow widgets, all reading
 `GET /api/summary/today`. See `docs/specs/build-the-native-android-app-and-its-hom.md` for the
 full design, and `docs/adr/ADR-014-android-client-in-repo.md` /
 `docs/adr/ADR-015-android-cookie-session-auth.md` for why it's built the way it is.
@@ -45,6 +45,17 @@ Install it over ADB (device or emulator, developer mode + USB debugging enabled)
 ```
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Galaxy Z Flip FlexWindow
+
+The APK registers a separate full-screen widget for Samsung's outer FlexWindow. On a supported
+Galaxy Z Flip, open **Settings → Cover screen → Widgets**, add **HealthVault FlexWindow**, then
+swipe left on the closed phone to reach it. The normal resizable home-screen widget remains a
+separate picker entry.
+
+The FlexWindow surface shows the saved calorie and macro summary and can refresh without opening
+the phone. **Log food** still uses the existing Chrome Custom Tab flow; One UI may ask you to open
+the phone so that flow can continue on the main display.
 
 ## Running the unit tests / lint locally
 

@@ -1,5 +1,6 @@
 package net.ikoro.healthvault.widget
 
+import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -12,7 +13,6 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
-import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -90,7 +90,7 @@ internal fun useReducedWidgetContent(fontScale: Float, layout: SummaryWidgetLayo
     else -> fontScale >= 1.3f
 }
 
-internal fun useMinimalMicroContent(fontScale: Float): Boolean = fontScale >= 1.8f
+internal fun useMinimalMicroContent(fontScale: Float): Boolean = fontScale >= 1.5f
 
 internal fun calorieHeroText(consumed: Int, isStale: Boolean, useReducedContent: Boolean): String =
     if (isStale && useReducedContent) "$consumed!" else consumed.toString()
@@ -104,12 +104,18 @@ internal fun widgetTapTarget(state: WidgetState): WidgetTapTarget = when (state)
 @Composable
 internal fun WidgetText(
     text: String,
+    modifier: GlanceModifier = GlanceModifier,
     color: ColorProvider = GlanceTheme.colors.onSurface,
     fontSize: TextUnit? = null,
     fontWeight: FontWeight? = null,
     maxLines: Int = Int.MAX_VALUE,
 ) {
-    Text(text = text, style = widgetTextStyle(color, fontSize, fontWeight), maxLines = maxLines)
+    Text(
+        text = text,
+        modifier = modifier,
+        style = widgetTextStyle(color, fontSize, fontWeight),
+        maxLines = maxLines,
+    )
 }
 
 internal fun widgetTextStyle(
@@ -193,7 +199,7 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
     }
 
     val contentPadding = when (layout) {
-        SummaryWidgetLayout.MICRO -> 3.dp
+        SummaryWidgetLayout.MICRO -> if (useMinimalMicroContent) 1.dp else 3.dp
         SummaryWidgetLayout.SHORT -> 4.dp
         SummaryWidgetLayout.WIDE_SHORT -> 5.dp
         SummaryWidgetLayout.TALL -> 4.dp
@@ -225,7 +231,7 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
     }
 }
 
-private fun widgetContentDescription(resourceContext: Context, state: WidgetState): String = when (state) {
+internal fun widgetContentDescription(resourceContext: Context, state: WidgetState): String = when (state) {
     is WidgetState.Loaded -> resourceContext.getString(
         R.string.widget_loaded_action_description,
         resourceContext.getString(R.string.app_name),
@@ -337,26 +343,33 @@ private fun MicroSummary(
     val consumed = summary.caloriesConsumed.toInt()
     val target = summary.target.takeIf { it.available && it.calories > 0 }
 
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        if (useReducedContent) {
-            AppIdentity(8)
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AppIdentity(8)
-                Spacer(modifier = GlanceModifier.width(1.dp))
-                WidgetText(
-                    text = resourceContext.getString(
-                        if (isStale) R.string.widget_calories_unit_stale else R.string.widget_calories_unit,
-                    ),
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                )
-            }
+    if (useMinimalContent) {
+        // At >= 1.5x, even two 11sp rows cannot fit the launcher's 48dp cell.
+        // Keep the calorie/stale value visible; the card semantics retain
+        // HealthVault identity, the kcal unit, and the Log food action.
+        Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            WidgetText(
+                text = calorieHeroText(consumed, isStale, useReducedContent),
+                fontWeight = FontWeight.Bold,
+                fontSize = 9.sp,
+                maxLines = 1,
+            )
         }
+        return
+    }
+
+    Column(modifier = GlanceModifier.fillMaxSize()) {
+        WidgetText(
+            text = resourceContext.getString(
+                if (isStale) R.string.widget_identity_short_stale else R.string.widget_identity_short,
+            ),
+            color = GlanceTheme.colors.onSurfaceVariant,
+            fontSize = 11.sp,
+            maxLines = 1,
+        )
         Spacer(modifier = GlanceModifier.defaultWeight())
         WidgetText(
-            text = calorieHeroText(consumed, isStale, useReducedContent),
+            text = consumed.toString(),
             fontWeight = FontWeight.Bold,
             fontSize = if (useReducedContent) 11.sp else 14.sp,
             maxLines = 1,
@@ -380,7 +393,13 @@ private fun ShortSummary(
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            AppIdentity(14)
+            WidgetText(
+                text = resourceContext.getString(R.string.widget_identity_short),
+                color = GlanceTheme.colors.onSurfaceVariant,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
             Spacer(modifier = GlanceModifier.width(4.dp))
             WidgetText(
                 text = calorieHeroText(consumed, isStale, useReducedContent),
@@ -421,11 +440,7 @@ private fun WideShortSummary(
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (useReducedContent) {
-                AppIdentity(14)
-            } else {
-                WidgetHeader(resourceContext, isStale)
-            }
+            WidgetHeader(resourceContext, isStale)
             Spacer(modifier = GlanceModifier.defaultWeight())
             WidgetText(
                 text = calorieHeroText(consumed, isStale, useReducedContent),
@@ -462,23 +477,17 @@ private fun TallSummary(
     val target = summary.target.takeIf { it.available && it.calories > 0 }
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AppIdentity(14)
-            if (!useReducedContent) {
-                Spacer(modifier = GlanceModifier.width(2.dp))
-                WidgetText(
-                    text = resourceContext.getString(
-                        if (isStale) R.string.widget_calories_unit_stale else R.string.widget_calories_unit,
-                    ),
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                )
-            }
-        }
+        WidgetText(
+            text = resourceContext.getString(
+                if (isStale) R.string.widget_identity_short_stale else R.string.widget_identity_short,
+            ),
+            color = GlanceTheme.colors.onSurfaceVariant,
+            fontSize = 11.sp,
+            maxLines = 1,
+        )
         Spacer(modifier = GlanceModifier.defaultWeight())
         WidgetText(
-            text = calorieHeroText(consumed, isStale, useReducedContent),
+            text = consumed.toString(),
             fontWeight = FontWeight.Bold,
             fontSize = if (useReducedContent) 14.sp else 16.sp,
             maxLines = 1,
@@ -510,31 +519,37 @@ private fun CompactSummary(
     val target = summary.target.takeIf { it.available && it.calories > 0 }
 
     Column(modifier = GlanceModifier.fillMaxSize()) {
-        if (useReducedContent) AppIdentity(14) else WidgetHeader(resourceContext, isStale)
-        Spacer(modifier = GlanceModifier.defaultWeight())
-        WidgetText(
-            text = calorieHeroText(consumed, isStale, useReducedContent),
-            fontWeight = FontWeight.Bold,
-            fontSize = if (useReducedContent) 14.sp else 30.sp,
-            maxLines = 1,
-        )
-        if (!useReducedContent) {
-            WidgetText(
-                text = target?.let {
-                    resourceContext.getString(
-                        R.string.widget_calorie_target_progress,
-                        it.calories,
-                        progressPercent(consumed, it.calories),
+        WidgetHeader(resourceContext, isStale)
+        Box(
+            modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Column(modifier = GlanceModifier.fillMaxWidth()) {
+                WidgetText(
+                    text = calorieHeroText(consumed, isStale, useReducedContent),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (useReducedContent) 18.sp else 30.sp,
+                    maxLines = 1,
+                )
+                if (!useReducedContent) {
+                    WidgetText(
+                        text = target?.let {
+                            resourceContext.getString(
+                                R.string.widget_calorie_target_progress,
+                                it.calories,
+                                progressPercent(consumed, it.calories),
+                            )
+                        } ?: resourceContext.getString(R.string.widget_calories_today),
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        maxLines = 1,
                     )
-                } ?: resourceContext.getString(R.string.widget_calories_today),
-                color = GlanceTheme.colors.onSurfaceVariant,
-                fontSize = 11.sp,
-                maxLines = 1,
-            )
-        }
-        if (target != null) {
-            Spacer(modifier = GlanceModifier.height(5.dp))
-            CalorieProgress(consumed, target.calories)
+                }
+                if (target != null) {
+                    Spacer(modifier = GlanceModifier.height(5.dp))
+                    CalorieProgress(consumed, target.calories)
+                }
+            }
         }
     }
 }
@@ -552,7 +567,7 @@ private fun WideSummary(
     Column(modifier = GlanceModifier.fillMaxSize()) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = GlanceModifier.defaultWeight()) {
-                if (useReducedContent) AppIdentity(14) else WidgetHeader(resourceContext, isStale)
+                WidgetHeader(resourceContext, isStale)
                 WidgetText(
                     text = calorieHeroText(consumed, isStale, useReducedContent),
                     fontWeight = FontWeight.Bold,
@@ -596,15 +611,6 @@ private fun WideSummary(
             MacroRows(resourceContext, summary)
         }
     }
-}
-
-@Composable
-private fun AppIdentity(size: Int) {
-    Image(
-        provider = ImageProvider(R.mipmap.ic_launcher),
-        contentDescription = null,
-        modifier = GlanceModifier.width(size.dp).height(size.dp),
-    )
 }
 
 @Composable
@@ -677,7 +683,7 @@ private fun MacroRow(
     }
 }
 
-private fun localizedResourceContext(context: Context, displayLanguage: String?): Context {
+internal fun localizedResourceContext(context: Context, displayLanguage: String?): Context {
     val language = displayLanguage?.let(::shippedDisplayLanguage) ?: return context
     val configuration = Configuration(context.resources.configuration).apply {
         setLocale(Locale.forLanguageTag(language))
@@ -690,15 +696,33 @@ private fun localizedResourceContext(context: Context, displayLanguage: String?)
  * intent extra, so no other app can drive this to an arbitrary page. Mirrors
  * TodayScreen's openLogFood.
  */
+private const val MAIN_DISPLAY_ID = 0
+
+private fun launchLogFood(context: Context, displayId: Int? = null) {
+    val app = context.applicationContext as HealthVaultApp
+    val serverUrl = app.secureStore.serverUrl ?: return
+    val intent = CustomTabsIntent.Builder().build().intent.apply {
+        data = Uri.parse(serverUrl.trimEnd('/') + "/food/upload/")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    if (displayId == null) {
+        context.startActivity(intent)
+    } else {
+        val options = ActivityOptions.makeBasic().apply { setLaunchDisplayId(displayId) }
+        context.startActivity(intent, options.toBundle())
+    }
+}
+
 class LogFoodAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val app = context.applicationContext as HealthVaultApp
-        val serverUrl = app.secureStore.serverUrl ?: return
-        val intent = CustomTabsIntent.Builder().build().intent.apply {
-            data = Uri.parse(serverUrl.trimEnd('/') + "/food/upload/")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
+        launchLogFood(context)
+    }
+}
+
+/** FlexWindow food entry belongs on the unfolded main display, not the cover display. */
+class FlexWindowLogFoodAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        launchLogFood(context, MAIN_DISPLAY_ID)
     }
 }
 

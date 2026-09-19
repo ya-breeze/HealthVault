@@ -17,7 +17,7 @@ private const val ONE_OFF_WORK_NAME = "healthvault-refresh-one-off"
 
 /**
  * Owns every trigger for RefreshWorker. The periodic job runs only while at
- * least one widget is placed — [SummaryWidgetReceiver] calls [ensurePeriodic]
+ * least one widget is placed — [RefreshingSummaryWidgetReceiver] calls [ensurePeriodic]
  * on the first placement (onEnabled) and [cancelPeriodic] on the last removal
  * (onDisabled). [enqueueOneOff] backs every other trigger: widget placement,
  * a manual refresh, the app resuming, and a 429's Retry-After-scheduled
