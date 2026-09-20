@@ -1,3 +1,5 @@
+@file:OptIn(androidx.glance.ExperimentalGlanceApi::class)
+
 package net.ikoro.healthvault.widget
 
 import android.content.Context
@@ -75,7 +77,12 @@ private fun FlexWindowContent(state: WidgetState, resourceContext: Context) {
     }
     val interactiveCardModifier = when (widgetTapTarget(state)) {
         WidgetTapTarget.LOG_FOOD ->
-            accessibleCardModifier.clickable(actionRunCallback<FlexWindowLogFoodAction>())
+            accessibleCardModifier.clickable(
+                actionStartActivity(
+                    widgetLogFoodIntent(resourceContext),
+                    activityOptions = flexWindowLogFoodActivityOptions(),
+                ),
+            )
         WidgetTapTarget.OPEN_APP ->
             accessibleCardModifier.clickable(actionStartActivity(Intent(resourceContext, MainActivity::class.java)))
     }
@@ -165,7 +172,10 @@ private fun FlexWindowSummary(
             SquareIconButton(
                 imageProvider = ImageProvider(R.drawable.ic_add_24),
                 contentDescription = resourceContext.getString(R.string.widget_log_food),
-                onClick = actionRunCallback<FlexWindowLogFoodAction>(),
+                onClick = actionStartActivity(
+                    widgetLogFoodIntent(resourceContext),
+                    activityOptions = flexWindowLogFoodActivityOptions(),
+                ),
             )
             CircleIconButton(
                 imageProvider = ImageProvider(R.drawable.ic_refresh_24),

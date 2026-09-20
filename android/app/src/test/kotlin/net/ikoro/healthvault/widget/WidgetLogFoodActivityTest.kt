@@ -27,7 +27,31 @@ class WidgetLogFoodActivityTest {
         assertTrue(resultCallback.indexOf("RefreshScheduler.enqueueOneOff") < resultCallback.indexOf("finish()"))
         assertTrue(source.contains("if (savedInstanceState != null) return"))
         assertTrue(source.contains("app.secureStore.serverUrl"))
+        assertTrue(source.contains("logFood.launch(intent)"))
         assertFalse(source.contains("intent.get"))
+
+        val onCreateBeforeLaunch = source
+            .substringAfter("override fun onCreate")
+            .substringBefore("logFood.launch(intent)")
+        val missingUrlBranch = onCreateBeforeLaunch
+            .substringAfter("if (url == null) {")
+            .substringBefore("}")
+        assertTrue(missingUrlBranch.indexOf("finish()") < missingUrlBranch.indexOf("return"))
+        assertFalse(onCreateBeforeLaunch.contains("RefreshScheduler.enqueueOneOff"))
+    }
+
+    @Test
+    fun `both widget surfaces start the bridge directly`() {
+        val summary = appFile("src/main/kotlin/net/ikoro/healthvault/widget/SummaryWidget.kt").readText()
+        val flexWindow = appFile("src/main/kotlin/net/ikoro/healthvault/widget/FlexWindowSummaryWidget.kt").readText()
+
+        assertTrue(summary.contains("actionStartActivity(widgetLogFoodIntent(resourceContext))"))
+        assertTrue(summary.contains("Intent(context, WidgetLogFoodActivity::class.java)"))
+        assertFalse(summary.contains("class LogFoodAction"))
+        assertTrue(flexWindow.contains("actionStartActivity("))
+        assertTrue(flexWindow.contains("widgetLogFoodIntent(resourceContext)"))
+        assertTrue(flexWindow.contains("activityOptions = flexWindowLogFoodActivityOptions()"))
+        assertFalse(flexWindow.contains("FlexWindowLogFoodAction"))
     }
 
     @Test
@@ -39,6 +63,7 @@ class WidgetLogFoodActivityTest {
 
         assertTrue(declaration.contains("android:exported=\"false\""))
         assertTrue(declaration.contains("android:excludeFromRecents=\"true\""))
+        assertTrue(declaration.contains("android:taskAffinity=\"\""))
         assertTrue(declaration.contains("@android:style/Theme.Translucent.NoTitleBar"))
     }
 }

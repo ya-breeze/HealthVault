@@ -27,6 +27,7 @@ async function corruptAuthCookies(context: BrowserContext, opts: { refreshToo?: 
     .filter(c => targets.includes(c.name))
     .map(c => ({ ...c, value: 'corrupted-invalid-token' }));
   await context.addCookies(patched);
+  return patched.length;
 }
 
 // navigator.locks (the cross-tab refresh coordination mechanism) requires a
@@ -110,10 +111,23 @@ test.describe('Session refresh on 401', () => {
     // in flight can make one start a refresh, then the reload below aborts its
     // response after the server has consumed the rotating refresh token.
     await page.waitForLoadState('networkidle');
-    await corruptAuthCookies(context);
+    const patchedCookieCount = await corruptAuthCookies(context);
+    expect(patchedCookieCount).toBe(1);
+
+    const refreshResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/auth/refresh'
+        && response.request().method() === 'POST'
+    );
+    const authenticatedRead = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/users/me'
+        && response.status() === 200
+    );
 
     await page.reload();
     await page.waitForLoadState('networkidle');
+
+    expect((await refreshResponse).ok()).toBeTruthy();
+    expect((await authenticatedRead).ok()).toBeTruthy();
 
     // Should stay on the dashboard — the 401 from the corrupted access token
     // should have been silently recovered via POST /api/auth/refresh, not

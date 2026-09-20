@@ -353,7 +353,7 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
 
     val interactiveCardModifier = when (widgetTapTarget(state)) {
         WidgetTapTarget.LOG_FOOD ->
-            accessibleCardModifier.clickable(actionRunCallback<LogFoodAction>())
+            accessibleCardModifier.clickable(actionStartActivity(widgetLogFoodIntent(resourceContext)))
         WidgetTapTarget.OPEN_APP ->
             // The reified actionStartActivity<T>() lives in androidx.glance.action; this file
             // imports androidx.glance.appwidget.action, whose actionStartActivity only takes an
@@ -970,30 +970,14 @@ internal fun localizedResourceContext(context: Context, displayLanguage: String?
 
 private const val MAIN_DISPLAY_ID = 0
 
-private fun launchLogFood(context: Context, displayId: Int? = null) {
-    val intent = Intent(context, WidgetLogFoodActivity::class.java).apply {
+internal fun widgetLogFoodIntent(context: Context): Intent =
+    Intent(context, WidgetLogFoodActivity::class.java).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    if (displayId == null) {
-        context.startActivity(intent)
-    } else {
-        val options = ActivityOptions.makeBasic().apply { setLaunchDisplayId(displayId) }
-        context.startActivity(intent, options.toBundle())
-    }
-}
-
-class LogFoodAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        launchLogFood(context)
-    }
-}
 
 /** FlexWindow food entry belongs on the unfolded main display, not the cover display. */
-class FlexWindowLogFoodAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        launchLogFood(context, MAIN_DISPLAY_ID)
-    }
-}
+internal fun flexWindowLogFoodActivityOptions() =
+    ActivityOptions.makeBasic().apply { setLaunchDisplayId(MAIN_DISPLAY_ID) }.toBundle()
 
 /** The widget's own refresh affordance: enqueues an immediate one-off update (work/RefreshScheduler.kt). */
 class RefreshAction : ActionCallback {

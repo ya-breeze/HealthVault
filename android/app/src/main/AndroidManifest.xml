@@ -26,6 +26,7 @@
             android:name=".widget.WidgetLogFoodActivity"
             android:excludeFromRecents="true"
             android:exported="false"
+            android:taskAffinity=""
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!--
