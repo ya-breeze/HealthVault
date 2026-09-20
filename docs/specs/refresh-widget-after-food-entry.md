@@ -61,5 +61,5 @@ only the test setup and makes the case exercise the intended expired-session rec
 
 - [x] Run Android JVM tests, lint, and debug APK assembly with the shared Android build environment.
 - [x] Stabilize the existing expired-access-token E2E setup so its deliberate cookie corruption begins only after the initial dashboard load settles.
-- [ ] Run the repository's static and test gates, and record any environment-limited validation honestly.
-- [ ] Mark completed
+- [x] Run the repository's static and test gates, and record any environment-limited validation honestly.
+- [x] Mark completed
