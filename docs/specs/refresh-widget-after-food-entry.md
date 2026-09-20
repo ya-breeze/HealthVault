@@ -15,8 +15,11 @@ summary as soon as the food-entry tab returns control to HealthVault.
 
 ## How
 
-Route both the home-screen and FlexWindow **Log food** callbacks through a small, non-exported,
-translucent Android activity. The activity derives the Custom Tab URL from the stored server URL,
+Route both the home-screen and FlexWindow **Log food** clicks directly to a small, non-exported,
+translucent Android activity through Glance's activity action. Do not launch the activity from an
+`ActionCallback`: Android can reject that broadcast/service-to-activity trampoline. Give the bridge
+an empty task affinity so closing it cannot reveal an existing HealthVault task. The activity derives
+the Custom Tab URL from the stored server URL,
 launches that intent through the Activity Result API, and enqueues the existing unique one-off
 `RefreshWorker` when the Custom Tab closes. It then finishes immediately, returning the user to the
 launcher instead of showing the native Today screen.
@@ -30,7 +33,8 @@ in their existing path.
 The activity must not accept a URL from an intent. It reads the configured server URL from
 `SecureStore`, preserving the current protection against another app redirecting the flow. If no
 server URL exists, it closes without launching or refreshing. FlexWindow still starts the bridge on
-the main display before the bridge opens the Custom Tab.
+the main display by passing `ActivityOptions` to the direct Glance activity action before the bridge
+opens the Custom Tab.
 
 This change does not alter widget layout, periodic refresh cadence, the backend API, or food-entry
 web behavior. Device acceptance still requires sideloading the debug APK because JVM and lint tests
@@ -41,8 +45,10 @@ returned as soon as the dashboard URL appeared, then the case deliberately corru
 cookie before the dashboard's initial API reads had settled. One of those reads could start a
 refresh with the corrupted cookie; the case's immediate reload then cancelled the response after
 the server had consumed the rotating refresh token, leaving the browser with the spent value. Make
-that case wait for the initial dashboard load to become idle before corrupting cookies. This changes
-only the test setup and makes the case exercise the intended expired-session recovery path.
+that case wait for the initial dashboard load to become idle before corrupting cookies. Assert that
+exactly one access cookie is overwritten, the refresh endpoint succeeds, and an authenticated API
+read succeeds after reload. This changes only the test setup and makes the case prove the intended
+expired-session recovery path.
 
 ## Validation Commands
 
