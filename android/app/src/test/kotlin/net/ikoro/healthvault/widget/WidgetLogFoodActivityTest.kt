@@ -33,9 +33,12 @@ class WidgetLogFoodActivityTest {
         val onCreateBeforeLaunch = source
             .substringAfter("override fun onCreate")
             .substringBefore("logFood.launch(intent)")
+        assertTrue(onCreateBeforeLaunch.contains("if (url == null) {"))
         val missingUrlBranch = onCreateBeforeLaunch
             .substringAfter("if (url == null) {")
             .substringBefore("}")
+        assertTrue(missingUrlBranch.contains("finish()"))
+        assertTrue(missingUrlBranch.contains("return"))
         assertTrue(missingUrlBranch.indexOf("finish()") < missingUrlBranch.indexOf("return"))
         assertFalse(onCreateBeforeLaunch.contains("RefreshScheduler.enqueueOneOff"))
     }
