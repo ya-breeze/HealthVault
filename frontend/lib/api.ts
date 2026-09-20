@@ -454,6 +454,71 @@ export interface UserSettings {
   [key: string]: unknown;
 }
 
+export type DashboardPrimaryMetric =
+  | 'steps'
+  | 'heart_rate'
+  | 'sleep'
+  | 'heart_rate_variability'
+  | 'distance'
+  | 'weight'
+  | 'blood_pressure'
+  | 'oxygen_saturation';
+
+export interface DashboardCumulativeAggregateRow {
+  bucket_start: string;
+  count: number;
+  sum: number | null;
+}
+
+export interface DashboardPointAggregateRow {
+  bucket_start: string;
+  count: number;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+export interface DashboardBloodPressureAggregateRow {
+  bucket_start: string;
+  count: number;
+  systolic_avg: number | null;
+  systolic_min: number | null;
+  systolic_max: number | null;
+  diastolic_avg: number | null;
+  diastolic_min: number | null;
+  diastolic_max: number | null;
+}
+
+export type DashboardValueSection<T> =
+  | { status: 'ok'; value: T }
+  | { status: 'error' };
+
+export type DashboardRowsSection<T> =
+  | { status: 'ok'; rows: T[] }
+  | { status: 'error' };
+
+export type DashboardCountSection =
+  | { status: 'ok'; count: number }
+  | { status: 'error' };
+
+export type DashboardAggregateRows = {
+  steps: DashboardRowsSection<DashboardCumulativeAggregateRow>;
+  heart_rate: DashboardRowsSection<DashboardPointAggregateRow>;
+  sleep: DashboardRowsSection<DashboardCumulativeAggregateRow>;
+  heart_rate_variability: DashboardRowsSection<DashboardPointAggregateRow>;
+  distance: DashboardRowsSection<DashboardCumulativeAggregateRow>;
+  weight: DashboardRowsSection<DashboardPointAggregateRow>;
+  blood_pressure: DashboardRowsSection<DashboardBloodPressureAggregateRow>;
+  oxygen_saturation: DashboardRowsSection<DashboardPointAggregateRow>;
+};
+
+export interface DashboardReadModel {
+  settings: DashboardValueSection<UserSettings>;
+  presence: DashboardValueSection<Record<string, boolean>>;
+  aggregates: DashboardAggregateRows;
+  needs_attention: DashboardCountSection;
+}
+
 // One day's Day Completeness state (food-day-completeness capability) —
 // mirrors the backend's database.DayCompleteness (food_completeness.go).
 export type DayCompletenessState = 'complete' | 'confirmed_complete' | 'unconfirmed' | 'incomplete';
@@ -816,6 +881,9 @@ export const api = {
     settingsPromise = p;
     return p;
   },
+
+  getDashboardReadModel: () => apiFetch<DashboardReadModel>('/dashboard'),
+
   putSettings: (settings: UserSettings) =>
     apiFetch<UserSettings>('/users/me/settings', { method: 'PUT', body: JSON.stringify(settings) }),
 

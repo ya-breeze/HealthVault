@@ -480,3 +480,44 @@ describe('bootstrap read coalescing', () => {
     await expect(bootstrap).resolves.toMatchObject({ timezone: 'UTC', display_language: 'en' });
   });
 });
+
+describe('dashboard read model', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('fetches /api/dashboard and preserves discriminated section variants', async () => {
+    const body = {
+      settings: { status: 'ok', value: { timezone: 'UTC', future_key: { enabled: true } } },
+      presence: { status: 'ok', value: { steps: true, weight: false } },
+      aggregates: {
+        steps: { status: 'ok', rows: [] },
+        heart_rate: { status: 'error' },
+        sleep: { status: 'ok', rows: [{ bucket_start: '2026-09-19T00:00:00Z', count: 1, sum: 3600 }] },
+        heart_rate_variability: { status: 'ok', rows: [] },
+        distance: { status: 'ok', rows: [] },
+        weight: { status: 'ok', rows: [] },
+        blood_pressure: { status: 'ok', rows: [] },
+        oxygen_saturation: { status: 'ok', rows: [] },
+      },
+      needs_attention: { status: 'ok', count: 2 },
+    };
+    const calls = installFetch(async path => {
+      if (path === '/api/dashboard') return json(body);
+      throw new Error(`unexpected request: ${path}`);
+    });
+
+    const api = await freshApi();
+    const got = await api.getDashboardReadModel();
+
+    expect(calls).toEqual(['GET /api/dashboard']);
+    expect(got.settings).toEqual(body.settings);
+    expect(got.settings.status).toBe('ok');
+    if (got.settings.status === 'ok') {
+      expect(got.settings.value.future_key).toEqual({ enabled: true });
+    }
+    expect(got.aggregates.heart_rate).toEqual({ status: 'error' });
+    expect(got.aggregates.sleep).toEqual(body.aggregates.sleep);
+    expect(got.aggregates.steps).toEqual({ status: 'ok', rows: [] });
+  });
+});
