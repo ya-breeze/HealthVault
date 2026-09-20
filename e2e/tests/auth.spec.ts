@@ -105,6 +105,11 @@ test.describe('Auth', () => {
 test.describe('Session refresh on 401', () => {
   test('expired access token is silently refreshed using a valid refresh token', async ({ page, context }) => {
     await login(page);
+    // waitForURL in login() returns before the dashboard's first API reads
+    // necessarily finish. Corrupting the cookie while those reads are still
+    // in flight can make one start a refresh, then the reload below aborts its
+    // response after the server has consumed the rotating refresh token.
+    await page.waitForLoadState('networkidle');
     await corruptAuthCookies(context);
 
     await page.reload();

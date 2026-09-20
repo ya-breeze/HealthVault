@@ -36,6 +36,14 @@ This change does not alter widget layout, periodic refresh cadence, the backend 
 web behavior. Device acceptance still requires sideloading the debug APK because JVM and lint tests
 cannot render or drive a real launcher, Samsung FlexWindow, or browser Custom Tab.
 
+Deployed validation exposed an existing race in the refresh-token E2E setup. Its `login` helper
+returned as soon as the dashboard URL appeared, then the case deliberately corrupted the access
+cookie before the dashboard's initial API reads had settled. One of those reads could start a
+refresh with the corrupted cookie; the case's immediate reload then cancelled the response after
+the server had consumed the rotating refresh token, leaving the browser with the spent value. Make
+that case wait for the initial dashboard load to become idle before corrupting cookies. This changes
+only the test setup and makes the case exercise the intended expired-session recovery path.
+
 ## Validation Commands
 
 - `make test`
@@ -52,5 +60,6 @@ cannot render or drive a real launcher, Samsung FlexWindow, or browser Custom Ta
 ### Task 2: Validate the Android client and repository
 
 - [x] Run Android JVM tests, lint, and debug APK assembly with the shared Android build environment.
+- [x] Stabilize the existing expired-access-token E2E setup so its deliberate cookie corruption begins only after the initial dashboard load settles.
 - [ ] Run the repository's static and test gates, and record any environment-limited validation honestly.
 - [ ] Mark completed
