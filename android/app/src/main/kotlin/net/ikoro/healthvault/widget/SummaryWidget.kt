@@ -4,9 +4,7 @@ import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.net.Uri
 import android.os.Build
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
@@ -970,18 +968,10 @@ internal fun localizedResourceContext(context: Context, displayLanguage: String?
     return context.createConfigurationContext(configuration)
 }
 
-/**
- * Always derives the Log food URL from the stored server URL, never from an
- * intent extra, so no other app can drive this to an arbitrary page. Mirrors
- * TodayScreen's openLogFood.
- */
 private const val MAIN_DISPLAY_ID = 0
 
 private fun launchLogFood(context: Context, displayId: Int? = null) {
-    val app = context.applicationContext as HealthVaultApp
-    val serverUrl = app.secureStore.serverUrl ?: return
-    val intent = CustomTabsIntent.Builder().build().intent.apply {
-        data = Uri.parse(serverUrl.trimEnd('/') + "/food/upload/")
+    val intent = Intent(context, WidgetLogFoodActivity::class.java).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     if (displayId == null) {

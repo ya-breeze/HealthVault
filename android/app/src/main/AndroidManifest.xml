@@ -22,6 +22,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".widget.WidgetLogFoodActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!--
           Persists AppCompatDelegate.setApplicationLocales across process
           restarts without requiring MainActivity to extend AppCompatActivity

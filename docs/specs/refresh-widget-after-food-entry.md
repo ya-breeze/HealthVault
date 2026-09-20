@@ -44,13 +44,13 @@ cannot render or drive a real launcher, Samsung FlexWindow, or browser Custom Ta
 
 ### Task 1: Add the refresh-on-return bridge
 
-- [ ] Add a non-exported translucent activity that opens the stored `/food/upload/` URL through a Custom Tab and enqueues the existing one-off widget refresh only after the tab returns.
-- [ ] Route both home-screen and FlexWindow Log food actions through the activity while preserving the main-display rule for FlexWindow.
-- [ ] Add JVM coverage for URL derivation and structural coverage for launch, return, refresh, and finish wiring.
-- [ ] Mark completed
+- [x] Add a non-exported translucent activity that opens the stored `/food/upload/` URL through a Custom Tab and enqueues the existing one-off widget refresh only after the tab returns.
+- [x] Route both home-screen and FlexWindow Log food actions through the activity while preserving the main-display rule for FlexWindow.
+- [x] Add JVM coverage for URL derivation and structural coverage for launch, return, refresh, and finish wiring.
+- [x] Mark completed
 
 ### Task 2: Validate the Android client and repository
 
-- [ ] Run Android JVM tests, lint, and debug APK assembly with the shared Android build environment.
+- [x] Run Android JVM tests, lint, and debug APK assembly with the shared Android build environment.
 - [ ] Run the repository's static and test gates, and record any environment-limited validation honestly.
 - [ ] Mark completed
