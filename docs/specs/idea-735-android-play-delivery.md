@@ -63,6 +63,6 @@ build Android is now stale; the original accepted decision stays unchanged.
 
 ### Task 3: Validate the deployed branch
 
-- [ ] Deploy the branch to `hcw-wip` without displacing another active Idea.
-- [ ] Wait for stack readiness and run the repository E2E suite against it.
-- [ ] Mark completed.
+- [x] Deploy the branch to `hcw-wip` without displacing another active Idea.
+- [x] Wait for stack readiness and run the repository E2E suite against it.
+- [x] Mark completed.
