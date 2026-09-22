@@ -29,7 +29,10 @@ source. Publishing stays restricted to Google Play Internal Testing by the share
 
 Update the Android README and the `android-apk` Makefile comment so they no longer claim that
 HealthVault has no release signing or that this control environment cannot build Android. Keep the
-manual debug APK path documented as an available development path.
+manual debug APK path documented as an available development path. Name the existing trusted-LAN
+HTTPS hostname as the supported release target, while keeping the public Cloudflare Access route
+unsupported. Add a dated update to ADR-014 because its statement that this environment cannot
+build Android is now stale; the original accepted decision stays unchanged.
 
 ## Validation Commands
 
@@ -38,19 +41,28 @@ manual debug APK path documented as an available development path.
 - `python3 -m json.tool android-delivery.json`
 - `python3 /data/Useful/ai/truenas/android-delivery/android_delivery.py inspect-config android-delivery.json`
 - `python3 /data/android-build.py HealthVault-worktrees/idea-735-android-play-delivery/android testDebugUnitTest`
+- `python3 /data/android-build.py HealthVault-worktrees/idea-735-android-play-delivery/android lintDebug`
 - Build `:app:bundleRelease` through the shared builder with a disposable keystore and delivery
   version properties, then inspect the resulting AAB signature.
+- Deploy the branch to `hcw-wip`, wait for readiness, then run `make test-e2e` against that stack.
 
 ### Task 1: Add the application delivery contract
 
-- [ ] Add and validate the public delivery contract.
-- [ ] Wire delivery versioning and release signing into the Android Gradle build.
-- [ ] Mark completed.
+- [x] Add and validate the public delivery contract.
+- [x] Wire delivery versioning and release signing into the Android Gradle build.
+- [x] Mark completed.
 
 ### Task 2: Update operator guidance and verify the delivery build
 
-- [ ] Update the Android README and Makefile comment for local Internal Testing delivery.
-- [ ] Prove existing Android unit tests and lint still pass.
-- [ ] Prove invalid delivery configuration fails closed.
-- [ ] Prove a signed release AAB builds without storing the key in the checkout.
+- [x] Update the Android README and Makefile comment for local Internal Testing delivery.
+- [x] Prove existing Android unit tests and lint still pass.
+- [x] Prove invalid delivery configuration fails closed.
+- [x] Prove a signed release AAB builds without storing the key in the checkout.
+- [x] Document the supported release HTTPS target and update the stale ADR-014 facts.
+- [x] Mark completed.
+
+### Task 3: Validate the deployed branch
+
+- [ ] Deploy the branch to `hcw-wip` without displacing another active Idea.
+- [ ] Wait for stack readiness and run the repository E2E suite against it.
 - [ ] Mark completed.

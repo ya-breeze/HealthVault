@@ -5,8 +5,9 @@ A thin, read-only native client (`net.ikoro.healthvault`) plus home-screen and S
 full design, and `docs/adr/ADR-014-android-client-in-repo.md` /
 `docs/adr/ADR-015-android-cookie-session-auth.md` for why it's built the way it is.
 
-There is no Play Store release and no release signing configuration — the only deliverable is a
-debug APK, built and sideloaded by hand.
+The development deliverable remains a debug APK that can be sideloaded by hand. Production-style
+delivery uses the repository's `android-delivery.json` contract and the shared local Android
+delivery service to build a signed App Bundle and publish it only to Google Play Internal Testing.
 
 ## Prerequisites
 
@@ -16,10 +17,10 @@ debug APK, built and sideloaded by hand.
 - No emulator is required to build the debug APK or run the unit tests — this project has no
   instrumented (device/emulator) tests, and none are planned (see ADR-014).
 
-This repository's own build environment (`/data/AGENTS.md`) has none of the above. `make
-test`/`make lint` detect that and print a skip notice for the Android targets rather than failing —
-see the Makefile's `test-android`/`lint-android` targets. Building the app for real requires a
-machine that does have the SDK, i.e. not this one.
+The repository checkout itself does not contain the SDK. `make test`/`make lint` detect a missing
+local SDK and print a skip notice for the Android targets rather than failing; see the Makefile's
+`test-android`/`lint-android` targets. The shared control host can run Android builds in its
+`android-build` container through `/data/android-build.py`.
 
 ## First-time setup
 
@@ -45,6 +46,18 @@ Install it over ADB (device or emulator, developer mode + USB debugging enabled)
 ```
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Google Play Internal delivery
+
+`android-delivery.json` is the public, non-secret build contract. A delivery build supplies
+`androidDeliveryVersionCode` and `androidDeliveryVersionName` together and activates the release
+signing configuration. The upload keystore path, its passwords, and its alias arrive through the
+four standard `ANDROID_DELIVERY_*` environment variables. They never belong in this repository.
+
+The shared delivery service resolves the app-scoped credentials from Infisical, builds in the
+shared Android container, and publishes only to the `internal` track. Use its canonical operator
+runbook at `/data/Useful/ai/truenas/android-delivery/README.md`; do not assemble or pass signing
+secrets on a command line.
 
 ## Galaxy Z Flip FlexWindow
 
@@ -74,14 +87,17 @@ and the widget's pure state mapping. See ADR-014 for what they do and don't cove
 On first run, the app asks for a server URL, username, and password, and validates them with a
 real login call.
 
-- **A LAN stack, e.g. `http://192.168.1.54:8892`:** works out of the box in a **debug** build only
-  — `app/src/debug/res/xml/network_security_config.xml` permits cleartext HTTP there. A release
-  build enforces HTTPS everywhere (`app/src/main/res/xml/network_security_config.xml`).
+- **The production LAN hostname, `https://healthvault.lan.ikoro.in`:** is the supported target for
+  release builds. The LAN proxy presents a publicly trusted certificate and routes the hostname to
+  HealthVault without a Cloudflare Access challenge. It is reachable only from the trusted LAN.
+- **A direct LAN stack, e.g. `http://192.168.1.54:8892`:** works out of the box in a **debug** build
+  only — `app/src/debug/res/xml/network_security_config.xml` permits cleartext HTTP there. A
+  release build enforces HTTPS everywhere (`app/src/main/res/xml/network_security_config.xml`).
 - **A public hostname behind Cloudflare Access (e.g. `https://healthvault.ikoro.in`):** is not a
   supported target for this version of the app. Cloudflare Access must continue to gate every
   public `ikoro.in` route, while this cookie-only client has no Access service-token flow. An Access
-  challenge is reported distinctly rather than as invalid credentials. **Use the LAN address; do
-  not add a Bypass policy for `/api/*`.**
+  challenge is reported distinctly rather than as invalid credentials. **Use the LAN HTTPS
+  hostname; do not add a Bypass policy for `/api/*`.**
 
 ## What this app deliberately does not do
 

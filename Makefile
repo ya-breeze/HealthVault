@@ -57,8 +57,8 @@ lint-android:
 		cd $(ROOT_DIR)android && ./gradlew lintDebug; \
 	fi
 
-# Builds the debug APK the owner sideloads by hand — there is no release
-# signing config and no automated device coverage (see android/README.md).
+# Builds the debug APK the owner can still sideload by hand. Signed Internal
+# delivery uses android-delivery.json and the shared local delivery service.
 android-apk:
 	@cd $(ROOT_DIR)android && ./gradlew assembleDebug
 
