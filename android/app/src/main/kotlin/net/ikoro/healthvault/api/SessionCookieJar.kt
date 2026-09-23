@@ -68,16 +68,16 @@ class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
 
     private val lock = Any()
     private val requestGeneration = ThreadLocal<Long>()
-    private val cookies: MutableList<Cookie> =
+    private val storedCookies: MutableList<Cookie> =
         secureStore.loadCookies().map { it.toCookie() }.toMutableList()
 
-    override fun saveFromResponse(url: HttpUrl, newCookies: List<Cookie>) {
-        if (newCookies.isEmpty()) return
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        if (cookies.isEmpty()) return
         synchronized(lock) {
             val generation = requestGeneration.get()
             if (generation != null && !secureStore.isCurrentSession(generation)) return
-            val updated = cookies.toMutableList()
-            for (cookie in newCookies) {
+            val updated = storedCookies.toMutableList()
+            for (cookie in cookies) {
                 updated.removeAll { existing ->
                     existing.name == cookie.name && existing.domain == cookie.domain && existing.path == cookie.path
                 }
@@ -90,8 +90,8 @@ class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
                 }
             }
             if (secureStore.saveCookies(updated.map { it.toPersisted() }, generation)) {
-                cookies.clear()
-                cookies.addAll(updated)
+                storedCookies.clear()
+                storedCookies.addAll(updated)
             }
         }
     }
@@ -101,16 +101,16 @@ class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
             val generation = requestGeneration.get()
             if (generation != null && !secureStore.isCurrentSession(generation)) return emptyList()
             val now = System.currentTimeMillis()
-            val hadExpired = cookies.removeAll { it.expiresAt <= now }
+            val hadExpired = storedCookies.removeAll { it.expiresAt <= now }
             if (hadExpired) persistLocked(generation)
-            return cookies.filter { it.matches(url) }
+            return storedCookies.filter { it.matches(url) }
         }
     }
 
     /** Used by sign-out: drops every cookie, including the refresh token. */
     fun clear() {
         synchronized(lock) {
-            cookies.clear()
+            storedCookies.clear()
             persistLocked()
         }
     }
@@ -123,7 +123,7 @@ class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
      */
     fun clearInMemory() {
         synchronized(lock) {
-            cookies.clear()
+            storedCookies.clear()
         }
     }
 
@@ -150,6 +150,6 @@ class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
     }
 
     private fun persistLocked(expectedSessionGeneration: Long? = null) {
-        secureStore.saveCookies(cookies.map { it.toPersisted() }, expectedSessionGeneration)
+        secureStore.saveCookies(storedCookies.map { it.toPersisted() }, expectedSessionGeneration)
     }
 }

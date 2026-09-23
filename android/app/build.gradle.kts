@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,18 +7,67 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
+    }
+}
+
+val deliveryVersionCodeText = providers.gradleProperty("androidDeliveryVersionCode").orNull
+val deliveryVersionName = providers.gradleProperty("androidDeliveryVersionName").orNull
+val deliveryRequested = deliveryVersionCodeText != null || deliveryVersionName != null
+
+val deliveryVersionCode = if (deliveryRequested) {
+    require(!deliveryVersionCodeText.isNullOrBlank() && !deliveryVersionName.isNullOrBlank()) {
+        "androidDeliveryVersionCode and androidDeliveryVersionName must be provided together"
+    }
+    deliveryVersionCodeText.toIntOrNull()?.takeIf { it > 0 }
+        ?: error("androidDeliveryVersionCode must be a positive integer")
+} else {
+    null
+}
+
+fun requiredDeliveryEnvironment(name: String): String =
+    providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+        ?: error("$name is required for an Android delivery build")
+
+val deliveryKeystoreFile = if (deliveryRequested) {
+    file(requiredDeliveryEnvironment("ANDROID_DELIVERY_KEYSTORE_FILE")).also {
+        require(it.isFile) { "ANDROID_DELIVERY_KEYSTORE_FILE must name an existing file" }
+    }
+} else {
+    null
+}
+val deliveryKeystorePassword =
+    if (deliveryRequested) requiredDeliveryEnvironment("ANDROID_DELIVERY_KEYSTORE_PASSWORD") else null
+val deliveryKeyAlias =
+    if (deliveryRequested) requiredDeliveryEnvironment("ANDROID_DELIVERY_KEY_ALIAS") else null
+val deliveryKeyPassword =
+    if (deliveryRequested) requiredDeliveryEnvironment("ANDROID_DELIVERY_KEY_PASSWORD") else null
+
 android {
     namespace = "net.ikoro.healthvault"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "net.ikoro.healthvault"
         minSdk = 26 // Glance's SizeMode.Responsive and the widget receiver APIs used here require 26+.
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 36
+        versionCode = deliveryVersionCode ?: 1
+        versionName = deliveryVersionName ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (deliveryRequested) {
+            create("deliveryRelease") {
+                storeFile = deliveryKeystoreFile
+                storePassword = deliveryKeystorePassword
+                keyAlias = deliveryKeyAlias
+                keyPassword = deliveryKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -29,6 +80,9 @@ android {
         }
         release {
             isMinifyEnabled = false
+            if (deliveryRequested) {
+                signingConfig = signingConfigs.getByName("deliveryRelease")
+            }
         }
     }
 
@@ -36,10 +90,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
     }

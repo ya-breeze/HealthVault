@@ -3,6 +3,12 @@
 ## Status
 Accepted
 
+> **Update (Idea 735, 2026-09-22):** The shared local `android-build` container now compiles,
+> tests, lints, and builds signed App Bundles for this repository. Google Play Internal Testing is
+> the supported release-delivery path; manual debug APK sideloading remains available. The build
+> still has no automated device coverage. See `android-delivery.json` and
+> `docs/specs/idea-735-android-play-delivery.md`.
+
 ## Context and Problem Statement
 
 `GET /api/summary/today` (`backend/pkg/server/summary_today.go`) and the login hardening in

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "package_name": "net.ikoro.healthvault",
+  "android_project": "android",
+  "gradle_task": ":app:bundleRelease",
+  "bundle_path": "app/build/outputs/bundle/release/app-release.aab",
+  "version_code_property": "androidDeliveryVersionCode",
+  "version_name_property": "androidDeliveryVersionName",
+  "version_code_base": 1000000,
+  "java_version": "17",
+  "release_notes_language": "en-US"
+}
