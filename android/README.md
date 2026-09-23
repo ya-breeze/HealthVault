@@ -12,7 +12,7 @@ delivery service to build a signed App Bundle and publish it only to Google Play
 ## Prerequisites
 
 - **Android Studio** (any recent version) or a standalone Android SDK + JDK 17.
-- **Android SDK Platform 34**, plus build-tools matching `compileSdk = 34` in
+- **Android SDK Platform 36**, plus build-tools matching `compileSdk = 36` in
   `app/build.gradle.kts`.
 - No emulator is required to build the debug APK or run the unit tests — this project has no
   instrumented (device/emulator) tests, and none are planned (see ADR-014).

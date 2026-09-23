@@ -1,8 +1,16 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
+    }
 }
 
 val deliveryVersionCodeText = providers.gradleProperty("androidDeliveryVersionCode").orNull
@@ -39,12 +47,12 @@ val deliveryKeyPassword =
 
 android {
     namespace = "net.ikoro.healthvault"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "net.ikoro.healthvault"
         minSdk = 26 // Glance's SizeMode.Responsive and the widget receiver APIs used here require 26+.
-        targetSdk = 34
+        targetSdk = 36
         versionCode = deliveryVersionCode ?: 1
         versionName = deliveryVersionName ?: "1.0"
 
@@ -82,10 +90,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
     }

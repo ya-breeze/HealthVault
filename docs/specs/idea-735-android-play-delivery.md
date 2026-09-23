@@ -66,3 +66,19 @@ build Android is now stale; the original accepted decision stays unchanged.
 - [x] Deploy the branch to `hcw-wip` without displacing another active Idea.
 - [x] Wait for stack readiness and run the repository E2E suite against it.
 - [x] Mark completed.
+
+### Task 4: Meet the current Google Play target API requirement
+
+The first live readiness upload on 2026-09-23 proved the signing, service-account access, and
+bundle build path, then Google Play rejected the bundle because it targeted API 34. Update the
+app to compile and target API 36, with mutually supported Gradle, Android Gradle plugin, and
+Kotlin plugin versions. Preserve `minSdk = 26`. Apply safe-drawing insets to both activity screens
+because targeting API 35 or newer enforces edge-to-edge system bars. Resolve build-script
+deprecations and override-parameter warnings exposed by the Kotlin upgrade without changing
+runtime behavior. Re-run Android unit tests, lint, the Review Gate, and the non-publishing Play
+readiness check.
+
+- [x] Upgrade the Android SDK and mutually supported build plugins.
+- [x] Keep setup and today content outside enforced system-bar insets.
+- [ ] Re-run Android validation and the non-publishing Google Play readiness check.
+- [ ] Mark completed.
