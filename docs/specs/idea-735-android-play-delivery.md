@@ -80,5 +80,5 @@ readiness check.
 
 - [x] Upgrade the Android SDK and mutually supported build plugins.
 - [x] Keep setup and today content outside enforced system-bar insets.
-- [ ] Re-run Android validation and the non-publishing Google Play readiness check.
-- [ ] Mark completed.
+- [x] Re-run Android validation and the non-publishing Google Play readiness check.
+- [x] Mark completed.
