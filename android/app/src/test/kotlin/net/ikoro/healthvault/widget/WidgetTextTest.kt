@@ -82,7 +82,7 @@ class WidgetTextTest {
         assertTrue(source.contains("DayNightColorProvider("))
         listOf("0xFF2E7D32", "0xFF69D68B", "0xFF8A5A00", "0xFFF3C75D", "0xFFD93025", "0xFFFF453A")
             .forEach { assertTrue("missing theme-aware pace color $it", source.contains(it)) }
-        assertTrue(source.contains("accessibleCardModifier.clickable(actionRunCallback<LogFoodAction>())"))
+        assertTrue(source.contains("accessibleCardModifier.clickable(actionStartActivity(widgetLogFoodIntent(resourceContext)))"))
         assertTrue(source.contains("accessibleCardModifier.clickable(actionStartActivity("))
         assertTrue(source.contains("semantics {"))
         assertTrue(!source.contains("R.mipmap.ic_launcher"))
@@ -259,7 +259,7 @@ class WidgetTextTest {
         assertTrue(provider.contains("android:previewLayout=\"@layout/flex_window_widget_preview\""))
         assertTrue(samsungProvider.contains("display=\"sub_screen\""))
         assertTrue(source.contains("class FlexWindowSummaryWidget"))
-        assertTrue(source.contains("actionRunCallback<FlexWindowLogFoodAction>()"))
+        assertTrue(source.contains("activityOptions = flexWindowLogFoodActivityOptions()"))
         assertTrue(source.contains("private fun FlexWindowMacroRow"))
         assertTrue(source.contains("WidgetHeader(resourceContext, isStale, markSize = 24"))
         assertTrue(message.contains("WidgetBrandMark(size = 28)"))
@@ -270,8 +270,7 @@ class WidgetTextTest {
         assertTrue(preview.contains("android:src=\"@drawable/healthvault_mark\""))
         assertTrue(preview.contains("android:text=\"@string/widget_preview_target\""))
         val homeSource = summaryWidgetSource().readText()
-        assertTrue(homeSource.contains("launchLogFood(context, MAIN_DISPLAY_ID)"))
-        assertTrue(homeSource.contains("setLaunchDisplayId(displayId)"))
+        assertTrue(homeSource.contains("setLaunchDisplayId(MAIN_DISPLAY_ID)"))
     }
 
     @Test

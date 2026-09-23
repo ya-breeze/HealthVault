@@ -4,9 +4,7 @@ import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.net.Uri
 import android.os.Build
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
@@ -355,7 +353,7 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
 
     val interactiveCardModifier = when (widgetTapTarget(state)) {
         WidgetTapTarget.LOG_FOOD ->
-            accessibleCardModifier.clickable(actionRunCallback<LogFoodAction>())
+            accessibleCardModifier.clickable(actionStartActivity(widgetLogFoodIntent(resourceContext)))
         WidgetTapTarget.OPEN_APP ->
             // The reified actionStartActivity<T>() lives in androidx.glance.action; this file
             // imports androidx.glance.appwidget.action, whose actionStartActivity only takes an
@@ -970,40 +968,16 @@ internal fun localizedResourceContext(context: Context, displayLanguage: String?
     return context.createConfigurationContext(configuration)
 }
 
-/**
- * Always derives the Log food URL from the stored server URL, never from an
- * intent extra, so no other app can drive this to an arbitrary page. Mirrors
- * TodayScreen's openLogFood.
- */
 private const val MAIN_DISPLAY_ID = 0
 
-private fun launchLogFood(context: Context, displayId: Int? = null) {
-    val app = context.applicationContext as HealthVaultApp
-    val serverUrl = app.secureStore.serverUrl ?: return
-    val intent = CustomTabsIntent.Builder().build().intent.apply {
-        data = Uri.parse(serverUrl.trimEnd('/') + "/food/upload/")
+internal fun widgetLogFoodIntent(context: Context): Intent =
+    Intent(context, WidgetLogFoodActivity::class.java).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    if (displayId == null) {
-        context.startActivity(intent)
-    } else {
-        val options = ActivityOptions.makeBasic().apply { setLaunchDisplayId(displayId) }
-        context.startActivity(intent, options.toBundle())
-    }
-}
-
-class LogFoodAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        launchLogFood(context)
-    }
-}
 
 /** FlexWindow food entry belongs on the unfolded main display, not the cover display. */
-class FlexWindowLogFoodAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        launchLogFood(context, MAIN_DISPLAY_ID)
-    }
-}
+internal fun flexWindowLogFoodActivityOptions() =
+    ActivityOptions.makeBasic().apply { setLaunchDisplayId(MAIN_DISPLAY_ID) }.toBundle()
 
 /** The widget's own refresh affordance: enqueues an immediate one-off update (work/RefreshScheduler.kt). */
 class RefreshAction : ActionCallback {
