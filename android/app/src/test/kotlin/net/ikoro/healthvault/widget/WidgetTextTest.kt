@@ -150,8 +150,12 @@ class WidgetTextTest {
     fun summaryWidget_platformBucketMatchingKeepsExistingCellsOnTheirLayouts() {
         // Mirrors RemoteViews on Android 12+: among the declared sizes that fit the
         // cell, the one with the smallest squared distance wins; none fit -> smallest.
+        // A bucket fits when ceil(cell) + 1 > bucket, the platform's rounding tolerance.
+        fun fits(bucket: Float, cell: Float) = kotlin.math.ceil(cell) + 1 > bucket
         fun platformBucket(cell: DpSize): DpSize {
-            val fitting = SUMMARY_WIDGET_SIZES.filter { it.width <= cell.width && it.height <= cell.height }
+            val fitting = SUMMARY_WIDGET_SIZES.filter {
+                fits(it.width.value, cell.width.value) && fits(it.height.value, cell.height.value)
+            }
             if (fitting.isEmpty()) return SUMMARY_WIDGET_SIZES.minBy { it.width.value * it.height.value }
             return fitting.minBy {
                 val dw = cell.width.value - it.width.value
@@ -167,6 +171,15 @@ class WidgetTextTest {
         // A wide-but-short 2x2 keeps the existing 2x2 composition.
         assertEquals(SummaryWidgetLayout.COMPACT, layoutFor(156, 110))
         assertEquals(SummaryWidgetLayout.COMPACT, layoutFor(156, 150))
+        // Fractional cells within the platform's 1dp tolerance still reach the roomy buckets.
+        assertEquals(
+            SummaryWidgetLayout.ROOMY_COMPACT,
+            summaryWidgetLayout(platformBucket(DpSize(149.2f.dp, 157.2f.dp))),
+        )
+        assertEquals(
+            SummaryWidgetLayout.ROOMY_SHORT,
+            summaryWidgetLayout(platformBucket(DpSize(139.4f.dp, 67.4f.dp))),
+        )
         // Minimum cells keep their layouts.
         assertEquals(SummaryWidgetLayout.SHORT, layoutFor(110, 56))
         assertEquals(SummaryWidgetLayout.COMPACT, layoutFor(110, 110))

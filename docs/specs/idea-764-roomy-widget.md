@@ -42,7 +42,8 @@ sit outside the flexible part of each row so that, if a larger system font makes
 target text clips before the glyph. Both compositions fill their minimum bucket at the default font
 scale, so from font scale 1.1 the roomy breakpoints render the existing `SHORT` and `COMPACT`
 compositions, which already handle large text. The 2x2 hero is 36sp rather than the mockup's 38sp,
-and the row gaps are tighter, for the same reason.
+its macro rows sit 2dp apart, and the 2x1 macro rows have no gap between them, for the same
+reason.
 
 Excluded: the FlexWindow widget, the 4x2 layout, the picker preview, and scaling fonts continuously
 with the real cell size. The picker preview stays representative of the 2x1 minimum.
@@ -63,6 +64,7 @@ fallback; visual acceptance needs the owner to sideload the debug APK on the Sam
 - [x] Add unit tests for the new breakpoint boundaries, their precedence against `WIDE_SHORT`/`WIDE`, and the large-font fallback
 - [x] Add a 150x110dp bucket mapped to `COMPACT` so distance-based matching keeps wide-but-short 2x2 cells on their layout
 - [x] Add a unit test that mirrors the platform's closest-fitting-bucket rule for Samsung, minimum, and wide cells
+- [x] Mirror the platform's 1dp fit tolerance in that test and cover a fractional boundary cell
 - [x] Mark completed
 
 ### Task 2: Variant B and G compositions
