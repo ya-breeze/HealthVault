@@ -66,7 +66,24 @@ private val WIDE_SIZE = DpSize(230.dp, 110.dp)
 // roomy launcher (Samsung 2x1 is about 156x72dp, 2x2 about 156x167dp) needs its
 // own buckets or it gets the minimum layout stretched over a bigger card.
 private val ROOMY_SHORT_SIZE = DpSize(140.dp, 68.dp)
-private val ROOMY_COMPACT_SIZE = DpSize(150.dp, 150.dp)
+private val ROOMY_COMPACT_SIZE = DpSize(150.dp, 158.dp)
+
+// The platform picks the fitting bucket closest to the real cell, not the
+// largest one. Without this, a ~156x110dp cell sits closer to ROOMY_SHORT than
+// to COMPACT_SIZE and would lose its 2x2 composition.
+private val COMPACT_WIDE_SIZE = DpSize(150.dp, 110.dp)
+
+internal val SUMMARY_WIDGET_SIZES = setOf(
+    MICRO_SIZE,
+    SHORT_SIZE,
+    WIDE_SHORT_SIZE,
+    TALL_NARROW_SIZE,
+    COMPACT_SIZE,
+    COMPACT_WIDE_SIZE,
+    WIDE_SIZE,
+    ROOMY_SHORT_SIZE,
+    ROOMY_COMPACT_SIZE,
+)
 
 private val PACE_GOOD: ColorProvider = DayNightColorProvider(
     day = Color(0xFF2E7D32),
@@ -110,6 +127,8 @@ internal fun summaryWidgetLayout(size: DpSize): SummaryWidgetLayout = when {
 
 internal fun useReducedWidgetContent(fontScale: Float, layout: SummaryWidgetLayout): Boolean = when (layout) {
     SummaryWidgetLayout.MICRO -> fontScale >= 1.1f
+    // The roomy compositions fill their minimum bucket at the default scale.
+    SummaryWidgetLayout.ROOMY_SHORT, SummaryWidgetLayout.ROOMY_COMPACT -> fontScale >= 1.1f
     else -> fontScale >= 1.3f
 }
 
@@ -313,18 +332,7 @@ private fun androidx.glance.layout.RowScope.MiniMacroRail(
  */
 class SummaryWidget : GlanceAppWidget() {
 
-    override val sizeMode = SizeMode.Responsive(
-        setOf(
-            MICRO_SIZE,
-            SHORT_SIZE,
-            WIDE_SHORT_SIZE,
-            TALL_NARROW_SIZE,
-            COMPACT_SIZE,
-            WIDE_SIZE,
-            ROOMY_SHORT_SIZE,
-            ROOMY_COMPACT_SIZE,
-        ),
-    )
+    override val sizeMode = SizeMode.Responsive(SUMMARY_WIDGET_SIZES)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val app = context.applicationContext as HealthVaultApp
@@ -387,7 +395,7 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
         SummaryWidgetLayout.TALL -> 4.dp
         SummaryWidgetLayout.COMPACT -> 10.dp
         SummaryWidgetLayout.WIDE -> 5.dp
-        SummaryWidgetLayout.ROOMY_SHORT -> if (useReducedContent) 4.dp else 5.dp
+        SummaryWidgetLayout.ROOMY_SHORT -> 4.dp
         SummaryWidgetLayout.ROOMY_COMPACT -> 10.dp
     }
 
@@ -903,7 +911,7 @@ private fun RoomyCompactSummary(
             consumed,
             isStale,
             useReducedContent = true,
-            valueSize = 38.sp,
+            valueSize = 36.sp,
             unitSize = 12.sp,
         )
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -927,14 +935,14 @@ private fun RoomyCompactSummary(
             }
         }
         if (target != null) {
-            Spacer(modifier = GlanceModifier.height(5.dp))
+            Spacer(modifier = GlanceModifier.height(4.dp))
             PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 8)
         }
         Spacer(modifier = GlanceModifier.defaultWeight())
         RoomyMacroRow(resourceContext, summary, R.string.widget_protein_short, summary.proteinGramsConsumed, macroTarget?.proteinGrams ?: 0)
-        Spacer(modifier = GlanceModifier.height(4.dp))
+        Spacer(modifier = GlanceModifier.height(2.dp))
         RoomyMacroRow(resourceContext, summary, R.string.widget_carbs_short, summary.carbsGramsConsumed, macroTarget?.carbsGrams ?: 0)
-        Spacer(modifier = GlanceModifier.height(4.dp))
+        Spacer(modifier = GlanceModifier.height(2.dp))
         RoomyMacroRow(resourceContext, summary, R.string.widget_fat_short, summary.fatGramsConsumed, macroTarget?.fatGrams ?: 0)
     }
 }
@@ -1021,9 +1029,7 @@ private fun RoomyShortSummary(
         Spacer(modifier = GlanceModifier.width(9.dp))
         Column(modifier = GlanceModifier.defaultWeight()) {
             RoomyShortMacroRow(resourceContext, summary, R.string.widget_protein_short, summary.proteinGramsConsumed, macroTarget?.proteinGrams ?: 0)
-            Spacer(modifier = GlanceModifier.height(2.dp))
             RoomyShortMacroRow(resourceContext, summary, R.string.widget_carbs_short, summary.carbsGramsConsumed, macroTarget?.carbsGrams ?: 0)
-            Spacer(modifier = GlanceModifier.height(2.dp))
             RoomyShortMacroRow(resourceContext, summary, R.string.widget_fat_short, summary.fatGramsConsumed, macroTarget?.fatGrams ?: 0)
         }
     }

@@ -61,9 +61,9 @@ fallback; visual acceptance needs the owner to sideload the debug APK on the Sam
 - [x] Declare `ROOMY_SHORT` (140x68dp) and `ROOMY_COMPACT` (150x158dp) in the responsive size set and in `summaryWidgetLayout`
 - [x] Render the existing `SHORT`/`COMPACT` compositions for the roomy breakpoints at font scale 1.1 and above
 - [x] Add unit tests for the new breakpoint boundaries, their precedence against `WIDE_SHORT`/`WIDE`, and the large-font fallback
-- [ ] Add a 150x110dp bucket mapped to `COMPACT` so distance-based matching keeps wide-but-short 2x2 cells on their layout
-- [ ] Add a unit test that mirrors the platform's closest-fitting-bucket rule for Samsung, minimum, and wide cells
-- [ ] Mark completed
+- [x] Add a 150x110dp bucket mapped to `COMPACT` so distance-based matching keeps wide-but-short 2x2 cells on their layout
+- [x] Add a unit test that mirrors the platform's closest-fitting-bucket rule for Samsung, minimum, and wide cells
+- [x] Mark completed
 
 ### Task 2: Variant B and G compositions
 
