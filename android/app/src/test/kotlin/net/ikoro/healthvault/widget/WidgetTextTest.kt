@@ -102,11 +102,19 @@ class WidgetTextTest {
     fun summaryWidget_selectsEveryDeclaredBreakpoint() {
         val source = summaryWidgetSource().readText()
 
-        assertTrue(
-            source.contains(
-                "setOf(MICRO_SIZE, SHORT_SIZE, WIDE_SHORT_SIZE, TALL_NARROW_SIZE, COMPACT_SIZE, WIDE_SIZE)",
-            ),
-        )
+        val declared = source.substringAfter("SizeMode.Responsive(").substringBefore(")\n")
+        listOf(
+            "MICRO_SIZE",
+            "SHORT_SIZE",
+            "WIDE_SHORT_SIZE",
+            "TALL_NARROW_SIZE",
+            "COMPACT_SIZE",
+            "WIDE_SIZE",
+            "ROOMY_SHORT_SIZE",
+            "ROOMY_COMPACT_SIZE",
+        ).forEach { name -> assertTrue(name, Regex("""\b$name\b""").containsMatchIn(declared)) }
+        assertTrue(source.contains("DpSize(140.dp, 68.dp)"))
+        assertTrue(source.contains("DpSize(150.dp, 150.dp)"))
         assertEquals(SummaryWidgetLayout.MICRO, summaryWidgetLayout(DpSize(48.dp, 48.dp)))
         assertEquals(SummaryWidgetLayout.SHORT, summaryWidgetLayout(DpSize(109.dp, 48.dp)))
         assertEquals(SummaryWidgetLayout.WIDE_SHORT, summaryWidgetLayout(DpSize(230.dp, 48.dp)))
@@ -117,6 +125,39 @@ class WidgetTextTest {
         assertEquals(SummaryWidgetLayout.TALL, summaryWidgetLayout(DpSize(109.dp, 110.dp)))
         assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(229.dp, 110.dp)))
         assertEquals(SummaryWidgetLayout.WIDE_SHORT, summaryWidgetLayout(DpSize(230.dp, 109.dp)))
+    }
+
+    @Test
+    fun summaryWidget_givesRoomyLauncherCellsTheirOwnLayouts() {
+        // Samsung One UI: 2x1 is about 156x72dp, 2x2 about 156x167dp.
+        assertEquals(SummaryWidgetLayout.ROOMY_SHORT, summaryWidgetLayout(DpSize(140.dp, 68.dp)))
+        assertEquals(SummaryWidgetLayout.ROOMY_SHORT, summaryWidgetLayout(DpSize(156.dp, 72.dp)))
+        assertEquals(SummaryWidgetLayout.SHORT, summaryWidgetLayout(DpSize(139.dp, 72.dp)))
+        assertEquals(SummaryWidgetLayout.SHORT, summaryWidgetLayout(DpSize(156.dp, 67.dp)))
+        assertEquals(SummaryWidgetLayout.ROOMY_COMPACT, summaryWidgetLayout(DpSize(150.dp, 150.dp)))
+        assertEquals(SummaryWidgetLayout.ROOMY_COMPACT, summaryWidgetLayout(DpSize(156.dp, 167.dp)))
+        assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(149.dp, 167.dp)))
+        assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(156.dp, 149.dp)))
+        // Wider cells keep their existing layouts.
+        assertEquals(SummaryWidgetLayout.WIDE_SHORT, summaryWidgetLayout(DpSize(230.dp, 72.dp)))
+        assertEquals(SummaryWidgetLayout.WIDE, summaryWidgetLayout(DpSize(230.dp, 167.dp)))
+    }
+
+    @Test
+    fun summaryWidget_roomyLayoutsFallBackToMinimumCompositionsForLargeText() {
+        val body = summaryWidgetSource().readText()
+            .substringAfter("private fun SummaryBody(").substringBefore("\n@Composable\nprivate fun")
+        assertTrue(!useReducedWidgetContent(1.29f, SummaryWidgetLayout.ROOMY_SHORT))
+        assertTrue(useReducedWidgetContent(1.3f, SummaryWidgetLayout.ROOMY_SHORT))
+        assertTrue(useReducedWidgetContent(1.3f, SummaryWidgetLayout.ROOMY_COMPACT))
+        assertTrue(
+            Regex("""ROOMY_SHORT -> if \(useReducedContent\) \{\s*ShortSummary\(""").containsMatchIn(body),
+        )
+        assertTrue(
+            Regex("""ROOMY_COMPACT -> if \(useReducedContent\) \{\s*CompactSummary\(""").containsMatchIn(body),
+        )
+        assertTrue(body.contains("RoomyShortSummary(resourceContext, summary, isStale)"))
+        assertTrue(body.contains("RoomyCompactSummary(resourceContext, summary, isStale)"))
     }
 
     @Test

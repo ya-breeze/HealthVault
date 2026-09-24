@@ -18,7 +18,7 @@ and variant **G** for 2x1.
 
 ## How
 
-Add two breakpoints, `ROOMY_SHORT` at 140x64dp and `ROOMY_COMPACT` at 150x150dp, to the existing
+Add two breakpoints, `ROOMY_SHORT` at 140x68dp and `ROOMY_COMPACT` at 150x150dp, to the existing
 responsive set. Glance picks the largest declared bucket that fits, so a Samsung 2x1 now lands on
 `ROOMY_SHORT` and a Samsung 2x2 on `ROOMY_COMPACT`, while launchers with smaller cells keep today's
 `SHORT` and `COMPACT` layouts unchanged. `WIDE_SHORT` (230x48) and `WIDE` (230x110) still win for
@@ -52,14 +52,14 @@ fallback; visual acceptance needs the owner to sideload the debug APK on the Sam
 
 ### Task 1: Roomy breakpoints
 
-- [ ] Declare `ROOMY_SHORT` (140x64dp) and `ROOMY_COMPACT` (150x150dp) in the responsive size set and in `summaryWidgetLayout`
-- [ ] Render the existing `SHORT`/`COMPACT` compositions for the roomy breakpoints at font scale 1.3 and above
-- [ ] Add unit tests for the new breakpoint boundaries, their precedence against `WIDE_SHORT`/`WIDE`, and the large-font fallback
-- [ ] Mark completed
+- [x] Declare `ROOMY_SHORT` (140x68dp) and `ROOMY_COMPACT` (150x150dp) in the responsive size set and in `summaryWidgetLayout`
+- [x] Render the existing `SHORT`/`COMPACT` compositions for the roomy breakpoints at font scale 1.3 and above
+- [x] Add unit tests for the new breakpoint boundaries, their precedence against `WIDE_SHORT`/`WIDE`, and the large-font fallback
+- [x] Mark completed
 
 ### Task 2: Variant B and G compositions
 
-- [ ] Implement the 2x2 variant B composition with the missing-target and stale states
-- [ ] Implement the 2x1 variant G composition with the missing-target and stale states
-- [ ] Add the "of N kcal" and "of N" strings in English and Russian
-- [ ] Mark completed
+- [x] Implement the 2x2 variant B composition with the missing-target and stale states
+- [x] Implement the 2x1 variant G composition with the missing-target and stale states
+- [x] Add the "of N kcal" and "of N" strings in English and Russian
+- [x] Mark completed
