@@ -26,9 +26,9 @@ No public hostname, Access rule, or production Compose ingress changes in this w
 - `make lint`
 
 ### Task 1: Add private SQLite-backed readiness and container health semantics
-- [ ] Add the backend readiness handler and unit tests for a successful schema query, a query error, a missing database handle, a bounded timeout, and unauthenticated access.
-- [ ] Add an exact-match Nginx readiness location restricted to loopback clients.
-- [ ] Add backend and Nginx healthchecks with explicit curl GET behavior, container-local addresses, bounded timeout/retry/start-period values, and Nginx depending on backend `service_healthy`.
-- [ ] Add the portless, host-data-free synthetic lab Compose file and its one-shot readiness/login smoke service, using only lab credentials and a named volume.
-- [ ] Run `make test` and `make lint`; inspect the final Compose and Nginx configuration for public-route leakage. Record the Docker-render/build/smoke gap if Docker remains unavailable.
-- [ ] Mark completed
+- [x] Add the backend readiness handler and unit tests for a successful schema query, a query error, a missing database handle, a bounded timeout, and unauthenticated access.
+- [x] Add an exact-match Nginx readiness location restricted to loopback clients.
+- [x] Add backend and Nginx healthchecks with explicit curl GET behavior, container-local addresses, bounded timeout/retry/start-period values, and Nginx depending on backend `service_healthy`.
+- [x] Add the portless, host-data-free synthetic lab Compose file and its one-shot readiness/login smoke service, using only lab credentials and a named volume.
+- [x] Run `make test` and `make lint`; inspect the final Compose and Nginx configuration for public-route leakage. Record the Docker-render/build/smoke gap if Docker remains unavailable.
+- [x] Mark completed

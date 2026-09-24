@@ -89,6 +89,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 		WithOFF(offIndex)
 
 	r := mux.NewRouter()
+	registerReadinessRoute(r, storage.DB())
 
 	// Webhook (unauthenticated) — implemented in Task 5
 	r.HandleFunc("/webhook/{username}", webhookHandler(storage)).Methods("POST")

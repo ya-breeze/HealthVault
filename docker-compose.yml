@@ -31,6 +31,12 @@ services:
       - ${HCW_DATA_PATH:?HCW_DATA_PATH must be set}:/data
     networks:
       - hcw-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8080/internal/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
 
   nginx:
     build:
@@ -41,9 +47,16 @@ services:
       - "${HCW_HTTP_PORT:?HCW_HTTP_PORT must be set}:80"
       - "${HCW_HTTPS_PORT:?HCW_HTTPS_PORT must be set}:443"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - hcw-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error --max-time 3 http://127.0.0.1:80/internal/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 networks:
   hcw-network:
