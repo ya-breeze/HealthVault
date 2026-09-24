@@ -62,6 +62,29 @@ private val TALL_NARROW_SIZE = DpSize(48.dp, 110.dp)
 private val COMPACT_SIZE = DpSize(110.dp, 110.dp)
 private val WIDE_SIZE = DpSize(230.dp, 110.dp)
 
+// Responsive hands the composition the matched bucket, not the real cell, so a
+// roomy launcher (Samsung 2x1 is about 156x72dp, 2x2 about 156x167dp) needs its
+// own buckets or it gets the minimum layout stretched over a bigger card.
+private val ROOMY_SHORT_SIZE = DpSize(140.dp, 68.dp)
+private val ROOMY_COMPACT_SIZE = DpSize(150.dp, 158.dp)
+
+// The platform picks the fitting bucket closest to the real cell, not the
+// largest one. Without this, a ~156x110dp cell sits closer to ROOMY_SHORT than
+// to COMPACT_SIZE and would lose its 2x2 composition.
+private val COMPACT_WIDE_SIZE = DpSize(150.dp, 110.dp)
+
+internal val SUMMARY_WIDGET_SIZES = setOf(
+    MICRO_SIZE,
+    SHORT_SIZE,
+    WIDE_SHORT_SIZE,
+    TALL_NARROW_SIZE,
+    COMPACT_SIZE,
+    COMPACT_WIDE_SIZE,
+    WIDE_SIZE,
+    ROOMY_SHORT_SIZE,
+    ROOMY_COMPACT_SIZE,
+)
+
 private val PACE_GOOD: ColorProvider = DayNightColorProvider(
     day = Color(0xFF2E7D32),
     night = Color(0xFF69D68B),
@@ -82,6 +105,8 @@ internal enum class SummaryWidgetLayout {
     TALL,
     COMPACT,
     WIDE,
+    ROOMY_SHORT,
+    ROOMY_COMPACT,
 }
 
 internal enum class WidgetTapTarget {
@@ -91,15 +116,19 @@ internal enum class WidgetTapTarget {
 
 internal fun summaryWidgetLayout(size: DpSize): SummaryWidgetLayout = when {
     size.width >= WIDE_SIZE.width && size.height >= WIDE_SIZE.height -> SummaryWidgetLayout.WIDE
+    size.width >= ROOMY_COMPACT_SIZE.width && size.height >= ROOMY_COMPACT_SIZE.height -> SummaryWidgetLayout.ROOMY_COMPACT
     size.width >= COMPACT_SIZE.width && size.height >= COMPACT_SIZE.height -> SummaryWidgetLayout.COMPACT
     size.height >= TALL_NARROW_SIZE.height -> SummaryWidgetLayout.TALL
     size.width >= WIDE_SHORT_SIZE.width -> SummaryWidgetLayout.WIDE_SHORT
+    size.width >= ROOMY_SHORT_SIZE.width && size.height >= ROOMY_SHORT_SIZE.height -> SummaryWidgetLayout.ROOMY_SHORT
     size.width >= SHORT_SIZE.width -> SummaryWidgetLayout.SHORT
     else -> SummaryWidgetLayout.MICRO
 }
 
 internal fun useReducedWidgetContent(fontScale: Float, layout: SummaryWidgetLayout): Boolean = when (layout) {
     SummaryWidgetLayout.MICRO -> fontScale >= 1.1f
+    // The roomy compositions fill their minimum bucket at the default scale.
+    SummaryWidgetLayout.ROOMY_SHORT, SummaryWidgetLayout.ROOMY_COMPACT -> fontScale >= 1.1f
     else -> fontScale >= 1.3f
 }
 
@@ -303,9 +332,7 @@ private fun androidx.glance.layout.RowScope.MiniMacroRail(
  */
 class SummaryWidget : GlanceAppWidget() {
 
-    override val sizeMode = SizeMode.Responsive(
-        setOf(MICRO_SIZE, SHORT_SIZE, WIDE_SHORT_SIZE, TALL_NARROW_SIZE, COMPACT_SIZE, WIDE_SIZE),
-    )
+    override val sizeMode = SizeMode.Responsive(SUMMARY_WIDGET_SIZES)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val app = context.applicationContext as HealthVaultApp
@@ -368,6 +395,8 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
         SummaryWidgetLayout.TALL -> 4.dp
         SummaryWidgetLayout.COMPACT -> 10.dp
         SummaryWidgetLayout.WIDE -> 5.dp
+        SummaryWidgetLayout.ROOMY_SHORT -> 4.dp
+        SummaryWidgetLayout.ROOMY_COMPACT -> 10.dp
     }
 
     Box(modifier = interactiveCardModifier.padding(contentPadding)) {
@@ -505,6 +534,17 @@ private fun SummaryBody(
         SummaryWidgetLayout.TALL -> TallSummary(resourceContext, summary, isStale, useReducedContent)
         SummaryWidgetLayout.COMPACT -> CompactSummary(resourceContext, summary, isStale, useReducedContent)
         SummaryWidgetLayout.WIDE -> WideSummary(resourceContext, summary, isStale, useReducedContent)
+        // Large text falls back to the proven minimum compositions rather than cropping.
+        SummaryWidgetLayout.ROOMY_SHORT -> if (useReducedContent) {
+            ShortSummary(resourceContext, summary, isStale, useReducedContent)
+        } else {
+            RoomyShortSummary(resourceContext, summary, isStale)
+        }
+        SummaryWidgetLayout.ROOMY_COMPACT -> if (useReducedContent) {
+            CompactSummary(resourceContext, summary, isStale, useReducedContent)
+        } else {
+            RoomyCompactSummary(resourceContext, summary, isStale)
+        }
     }
 }
 
@@ -849,6 +889,203 @@ private fun WideSummary(
             Spacer(modifier = GlanceModifier.defaultWeight())
         } else {
             MacroRows(resourceContext, summary)
+        }
+    }
+}
+
+/** 2x2 on roomy launchers: calorie hero, target and pace, then three macro rows (Idea 764, variant B). */
+@Composable
+private fun RoomyCompactSummary(
+    resourceContext: Context,
+    summary: TodaySummary,
+    isStale: Boolean,
+) {
+    val consumed = summary.caloriesConsumed.toInt()
+    val target = summary.target.takeIf { it.available && it.calories > 0 }
+    val caloriePace = target?.let { paceFor(summary, summary.caloriesConsumed, it.calories) }
+    val macroTarget = summary.target.takeIf { it.available }
+
+    Column(modifier = GlanceModifier.fillMaxSize()) {
+        CalorieValue(
+            resourceContext,
+            consumed,
+            isStale,
+            useReducedContent = true,
+            valueSize = 36.sp,
+            unitSize = 12.sp,
+        )
+        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            WidgetText(
+                text = target?.let { resourceContext.getString(R.string.widget_calorie_target, it.calories) }
+                    ?: resourceContext.getString(R.string.widget_calories_today),
+                color = GlanceTheme.colors.onSurfaceVariant,
+                fontSize = 12.sp,
+                maxLines = 1,
+            )
+            if (target != null) {
+                Spacer(modifier = GlanceModifier.defaultWeight())
+                WidgetText(
+                    text = caloriePace?.let { "${it.direction.glyph} ${it.actualPercent}%" }
+                        ?: "${progressPercent(consumed, target.calories)}%",
+                    color = caloriePace?.let { paceColor(it.level) } ?: GlanceTheme.colors.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (target != null) {
+            Spacer(modifier = GlanceModifier.height(4.dp))
+            PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 8)
+        }
+        Spacer(modifier = GlanceModifier.defaultWeight())
+        RoomyMacroRow(resourceContext, summary, R.string.widget_protein_short, summary.proteinGramsConsumed, macroTarget?.proteinGrams ?: 0)
+        Spacer(modifier = GlanceModifier.height(2.dp))
+        RoomyMacroRow(resourceContext, summary, R.string.widget_carbs_short, summary.carbsGramsConsumed, macroTarget?.carbsGrams ?: 0)
+        Spacer(modifier = GlanceModifier.height(2.dp))
+        RoomyMacroRow(resourceContext, summary, R.string.widget_fat_short, summary.fatGramsConsumed, macroTarget?.fatGrams ?: 0)
+    }
+}
+
+@Composable
+private fun RoomyMacroRow(
+    resourceContext: Context,
+    summary: TodaySummary,
+    labelRes: Int,
+    consumedGrams: Double,
+    targetGrams: Int,
+) {
+    val signal = paceFor(summary, consumedGrams, targetGrams)
+    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = GlanceModifier.width(14.dp)) {
+            WidgetText(
+                text = resourceContext.getString(labelRes),
+                color = GlanceTheme.colors.onSurfaceVariant,
+                fontSize = 12.sp,
+                maxLines = 1,
+            )
+        }
+        // The bar is the flexible part, so a wider value never pushes the glyph out.
+        if (targetGrams > 0) {
+            PaceProgress(summary, consumedGrams, targetGrams, height = 5, modifier = GlanceModifier.defaultWeight())
+        } else {
+            Spacer(modifier = GlanceModifier.defaultWeight())
+        }
+        Spacer(modifier = GlanceModifier.width(6.dp))
+        WidgetText(text = consumedGrams.toInt().toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        if (signal != null) {
+            Spacer(modifier = GlanceModifier.width(4.dp))
+            WidgetText(
+                text = signal.direction.glyph,
+                color = paceColor(signal.level),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** 2x1 on roomy launchers: calories on the left, three macro rows with targets on the right (Idea 764, variant G). */
+@Composable
+private fun RoomyShortSummary(
+    resourceContext: Context,
+    summary: TodaySummary,
+    isStale: Boolean,
+) {
+    val consumed = summary.caloriesConsumed.toInt()
+    val target = summary.target.takeIf { it.available && it.calories > 0 }
+    val macroTarget = summary.target.takeIf { it.available }
+
+    Row(
+        modifier = GlanceModifier.fillMaxSize().padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            WidgetText(
+                text = calorieHeroText(consumed, isStale, useReducedContent = true),
+                fontWeight = FontWeight.Bold,
+                fontSize = 26.sp,
+                maxLines = 1,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                WidgetText(
+                    text = target?.let { resourceContext.getString(R.string.widget_calorie_target_short, it.calories) }
+                        ?: resourceContext.getString(R.string.widget_calories_unit),
+                    color = GlanceTheme.colors.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                )
+                if (target != null) {
+                    Spacer(modifier = GlanceModifier.width(3.dp))
+                    PaceGlyph(summary, summary.caloriesConsumed, target.calories, fontSize = 11.sp)
+                }
+            }
+            if (target != null) {
+                Spacer(modifier = GlanceModifier.height(3.dp))
+                PaceProgress(summary, summary.caloriesConsumed, target.calories, height = 6)
+            }
+        }
+        Spacer(modifier = GlanceModifier.width(9.dp))
+        Column(modifier = GlanceModifier.defaultWeight()) {
+            RoomyShortMacroRow(resourceContext, summary, R.string.widget_protein_short, summary.proteinGramsConsumed, macroTarget?.proteinGrams ?: 0)
+            RoomyShortMacroRow(resourceContext, summary, R.string.widget_carbs_short, summary.carbsGramsConsumed, macroTarget?.carbsGrams ?: 0)
+            RoomyShortMacroRow(resourceContext, summary, R.string.widget_fat_short, summary.fatGramsConsumed, macroTarget?.fatGrams ?: 0)
+        }
+    }
+}
+
+@Composable
+private fun RoomyShortMacroRow(
+    resourceContext: Context,
+    summary: TodaySummary,
+    labelRes: Int,
+    consumedGrams: Double,
+    targetGrams: Int,
+) {
+    val signal = paceFor(summary, consumedGrams, targetGrams)
+    Column(modifier = GlanceModifier.fillMaxWidth()) {
+        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // Weighted so that, under a larger font, the target clips before the pace glyph does.
+            Box(modifier = GlanceModifier.defaultWeight()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    WidgetText(
+                        text = resourceContext.getString(labelRes),
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                    )
+                    Spacer(modifier = GlanceModifier.width(3.dp))
+                    WidgetText(
+                        text = consumedGrams.toInt().toString(),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                    if (targetGrams > 0) {
+                        WidgetText(
+                            text = "/$targetGrams",
+                            color = GlanceTheme.colors.onSurfaceVariant,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+            if (signal != null) {
+                Spacer(modifier = GlanceModifier.width(3.dp))
+                WidgetText(
+                    text = signal.direction.glyph,
+                    color = paceColor(signal.level),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (targetGrams > 0) {
+            Spacer(modifier = GlanceModifier.height(1.dp))
+            PaceProgress(summary, consumedGrams, targetGrams, height = 3)
         }
     }
 }

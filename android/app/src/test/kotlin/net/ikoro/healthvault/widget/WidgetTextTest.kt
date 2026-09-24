@@ -102,10 +102,20 @@ class WidgetTextTest {
     fun summaryWidget_selectsEveryDeclaredBreakpoint() {
         val source = summaryWidgetSource().readText()
 
-        assertTrue(
-            source.contains(
-                "setOf(MICRO_SIZE, SHORT_SIZE, WIDE_SHORT_SIZE, TALL_NARROW_SIZE, COMPACT_SIZE, WIDE_SIZE)",
+        assertTrue(source.contains("SizeMode.Responsive(SUMMARY_WIDGET_SIZES)"))
+        assertEquals(
+            setOf(
+                DpSize(48.dp, 48.dp),
+                DpSize(109.dp, 48.dp),
+                DpSize(230.dp, 48.dp),
+                DpSize(48.dp, 110.dp),
+                DpSize(110.dp, 110.dp),
+                DpSize(150.dp, 110.dp),
+                DpSize(230.dp, 110.dp),
+                DpSize(140.dp, 68.dp),
+                DpSize(150.dp, 158.dp),
             ),
+            SUMMARY_WIDGET_SIZES,
         )
         assertEquals(SummaryWidgetLayout.MICRO, summaryWidgetLayout(DpSize(48.dp, 48.dp)))
         assertEquals(SummaryWidgetLayout.SHORT, summaryWidgetLayout(DpSize(109.dp, 48.dp)))
@@ -117,6 +127,85 @@ class WidgetTextTest {
         assertEquals(SummaryWidgetLayout.TALL, summaryWidgetLayout(DpSize(109.dp, 110.dp)))
         assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(229.dp, 110.dp)))
         assertEquals(SummaryWidgetLayout.WIDE_SHORT, summaryWidgetLayout(DpSize(230.dp, 109.dp)))
+    }
+
+    @Test
+    fun summaryWidget_givesRoomyLauncherCellsTheirOwnLayouts() {
+        // Samsung One UI: 2x1 is about 156x72dp, 2x2 about 156x167dp.
+        assertEquals(SummaryWidgetLayout.ROOMY_SHORT, summaryWidgetLayout(DpSize(140.dp, 68.dp)))
+        assertEquals(SummaryWidgetLayout.ROOMY_SHORT, summaryWidgetLayout(DpSize(156.dp, 72.dp)))
+        assertEquals(SummaryWidgetLayout.SHORT, summaryWidgetLayout(DpSize(139.dp, 72.dp)))
+        assertEquals(SummaryWidgetLayout.SHORT, summaryWidgetLayout(DpSize(156.dp, 67.dp)))
+        assertEquals(SummaryWidgetLayout.ROOMY_COMPACT, summaryWidgetLayout(DpSize(150.dp, 158.dp)))
+        assertEquals(SummaryWidgetLayout.ROOMY_COMPACT, summaryWidgetLayout(DpSize(156.dp, 167.dp)))
+        assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(149.dp, 167.dp)))
+        assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(156.dp, 157.dp)))
+        assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(150.dp, 110.dp)))
+        // Wider cells keep their existing layouts.
+        assertEquals(SummaryWidgetLayout.WIDE_SHORT, summaryWidgetLayout(DpSize(230.dp, 72.dp)))
+        assertEquals(SummaryWidgetLayout.WIDE, summaryWidgetLayout(DpSize(230.dp, 167.dp)))
+    }
+
+    @Test
+    fun summaryWidget_platformBucketMatchingKeepsExistingCellsOnTheirLayouts() {
+        // Mirrors RemoteViews on Android 12+: among the declared sizes that fit the
+        // cell, the one with the smallest squared distance wins; none fit -> smallest.
+        // A bucket fits when ceil(cell) + 1 > bucket, the platform's rounding tolerance.
+        fun fits(bucket: Float, cell: Float) = kotlin.math.ceil(cell) + 1 > bucket
+        fun platformBucket(cell: DpSize): DpSize {
+            val fitting = SUMMARY_WIDGET_SIZES.filter {
+                fits(it.width.value, cell.width.value) && fits(it.height.value, cell.height.value)
+            }
+            if (fitting.isEmpty()) return SUMMARY_WIDGET_SIZES.minBy { it.width.value * it.height.value }
+            return fitting.minBy {
+                val dw = cell.width.value - it.width.value
+                val dh = cell.height.value - it.height.value
+                dw * dw + dh * dh
+            }
+        }
+        fun layoutFor(width: Int, height: Int) = summaryWidgetLayout(platformBucket(DpSize(width.dp, height.dp)))
+
+        // Samsung One UI cells from the owner's screenshot.
+        assertEquals(SummaryWidgetLayout.ROOMY_SHORT, layoutFor(156, 72))
+        assertEquals(SummaryWidgetLayout.ROOMY_COMPACT, layoutFor(156, 167))
+        // A wide-but-short 2x2 keeps the existing 2x2 composition.
+        assertEquals(SummaryWidgetLayout.COMPACT, layoutFor(156, 110))
+        assertEquals(SummaryWidgetLayout.COMPACT, layoutFor(156, 150))
+        // Fractional cells within the platform's 1dp tolerance still reach the roomy buckets.
+        assertEquals(
+            SummaryWidgetLayout.ROOMY_COMPACT,
+            summaryWidgetLayout(platformBucket(DpSize(149.2f.dp, 157.2f.dp))),
+        )
+        assertEquals(
+            SummaryWidgetLayout.ROOMY_SHORT,
+            summaryWidgetLayout(platformBucket(DpSize(139.4f.dp, 67.4f.dp))),
+        )
+        // Minimum cells keep their layouts.
+        assertEquals(SummaryWidgetLayout.SHORT, layoutFor(110, 56))
+        assertEquals(SummaryWidgetLayout.COMPACT, layoutFor(110, 110))
+        assertEquals(SummaryWidgetLayout.MICRO, layoutFor(48, 48))
+        // Wider cells keep their layouts.
+        assertEquals(SummaryWidgetLayout.WIDE_SHORT, layoutFor(240, 72))
+        assertEquals(SummaryWidgetLayout.WIDE, layoutFor(240, 120))
+        assertEquals(SummaryWidgetLayout.WIDE, layoutFor(320, 180))
+    }
+
+    @Test
+    fun summaryWidget_roomyLayoutsFallBackToMinimumCompositionsForLargeText() {
+        val body = summaryWidgetSource().readText()
+            .substringAfter("private fun SummaryBody(").substringBefore("\n@Composable\nprivate fun")
+        assertTrue(!useReducedWidgetContent(1.09f, SummaryWidgetLayout.ROOMY_SHORT))
+        assertTrue(useReducedWidgetContent(1.1f, SummaryWidgetLayout.ROOMY_SHORT))
+        assertTrue(!useReducedWidgetContent(1.09f, SummaryWidgetLayout.ROOMY_COMPACT))
+        assertTrue(useReducedWidgetContent(1.1f, SummaryWidgetLayout.ROOMY_COMPACT))
+        assertTrue(
+            Regex("""ROOMY_SHORT -> if \(useReducedContent\) \{\s*ShortSummary\(""").containsMatchIn(body),
+        )
+        assertTrue(
+            Regex("""ROOMY_COMPACT -> if \(useReducedContent\) \{\s*CompactSummary\(""").containsMatchIn(body),
+        )
+        assertTrue(body.contains("RoomyShortSummary(resourceContext, summary, isStale)"))
+        assertTrue(body.contains("RoomyCompactSummary(resourceContext, summary, isStale)"))
     }
 
     @Test
