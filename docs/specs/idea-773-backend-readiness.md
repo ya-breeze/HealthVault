@@ -15,10 +15,17 @@ The lab file belongs here because parent Idea 768 needs VM-independent evidence 
 
 ```sh
 docker compose -f docker-compose.lab.yml --profile smoke up --build --abort-on-container-exit --exit-code-from lab-smoke
+# Deletes the synthetic lab-data volume. Run only after explicit owner approval; it was not run here.
 docker compose -f docker-compose.lab.yml --profile smoke down --volumes --remove-orphans
 ```
 
-No public hostname, Access rule, or production Compose ingress changes in this work. This subtask does not deploy to WIP or production. The Docker CLI is unavailable in the implementation environment, so local Go/TypeScript checks and source review can run here; image builds, Compose rendering, and the smoke run remain unverified until a Docker host is available.
+No public hostname, Access rule, or production Compose ingress changes in this work. This subtask does not deploy to WIP or production. The Docker CLI is unavailable in the implementation environment, so local Compose CLI rendering remains unavailable. See the later Portainer evidence for the synthetic image build and smoke validation.
+
+## Synthetic Portainer smoke evidence (2026-09-24)
+
+The Docker CLI remains unavailable locally. The synthetic lab was instead built and run in a new Portainer standalone stack using the committed-revision-only runner documented in [`idea-773-portainer-lab.md`](../idea-773-portainer-lab.md). Stack 99 (`idea-773-healthvault-smoke-15cbbd5`) built both images, reached healthy backend and Nginx states, and its synthetic readiness-denial/login/session smoke exited 0. Runtime inspection confirmed no published ports, no host/persistent mounts, an internal network, and backend `/data` tmpfs (`HostConfig.Tmpfs={"/data":"size=536870912"}`). The smoke container has exited; backend and Nginx were stopped after verification. The stack and images remain retained.
+
+This closes the synthetic image-build and login/readiness smoke gap only. Local Compose CLI rendering, published-port behavior, VM-specific TLS/ingress, real-data migration, backup/restore, and real-VM acceptance remain open. The shared Nginx Dockerfile currently embeds `192.168.1.54` in its self-signed certificate SAN; do not reuse the lab image as portable VM ingress. Paused follow-up: Idea 779.
 
 ## Validation Commands
 
