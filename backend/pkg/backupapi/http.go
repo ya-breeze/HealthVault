@@ -157,7 +157,7 @@ func parseRequest(body []byte) (Request, bool) {
 		return Request{}, false
 	}
 	var request Request
-	if json.Unmarshal(triggerRaw, &request.Trigger) != nil || request.Trigger != "pre_deploy" {
+	if json.Unmarshal(triggerRaw, &request.Trigger) != nil || (request.Trigger != "pre_deploy" && request.Trigger != "scheduled") {
 		return Request{}, false
 	}
 	if json.Unmarshal(revisionRaw, &request.TargetRevision) != nil || !revisionPattern.MatchString(request.TargetRevision) {

@@ -2,8 +2,6 @@ package backupapi
 
 import (
 	"context"
-	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,20 +14,16 @@ import (
 	"filippo.io/age"
 )
 
-type conformanceStore struct {
-	inner    memoryObjectStore
+type conformanceRunner struct {
+	inner    *SetRunner
 	failNext atomic.Bool
 }
 
-func (s *conformanceStore) Put(ctx context.Context, key string, body io.Reader, size int64) error {
+func (s *conformanceRunner) Run(ctx context.Context, job Job) (*Evidence, *Error) {
 	if s.failNext.Swap(false) {
-		return errors.New("forced conformance storage failure")
+		return nil, &Error{Code: "publish_failed"}
 	}
-	return s.inner.Put(ctx, key, body, size)
-}
-
-func (s *conformanceStore) Get(ctx context.Context, key string) (io.ReadCloser, error) {
-	return s.inner.Get(ctx, key)
+	return s.inner.Run(ctx, job)
 }
 
 func TestIdeaForgeBackupConformanceAgainstDisposableHTTPHandler(t *testing.T) {
@@ -48,9 +42,8 @@ func TestIdeaForgeBackupConformanceAgainstDisposableHTTPHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objects := &conformanceStore{}
-	runner := fixtureRunner(fx, &objects.inner, identity.Recipient().String())
-	runner.Store = objects
+	baseRunner := fixtureRunner(t, fx, identity.Recipient().String())
+	runner := &conformanceRunner{inner: baseRunner}
 	service := newTestService(t, runner)
 	mux := http.NewServeMux()
 	mux.Handle("/internal/backups/", NewHandler(testCredential, service))
@@ -59,7 +52,7 @@ func TestIdeaForgeBackupConformanceAgainstDisposableHTTPHandler(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		objects.failNext.Store(true)
+		runner.failNext.Store(true)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	server := httptest.NewServer(mux)

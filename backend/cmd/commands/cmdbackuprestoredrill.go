@@ -13,7 +13,7 @@ import (
 )
 
 func CmdBackupRestoreDrill() *cobra.Command {
-	var objectID, manifestHash, ciphertextHash string
+	var readyFileID, manifestHash, ciphertextHash string
 	var ciphertextSize int64
 	cmd := &cobra.Command{
 		Use:   "backup-restore-drill",
@@ -24,13 +24,8 @@ func CmdBackupRestoreDrill() *cobra.Command {
 			if err != nil {
 				return errors.New("backup configuration is unavailable")
 			}
-			if cfg.BackupEncryptionKeyID == "" {
-				return errors.New("backup encryption key ID is not configured")
-			}
-			store, err := backupapi.NewS3CompatibleStore(cfg.BackupS3Endpoint, cfg.BackupS3Bucket,
-				cfg.BackupS3AccessKey, cfg.BackupS3SecretKey, cfg.BackupS3Region)
-			if err != nil {
-				return errors.New("backup object storage is not configured")
+			if cfg.BackupEncryptionKeyID == "" || cfg.BackupSpoolDir == "" {
+				return errors.New("backup spool and encryption key ID must be configured")
 			}
 			identityBytes, err := io.ReadAll(io.LimitReader(cmd.InOrStdin(), 16*1024+1))
 			if err != nil || len(identityBytes) == 0 || len(identityBytes) > 16*1024 {
@@ -44,20 +39,20 @@ func CmdBackupRestoreDrill() *cobra.Command {
 				return errors.New("standard input does not contain a valid age identity")
 			}
 			evidence := backupapi.Evidence{BackupSetType: "full", ManifestSHA256: manifestHash,
-				RemoteObjectID: objectID, CiphertextSHA256: ciphertextHash, CiphertextSizeBytes: ciphertextSize,
+				ReadyFileID: readyFileID, CiphertextSHA256: ciphertextHash, CiphertextSizeBytes: ciphertextSize,
 				EncryptionKeyID: cfg.BackupEncryptionKeyID}
-			report, err := backupapi.RestoreDrill(cmd.Context(), store, objectID, evidence, identities)
+			report, err := backupapi.RestoreDrill(cmd.Context(), cfg.BackupSpoolDir, evidence, identities)
 			if err != nil {
 				return err
 			}
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(report)
 		},
 	}
-	cmd.Flags().StringVar(&objectID, "object-id", "", "opaque object ID from backup evidence")
+	cmd.Flags().StringVar(&readyFileID, "ready-file-id", "", "artifact basename from backup evidence")
 	cmd.Flags().StringVar(&manifestHash, "manifest-sha256", "", "manifest SHA-256 from backup evidence")
 	cmd.Flags().StringVar(&ciphertextHash, "ciphertext-sha256", "", "ciphertext SHA-256 from backup evidence")
 	cmd.Flags().Int64Var(&ciphertextSize, "ciphertext-size-bytes", 0, "ciphertext size from backup evidence")
-	_ = cmd.MarkFlagRequired("object-id")
+	_ = cmd.MarkFlagRequired("ready-file-id")
 	_ = cmd.MarkFlagRequired("manifest-sha256")
 	_ = cmd.MarkFlagRequired("ciphertext-sha256")
 	_ = cmd.MarkFlagRequired("ciphertext-size-bytes")

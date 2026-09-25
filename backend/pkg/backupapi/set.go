@@ -32,14 +32,6 @@ type CaptureBarrier interface {
 	Unlock()
 }
 
-// ObjectStore deliberately exposes only upload and remote read-back. A HEAD,
-// ETag, or provider response alone cannot prove that the stored ciphertext is
-// the ciphertext this process uploaded.
-type ObjectStore interface {
-	Put(context.Context, string, io.Reader, int64) error
-	Get(context.Context, string) (io.ReadCloser, error)
-}
-
 // SnapshotFunc exists so tests can force interruption at the SQLite boundary.
 type SnapshotFunc func(context.Context, string, string) error
 
@@ -50,12 +42,13 @@ const (
 )
 
 type SetRunner struct {
-	DatabasePath string
-	UploadsDir   string
-	AgeRecipient string
-	EncryptionID string
-	Store        ObjectStore
-	Barrier      CaptureBarrier
+	DatabasePath   string
+	UploadsDir     string
+	SpoolDir       string
+	PersistentRoot string
+	AgeRecipient   string
+	EncryptionID   string
+	Barrier        CaptureBarrier
 
 	// Snapshot is optional. Production uses SQLite's online backup API.
 	Snapshot SnapshotFunc
@@ -90,14 +83,29 @@ type capturedSet struct {
 	manifestHash string
 }
 
-// Run creates a verified project backup. It leaves no plaintext outside a
-// private temporary directory and returns evidence only after a streaming GET
-// of the uploaded object matches both the local ciphertext size and SHA-256.
+// Run creates and durably publishes a verified encrypted project backup.
+// It leaves no plaintext outside a private temporary directory and returns
+// evidence only after the ready marker is atomically published.
 func (r *SetRunner) Run(ctx context.Context, _ Job) (evidence *Evidence, failure *Error) {
-	if r == nil || r.Store == nil || r.DatabasePath == "" || r.UploadsDir == "" || r.AgeRecipient == "" || r.EncryptionID == "" {
+	if r == nil || r.SpoolDir == "" || r.DatabasePath == "" || r.UploadsDir == "" || r.AgeRecipient == "" || r.EncryptionID == "" {
 		return nil, &Error{Code: "storage_unconfigured"}
 	}
 	if !safeEvidenceLabel(r.EncryptionID) {
+		return nil, &Error{Code: "storage_unconfigured"}
+	}
+	if r.PersistentRoot != "" && !pathIsWithin(r.PersistentRoot, r.SpoolDir) {
+		return nil, &Error{Code: "storage_unconfigured"}
+	}
+	if pathsOverlap(r.SpoolDir, r.UploadsDir) {
+		return nil, &Error{Code: "storage_unconfigured"}
+	}
+	if err := ensurePrivateSpool(r.SpoolDir); err != nil {
+		return nil, &Error{Code: "storage_unconfigured"}
+	}
+	if r.PersistentRoot != "" && !resolvedPathIsWithin(r.PersistentRoot, r.SpoolDir) {
+		return nil, &Error{Code: "storage_unconfigured"}
+	}
+	if resolvedPathsOverlap(r.SpoolDir, r.UploadsDir) {
 		return nil, &Error{Code: "storage_unconfigured"}
 	}
 	tmp, err := os.MkdirTemp("", "healthvault-backup-")
@@ -114,8 +122,7 @@ func (r *SetRunner) Run(ctx context.Context, _ Job) (evidence *Evidence, failure
 			remove = r.removeScratch
 		}
 		if err := remove(tmp); err != nil {
-			// A successful remote read-back is not sufficient if plaintext is
-			// still left in the local scratch directory.
+			// A completed backup must not leave plaintext in local scratch.
 			evidence = nil
 			failure = &Error{Code: "internal"}
 		}
@@ -144,39 +151,242 @@ func (r *SetRunner) Run(ctx context.Context, _ Job) (evidence *Evidence, failure
 	if err != nil || cipherSize <= 0 {
 		return nil, failureForContext(ctx, "encryption_failed")
 	}
-	objectID, err := uuid.NewRandom()
+	fileID, err := uuid.NewRandom()
 	if err != nil {
-		return nil, failureForContext(ctx, "upload_failed")
+		return nil, failureForContext(ctx, "publish_failed")
 	}
-	key := objectID.String()
-	cipher, err := os.Open(cipherPath)
-	if err != nil {
-		return nil, failureForContext(ctx, "upload_failed")
-	}
-	putErr := r.Store.Put(ctx, key, cipher, cipherSize)
-	closeErr := cipher.Close()
-	if putErr != nil || closeErr != nil {
-		return nil, failureForContext(ctx, "upload_failed")
-	}
-	remote, err := r.Store.Get(ctx, key)
-	if err != nil {
-		return nil, failureForContext(ctx, "remote_verification_failed")
-	}
-	remoteSize, remoteHash, readErr := digestReader(remote)
-	closeErr = remote.Close()
-	if readErr != nil || closeErr != nil || remoteSize != cipherSize || remoteHash != cipherHash {
-		return nil, failureForContext(ctx, "remote_verification_failed")
+	readyFileID := fileID.String() + ".age"
+	if err := publishArtifact(ctx, r.SpoolDir, cipherPath, readyFileID, cipherSize, cipherHash); err != nil {
+		return nil, failureForContext(ctx, "publish_failed")
 	}
 	return &Evidence{
 		BackupSetType:       "full",
 		ManifestSHA256:      set.manifestHash,
-		RemoteObjectID:      key,
+		ReadyFileID:         readyFileID,
 		CiphertextSHA256:    cipherHash,
 		CiphertextSizeBytes: cipherSize,
 		EncryptionKeyID:     r.EncryptionID,
-		RetainUntil:         nil,
-		ImmutableUntil:      nil,
 	}, nil
+}
+
+func pathIsWithin(root, path string) bool {
+	rootAbs, rootErr := filepath.Abs(root)
+	pathAbs, pathErr := filepath.Abs(path)
+	if rootErr != nil || pathErr != nil {
+		return false
+	}
+	rootAbs, pathAbs = filepath.Clean(rootAbs), filepath.Clean(pathAbs)
+	rel, err := filepath.Rel(rootAbs, pathAbs)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func resolvedPathIsWithin(root, path string) bool {
+	rootResolved, rootErr := resolvePath(root)
+	pathResolved, pathErr := resolvePath(path)
+	if rootErr != nil || pathErr != nil {
+		return false
+	}
+	return pathIsWithin(rootResolved, pathResolved)
+}
+
+func resolvePath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	current := filepath.Clean(absolute)
+	var missing []string
+	for {
+		resolved, resolveErr := filepath.EvalSymlinks(current)
+		if resolveErr == nil {
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !os.IsNotExist(resolveErr) {
+			return "", resolveErr
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", resolveErr
+		}
+		missing = append(missing, filepath.Base(current))
+		current = parent
+	}
+}
+
+func pathsOverlap(first, second string) bool {
+	firstAbs, firstErr := filepath.Abs(first)
+	secondAbs, secondErr := filepath.Abs(second)
+	if firstErr != nil || secondErr != nil {
+		return true
+	}
+	firstAbs, secondAbs = filepath.Clean(firstAbs), filepath.Clean(secondAbs)
+	return pathIsWithinOrSame(firstAbs, secondAbs) || pathIsWithinOrSame(secondAbs, firstAbs)
+}
+
+func resolvedPathsOverlap(first, second string) bool {
+	firstResolved, firstErr := resolvePath(first)
+	secondResolved, secondErr := resolvePath(second)
+	if firstErr != nil || secondErr != nil {
+		return true
+	}
+	return pathsOverlap(firstResolved, secondResolved)
+}
+
+func pathIsWithinOrSame(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && (rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
+type readyManifest struct {
+	ArtifactFile        string `json:"artifact_file"`
+	CiphertextSizeBytes int64  `json:"ciphertext_size_bytes"`
+	CiphertextSHA256    string `json:"ciphertext_sha256"`
+}
+
+func ensurePrivateSpool(path string) error {
+	if err := mkdirAllDurable(path); err != nil {
+		return err
+	}
+	// Sync even when the directory already existed. This also makes a retry
+	// safe if the previous creation's parent sync failed.
+	if err := syncDirectory(filepath.Dir(filepath.Clean(path))); err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+		return errors.New("backup spool must be a private directory")
+	}
+	return nil
+}
+
+// mkdirAllDurable creates each missing directory privately and syncs the
+// containing directory after adding its entry. Existing components must be
+// real directories so a symlink cannot redirect spool creation.
+func mkdirAllDurable(path string) error {
+	path = filepath.Clean(path)
+	info, err := os.Lstat(path)
+	if err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("backup spool path component is not a directory")
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return err
+	}
+	if err := mkdirAllDurable(parent); err != nil {
+		return err
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		info, statErr := os.Lstat(path)
+		if statErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("backup spool path component is not a directory")
+		}
+		return nil
+	}
+	return syncDirectory(parent)
+}
+
+func publishArtifact(ctx context.Context, spoolDir, sourcePath, fileID string, expectedSize int64, expectedHash string) error {
+	if !readyFileIDPattern.MatchString(fileID) || expectedSize <= 0 || !isDigest(expectedHash) {
+		return errors.New("invalid backup artifact")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	finalPath := filepath.Join(spoolDir, fileID)
+	markerPath := filepath.Join(spoolDir, strings.TrimSuffix(fileID, ".age")+".ready.json")
+	if _, err := os.Lstat(finalPath); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return errors.New("backup artifact already exists")
+	}
+	if _, err := os.Lstat(markerPath); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return errors.New("backup ready marker already exists")
+	}
+
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	staged, err := os.CreateTemp(spoolDir, ".backup-artifact-*.tmp")
+	if err != nil {
+		return err
+	}
+	stagedPath := staged.Name()
+	defer os.Remove(stagedPath) // exact unique staging path; published files have another name
+	hash := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(staged, hash), &contextReader{ctx: ctx, reader: source})
+	syncErr := staged.Sync()
+	closeErr := staged.Close()
+	if copyErr != nil || syncErr != nil || closeErr != nil || written != expectedSize || hex.EncodeToString(hash.Sum(nil)) != expectedHash {
+		return errors.New("backup ciphertext changed while publishing")
+	}
+	if err := os.Rename(stagedPath, finalPath); err != nil {
+		return err
+	}
+	if err := syncDirectory(spoolDir); err != nil {
+		return err
+	}
+	if err := verifyPublishedArtifact(finalPath, expectedSize, expectedHash); err != nil {
+		return err
+	}
+
+	manifest, err := json.Marshal(readyManifest{ArtifactFile: fileID, CiphertextSizeBytes: expectedSize, CiphertextSHA256: expectedHash})
+	if err != nil {
+		return err
+	}
+	marker, err := os.CreateTemp(spoolDir, ".backup-ready-*.tmp")
+	if err != nil {
+		return err
+	}
+	markerTemp := marker.Name()
+	defer os.Remove(markerTemp)
+	if _, err := marker.Write(manifest); err != nil {
+		_ = marker.Close()
+		return err
+	}
+	if err := marker.Sync(); err != nil {
+		_ = marker.Close()
+		return err
+	}
+	if err := marker.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(markerTemp, markerPath); err != nil {
+		return err
+	}
+	return syncDirectory(spoolDir)
+}
+
+func verifyPublishedArtifact(path string, expectedSize int64, expectedHash string) error {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("published backup artifact is not a regular file")
+	}
+	size, hash, err := digestFile(path)
+	if err != nil || size != expectedSize || hash != expectedHash {
+		return errors.New("published backup ciphertext failed local verification")
+	}
+	return nil
+}
+
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 type stageError struct{ code string }

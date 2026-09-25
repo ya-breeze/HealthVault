@@ -144,6 +144,13 @@ func TestMalformedRequestsAreJSON400(t *testing.T) {
 	}
 }
 
+func TestScheduledTriggerIsAccepted(t *testing.T) {
+	request, ok := parseRequest([]byte(`{"trigger":"scheduled","target_revision":"currently-running-revision"}`))
+	if !ok || request.Trigger != "scheduled" || request.TargetRevision != "currently-running-revision" {
+		t.Fatalf("scheduled trigger was rejected: request=%+v ok=%v", request, ok)
+	}
+}
+
 func TestIdempotentReplayConflictAndLifecycle(t *testing.T) {
 	started := make(chan struct{})
 	finish := make(chan struct{})
@@ -231,7 +238,7 @@ func TestStatusRetainsMostRecentSuccessAfterFailure(t *testing.T) {
 	success := row{ID: "j_success", IdempotencyKey: "success-key", RequestSHA256: strings.Repeat("a", 64),
 		Trigger: "pre_deploy", TargetRevision: "old", State: "succeeded", CreatedAt: time.Now().UTC().Add(-time.Minute),
 		CompletedAt: timePtr(time.Now().UTC().Add(-time.Second))}
-	evidence, _ := json.Marshal(Evidence{BackupSetType: "full", ManifestSHA256: strings.Repeat("a", 64), RemoteObjectID: "object-1",
+	evidence, _ := json.Marshal(Evidence{BackupSetType: "full", ManifestSHA256: strings.Repeat("a", 64), ReadyFileID: "6f0d5b9a-61dc-4c53-b15e-64d46273eec1.age",
 		CiphertextSHA256: strings.Repeat("b", 64), CiphertextSizeBytes: 1, EncryptionKeyID: "key-1"})
 	evidenceText := string(evidence)
 	success.EvidenceJSON = &evidenceText
@@ -336,7 +343,7 @@ func TestServiceSerializesBackupJobs(t *testing.T) {
 	service := newTestService(t, RunnerFunc(func(_ context.Context, job Job) (*Evidence, *Error) {
 		started <- job.JobID
 		<-release
-		return nil, &Error{Code: "upload_failed"}
+		return nil, &Error{Code: "publish_failed"}
 	}))
 	request := Request{Trigger: "pre_deploy", TargetRevision: "revision-a"}
 	first, _, err := service.Create(context.Background(), "serial-a", request)
