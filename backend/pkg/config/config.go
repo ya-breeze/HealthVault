@@ -7,12 +7,24 @@ import (
 )
 
 type Config struct {
-	Port         string
-	DBPath       string
-	SeedUsers    string
-	JWTSecret    string
-	CookieSecure bool
-	MCPToken     string // required bearer token for /mcp; if empty, /mcp is disabled
+	Port           string
+	DBPath         string
+	SeedUsers      string
+	JWTSecret      string
+	CookieSecure   bool
+	MCPToken       string // required bearer token for /mcp; if empty, /mcp is disabled
+	BackupAPIToken string // private project-owned backup API; if empty, job creation is disabled
+
+	// Project-owned off-host backup configuration. All fields are optional at
+	// startup; the backup runner remains disabled unless every required field is
+	// present and the S3 endpoint is a valid HTTPS origin.
+	BackupS3Endpoint      string
+	BackupS3Bucket        string
+	BackupS3AccessKey     string
+	BackupS3SecretKey     string
+	BackupS3Region        string
+	BackupAgeRecipient    string
+	BackupEncryptionKeyID string
 
 	// Cloudflare Access sign-in exchange (POST /api/auth/cf-access). All three
 	// default to empty; the endpoint answers 404 unless all three are set.
@@ -43,12 +55,20 @@ func Load() (*Config, error) {
 	viper.SetDefault("VISION_TIMEOUT", "60s")
 	viper.SetDefault("OPENAI_MODEL", "gpt-4o-mini")
 	return &Config{
-		Port:         viper.GetString("PORT"),
-		DBPath:       viper.GetString("DBPATH"),
-		SeedUsers:    viper.GetString("SEED_USERS"),
-		JWTSecret:    viper.GetString("JWT_SECRET"),
-		CookieSecure: viper.GetBool("COOKIE_SECURE"),
-		MCPToken:     viper.GetString("MCP_TOKEN"),
+		Port:                  viper.GetString("PORT"),
+		DBPath:                viper.GetString("DBPATH"),
+		SeedUsers:             viper.GetString("SEED_USERS"),
+		JWTSecret:             viper.GetString("JWT_SECRET"),
+		CookieSecure:          viper.GetBool("COOKIE_SECURE"),
+		MCPToken:              viper.GetString("MCP_TOKEN"),
+		BackupAPIToken:        viper.GetString("BACKUP_API_TOKEN"),
+		BackupS3Endpoint:      viper.GetString("BACKUP_S3_ENDPOINT"),
+		BackupS3Bucket:        viper.GetString("BACKUP_S3_BUCKET"),
+		BackupS3AccessKey:     viper.GetString("BACKUP_S3_ACCESS_KEY"),
+		BackupS3SecretKey:     viper.GetString("BACKUP_S3_SECRET_KEY"),
+		BackupS3Region:        viper.GetString("BACKUP_S3_REGION"),
+		BackupAgeRecipient:    viper.GetString("BACKUP_AGE_RECIPIENT"),
+		BackupEncryptionKeyID: viper.GetString("BACKUP_ENCRYPTION_KEY_ID"),
 
 		CFAccessTeamDomain: viper.GetString("CF_ACCESS_TEAM_DOMAIN"),
 		CFAccessAUD:        viper.GetString("CF_ACCESS_AUD"),
