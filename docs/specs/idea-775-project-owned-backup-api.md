@@ -10,35 +10,36 @@ The private VM pilot has a writable SQLite database and uploads, but no verified
 
 Implement the merged [backup API v1 contract](https://github.com/ya-breeze/idea-forge/blob/9a3f4ea019eeece86bb5d12870b38bc9c1ce2326/docs/backup-api-v1.md) inside HealthVault. Keep the HTTP adapter and its per-project service credential separate from user auth. Do not publish `/internal/backups/` through nginx or a public hostname. Empty or incomplete configuration fails closed.
 
-Create durable, idempotent jobs with the contract's exact closed schemas and state transitions. Snapshot SQLite consistently using its online backup mechanism. Include uploads in the same backup set and verify references from the captured database; fail a job if a referenced upload cannot be captured consistently. Package a manifest and data, encrypt before leaving the project boundary, upload to a configurable off-host object store, and verify the remote ciphertext checksum before reporting `succeeded`. Keep encryption and storage credentials project-owned; return opaque evidence only. Provide an isolated restore command/drill that cannot target a running or production data directory.
+Create durable, idempotent jobs with the contract's exact closed schemas and state transitions. Snapshot SQLite with its online backup mechanism. A process-wide request barrier keeps database rows and upload files stable through snapshot, archive creation, and local verification. This assumes one backend process per data set and no out-of-band database or upload writer. Package a USTAR archive with `manifest.json`, `database.sqlite`, and `uploads/<relative path>` members. The version 1 manifest records UTC creation time plus each file's relative path, byte size, and SHA-256. Require local SQLite integrity and archive-member checksums before age encryption. Use a project-owned age public recipient and generic HTTPS S3-compatible configuration from `HCW_BACKUP_AGE_RECIPIENT`, `HCW_BACKUP_ENCRYPTION_KEY_ID`, `HCW_BACKUP_S3_ENDPOINT`, `HCW_BACKUP_S3_BUCKET`, `HCW_BACKUP_S3_ACCESS_KEY`, `HCW_BACKUP_S3_SECRET_KEY`, and optional `HCW_BACKUP_S3_REGION`. Upload ciphertext only, then stream the remote object back and verify its byte count and SHA-256 before reporting `succeeded`. Keep private keys and storage credentials outside the app response; return opaque evidence only. The local temporary workspace peaks at about two backup-set sizes while snapshotting/encrypting, so provision equivalent free scratch space. Provide an isolated restore command/drill that cannot target a running or production data directory.
 
-Use disposable storage and a synthetic database for development, conformance, and restore tests. Real off-host provider, bucket, credentials, encryption identity, retention policy, and VM pilot activation require separate configuration and owner approval. No home storage, home network path, real HealthVault data, production deployment, or public ingress is in this change. Deployer integration is also separate.
+Use disposable storage and a synthetic database for development, conformance, and restore tests. Record the new dependency and data-protection boundary in [ADR-016](../adr/ADR-016-project-owned-encrypted-off-host-backups.md). Real off-host provider, bucket, credentials, encryption identity, retention policy, and VM pilot activation require separate configuration and owner approval. No home storage, home network path, real HealthVault data, production deployment, or public ingress is in this change. Deployer integration is also separate.
 
 ## Validation Commands
 
 ```sh
 make test-backend
 make lint
-# Run IdeaForge's backup_conformance against a disposable HealthVault instance and store.
-# Run the isolated restore drill and verify database contents plus uploaded bytes.
+cd backend
+IDEA_FORGE_ROOT=/path/to/idea-forge go test -tags sqlite_fts5 -run TestIdeaForgeBackupConformanceAgainstDisposableHTTPHandler -v ./pkg/backupapi
+go test -tags sqlite_fts5 -run TestRestoreDrill ./pkg/backupapi
 ```
 
 ### Task 1: Private contract and durable jobs
 
-- [ ] Add exact v1 routes, constant-time per-project authentication, bounded request validation, idempotency, durable status, and safe errors.
-- [ ] Test authentication, malformed requests, same-key replay, key conflict, state transitions, restart recovery, and response/log redaction.
-- [ ] Mark completed.
+- [x] Add exact v1 routes, constant-time per-project authentication, bounded request validation, idempotency, durable status, and safe errors.
+- [x] Test authentication, malformed requests, same-key replay, key conflict, state transitions, restart recovery, and response/log redaction.
+- [x] Mark completed.
 
 ### Task 2: Project-owned backup set
 
-- [ ] Capture SQLite plus uploads consistently and verify the local set before encryption.
-- [ ] Encrypt, upload to a configurable off-host destination, verify the remote ciphertext, and publish complete evidence only afterward.
-- [ ] Test missing uploads, interrupted snapshot, failed encryption/upload/remote verification, and no plaintext or credential leakage.
-- [ ] Mark completed.
+- [x] Capture SQLite plus uploads consistently and verify the local set before encryption.
+- [x] Encrypt, upload to a configurable off-host destination, verify the remote ciphertext, and publish complete evidence only afterward.
+- [x] Test missing uploads, interrupted snapshot, failed encryption/upload/remote verification, and no plaintext or credential leakage.
+- [x] Mark completed.
 
 ### Task 3: Restore and integration proof
 
-- [ ] Add an isolated restore drill that verifies SQLite integrity and uploaded bytes without touching a live target.
-- [ ] Run black-box v1 conformance against a disposable instance, including a forced failed job.
-- [ ] Verify the private routing boundary and document the configuration/recovery procedure. Do not activate against real data.
-- [ ] Mark completed.
+- [x] Add an isolated restore drill that verifies SQLite integrity and uploaded bytes without touching a live target.
+- [x] Run black-box v1 conformance against a disposable instance, including a forced failed job.
+- [x] Verify the private routing boundary and document the configuration/recovery procedure. Do not activate against real data.
+- [x] Mark completed.
