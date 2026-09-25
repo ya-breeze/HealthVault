@@ -21,49 +21,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-type memoryObjectStore struct {
-	objects    map[string][]byte
-	putErr     error
-	getErr     error
-	corruptGet bool
-	puts       int
-}
-
-func (s *memoryObjectStore) Put(_ context.Context, key string, body io.Reader, size int64) error {
-	s.puts++
-	if s.putErr != nil {
-		return s.putErr
-	}
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return err
-	}
-	if int64(len(data)) != size {
-		return errors.New("wrong upload size")
-	}
-	if s.objects == nil {
-		s.objects = make(map[string][]byte)
-	}
-	s.objects[key] = data
-	return nil
-}
-
-func (s *memoryObjectStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
-	if s.getErr != nil {
-		return nil, s.getErr
-	}
-	data, ok := s.objects[key]
-	if !ok {
-		return nil, os.ErrNotExist
-	}
-	data = append([]byte(nil), data...)
-	if s.corruptGet && len(data) > 0 {
-		data[len(data)/2] ^= 0xff
-	}
-	return io.NopCloser(bytes.NewReader(data)), nil
-}
-
-func TestSetRunnerCreatesEncryptedConsistentSetAndVerifiesRemoteBytes(t *testing.T) {
+func TestSetRunnerCreatesEncryptedConsistentSetAndPublishesReadyArtifact(t *testing.T) {
 	fx := newBackupFixture(t)
 	scratch := filepath.Join(t.TempDir(), "private-scratch")
 	if err := os.Mkdir(scratch, 0o700); err != nil {
@@ -74,8 +32,7 @@ func TestSetRunnerCreatesEncryptedConsistentSetAndVerifiesRemoteBytes(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &memoryObjectStore{}
-	runner := fixtureRunner(fx, store, identity.Recipient().String())
+	runner := fixtureRunner(t, fx, identity.Recipient().String())
 	runner.Barrier = &sync.RWMutex{}
 	runner.Now = func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) }
 
@@ -90,16 +47,21 @@ func TestSetRunnerCreatesEncryptedConsistentSetAndVerifiesRemoteBytes(t *testing
 	if err != nil || len(leftovers) != 0 {
 		t.Fatalf("private plaintext workspace was not cleaned: entries=%d err=%v", len(leftovers), err)
 	}
-	if len(store.objects) != 1 || store.puts != 1 {
-		t.Fatalf("expected one verified object, got puts=%d objects=%d", store.puts, len(store.objects))
-	}
-	ciphertext := store.objects[evidence.RemoteObjectID]
+	ciphertext := readArtifact(t, runner, *evidence)
 	if bytes.Contains(ciphertext, []byte("synthetic-meal-photo")) || bytes.Contains(ciphertext, []byte("synthetic-health-row")) || bytes.Contains(ciphertext, []byte("fake-object-secret")) {
-		t.Fatal("remote object contains plaintext or store credentials")
+		t.Fatal("published artifact contains plaintext or credentials")
 	}
 	hash := sha256.Sum256(ciphertext)
 	if hex.EncodeToString(hash[:]) != evidence.CiphertextSHA256 || int64(len(ciphertext)) != evidence.CiphertextSizeBytes {
-		t.Fatal("evidence does not match remotely read ciphertext")
+		t.Fatal("evidence does not match published ciphertext")
+	}
+	entries, err := os.ReadDir(runner.SpoolDir)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("expected artifact and ready marker, entries=%d err=%v", len(entries), err)
+	}
+	marker, err := os.ReadFile(filepath.Join(runner.SpoolDir, strings.TrimSuffix(evidence.ReadyFileID, ".age")+".ready.json"))
+	if err != nil || !bytes.Contains(marker, []byte(evidence.CiphertextSHA256)) || !bytes.Contains(marker, []byte(evidence.ReadyFileID)) {
+		t.Fatalf("ready marker does not match evidence: %s (%v)", marker, err)
 	}
 
 	plain, err := age.Decrypt(bytes.NewReader(ciphertext), identity)
@@ -135,8 +97,7 @@ func TestSetRunnerDoesNotReportSuccessWhenScratchCleanupFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &memoryObjectStore{}
-	runner := fixtureRunner(fx, store, identity.Recipient().String())
+	runner := fixtureRunner(t, fx, identity.Recipient().String())
 	runner.removeScratch = func(path string) error {
 		if err := os.RemoveAll(path); err != nil {
 			return err
@@ -147,8 +108,9 @@ func TestSetRunnerDoesNotReportSuccessWhenScratchCleanupFails(t *testing.T) {
 	if evidence != nil || failure == nil || failure.Code != "internal" {
 		t.Fatalf("cleanup failure yielded evidence=%+v failure=%+v", evidence, failure)
 	}
-	if store.puts != 1 {
-		t.Fatalf("test did not reach remote verification: puts=%d", store.puts)
+	entries, err := os.ReadDir(runner.SpoolDir)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("test did not reach artifact publication: entries=%d err=%v", len(entries), err)
 	}
 }
 
@@ -189,13 +151,12 @@ func TestSetRunnerAcceptsFreshDatabaseWithoutUploadsDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &memoryObjectStore{}
-	runner := fixtureRunner(fx, store, identity.Recipient().String())
+	runner := fixtureRunner(t, fx, identity.Recipient().String())
 	evidence, failure := runner.Run(context.Background(), Job{})
 	if failure != nil || evidence == nil {
 		t.Fatalf("fresh database failed backup: evidence=%+v failure=%+v", evidence, failure)
 	}
-	if _, err := RestoreDrill(context.Background(), store, evidence.RemoteObjectID, *evidence, []age.Identity{identity}); err != nil {
+	if _, err := RestoreDrill(context.Background(), runner.SpoolDir, *evidence, []age.Identity{identity}); err != nil {
 		t.Fatalf("fresh database did not restore: %v", err)
 	}
 }
@@ -206,39 +167,39 @@ func TestRestoreDrillIgnoresCallerTMPDIR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &memoryObjectStore{}
-	evidence, failure := fixtureRunner(fx, store, identity.Recipient().String()).Run(context.Background(), Job{})
+	runner := fixtureRunner(t, fx, identity.Recipient().String())
+	evidence, failure := runner.Run(context.Background(), Job{})
 	if failure != nil || evidence == nil {
 		t.Fatalf("synthetic backup failed: %+v", failure)
 	}
 	// If the drill honored TMPDIR, it would fail to create a workspace here.
 	// It must choose its own scratch root rather than the live data volume.
 	t.Setenv("TMPDIR", filepath.Join(fx.uploads, "nonexistent"))
-	if _, err := RestoreDrill(context.Background(), store, evidence.RemoteObjectID, *evidence, []age.Identity{identity}); err != nil {
+	if _, err := RestoreDrill(context.Background(), runner.SpoolDir, *evidence, []age.Identity{identity}); err != nil {
 		t.Fatalf("restore drill used caller TMPDIR: %v", err)
 	}
 }
 
-func TestSetRunnerFailsClosedBeforeUpload(t *testing.T) {
+func TestSetRunnerFailsClosedBeforePublication(t *testing.T) {
 	tests := []struct {
 		name      string
-		configure func(*testing.T, *backupFixture, *memoryObjectStore, string) (*SetRunner, context.Context)
+		configure func(*testing.T, *backupFixture, string) (*SetRunner, context.Context)
 		wantCode  string
 	}{
 		{
 			name: "referenced upload missing",
-			configure: func(t *testing.T, fx *backupFixture, store *memoryObjectStore, recipient string) (*SetRunner, context.Context) {
+			configure: func(t *testing.T, fx *backupFixture, recipient string) (*SetRunner, context.Context) {
 				if err := os.Remove(filepath.Join(fx.uploads, "user-a/meal/meal.jpg")); err != nil {
 					t.Fatal(err)
 				}
-				return fixtureRunner(fx, store, recipient), context.Background()
+				return fixtureRunner(t, fx, recipient), context.Background()
 			},
 			wantCode: "snapshot_failed",
 		},
 		{
 			name: "interrupted snapshot",
-			configure: func(t *testing.T, fx *backupFixture, store *memoryObjectStore, recipient string) (*SetRunner, context.Context) {
-				runner := fixtureRunner(fx, store, recipient)
+			configure: func(t *testing.T, fx *backupFixture, recipient string) (*SetRunner, context.Context) {
+				runner := fixtureRunner(t, fx, recipient)
 				runner.Snapshot = func(context.Context, string, string) error { return errors.New("private snapshot detail") }
 				return runner, context.Background()
 			},
@@ -246,31 +207,29 @@ func TestSetRunnerFailsClosedBeforeUpload(t *testing.T) {
 		},
 		{
 			name: "encryption failure",
-			configure: func(t *testing.T, fx *backupFixture, store *memoryObjectStore, _ string) (*SetRunner, context.Context) {
-				return fixtureRunner(fx, store, "invalid-age-recipient"), context.Background()
+			configure: func(t *testing.T, fx *backupFixture, _ string) (*SetRunner, context.Context) {
+				return fixtureRunner(t, fx, "invalid-age-recipient"), context.Background()
 			},
 			wantCode: "encryption_failed",
 		},
 		{
-			name: "upload failure",
-			configure: func(t *testing.T, fx *backupFixture, store *memoryObjectStore, recipient string) (*SetRunner, context.Context) {
-				store.putErr = errors.New("fake-object-secret upload detail")
-				return fixtureRunner(fx, store, recipient), context.Background()
+			name: "invalid spool configuration",
+			configure: func(t *testing.T, fx *backupFixture, recipient string) (*SetRunner, context.Context) {
+				runner := fixtureRunner(t, fx, recipient)
+				if err := os.RemoveAll(runner.SpoolDir); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(runner.SpoolDir, []byte("not a directory"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return runner, context.Background()
 			},
-			wantCode: "upload_failed",
-		},
-		{
-			name: "remote ciphertext mismatch",
-			configure: func(t *testing.T, fx *backupFixture, store *memoryObjectStore, recipient string) (*SetRunner, context.Context) {
-				store.corruptGet = true
-				return fixtureRunner(fx, store, recipient), context.Background()
-			},
-			wantCode: "remote_verification_failed",
+			wantCode: "storage_unconfigured",
 		},
 		{
 			name: "cancelled snapshot",
-			configure: func(t *testing.T, fx *backupFixture, store *memoryObjectStore, recipient string) (*SetRunner, context.Context) {
-				runner := fixtureRunner(fx, store, recipient)
+			configure: func(t *testing.T, fx *backupFixture, recipient string) (*SetRunner, context.Context) {
+				runner := fixtureRunner(t, fx, recipient)
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
 				return runner, ctx
@@ -286,19 +245,13 @@ func TestSetRunnerFailsClosedBeforeUpload(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			store := &memoryObjectStore{}
-			runner, ctx := tt.configure(t, fx, store, identity.Recipient().String())
+			runner, ctx := tt.configure(t, fx, identity.Recipient().String())
 			_, failure := runner.Run(ctx, Job{})
 			if failure == nil || failure.Code != tt.wantCode {
 				t.Fatalf("want failure %q, got %+v", tt.wantCode, failure)
 			}
 			if strings.Contains(failure.Message, "private snapshot detail") || strings.Contains(failure.Message, "fake-object-secret") {
 				t.Fatalf("failure leaked sensitive details: %q", failure.Message)
-			}
-			if tt.name == "referenced upload missing" || tt.name == "interrupted snapshot" || tt.name == "encryption failure" || tt.name == "cancelled snapshot" {
-				if store.puts != 0 {
-					t.Fatalf("failed before upload but performed %d uploads", store.puts)
-				}
 			}
 		})
 	}
@@ -310,8 +263,7 @@ func TestRestoreDrillRoundTripsSyntheticBackupAndRejectsCorruption(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &memoryObjectStore{}
-	runner := fixtureRunner(fx, store, identity.Recipient().String())
+	runner := fixtureRunner(t, fx, identity.Recipient().String())
 	evidence, failure := runner.Run(context.Background(), Job{})
 	if failure != nil {
 		t.Fatalf("create synthetic backup: %s", failure.Code)
@@ -322,7 +274,7 @@ func TestRestoreDrillRoundTripsSyntheticBackupAndRejectsCorruption(t *testing.T)
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", scratch)
-	report, err := RestoreDrill(context.Background(), store, evidence.RemoteObjectID, *evidence, []age.Identity{identity})
+	report, err := RestoreDrill(context.Background(), runner.SpoolDir, *evidence, []age.Identity{identity})
 	if err != nil {
 		t.Fatalf("restore drill: %v", err)
 	}
@@ -334,7 +286,10 @@ func TestRestoreDrillRoundTripsSyntheticBackupAndRejectsCorruption(t *testing.T)
 		t.Fatalf("restore workspace was not removed: entries=%d err=%v", len(entries), err)
 	}
 
-	originalCiphertext := append([]byte(nil), store.objects[evidence.RemoteObjectID]...)
+	originalCiphertext, err := os.ReadFile(filepath.Join(runner.SpoolDir, evidence.ReadyFileID))
+	if err != nil {
+		t.Fatal(err)
+	}
 	plain, err := age.Decrypt(bytes.NewReader(originalCiphertext), identity)
 	if err != nil {
 		t.Fatal(err)
@@ -384,11 +339,17 @@ func TestRestoreDrillRoundTripsSyntheticBackupAndRejectsCorruption(t *testing.T)
 		t.Fatal(err)
 	}
 	changedHash := sha256.Sum256(changedCiphertext.Bytes())
-	store.objects[evidence.RemoteObjectID] = changedCiphertext.Bytes()
+	artifactPath := filepath.Join(runner.SpoolDir, evidence.ReadyFileID)
 	changedEvidence := *evidence
 	changedEvidence.CiphertextSHA256 = hex.EncodeToString(changedHash[:])
 	changedEvidence.CiphertextSizeBytes = int64(changedCiphertext.Len())
-	if _, err := RestoreDrill(context.Background(), store, changedEvidence.RemoteObjectID, changedEvidence, []age.Identity{identity}); err == nil || err.Error() != "backup archive member checksum mismatch" {
+	if err := os.WriteFile(artifactPath, changedCiphertext.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeReadySidecar(runner.SpoolDir, changedEvidence); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreDrill(context.Background(), runner.SpoolDir, changedEvidence, []age.Identity{identity}); err == nil || err.Error() != "backup archive member checksum mismatch" {
 		t.Fatalf("archive member corruption accepted: %v", err)
 	}
 	entries, err = os.ReadDir(scratch)
@@ -397,9 +358,17 @@ func TestRestoreDrillRoundTripsSyntheticBackupAndRejectsCorruption(t *testing.T)
 	}
 
 	// Restore the genuine object before checking ciphertext-level corruption.
-	store.objects[evidence.RemoteObjectID] = originalCiphertext
-	store.objects[evidence.RemoteObjectID][0] ^= 0xff
-	if _, err := RestoreDrill(context.Background(), store, evidence.RemoteObjectID, *evidence, []age.Identity{identity}); err == nil || err.Error() != "backup ciphertext verification failed" {
+	if err := os.WriteFile(artifactPath, originalCiphertext, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeReadySidecar(runner.SpoolDir, *evidence); err != nil {
+		t.Fatal(err)
+	}
+	originalCiphertext[0] ^= 0xff
+	if err := os.WriteFile(artifactPath, originalCiphertext, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreDrill(context.Background(), runner.SpoolDir, *evidence, []age.Identity{identity}); err == nil || err.Error() != "backup ciphertext verification failed" {
 		t.Fatalf("corrupt remote ciphertext accepted: %v", err)
 	}
 	entries, err = os.ReadDir(scratch)
@@ -449,16 +418,25 @@ func TestRestoreDrillRejectsUnsafeArchiveMember(t *testing.T) {
 	}
 	cipherHash := sha256.Sum256(ciphertext.Bytes())
 	manifestHash := sha256.Sum256(manifestBytes)
-	objectID := "6f0d5b9a-61dc-4c53-b15e-64d46273eec1"
-	store := &memoryObjectStore{objects: map[string][]byte{objectID: ciphertext.Bytes()}}
-	evidence := Evidence{BackupSetType: "full", ManifestSHA256: hex.EncodeToString(manifestHash[:]), RemoteObjectID: objectID,
+	fileID := "6f0d5b9a-61dc-4c53-b15e-64d46273eec1.age"
+	spool := filepath.Join(t.TempDir(), "spool")
+	if err := os.Mkdir(spool, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(spool, fileID), ciphertext.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	evidence := Evidence{BackupSetType: "full", ManifestSHA256: hex.EncodeToString(manifestHash[:]), ReadyFileID: fileID,
 		CiphertextSHA256: hex.EncodeToString(cipherHash[:]), CiphertextSizeBytes: int64(ciphertext.Len()), EncryptionKeyID: "synthetic-test-key"}
+	if err := writeReadySidecar(spool, evidence); err != nil {
+		t.Fatal(err)
+	}
 	scratch := filepath.Join(t.TempDir(), "private-restore-scratch")
 	if err := os.Mkdir(scratch, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", scratch)
-	if _, err := RestoreDrill(context.Background(), store, objectID, evidence, []age.Identity{identity}); err == nil || !strings.Contains(err.Error(), "unsafe member") {
+	if _, err := RestoreDrill(context.Background(), spool, evidence, []age.Identity{identity}); err == nil || !strings.Contains(err.Error(), "unsafe member") {
 		t.Fatalf("unsafe archive member accepted: %v", err)
 	}
 	entries, err := os.ReadDir(scratch)
@@ -472,7 +450,7 @@ func TestRestoreDrillRejectsUnsafeArchiveMember(t *testing.T) {
 
 func TestSetRunnerRejectsTamperedLocalArchive(t *testing.T) {
 	fx := newBackupFixture(t)
-	runner := fixtureRunner(fx, &memoryObjectStore{}, "unused")
+	runner := fixtureRunner(t, fx, "unused")
 	tmp := t.TempDir()
 	set, err := runner.capture(context.Background(), tmp)
 	if err != nil {
@@ -488,8 +466,7 @@ func TestSetRunnerRejectsTamperedLocalArchive(t *testing.T) {
 
 func TestSetRunnerRejectsMissingConfigurationAndUnsafePhotoPaths(t *testing.T) {
 	fx := newBackupFixture(t)
-	store := &memoryObjectStore{}
-	runner := fixtureRunner(fx, store, "")
+	runner := fixtureRunner(t, fx, "")
 	if _, failure := runner.Run(context.Background(), Job{}); failure == nil || failure.Code != "storage_unconfigured" {
 		t.Fatalf("missing recipient should fail closed, got %+v", failure)
 	}
@@ -498,19 +475,125 @@ func TestSetRunnerRejectsMissingConfigurationAndUnsafePhotoPaths(t *testing.T) {
 	}
 }
 
-func TestS3CompatibleStoreRequiresCredentialFreeHTTPSOrigin(t *testing.T) {
-	for _, endpoint := range []string{
-		"http://objects.example.invalid",
-		"https://user:password@objects.example.invalid",
-		"https://objects.example.invalid/prefix",
-		"https://objects.example.invalid/?token=secret",
-	} {
-		if _, err := NewS3CompatibleStore(endpoint, "bucket", "access", "secret", "region"); err == nil {
-			t.Errorf("unsafe endpoint accepted: %q", endpoint)
-		}
+func TestSetRunnerRejectsSpoolInsideUploadsDirectory(t *testing.T) {
+	fx := newBackupFixture(t)
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := NewS3CompatibleStore("https://objects.example.invalid", "bucket", "access", "secret", "region"); err != nil {
-		t.Fatalf("valid HTTPS S3 origin rejected: %v", err)
+	runner := fixtureRunner(t, fx, identity.Recipient().String())
+	runner.SpoolDir = filepath.Join(fx.uploads, "backups")
+	if evidence, failure := runner.Run(context.Background(), Job{}); evidence != nil || failure == nil || failure.Code != "storage_unconfigured" {
+		t.Fatalf("spool inside uploads was accepted: evidence=%+v failure=%+v", evidence, failure)
+	}
+	if _, err := os.Lstat(runner.SpoolDir); !os.IsNotExist(err) {
+		t.Fatalf("runner created an invalid spool inside uploads: %v", err)
+	}
+}
+
+func TestSetRunnerRejectsSymlinkedPersistentSpoolEscape(t *testing.T) {
+	fx := newBackupFixture(t)
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	persistentRoot := filepath.Join(t.TempDir(), "persistent")
+	if err := os.Mkdir(persistentRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external := t.TempDir()
+	if err := os.Symlink(external, filepath.Join(persistentRoot, "redirect")); err != nil {
+		t.Fatal(err)
+	}
+	runner := fixtureRunner(t, fx, identity.Recipient().String())
+	runner.PersistentRoot = persistentRoot
+	runner.SpoolDir = filepath.Join(persistentRoot, "redirect", "backups")
+	if evidence, failure := runner.Run(context.Background(), Job{}); evidence != nil || failure == nil || failure.Code != "storage_unconfigured" {
+		t.Fatalf("symlink escape was accepted: evidence=%+v failure=%+v", evidence, failure)
+	}
+}
+
+func TestPublishArtifactWritesSidecarLastAndRejectsCiphertextMismatch(t *testing.T) {
+	spool := filepath.Join(t.TempDir(), "spool")
+	if err := os.Mkdir(spool, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "cipher.age")
+	ciphertext := []byte("synthetic-encrypted-backup")
+	if err := os.WriteFile(source, ciphertext, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(ciphertext)
+	fileID := "6f0d5b9a-61dc-4c53-b15e-64d46273eec1.age"
+	if err := publishArtifact(context.Background(), spool, source, fileID, int64(len(ciphertext)), hex.EncodeToString(digest[:])); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(spool)
+	if err != nil || len(entries) != 2 || entries[0].Name() != fileID && entries[1].Name() != fileID {
+		t.Fatalf("artifact and ready sidecar were not both published: %#v, %v", entries, err)
+	}
+	markerBytes, err := os.ReadFile(filepath.Join(spool, strings.TrimSuffix(fileID, ".age")+".ready.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var marker readyManifest
+	if err := json.Unmarshal(markerBytes, &marker); err != nil || marker.ArtifactFile != fileID || marker.CiphertextSizeBytes != int64(len(ciphertext)) || marker.CiphertextSHA256 != hex.EncodeToString(digest[:]) {
+		t.Fatalf("unexpected ready marker: %+v (%v)", marker, err)
+	}
+
+	other := filepath.Join(t.TempDir(), "different.age")
+	if err := os.WriteFile(other, []byte("different"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	badSpool := filepath.Join(t.TempDir(), "bad-spool")
+	if err := os.Mkdir(badSpool, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishArtifact(context.Background(), badSpool, other, fileID, int64(len(ciphertext)), hex.EncodeToString(digest[:])); err == nil {
+		t.Fatal("publication accepted ciphertext inconsistent with expected hash and size")
+	}
+	entries, err = os.ReadDir(badSpool)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("failed publication left a ready artifact: %#v, %v", entries, err)
+	}
+}
+
+func TestVerifyPublishedArtifactChecksBytesAtFinalPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "artifact.age")
+	want := []byte("published ciphertext")
+	if err := os.WriteFile(path, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(want)
+	hash := hex.EncodeToString(digest[:])
+	if err := verifyPublishedArtifact(path, int64(len(want)), hash); err != nil {
+		t.Fatalf("valid published ciphertext failed verification: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("corrupted ciphertext"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyPublishedArtifact(path, int64(len(want)), hash); err == nil {
+		t.Fatal("corrupted bytes at the final artifact path passed verification")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(t.TempDir(), "outside.age"), path); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyPublishedArtifact(path, int64(len(want)), hash); err == nil {
+		t.Fatal("symlink at the final artifact path passed verification")
+	}
+}
+
+func TestEnsurePrivateSpoolCreatesDurablePrivateDirectoryTree(t *testing.T) {
+	spool := filepath.Join(t.TempDir(), "persistent", "backups")
+	if err := ensurePrivateSpool(spool); err != nil {
+		t.Fatalf("ensurePrivateSpool: %v", err)
+	}
+	info, err := os.Lstat(spool)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("spool was not created as a private directory: info=%v err=%v", info, err)
 	}
 }
 
@@ -523,7 +606,7 @@ func TestSetRunnerWaitsForSharedPhotoOperationBarrier(t *testing.T) {
 	barrier := &sync.RWMutex{}
 	barrier.RLock() // represents an HTTP photo operation still in flight
 	enteredSnapshot := make(chan struct{})
-	runner := fixtureRunner(fx, &memoryObjectStore{}, identity.Recipient().String())
+	runner := fixtureRunner(t, fx, identity.Recipient().String())
 	runner.Barrier = barrier
 	runner.Snapshot = func(ctx context.Context, source, dest string) error {
 		close(enteredSnapshot)
@@ -596,9 +679,29 @@ func newBackupFixture(t *testing.T) *backupFixture {
 	return fx
 }
 
-func fixtureRunner(fx *backupFixture, store *memoryObjectStore, recipient string) *SetRunner {
-	return &SetRunner{DatabasePath: fx.dbPath, UploadsDir: fx.uploads, AgeRecipient: recipient,
-		EncryptionID: "age-recipient-test-v1", Store: store}
+func fixtureRunner(t *testing.T, fx *backupFixture, recipient string) *SetRunner {
+	t.Helper()
+	return &SetRunner{DatabasePath: fx.dbPath, UploadsDir: fx.uploads, SpoolDir: filepath.Join(filepath.Dir(fx.dbPath), "private-backups"),
+		PersistentRoot: filepath.Dir(fx.dbPath), AgeRecipient: recipient,
+		EncryptionID: "age-recipient-test-v1"}
+}
+
+func readArtifact(t *testing.T, runner *SetRunner, evidence Evidence) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(runner.SpoolDir, evidence.ReadyFileID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func writeReadySidecar(spoolDir string, evidence Evidence) error {
+	marker := readyManifest{ArtifactFile: evidence.ReadyFileID, CiphertextSizeBytes: evidence.CiphertextSizeBytes, CiphertextSHA256: evidence.CiphertextSHA256}
+	encoded, err := json.Marshal(marker)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(spoolDir, strings.TrimSuffix(evidence.ReadyFileID, ".age")+".ready.json"), encoded, 0o600)
 }
 
 func readTarMember(t *testing.T, archive []byte, name string) []byte {

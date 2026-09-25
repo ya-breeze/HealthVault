@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -27,16 +26,40 @@ type RestoreReport struct {
 	UploadBytes    int64
 }
 
-// RestoreDrill downloads and verifies a completed backup in a fresh private
+// RestoreDrill verifies one locally published backup in a fresh private
 // temporary directory. identities are provided by the caller and are never
 // written to disk. No files are installed into an application data directory.
-func RestoreDrill(ctx context.Context, store ObjectStore, objectID string, evidence Evidence, identities []age.Identity) (result *RestoreReport, resultErr error) {
-	if store == nil || !validObjectKey(objectID) || objectID != evidence.RemoteObjectID ||
-		validateEvidence(evidence) != nil || evidence.CiphertextSizeBytes == math.MaxInt64 || len(identities) == 0 {
+func RestoreDrill(ctx context.Context, spoolDir string, evidence Evidence, identities []age.Identity) (result *RestoreReport, resultErr error) {
+	if spoolDir == "" || validateEvidence(evidence) != nil || len(identities) == 0 {
 		return nil, errors.New("invalid restore drill input")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, errors.New("restore drill canceled")
+	}
+	if err := ensurePrivateSpool(spoolDir); err != nil {
+		return nil, errors.New("backup spool unavailable")
+	}
+	artifactPath := filepath.Join(spoolDir, evidence.ReadyFileID)
+	markerPath := filepath.Join(spoolDir, strings.TrimSuffix(evidence.ReadyFileID, ".age")+".ready.json")
+	markerInfo, err := os.Lstat(markerPath)
+	if err != nil || !markerInfo.Mode().IsRegular() || markerInfo.Mode()&os.ModeSymlink != 0 || markerInfo.Size() < 1 || markerInfo.Size() > 4096 {
+		return nil, errors.New("backup ready marker unavailable")
+	}
+	markerBytes, err := os.ReadFile(markerPath)
+	if err != nil {
+		return nil, errors.New("backup ready marker unavailable")
+	}
+	var marker readyManifest
+	decoder := json.NewDecoder(strings.NewReader(string(markerBytes)))
+	decoder.DisallowUnknownFields()
+	var trailing any
+	if decoder.Decode(&marker) != nil || decoder.Decode(&trailing) != io.EOF || marker.ArtifactFile != evidence.ReadyFileID ||
+		marker.CiphertextSizeBytes != evidence.CiphertextSizeBytes || marker.CiphertextSHA256 != evidence.CiphertextSHA256 {
+		return nil, errors.New("backup ready marker does not match evidence")
+	}
+	artifactInfo, err := os.Lstat(artifactPath)
+	if err != nil || !artifactInfo.Mode().IsRegular() || artifactInfo.Mode()&os.ModeSymlink != 0 || artifactInfo.Size() != evidence.CiphertextSizeBytes {
+		return nil, errors.New("backup artifact unavailable")
 	}
 	// Ignore TMPDIR: a caller must not redirect decrypted scratch files into
 	// the live HealthVault data volume through an environment variable.
@@ -56,9 +79,9 @@ func RestoreDrill(ctx context.Context, store ObjectStore, objectID string, evide
 	}()
 
 	cipherPath := filepath.Join(tmp, "backup.age")
-	remote, err := store.Get(ctx, objectID)
+	remote, err := os.Open(artifactPath)
 	if err != nil {
-		return nil, errors.New("backup object unavailable")
+		return nil, errors.New("backup artifact unavailable")
 	}
 	cipherFile, err := os.OpenFile(cipherPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {

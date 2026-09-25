@@ -97,19 +97,12 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	r.SkipClean(true)
 	captureBarrier := &sync.RWMutex{}
 	var backupRunner backupapi.Runner = backupapi.RunnerFunc(backupapi.UnconfiguredRunner)
-	if cfg.BackupS3Endpoint != "" && cfg.BackupS3Bucket != "" && cfg.BackupS3AccessKey != "" &&
-		cfg.BackupS3SecretKey != "" && cfg.BackupAgeRecipient != "" && cfg.BackupEncryptionKeyID != "" {
-		if store, storeErr := backupapi.NewS3CompatibleStore(cfg.BackupS3Endpoint, cfg.BackupS3Bucket,
-			cfg.BackupS3AccessKey, cfg.BackupS3SecretKey, cfg.BackupS3Region); storeErr == nil {
-			backupRunner = &backupapi.SetRunner{DatabasePath: cfg.DBPath, UploadsDir: cfg.UploadsDir,
-				AgeRecipient: cfg.BackupAgeRecipient, EncryptionID: cfg.BackupEncryptionKeyID,
-				Store: store, Barrier: captureBarrier}
-		} else {
-			logger.Warn("backup storage configuration is invalid; jobs will fail closed")
-		}
-	} else if cfg.BackupS3Endpoint != "" || cfg.BackupS3Bucket != "" || cfg.BackupS3AccessKey != "" ||
-		cfg.BackupS3SecretKey != "" || cfg.BackupAgeRecipient != "" || cfg.BackupEncryptionKeyID != "" {
-		logger.Warn("backup storage configuration is incomplete; jobs will fail closed")
+	if cfg.BackupSpoolDir != "" && cfg.BackupAgeRecipient != "" && cfg.BackupEncryptionKeyID != "" {
+		backupRunner = &backupapi.SetRunner{DatabasePath: cfg.DBPath, UploadsDir: cfg.UploadsDir,
+			SpoolDir: cfg.BackupSpoolDir, PersistentRoot: "/data", AgeRecipient: cfg.BackupAgeRecipient,
+			EncryptionID: cfg.BackupEncryptionKeyID, Barrier: captureBarrier}
+	} else if cfg.BackupAgeRecipient != "" || cfg.BackupEncryptionKeyID != "" {
+		logger.Warn("backup spool configuration is incomplete; jobs will fail closed")
 	}
 	backupJobs, err := backupapi.New(storage.DB(), backupRunner)
 	if err != nil {

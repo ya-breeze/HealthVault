@@ -32,14 +32,12 @@ type Error struct {
 }
 
 type Evidence struct {
-	BackupSetType       string     `json:"backup_set_type"`
-	ManifestSHA256      string     `json:"manifest_sha256"`
-	RemoteObjectID      string     `json:"remote_object_id"`
-	CiphertextSHA256    string     `json:"ciphertext_sha256"`
-	CiphertextSizeBytes int64      `json:"ciphertext_size_bytes"`
-	EncryptionKeyID     string     `json:"encryption_key_id"`
-	RetainUntil         *time.Time `json:"retain_until"`
-	ImmutableUntil      *time.Time `json:"immutable_until"`
+	BackupSetType       string `json:"backup_set_type"`
+	ManifestSHA256      string `json:"manifest_sha256"`
+	ReadyFileID         string `json:"ready_file_id"`
+	CiphertextSHA256    string `json:"ciphertext_sha256"`
+	CiphertextSizeBytes int64  `json:"ciphertext_size_bytes"`
+	EncryptionKeyID     string `json:"encryption_key_id"`
 }
 
 type Job struct {
@@ -312,7 +310,7 @@ func newJobID() (string, error) {
 
 func validJobError(code string) bool {
 	switch code {
-	case "snapshot_failed", "local_verification_failed", "encryption_failed", "upload_failed", "remote_verification_failed", "storage_unconfigured", "timeout", "internal":
+	case "snapshot_failed", "local_verification_failed", "encryption_failed", "publish_failed", "storage_unconfigured", "timeout", "internal":
 		return true
 	default:
 		return false
@@ -327,10 +325,8 @@ func safeMessage(code string) string {
 		return "backup verification failed"
 	case "encryption_failed":
 		return "backup encryption failed"
-	case "upload_failed":
-		return "backup upload failed"
-	case "remote_verification_failed":
-		return "remote backup verification failed"
+	case "publish_failed":
+		return "backup artifact publication failed"
 	case "storage_unconfigured":
 		return "backup storage is not configured"
 	case "timeout":
@@ -342,18 +338,15 @@ func safeMessage(code string) string {
 
 func validateEvidence(value Evidence) error {
 	if value.BackupSetType != "full" || !isDigest(value.ManifestSHA256) || !isDigest(value.CiphertextSHA256) ||
-		value.RemoteObjectID == "" || len(value.RemoteObjectID) > 512 || containsUnsafe(value.RemoteObjectID) || containsLeak(value.RemoteObjectID) ||
+		!readyFileIDPattern.MatchString(value.ReadyFileID) ||
 		value.CiphertextSizeBytes <= 0 || value.EncryptionKeyID == "" || len(value.EncryptionKeyID) > 200 ||
 		containsLeak(value.EncryptionKeyID) {
 		return errors.New("invalid evidence")
 	}
-	for _, timestamp := range []*time.Time{value.RetainUntil, value.ImmutableUntil} {
-		if timestamp != nil {
-			*timestamp = timestamp.UTC()
-		}
-	}
 	return nil
 }
+
+var readyFileIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.age$`)
 
 func isDigest(value string) bool {
 	if len(value) != 64 {
