@@ -27,6 +27,10 @@ services:
       HCW_OFF_DB_PATH: ${HCW_OFF_DB_PATH:-/data/off.db}
       HCW_OPENAI_API_KEY: ${HCW_OPENAI_API_KEY:-}
       HCW_OPENAI_MODEL: ${HCW_OPENAI_MODEL:-gpt-4o-mini}
+      HCW_BACKUP_API_TOKEN: ${HCW_BACKUP_API_TOKEN:-}
+      HCW_BACKUP_SPOOL_DIR: ${HCW_BACKUP_SPOOL_DIR:-/data/backups}
+      HCW_BACKUP_AGE_RECIPIENT: ${HCW_BACKUP_AGE_RECIPIENT:-}
+      HCW_BACKUP_ENCRYPTION_KEY_ID: ${HCW_BACKUP_ENCRYPTION_KEY_ID:-}
     volumes:
       - ${HCW_DATA_PATH:?HCW_DATA_PATH must be set}:/data
     networks:

@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
+	"sync"
 
 	"github.com/gorilla/mux"
+	"github.com/ya-breeze/healthvault/pkg/backupapi"
 	"github.com/ya-breeze/healthvault/pkg/cfaccess"
 	"github.com/ya-breeze/healthvault/pkg/config"
 	"github.com/ya-breeze/healthvault/pkg/database"
@@ -89,6 +92,23 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 		WithOFF(offIndex)
 
 	r := mux.NewRouter()
+	// Internal backup calls are private backend routes. nginx returns an explicit
+	// JSON 404 for this prefix and never proxies it from an application hostname.
+	r.SkipClean(true)
+	captureBarrier := &sync.RWMutex{}
+	var backupRunner backupapi.Runner = backupapi.RunnerFunc(backupapi.UnconfiguredRunner)
+	if cfg.BackupSpoolDir != "" && cfg.BackupAgeRecipient != "" && cfg.BackupEncryptionKeyID != "" {
+		backupRunner = &backupapi.SetRunner{DatabasePath: cfg.DBPath, UploadsDir: cfg.UploadsDir,
+			SpoolDir: cfg.BackupSpoolDir, PersistentRoot: "/data", AgeRecipient: cfg.BackupAgeRecipient,
+			EncryptionID: cfg.BackupEncryptionKeyID, Barrier: captureBarrier}
+	} else if cfg.BackupAgeRecipient != "" || cfg.BackupEncryptionKeyID != "" {
+		logger.Warn("backup spool configuration is incomplete; jobs will fail closed")
+	}
+	backupJobs, err := backupapi.New(storage.DB(), backupRunner)
+	if err != nil {
+		return fmt.Errorf("initialize backup jobs: %w", err)
+	}
+	r.PathPrefix("/internal/backups").Handler(backupapi.NewHandler(cfg.BackupAPIToken, backupJobs))
 
 	// Webhook (unauthenticated) — implemented in Task 5
 	r.HandleFunc("/webhook/{username}", webhookHandler(storage)).Methods("POST")
@@ -153,7 +173,12 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	mcpHandler := mcpserver.Handler(storage)
 	r.PathPrefix("/mcp").Handler(requireBearerToken(cfg.MCPToken, mcpHandler))
 
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
+	// Keep all HTTP operations mutually compatible with a backup capture. The
+	// backup runner takes the exclusive side while it snapshots SQLite and
+	// reads uploads, so no request can create a database/photo mismatch. This
+	// is process-local; HealthVault must run one backend replica per data set.
+	sharedHandler := captureAwareHandler(r, captureBarrier)
+	srv := &http.Server{Addr: ":" + cfg.Port, Handler: sharedHandler}
 	logger.Info("listening", "port", cfg.Port)
 
 	errCh := make(chan error, 1)
@@ -164,4 +189,20 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
 	}
+}
+
+func captureAwareHandler(router http.Handler, captureBarrier *sync.RWMutex) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Backup status must remain reachable while a capture waits or runs.
+		// MCP tools are read-only, and a stream may remain open indefinitely.
+		if strings.HasPrefix(req.URL.Path, "/internal/backups/") ||
+			req.URL.Path == "/internal/backups" ||
+			req.URL.Path == "/mcp" || strings.HasPrefix(req.URL.Path, "/mcp/") {
+			router.ServeHTTP(w, req)
+			return
+		}
+		captureBarrier.RLock()
+		defer captureBarrier.RUnlock()
+		router.ServeHTTP(w, req)
+	})
 }
