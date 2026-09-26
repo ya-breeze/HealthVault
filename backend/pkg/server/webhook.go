@@ -1,10 +1,13 @@
 package server
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +15,32 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/database"
 	"github.com/ya-breeze/healthvault/pkg/ingest"
 )
+
+const webhookTokenHeader = "X-HCW-Webhook-Token"
+
+// requireWebhookToken rejects requests before the handler can inspect a user
+// or payload. An unset server token disables the endpoint.
+func requireWebhookToken(token string, next http.Handler) http.Handler {
+	configured := token != "" && strings.TrimSpace(token) == token
+	expected := sha256.Sum256([]byte(token))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !configured {
+			http.Error(w, "webhook not configured", http.StatusServiceUnavailable)
+			return
+		}
+		values := r.Header.Values(webhookTokenHeader)
+		if len(values) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		presented := sha256.Sum256([]byte(values[0]))
+		if subtle.ConstantTimeCompare(presented[:], expected[:]) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func webhookHandler(storage database.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

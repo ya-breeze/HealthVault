@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { BASE_URL } from './helpers/target';
+import { webhookAuthHeaders } from './helpers/webhook';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
@@ -811,6 +812,7 @@ test.describe('Webhook ingest + dashboard', () => {
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59).toISOString();
 
     const resp = await request.post(`${BASE_URL}/webhook/${USER}`, {
+      headers: webhookAuthHeaders(),
       data: {
         timestamp: ts,
         app_version: 'e2e-test',

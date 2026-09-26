@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { BASE_URL } from './helpers/target';
+import { webhookAuthHeaders } from './helpers/webhook';
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
@@ -674,6 +675,7 @@ test.describe('Step interval collapse (check-the-health-data)', () => {
     // full-morning record plus a smaller one nested inside it, simulating
     // two sync sources' overlapping copies of the same walk.
     const resp = await request.post(`${BASE_URL}/webhook/${USER}`, {
+      headers: webhookAuthHeaders(),
       data: {
         timestamp: new Date().toISOString(),
         app_version: 'e2e-test-1.0',
@@ -1182,6 +1184,7 @@ test.describe('Writable form localization — Russian', () => {
 test.describe('Webhook endpoint', () => {
   test('POST /webhook/alice with valid payload returns 204', async ({ request }) => {
     const resp = await request.post(`${BASE_URL}/webhook/${USER}`, {
+      headers: webhookAuthHeaders(),
       data: {
         timestamp: new Date().toISOString(),
         app_version: 'e2e-test-1.0',
@@ -1193,6 +1196,7 @@ test.describe('Webhook endpoint', () => {
 
   test('POST /webhook/nonexistent_user returns 404', async ({ request }) => {
     const resp = await request.post(`${BASE_URL}/webhook/nonexistent_user_xyz`, {
+      headers: webhookAuthHeaders(),
       data: { timestamp: new Date().toISOString(), app_version: '1.0' },
     });
     expect(resp.status()).toBe(404);
@@ -1200,10 +1204,25 @@ test.describe('Webhook endpoint', () => {
 
   test('POST /webhook/alice with invalid JSON returns 400', async ({ request }) => {
     const resp = await request.post(`${BASE_URL}/webhook/${USER}`, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...webhookAuthHeaders(), 'Content-Type': 'application/json' },
       data: 'not valid json{{{',
     });
     expect(resp.status()).toBe(400);
+  });
+
+  test('POST /webhook/alice without the token returns 401', async ({ request }) => {
+    const resp = await request.post(`${BASE_URL}/webhook/${USER}`, {
+      data: { timestamp: new Date().toISOString(), app_version: 'e2e-test-1.0' },
+    });
+    expect(resp.status()).toBe(401);
+  });
+
+  test('POST /webhook/alice with the wrong token returns 401', async ({ request }) => {
+    const resp = await request.post(`${BASE_URL}/webhook/${USER}`, {
+      headers: { 'X-HCW-Webhook-Token': `${webhookAuthHeaders()['X-HCW-Webhook-Token']}-wrong` },
+      data: { timestamp: new Date().toISOString(), app_version: 'e2e-test-1.0' },
+    });
+    expect(resp.status()).toBe(401);
   });
 });
 

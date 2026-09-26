@@ -11,6 +11,8 @@ services:
       HCW_JWT_SECRET: ${HCW_JWT_SECRET:?HCW_JWT_SECRET must be set}
       HCW_COOKIE_SECURE: ${HCW_COOKIE_SECURE:-true}
       HCW_MCP_TOKEN: ${HCW_MCP_TOKEN:-}
+      # Empty disables the webhook instead of accepting unauthenticated payloads.
+      HCW_WEBHOOK_TOKEN: ${HCW_WEBHOOK_TOKEN:-}
       # Cloudflare Access sign-in exchange (POST /api/auth/cf-access). All
       # three default to empty; the endpoint 404s unless all three are set.
       # HCW_CF_ACCESS_TEAM_DOMAIN: the Access team domain, e.g.
