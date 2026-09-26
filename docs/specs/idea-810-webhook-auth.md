@@ -42,6 +42,6 @@ Cloudflare sign-in ADR, which described the webhook as unauthenticated when it w
 ### Task 2: Validate against a private WIP deployment
 
 - [x] Pass the token through Compose and make webhook E2E requests send the WIP-only token.
-- [ ] Test rejection and successful synthetic ingestion on the private WIP stack without public ingress.
+- [x] Test rejection and successful synthetic ingestion on the private WIP stack without public ingress.
 - [x] Run backend tests, static checks, and the Review Gate before WIP deployment.
-- [ ] Mark completed
+- [x] Mark completed
