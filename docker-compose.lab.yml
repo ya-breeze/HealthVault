@@ -1,0 +1,79 @@
+name: healthvault-lab
+
+services:
+  backend:
+    image: healthvault-lab-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: "no"
+    environment:
+      HCW_PORT: "8080"
+      HCW_DBPATH: /data/hcw.db
+      HCW_SEED_USERS: LabFamily:lab:lab-only-password
+      HCW_JWT_SECRET: healthvault-lab-only-not-a-secret
+      HCW_COOKIE_SECURE: "false"
+      HCW_MCP_TOKEN: ""
+      HCW_CF_ACCESS_TEAM_DOMAIN: ""
+      HCW_CF_ACCESS_AUD: ""
+      HCW_CF_ACCESS_EMAIL_MAP: ""
+      HCW_UPLOADS_DIR: /data/uploads
+      HCW_USDA_DB_PATH: /data/usda.db
+      HCW_OFF_DB_PATH: /data/off.db
+      HCW_OPENAI_API_KEY: ""
+    volumes:
+      - lab-data:/data
+    networks:
+      - lab
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8080/internal/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+
+  nginx:
+    image: healthvault-lab-nginx
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    restart: "no"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - lab
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error --max-time 3 http://127.0.0.1:80/internal/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  lab-smoke:
+    image: healthvault-lab-backend
+    profiles: [smoke]
+    depends_on:
+      nginx:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        curl --fail --silent --show-error --max-time 3 http://nginx/login/ >/dev/null
+        status=$$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 3 http://nginx/internal/ready)
+        [ "$$status" = "403" ] || { echo "HTTP readiness route returned $$status, expected 403" >&2; exit 1; }
+        status=$$(curl --insecure --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 3 https://nginx/internal/ready)
+        [ "$$status" = "403" ] || { echo "HTTPS readiness route returned $$status, expected 403" >&2; exit 1; }
+        curl --fail --silent --show-error --max-time 3 --cookie-jar /tmp/lab-cookies --header 'Content-Type: application/json' --data '{"username":"lab","password":"lab-only-password"}' http://nginx/api/auth/login >/dev/null
+        curl --fail --silent --show-error --max-time 3 --cookie /tmp/lab-cookies http://nginx/api/users/me >/dev/null
+        echo "lab readiness boundary and synthetic login smoke passed"
+    networks:
+      - lab
+
+networks:
+  lab:
+    internal: true
+
+volumes:
+  lab-data:

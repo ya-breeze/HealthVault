@@ -8,7 +8,7 @@ COPY . .
 RUN CGO_ENABLED=1 GOOS=linux go build -tags sqlite_fts5 -o /hcw ./cmd/
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates sqlite3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl sqlite3 && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /hcw /hcw
 EXPOSE 8080
 CMD ["/hcw", "server"]

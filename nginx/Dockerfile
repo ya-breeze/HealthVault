@@ -8,7 +8,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 FROM nginx:alpine
-RUN apk add --no-cache openssl && \
+RUN apk add --no-cache curl openssl && \
     mkdir -p /etc/nginx/ssl && \
     openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
       -keyout /etc/nginx/ssl/server.key \
