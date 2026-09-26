@@ -1,7 +1,7 @@
 # ADR-016: Authenticate Health Connect webhook with a dedicated static header token
 
 ## Status
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
