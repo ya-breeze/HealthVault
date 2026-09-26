@@ -90,8 +90,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 
 	r := mux.NewRouter()
 
-	// Webhook (unauthenticated) — implemented in Task 5
-	r.HandleFunc("/webhook/{username}", webhookHandler(storage)).Methods("POST")
+	// Authenticate before the webhook handler looks up a user or reads the body.
+	r.Handle("/webhook/{username}", requireWebhookToken(cfg.WebhookToken, webhookHandler(storage))).Methods("POST")
 
 	// Auth
 	r.HandleFunc("/api/auth/login", ah.Login).Methods("POST")

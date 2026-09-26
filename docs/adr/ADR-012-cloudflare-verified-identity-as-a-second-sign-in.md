@@ -3,6 +3,11 @@
 ## Status
 Accepted
 
+> **Update (ADR-016, 2026-09-26):** The webhook was unauthenticated when this ADR was
+> accepted. The later VM webhook-auth change requires a dedicated static header token and
+> fails closed when it is unset. See ADR-016. This does not make a public route or change
+> Cloudflare Access policy.
+
 ## Context and Problem Statement
 
 Every public hostname on `ikoro.in` sits behind Cloudflare Access, and the policy in front of

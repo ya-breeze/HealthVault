@@ -13,6 +13,7 @@ type Config struct {
 	JWTSecret    string
 	CookieSecure bool
 	MCPToken     string // required bearer token for /mcp; if empty, /mcp is disabled
+	WebhookToken string // required X-HCW-Webhook-Token for /webhook; empty disables it
 
 	// Cloudflare Access sign-in exchange (POST /api/auth/cf-access). All three
 	// default to empty; the endpoint answers 404 unless all three are set.
@@ -49,6 +50,7 @@ func Load() (*Config, error) {
 		JWTSecret:    viper.GetString("JWT_SECRET"),
 		CookieSecure: viper.GetBool("COOKIE_SECURE"),
 		MCPToken:     viper.GetString("MCP_TOKEN"),
+		WebhookToken: viper.GetString("WEBHOOK_TOKEN"),
 
 		CFAccessTeamDomain: viper.GetString("CF_ACCESS_TEAM_DOMAIN"),
 		CFAccessAUD:        viper.GetString("CF_ACCESS_AUD"),
