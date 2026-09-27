@@ -1,6 +1,6 @@
 # Repeatable HealthVault synthetic Portainer smoke
 
-Use this runner only for the disposable readiness/login lab. It does not deploy
+Use this runner only for the disposable readiness/login/path-boundary lab. It does not deploy
 to `hcw-wip` or production, and it does not create a public route. It obtains
 Portainer credentials from the existing local registry helper without printing
 them. The runner refuses dirty worktrees and existing stacks with the same
@@ -12,7 +12,7 @@ Run from the committed Idea 773 worktree on a host with Python 3, PyYAML, the
 shared `/data/Useful/ai/truenas/portainer.py` helper, and Portainer access:
 
 ```sh
-cd /data/HealthVault-worktrees/idea-773-backend-readiness
+cd /data/HealthVault-worktrees/idea-773-raw-path-guard
 python3 tools/idea773_lab_portainer.py check
 python3 -m unittest tools.test_idea773_lab_portainer -v
 ```
@@ -21,7 +21,7 @@ python3 -m unittest tools.test_idea773_lab_portainer -v
 file allowlist sizes, and the safety properties of the in-memory Compose
 transform. Review that output and send the normal Idea/project coordination
 intent before creating a stack. `run` is restricted to the clean
-`feature/idea-773-backend-readiness` branch. Then run:
+`feature/idea-773-raw-path-guard` branch. Then run:
 
 ```sh
 python3 tools/idea773_lab_portainer.py run
@@ -96,15 +96,18 @@ allowlisted-context retry succeeded. Do not treat the first failure as resolved:
 if a future VM build repeats it, inspect build logs and resource status before
 retrying.
 
-This exercises the internal readiness denial and synthetic login path through
-Nginx. It does not prove host-published-port behavior, real-user migration,
+The original run exercised internal readiness denial and synthetic login through Nginx.
+The new lab smoke also checks ambiguous raw paths on both HTTP and HTTPS, normal API access,
+the unconfigured webhook denial, and the public backup-route denial. It does not prove
+host-published-port behavior, real-user migration,
 food-photo placement, backup/restore, VM isolation, firewall rules, or any
 home-to-VM route. No home or production data was included.
 
 The current shared `nginx/Dockerfile` also embeds `192.168.1.54` as a
 self-signed certificate SAN. The synthetic smoke uses `curl --insecure` and
-does not validate that certificate for a real hostname. Keep this image and
-certificate lab-only; do not treat the Nginx image as portable VM ingress or
-create a public hostname from it. A separate paused child Idea tracks the
-project-owned ingress/TLS configuration needed to remove this home-LAN
-assumption without changing existing home WIP behavior.
+does not validate that certificate for a real hostname. Do not use this image's
+HTTPS listener as a public origin or claim that the certificate is portable.
+The separate VM-only Cloudflare pilot may use the container's HTTP listener on
+VM loopback behind its outbound tunnel; public TLS terminates at Cloudflare.
+Keep direct VM ports closed. A separate paused child Idea tracks a portable
+project-owned ingress/TLS configuration if direct origin HTTPS is ever needed.

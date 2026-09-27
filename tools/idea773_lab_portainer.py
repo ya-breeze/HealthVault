@@ -46,7 +46,7 @@ TRANSFORMED_SERVICE_KEYS = {
     "nginx": {"image", "restart", "depends_on", "networks", "healthcheck"},
     "lab-smoke": {"image", "depends_on", "restart", "entrypoint", "command", "networks"},
 }
-SMOKE_COMMAND_SHA256 = "5b3137017c1e1719e6c49fde0339518e9d3ce6073626778f27bc4a75c6bf17ad"
+SMOKE_COMMAND_SHA256 = "64e825b3d7e2f9f3ff3ef7d1c5120198cb49f59801c3da6a6b3671ffe55a0318"
 
 
 class LabError(RuntimeError):
@@ -67,8 +67,8 @@ def stack_name(repo: Path) -> str:
 
 def assert_clean(repo: Path) -> None:
     branch = _git(repo, "branch", "--show-current").decode().strip()
-    if branch != "feature/idea-773-backend-readiness":
-        raise LabError("run is restricted to feature/idea-773-backend-readiness")
+    if branch != "feature/idea-773-raw-path-guard":
+        raise LabError("run is restricted to feature/idea-773-raw-path-guard")
     if _git(repo, "status", "--porcelain", "--untracked-files=all").strip():
         raise LabError("run requires a clean worktree; commit or remove local changes first")
 

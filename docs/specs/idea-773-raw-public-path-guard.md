@@ -41,11 +41,11 @@ current home hostname or add its bypass as part of this change.
 - `python3 tools/idea773_lab_portainer.py --help`
 
 ### Task 1: Reject ambiguous raw request paths
-- [ ] Add an early Nginx guard for encoded separators, dots, percent signs, literal backslashes, and literal dot segments in every path portion.
+- [x] Add an early Nginx guard for encoded separators, dots, percent signs, literal backslashes, and literal dot segments in every path portion.
 - [ ] Keep encoded query strings and ordinary application routes working.
-- [ ] Add synthetic HTTP and HTTPS probes for rejected paths and existing protected routes.
-- [ ] Update the lab runner's reviewed command digest and exact branch gate.
-- [ ] Run local tests and static checks.
+- [x] Add synthetic HTTP and HTTPS probes for rejected paths and existing protected routes.
+- [x] Update the lab runner's reviewed command digest and exact branch gate.
+- [x] Run local tests and static checks.
 - [ ] Mark completed
 
 ### Task 2: Prove the guard without home exposure
