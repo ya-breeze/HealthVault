@@ -11,8 +11,8 @@ origin rejects ambiguous paths before selecting a backend or web route.
 ## How
 
 Use the original Nginx request target, not normalized `$uri`, to reject encoded separators,
-encoded dots, and encoded percent signs in the path portion of every request. Reject literal
-dot segments there too. A raw prefix check alone is insufficient: Cloudflare may decode a
+encoded dots, encoded percent signs, and literal backslashes in the path portion of every
+request. Reject literal dot segments there too. A raw prefix check alone is insufficient: Cloudflare may decode a
 prefix before matching an Access application. Do not inspect the query string; an API query
 may legitimately contain encoded characters. Return a non-redirecting 400 before
 proxying to `/mcp`, the backend, or the web fallback. Keep normal API, webhook, readiness,
@@ -39,7 +39,7 @@ current home hostname or add its bypass as part of this change.
 - `python3 tools/idea773_lab_portainer.py --help`
 
 ### Task 1: Reject ambiguous raw request paths
-- [ ] Add an early Nginx guard for encoded separators, dots, percent signs, and literal dot segments in every path portion.
+- [ ] Add an early Nginx guard for encoded separators, dots, percent signs, literal backslashes, and literal dot segments in every path portion.
 - [ ] Keep encoded query strings and ordinary application routes working.
 - [ ] Add synthetic HTTP and HTTPS probes for rejected paths and existing protected routes.
 - [ ] Update the lab runner's reviewed command digest and exact branch gate.
