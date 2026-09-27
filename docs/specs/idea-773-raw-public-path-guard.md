@@ -13,8 +13,8 @@ origin rejects ambiguous paths before selecting a backend or web route.
 Use the original Nginx request target, not normalized `$uri`, to reject encoded separators,
 encoded dots, encoded percent signs, and literal backslashes in the path portion of every
 request. Reject literal dot segments there too. A raw prefix check alone is insufficient: Cloudflare may decode a
-prefix before matching an Access application. Do not inspect the query string; an API query
-may legitimately contain encoded characters. Return a non-redirecting 400 before
+prefix before matching an Access application. Do not inspect the query string; API and webhook
+queries may legitimately contain encoded characters. Return a non-redirecting 400 before
 proxying to `/mcp`, the backend, or the web fallback. Keep normal API, webhook, readiness,
 backup-boundary, and web routes unchanged.
 
@@ -25,6 +25,8 @@ production or real user data.
 
 After local checks, build and run a private synthetic lab stack. Update only the private VM
 pilot to the reviewed release and verify its raw-path guard through the WARP-only SSH route.
+For the temporary public pilot, connect the outbound tunnel to Nginx over VM loopback HTTP.
+Terminate public TLS at Cloudflare; do not expose the self-signed Nginx HTTPS listener directly.
 Create a temporary VM-only public hostname only after the owner-approved Access application is
 in place, following Access app, DNS, then tunnel ingress. Keep the broad Access gate active
 while checking the origin. Add path exceptions only to this temporary hostname for the external
