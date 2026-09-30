@@ -31,8 +31,10 @@ Prior validation (before the owner requested Luna high): backend suite, 260 fron
 Revised validation: backend suite, 260 frontend tests, Go vet, E2E type checking, and frontend TypeScript passed. An actual OpenAI synthetic tool round-trip completed on gpt-6-luna with high reasoning in 3.8 seconds. All 9 Nutrition advice chat browser tests passed without retries against hcw-wip running code commit 02a09ab. Native Codex and Claude peer reviews completed; valid cleanup and spec findings were addressed and reviewed. No production VM mutation occurred. ADR-018 remains Proposed until owner-approved merge.
 
 ### Task 3: Distinguish retryable and final errors
-- [ ] Preserve upstream HTTP status and safe error classification through the server response.
-- [ ] Offer exact replay only for retryable failures and show final error text otherwise.
-- [ ] Test provider 4xx/5xx and transport failures, including non-JSON error bodies and quota errors.
-- [ ] Run tests, static checks, Review Gate, and WIP browser validation.
-- [ ] Mark completed
+- [x] Preserve upstream HTTP status and safe error classification through the server response.
+- [x] Offer exact replay only for retryable failures and show final error text otherwise.
+- [x] Test provider 4xx/5xx and transport failures, including non-JSON error bodies and quota errors.
+- [x] Run tests, static checks, Review Gate, and WIP browser validation.
+- [x] Mark completed
+
+Selective-retry validation: backend suite, 264 frontend tests, Go vet, frontend TypeScript and E2E TypeScript passed. Native Codex and Claude peer reviews completed; all valid findings addressed. All 23 Nutrition advice chat browser tests passed without retries against hcw-wip, whose Portainer GitConfig.ConfigHash was 45e7778dab33e0303d46b2eebd6f21d98eaaef44. Coverage includes persistent HTTP 401 after auth refresh, HTML 502, malformed HTTP 200, exact replay and final errors in English and Russian. The final follow-up changes only the 401 test fixture and this validation record. Production VM remains unchanged.

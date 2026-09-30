@@ -1966,7 +1966,8 @@ test.describe('Nutrition advice chat', () => {
         const bodies: Array<Record<string, unknown>> = [];
         await page.route('**/api/food/advice/chat', route => {
           bodies.push(route.request().postDataJSON());
-          return bodies.length === 1
+          // A persistent 401 also fails after the shared auth refresh.
+          return bodies.length === 1 || status === 401
             ? route.fulfill(status === 200 || status === 502
               ? { status, contentType: 'text/html', body: '<html>upstream unavailable</html>' }
               : { status, json: { error: 'Chat request failed' } })
@@ -1990,7 +1991,8 @@ test.describe('Nutrition advice chat', () => {
           await expect(sheet.getByTestId('nutrition-chat-error')).toHaveText(
             'The answer is unavailable. Retrying this request will not help.');
           await expect(retry).toHaveCount(0);
-          expect(bodies).toHaveLength(1);
+          expect(bodies).toHaveLength(status === 401 ? 2 : 1);
+          if (status === 401) expect(bodies[1]).toEqual(bodies[0]);
         }
         await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(1);
       } finally {
