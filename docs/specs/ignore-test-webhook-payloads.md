@@ -15,5 +15,11 @@ Existing synthetic measurements were removed in a one-time, owner-authorized pro
 ### Task 1: Ignore synthetic webhook measurements
 - [x] Add regression coverage for test, ordinary, and malformed test flags.
 - [x] Delete existing health records linked to verified test-marked payloads while retaining their raw webhook audit records.
-- [ ] Verify the deployed WIP endpoint accepts an authenticated test payload without creating health records and continues ingesting a normal payload.
-- [ ] Mark completed
+- [x] Verify the deployed WIP endpoint accepts an authenticated test payload without creating health records and continues ingesting a normal payload.
+- [x] Mark completed
+
+## Validation Results
+- `make test-backend` passed.
+- `make lint` passed; Android lint was skipped because the Android SDK is unavailable.
+- On 2026-09-30, `hcw-wip` stack 50 ran commit `87150477523f7a3eae6bc815f339dbf5ca94853f` (`GitConfig.ConfigHash` `87150477523f7a3eae6bc815f339dbf5ca94853f`). Authenticated `test:true` and `test:false` webhook requests both returned 204. The test payload created zero linked health rows; the ordinary payload created its expected one step and one weight row. The two temporary validation payloads and their two synthetic health rows were removed from WIP after verification.
+- The one-time production cleanup removed 53 health rows linked to two verified `test:true` payloads and preserved both raw webhook audit rows. The database integrity check passed.
