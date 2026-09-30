@@ -1,6 +1,6 @@
 # ADR-018: Nutrition Chat uses Luna high through Responses
 
-**Status: Proposed**
+**Status: Accepted**
 
 ## Context
 
@@ -14,7 +14,7 @@ This supersedes only the endpoint and disabled-reasoning part of ADR-013. The bo
 
 ## Consequences
 
-The Nutrition Chat model no longer depends on the legacy photo model setting. High reasoning can increase latency; the existing request timeout bounds the whole tool loop. Provider failure returns unavailable and the user can retry the same ephemeral request.
+The Nutrition Chat model no longer depends on the legacy photo model setting. High reasoning can increase latency; the existing request timeout bounds the whole tool loop. Provider failure returns unavailable with a safe retry classification. Only temporary failures allow replay of the same ephemeral request.
 
 ## Sources
 
