@@ -15,7 +15,7 @@ State in one shared instruction used by photo, description, and clarification re
 - `make test-e2e`
 
 ### Task 1: Make the sodium units explicit
-- [ ] Add a shared sodium unit directive to photo, description, and clarification prompt paths, with the 1500 mg per 100 g and 40 g portion example.
-- [ ] Describe the units and per-100 g basis for every field in the structured output schema.
+- [x] Add a shared sodium unit directive to photo, description, and clarification prompt paths, with the 1500 mg per 100 g and 40 g portion example.
+- [x] Describe the units and per-100 g basis for every field in the structured output schema.
 - [ ] Run the validation commands and validate two synthetic meal descriptions against hcw-wip using the real configured provider: one with the explicit label values, and one with plain Russian dry-salami text.
 - [ ] Mark completed
