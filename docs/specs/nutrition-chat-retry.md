@@ -23,7 +23,9 @@ Keep the failed request in the sheet's existing ephemeral state. Show a translat
 ### Task 2: Use Luna high through Responses
 - [x] Move Nutrition Chat to Responses with GPT-6 Luna and high reasoning, and test complete tool round trips.
 - [x] Verify Luna high with real API calls using synthetic tool data only.
-- [ ] Run static checks, the Review Gate, and deployed WIP browser tests.
-- [ ] Mark completed
+- [x] Run static checks, the Review Gate, and deployed WIP browser tests.
+- [x] Mark completed
 
 Prior validation (before the owner requested Luna high): backend suite, 260 frontend tests, and 9 chat WIP E2E passed. Revalidate the revised provider implementation before handoff.
+
+Revised validation: backend suite, 260 frontend tests, Go vet, E2E type checking, and frontend TypeScript passed. An actual OpenAI synthetic tool round-trip completed on gpt-6-luna with high reasoning in 3.8 seconds. All 9 Nutrition advice chat browser tests passed without retries against hcw-wip running code commit 02a09ab. Native Codex and Claude peer reviews completed; valid cleanup and spec findings were addressed and reviewed. No production VM mutation occurred. ADR-018 remains Proposed until owner-approved merge.
