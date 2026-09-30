@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -222,6 +221,8 @@ type OpenAIClient struct {
 	HTTPClient *http.Client
 	// BaseURL defaults to the real OpenAI endpoint; overridable for tests.
 	BaseURL string
+	// ResponsesURL overrides only the Nutrition Chat endpoint for tests.
+	ResponsesURL string
 }
 
 // NewOpenAIClient builds a client for the given API key and model.
@@ -242,20 +243,15 @@ func (c *OpenAIClient) url() string {
 }
 
 type chatMessage struct {
-	Role       string         `json:"role"`
-	Content    any            `json:"content,omitempty"`
-	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Role    string `json:"role"`
+	Content any    `json:"content,omitempty"`
 }
 
 type chatCompletionRequest struct {
-	Model           string         `json:"model"`
-	Messages        []chatMessage  `json:"messages"`
-	ResponseFormat  responseFormat `json:"response_format"`
-	Store           bool           `json:"store"`
-	Tools           []chatTool     `json:"tools,omitempty"`
-	ToolChoice      string         `json:"tool_choice,omitempty"`
-	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Model          string         `json:"model"`
+	Messages       []chatMessage  `json:"messages"`
+	ResponseFormat responseFormat `json:"response_format"`
+	Store          bool           `json:"store"`
 }
 
 type chatTool struct {
@@ -268,15 +264,6 @@ type chatToolFunction struct {
 	Description string `json:"description"`
 	Parameters  any    `json:"parameters"`
 	Strict      bool   `json:"strict"`
-}
-
-type chatToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
 }
 
 type responseFormat struct {
@@ -294,8 +281,7 @@ type chatCompletionResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
-			Content   string         `json:"content"`
-			ToolCalls []chatToolCall `json:"tool_calls"`
+			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
 	Usage struct {
@@ -1047,92 +1033,6 @@ var nutritionChatTools = []chatTool{
 			},
 		},
 	},
-}
-
-// NutritionChat is text-only: it sends the evidence and the conversation so far
-// as JSON and no image. The conversation is replayed in full on every call
-// because nothing here keeps a thread.
-func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput) (*NutritionChatResult, error) {
-	payload, err := json.Marshal(in)
-	if err != nil {
-		return nil, fmt.Errorf("marshal nutrition chat input: %w", err)
-	}
-	messages := []chatMessage{
-		{Role: "system", Content: nutritionChatSystemPrompt},
-		{Role: "user", Content: string(payload)},
-	}
-
-	tools := []chatTool(nil)
-	toolChoice := ""
-	reasoningEffort := ""
-	if in.HistoryTools != nil {
-		tools = nutritionChatTools
-		toolChoice = "auto"
-		// Chat Completions rejects function tools for reasoning models when
-		// reasoning_effort is active. Keep this compatibility setting scoped
-		// to the tool-enabled chat path; the other vision calls stay unchanged.
-		reasoningEffort = "none"
-	}
-	totalPromptTokens := 0
-	totalCompletionTokens := 0
-	totalLatency := time.Duration(0)
-	toolCallsUsed := 0
-	toolCallIDs := make(map[string]bool, nutritionChatMaxToolCalls)
-	lastModel := ""
-
-	for {
-		resp, latency, err := c.callRequest(ctx, chatCompletionRequest{
-			Model: c.Model, Messages: messages,
-			ResponseFormat: responseFormat{Type: "json_schema", JSONSchema: jsonSchema{
-				Name: "nutrition_chat", Strict: true, Schema: nutritionChatJSONSchema,
-			}},
-			Store: false, Tools: tools, ToolChoice: toolChoice, ReasoningEffort: reasoningEffort,
-		})
-		if err != nil {
-			return nil, err
-		}
-		totalLatency += latency
-		totalPromptTokens += resp.Usage.PromptTokens
-		totalCompletionTokens += resp.Usage.CompletionTokens
-		lastModel = resp.Model
-		message := resp.Choices[0].Message
-		if len(message.ToolCalls) == 0 {
-			return parseNutritionChatAnswer(
-				message.Content, lastModel, totalPromptTokens, totalCompletionTokens, totalLatency,
-			)
-		}
-		if in.HistoryTools == nil || toolCallsUsed+len(message.ToolCalls) > nutritionChatMaxToolCalls {
-			return nil, fmt.Errorf("nutrition chat exceeded tool call limit")
-		}
-
-		assistantMessage := chatMessage{Role: "assistant", ToolCalls: message.ToolCalls}
-		if message.Content != "" {
-			assistantMessage.Content = message.Content
-		}
-		messages = append(messages, assistantMessage)
-		for _, call := range message.ToolCalls {
-			if call.ID == "" || toolCallIDs[call.ID] || call.Type != "function" || call.Function.Name == "" {
-				return nil, fmt.Errorf("nutrition chat returned an invalid tool call")
-			}
-			toolCallIDs[call.ID] = true
-			result, execErr := in.HistoryTools.Execute(
-				ctx, call.Function.Name, json.RawMessage(call.Function.Arguments),
-			)
-			if execErr != nil {
-				if !errors.Is(execErr, ErrInvalidNutritionChatToolCall) {
-					return nil, fmt.Errorf("nutrition chat history tool failed: %w", execErr)
-				}
-				result = json.RawMessage(`{"available":false,"reason":"invalid_request"}`)
-			}
-			if !json.Valid(result) {
-				return nil, fmt.Errorf("nutrition chat history tool returned invalid JSON")
-			}
-			messages = append(messages, chatMessage{
-				Role: "tool", ToolCallID: call.ID, Content: string(result),
-			})
-			toolCallsUsed++
-		}
-	}
 }
 
 func parseNutritionChatAnswer(

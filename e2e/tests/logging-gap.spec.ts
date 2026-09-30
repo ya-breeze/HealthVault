@@ -1837,6 +1837,170 @@ test.describe('Nutrition advice chat', () => {
     }
   });
 
+  for (const failure of ['unavailable', 'transport'] as const) {
+    test(`retries the same request after ${failure} without duplicating history`, async ({ page, request }) => {
+      await login(page);
+      const cookies = await cookieHeader(page);
+      const original = await getSettings(request, cookies);
+      await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'ru' });
+      try {
+        await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), {
+          adviceHandler: route => route.fulfill({ json: {
+            available: true, lines: ['Меньше соли.'], logged_day: '2026-09-05',
+            generated_at: '2026-09-05T06:12:00Z',
+            context: { ...matchingAdviceContext, display_language: 'ru' },
+          } }),
+        });
+        const bodies: Array<Record<string, unknown>> = [];
+        let releaseRetry: (() => void) | undefined;
+        await page.route('**/api/food/advice/chat', async route => {
+          bodies.push(route.request().postDataJSON());
+          // Three complete exchanges plus two failed questions reach the UI turn limit.
+          if (bodies.length <= 3) {
+            await route.fulfill({ json: { available: true, answer: 'Earlier answer.' } });
+          } else if (bodies.length <= 6) {
+            if (failure === 'transport') await route.abort('failed');
+            else await route.fulfill({ json: { available: false, reason: 'unavailable', retryable: true } });
+          } else {
+            await new Promise<void>(resolve => { releaseRetry = resolve; });
+            await route.fulfill({ json: { available: true, answer: 'Recovered.' } });
+          }
+        });
+        await page.goto('/');
+        const sheet = await openSheet(page);
+        for (let i = 0; i < 3; i++) {
+          await sheet.getByTestId('nutrition-chat-input').fill(`Earlier question ${i}`);
+          await sheet.getByTestId('nutrition-chat-send').click();
+          await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(i + 1);
+        }
+        await sheet.getByTestId('nutrition-chat-input').fill('Откуда столько натрия?');
+        await sheet.getByTestId('nutrition-chat-send').click();
+        await expect(sheet.getByTestId('nutrition-chat-error')).toBeVisible();
+        // A different question replaces the retry target, then reaches 8 turns.
+        await sheet.getByTestId('nutrition-chat-input').fill('Откуда столько натрия в супе?');
+        await sheet.getByTestId('nutrition-chat-send').click();
+        await expect.poll(() => bodies.length).toBe(5);
+        await expect(sheet.getByTestId('nutrition-chat-pending')).toHaveCount(0);
+        await expect(sheet.getByTestId('nutrition-chat-turn-limit')).toBeVisible();
+        await expect(sheet.getByTestId('nutrition-chat-input')).toBeDisabled();
+        const retry = sheet.getByTestId('nutrition-chat-retry');
+        await expect(retry).toHaveText('Повторить запрос');
+        await retry.click();
+        await expect.poll(() => bodies.length).toBe(6);
+        await expect(retry).toBeEnabled();
+        await expect(sheet.getByTestId('nutrition-chat-error')).toBeVisible();
+        expect(bodies[5]).toEqual(bodies[4]);
+        await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(5);
+        await retry.click();
+        await expect(sheet.getByTestId('nutrition-chat-pending')).toBeVisible();
+        await expect(retry).toBeDisabled();
+        await expect(sheet.getByTestId('nutrition-chat-send')).toBeDisabled();
+        await expect.poll(() => bodies.length).toBe(7);
+        expect(bodies[6]).toEqual(bodies[4]);
+        releaseRetry?.();
+        await expect(sheet.getByTestId('nutrition-chat-assistant').last()).toHaveText('Recovered.');
+        await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(5);
+        await expect(sheet.getByTestId('nutrition-chat-error')).toHaveCount(0);
+        await expect(retry).toHaveCount(0);
+        await sheet.getByTestId('nutrition-chat-close').click();
+        await page.getByTestId('nutrition-advice-discuss').click();
+        await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(0);
+        await expect(retry).toHaveCount(0);
+      } finally {
+        await putSettings(request, cookies, original);
+      }
+    });
+  }
+
+  for (const language of ['en', 'ru'] as const) {
+    for (const retryable of [false, undefined]) {
+      test(`a final provider failure with retryable=${retryable} hides retry in ${language}`, async ({ page, request }) => {
+        await login(page);
+        const cookies = await cookieHeader(page);
+        const original = await getSettings(request, cookies);
+        await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: language });
+        try {
+          await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), {
+            adviceHandler: route => route.fulfill({ json: {
+              available: true, lines: ['Cut back on salty foods.'], logged_day: '2026-09-05',
+              generated_at: '2026-09-05T06:12:00Z',
+              context: { ...matchingAdviceContext, display_language: language },
+            } }),
+          });
+          let calls = 0;
+          await page.route('**/api/food/advice/chat', route => {
+            calls++;
+            return route.fulfill({ json: {
+              available: false, reason: 'unavailable',
+              ...(retryable === undefined ? {} : { retryable }),
+            } });
+          });
+          await page.goto('/');
+          const sheet = await openSheet(page);
+          await sheet.getByTestId('nutrition-chat-input').fill('Why so much sodium?');
+          await sheet.getByTestId('nutrition-chat-send').click();
+          await expect(sheet.getByTestId('nutrition-chat-error')).toHaveText(language === 'ru'
+            ? 'Ответ недоступен. Повтор запроса не поможет.'
+            : 'The answer is unavailable. Retrying this request will not help.');
+          await expect(sheet.getByTestId('nutrition-chat-retry')).toHaveCount(0);
+          await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(1);
+          await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(0);
+          await expect(sheet.getByTestId('nutrition-chat-input')).toBeEnabled();
+          expect(calls).toBe(1);
+        } finally {
+          await putSettings(request, cookies, original);
+        }
+      });
+    }
+  }
+
+  for (const status of [200, 400, 401, 403, 422, 408, 429, 500, 502, 503]) {
+    const retryable = [408, 429, 500, 502, 503].includes(status);
+    test(`HTTP ${status} ${retryable ? 'allows' : 'prevents'} repeating the same request`, async ({ page, request }) => {
+      await login(page);
+      const cookies = await cookieHeader(page);
+      const original = await getSettings(request, cookies);
+      await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'en' });
+      try {
+        await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), { adviceHandler: adviceOk });
+        const bodies: Array<Record<string, unknown>> = [];
+        await page.route('**/api/food/advice/chat', route => {
+          bodies.push(route.request().postDataJSON());
+          // A persistent 401 also fails after the shared auth refresh.
+          return bodies.length === 1 || status === 401
+            ? route.fulfill(status === 200 || status === 502
+              ? { status, contentType: 'text/html', body: '<html>upstream unavailable</html>' }
+              : { status, json: { error: 'Chat request failed' } })
+            : route.fulfill({ json: { available: true, answer: 'Recovered.' } });
+        });
+        await page.goto('/');
+        const sheet = await openSheet(page);
+        await sheet.getByTestId('nutrition-chat-input').fill('Why so much sodium?');
+        await sheet.getByTestId('nutrition-chat-send').click();
+        await expect(sheet.getByTestId('nutrition-chat-error')).toBeVisible();
+        const retry = sheet.getByTestId('nutrition-chat-retry');
+        if (retryable) {
+          await expect(retry).toBeEnabled();
+          await retry.click();
+          await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveText('Recovered.');
+          expect(bodies).toHaveLength(2);
+          expect(bodies[1]).toEqual(bodies[0]);
+          await expect(sheet.getByTestId('nutrition-chat-error')).toHaveCount(0);
+          await expect(retry).toHaveCount(0);
+        } else {
+          await expect(sheet.getByTestId('nutrition-chat-error')).toHaveText(
+            'The answer is unavailable. Retrying this request will not help.');
+          await expect(retry).toHaveCount(0);
+          expect(bodies).toHaveLength(status === 401 ? 2 : 1);
+          if (status === 401) expect(bodies[1]).toEqual(bodies[0]);
+        }
+        await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(1);
+      } finally {
+        await putSettings(request, cookies, original);
+      }
+    });
+  }
+
   test('a failing answer leaves the sheet and the advice usable', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);
@@ -1848,7 +2012,7 @@ test.describe('Nutrition advice chat', () => {
       await page.route('**/api/food/advice/chat', route => {
         if (fail) {
           fail = false;
-          return route.fulfill({ json: { available: false, reason: 'unavailable' } });
+          return route.fulfill({ json: { available: false, reason: 'unavailable', retryable: true } });
         }
         return route.fulfill({ json: { available: true, answer: 'Recovered.' } });
       });

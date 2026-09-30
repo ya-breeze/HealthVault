@@ -25,6 +25,7 @@ function dailyTotal(unconfirmed_meals = 0): DailyTotal {
     sugar_grams: 20,
     sodium_grams: 2,
     dietary_fiber_grams: 25,
+    saturated_fat_grams: 10,
     unconfirmed_meals,
   };
 }

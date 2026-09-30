@@ -60,3 +60,5 @@ causation.
   than widening access to the database.
 - Advice can regenerate within a Logged Day when newly synced health context changes its complete
   input hash.
+
+> **Update (ADR-018, 2026-09-30):** The proposed Luna high change replaces the disabled-reasoning Chat Completions loop with stateless Responses. The bounded caller-scoped history and privacy decisions remain in force.

@@ -205,6 +205,16 @@ export class ApiError extends Error {
   }
 }
 
+// Distinguish chat transport failures from local errors and invalid JSON.
+export class NutritionChatTransportError extends Error {}
+
+function throwNutritionChatTransportError(error: unknown): never {
+  if (error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError')) {
+    throw new NutritionChatTransportError('Chat connection failed');
+  }
+  throw error;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await apiRawFetch(path, options);
   if (!res.ok) throw new ApiError(res.status, (await res.text()) || `${res.status} ${res.statusText}`);
@@ -752,7 +762,7 @@ export interface NutritionChatRequest {
 // Discriminated the way NutritionAdviceResponse is, so the answer is
 // inaccessible until the caller has proved the response carries one.
 export type NutritionChatResponse =
-  | { available: false; reason: 'unconfigured' | 'unavailable' }
+  | { available: false; reason: 'unconfigured' | 'unavailable'; retryable: boolean }
   | { available: true; answer: string; sources?: NutritionChatSource[] };
 
 export interface FoodAdviceEngagementRequest {
@@ -900,11 +910,22 @@ export const api = {
 
   // Stateless: the conversation is replayed on every call because nothing on
   // either side keeps a thread. See docs/specs/nutrition-chat.md.
-  postNutritionChat: (input: NutritionChatRequest) =>
-    apiFetch<NutritionChatResponse>('/food/advice/chat', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
+  postNutritionChat: async (input: NutritionChatRequest): Promise<NutritionChatResponse> => {
+    const body = JSON.stringify(input);
+    let response: Response;
+    try {
+      response = await apiRawFetch('/food/advice/chat', { method: 'POST', body });
+    } catch (error) {
+      throwNutritionChatTransportError(error);
+    }
+    // Preserve the HTTP verdict even if an error body is HTML or unreadable.
+    if (!response.ok) throw new ApiError(response.status, 'Chat request failed');
+    try {
+      return await response.json();
+    } catch (error) {
+      throwNutritionChatTransportError(error);
+    }
+  },
 
   recordFoodAdviceEngagement: (input: FoodAdviceEngagementRequest) =>
     apiFetchNoBody('/food/advice/engagement', {
