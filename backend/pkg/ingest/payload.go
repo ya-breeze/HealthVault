@@ -1,35 +1,55 @@
 package ingest
 
+import "fmt"
+
+// TestFlag is the optional webhook test marker. A custom decoder is needed
+// because encoding/json treats null as a no-op for bool fields, which would
+// otherwise let a malformed marked packet fall through as normal data.
+type TestFlag bool
+
+func (f *TestFlag) UnmarshalJSON(data []byte) error {
+	switch string(data) {
+	case "true":
+		*f = true
+	case "false":
+		*f = false
+	default:
+		return fmt.Errorf("test must be a JSON boolean")
+	}
+	return nil
+}
+
 // PayloadJSON mirrors the HC Webhook JSON shape. All type arrays are optional.
 type PayloadJSON struct {
-	Timestamp  string `json:"timestamp"`
-	AppVersion string `json:"app_version"`
+	Timestamp  string   `json:"timestamp"`
+	AppVersion string   `json:"app_version"`
+	Test       TestFlag `json:"test,omitempty"`
 
-	Steps                []StepsJSON                `json:"steps,omitempty"`
-	HeartRate            []HeartRateJSON            `json:"heart_rate,omitempty"`
-	HeartRateVariability []HRVJson                  `json:"heart_rate_variability,omitempty"`
-	Sleep                []SleepJSON                `json:"sleep,omitempty"`
-	Distance             []DistanceJSON             `json:"distance,omitempty"`
-	ActiveCalories       []CaloriesJSON             `json:"active_calories,omitempty"`
-	TotalCalories        []CaloriesJSON             `json:"total_calories,omitempty"`
-	Weight               []WeightJSON               `json:"weight,omitempty"`
-	Height               []HeightJSON               `json:"height,omitempty"`
-	BloodPressure        []BloodPressureJSON        `json:"blood_pressure,omitempty"`
-	BloodGlucose         []BloodGlucoseJSON         `json:"blood_glucose,omitempty"`
-	OxygenSaturation     []OxygenSaturationJSON     `json:"oxygen_saturation,omitempty"`
-	BodyTemperature      []BodyTemperatureJSON      `json:"body_temperature,omitempty"`
-	SkinTemperature      []SkinTemperatureJSON      `json:"skin_temperature,omitempty"`
-	RespiratoryRate      []RespiratoryRateJSON      `json:"respiratory_rate,omitempty"`
-	RestingHeartRate     []RestingHeartRateJSON     `json:"resting_heart_rate,omitempty"`
-	Exercise             []ExerciseJSON             `json:"exercise,omitempty"`
-	Hydration            []HydrationJSON            `json:"hydration,omitempty"`
-	Nutrition            []NutritionJSON            `json:"nutrition,omitempty"`
-	BasalMetabolicRate   []BasalMetabolicRateJSON   `json:"basal_metabolic_rate,omitempty"`
-	BodyFat              []BodyFatJSON              `json:"body_fat,omitempty"`
-	LeanBodyMass         []LeanBodyMassJSON         `json:"lean_body_mass,omitempty"`
-	VO2Max               []VO2MaxJSON               `json:"vo2_max,omitempty"`
-	BoneMass             []BoneMassJSON             `json:"bone_mass,omitempty"`
-	Speed                []SpeedJSON                `json:"speed,omitempty"`
+	Steps                []StepsJSON              `json:"steps,omitempty"`
+	HeartRate            []HeartRateJSON          `json:"heart_rate,omitempty"`
+	HeartRateVariability []HRVJson                `json:"heart_rate_variability,omitempty"`
+	Sleep                []SleepJSON              `json:"sleep,omitempty"`
+	Distance             []DistanceJSON           `json:"distance,omitempty"`
+	ActiveCalories       []CaloriesJSON           `json:"active_calories,omitempty"`
+	TotalCalories        []CaloriesJSON           `json:"total_calories,omitempty"`
+	Weight               []WeightJSON             `json:"weight,omitempty"`
+	Height               []HeightJSON             `json:"height,omitempty"`
+	BloodPressure        []BloodPressureJSON      `json:"blood_pressure,omitempty"`
+	BloodGlucose         []BloodGlucoseJSON       `json:"blood_glucose,omitempty"`
+	OxygenSaturation     []OxygenSaturationJSON   `json:"oxygen_saturation,omitempty"`
+	BodyTemperature      []BodyTemperatureJSON    `json:"body_temperature,omitempty"`
+	SkinTemperature      []SkinTemperatureJSON    `json:"skin_temperature,omitempty"`
+	RespiratoryRate      []RespiratoryRateJSON    `json:"respiratory_rate,omitempty"`
+	RestingHeartRate     []RestingHeartRateJSON   `json:"resting_heart_rate,omitempty"`
+	Exercise             []ExerciseJSON           `json:"exercise,omitempty"`
+	Hydration            []HydrationJSON          `json:"hydration,omitempty"`
+	Nutrition            []NutritionJSON          `json:"nutrition,omitempty"`
+	BasalMetabolicRate   []BasalMetabolicRateJSON `json:"basal_metabolic_rate,omitempty"`
+	BodyFat              []BodyFatJSON            `json:"body_fat,omitempty"`
+	LeanBodyMass         []LeanBodyMassJSON       `json:"lean_body_mass,omitempty"`
+	VO2Max               []VO2MaxJSON             `json:"vo2_max,omitempty"`
+	BoneMass             []BoneMassJSON           `json:"bone_mass,omitempty"`
+	Speed                []SpeedJSON              `json:"speed,omitempty"`
 }
 
 type StepsJSON struct {

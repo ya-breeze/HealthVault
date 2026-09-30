@@ -1,6 +1,7 @@
 package ingest_test
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"testing"
@@ -30,6 +31,32 @@ func TestProcess_Steps(t *testing.T) {
 	db.Find(&steps)
 	if len(steps) != 1 || steps[0].Count != 1000 {
 		t.Errorf("want 1 step record with count=1000, got %+v", steps)
+	}
+}
+
+func TestProcess_TestPayloadSkipsAllHealthRecords(t *testing.T) {
+	db, err := database.Open(slog.New(slog.NewTextHandler(io.Discard, nil)), ":memory:")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	userID, familyID, payloadID := uuid.New(), uuid.New(), uuid.New()
+	p := &ingest.PayloadJSON{
+		Test:   true,
+		Steps:  []ingest.StepsJSON{{Count: 8432, StartTime: "2026-06-24T00:00:00Z", EndTime: "2026-06-24T01:00:00Z"}},
+		Weight: []ingest.WeightJSON{{Kilograms: 75.5, Time: "2026-06-24T07:30:00Z"}},
+	}
+
+	if err := ingest.Process(db, userID, familyID, payloadID, p); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	for _, table := range []string{"steps", "weights"} {
+		var count int64
+		if err := db.Table(table).Count(&count).Error; err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Errorf("test payload created %d %s records, want none", count, table)
+		}
 	}
 }
 
