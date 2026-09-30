@@ -77,12 +77,8 @@ text is actually readable. Do not guess a brand from appearance alone.
 Also estimate each item's own per-100g nutrition as estimated_profile — your
 best guess from the photo, even for an item you expect will be matched to a
 known food or product afterward, since this is only used as a fallback if no
-match is found later. Units: calories_per_100g is kcal; every other field
-(protein, carbs, fat, sugar, sodium, dietary_fiber, saturated_fat) is grams
-per 100g — sodium included: a food label's milligram sodium value must be
-converted to grams (divide by 1000) before reporting it here. Set
-estimated_profile to null only if you genuinely cannot make any reasonable
-estimate for that item.
+match is found later. Set estimated_profile to null only if you genuinely
+cannot make any reasonable estimate for that item.
 
 When an item is itself a composite or merged dish (its ingredients were
 mixed, chopped, tossed, or cooked/sauced together — the same test used above
@@ -150,12 +146,8 @@ Also estimate each item's own per-100g nutrition as estimated_profile — your
 best guess from the description, even for an item you expect will be matched
 to a known food or product afterward. On this path there is usually no other
 source of macros for the item, so make your best estimate rather than
-leaving it null whenever you can reasonably guess. Units: calories_per_100g
-is kcal; every other field (protein, carbs, fat, sugar, sodium,
-dietary_fiber, saturated_fat) is grams per 100g — sodium included: a
-milligram sodium value must be converted to grams (divide by 1000) before
-reporting it here. Set estimated_profile to null only if you genuinely
-cannot make any reasonable estimate for that item.
+leaving it null whenever you can reasonably guess. Set estimated_profile to
+null only if you genuinely cannot make any reasonable estimate for that item.
 
 When an item is itself a composite or merged dish (its ingredients were
 mixed, chopped, tossed, or cooked/sauced together — the same test used above
@@ -210,6 +202,20 @@ func languageDirective(displayLanguage string) string {
 	return "\n\nThe requested display language is BCP-47 \"" + displayLanguage + "\". " +
 		"Write display_name in that language, and canonical_name as the same food's standard English name."
 }
+
+// estimatedProfileUnitsDirective is shared by photo, description, and
+// clarification recognition so every path uses the same per-100g units.
+const estimatedProfileUnitsDirective = `
+
+estimated_profile fields are all per 100 g. calories_per_100g is kcal per
+100 g. protein_per_100g, carbs_per_100g, fat_per_100g, sugar_per_100g,
+sodium_per_100g, dietary_fiber_per_100g, and saturated_fat_per_100g are grams
+per 100 g. Sodium is never milligrams and never the total for the estimated
+portion. Convert milligrams to grams and normalize the value to 100 g. For
+example, a label showing 1500 mg sodium per 100 g means sodium_per_100g: 1.5,
+not 1500. A 40 g portion of that food contains about 0.6 g total sodium, but
+its sodium_per_100g remains 1.5. If a label gives sodium per serving, convert
+that amount to grams per 100 g using the serving weight.`
 
 // OpenAIClient is the production vision.Client, backed by OpenAI's Chat
 // Completions API with structured outputs (response_format: json_schema).
@@ -301,14 +307,30 @@ type chatCompletionResponse struct {
 var estimatedProfileSchema = map[string]any{
 	"type": []string{"object", "null"},
 	"properties": map[string]any{
-		"calories_per_100g":      map[string]any{"type": "number"},
-		"protein_per_100g":       map[string]any{"type": "number"},
-		"carbs_per_100g":         map[string]any{"type": "number"},
-		"fat_per_100g":           map[string]any{"type": "number"},
-		"sugar_per_100g":         map[string]any{"type": "number"},
-		"sodium_per_100g":        map[string]any{"type": "number"},
-		"dietary_fiber_per_100g": map[string]any{"type": "number"},
-		"saturated_fat_per_100g": map[string]any{"type": "number"},
+		"calories_per_100g": map[string]any{
+			"type": "number", "description": "Kilocalories per 100 g of food.",
+		},
+		"protein_per_100g": map[string]any{
+			"type": "number", "description": "Grams of protein per 100 g of food.",
+		},
+		"carbs_per_100g": map[string]any{
+			"type": "number", "description": "Grams of carbohydrates per 100 g of food.",
+		},
+		"fat_per_100g": map[string]any{
+			"type": "number", "description": "Grams of fat per 100 g of food.",
+		},
+		"sugar_per_100g": map[string]any{
+			"type": "number", "description": "Grams of sugar per 100 g of food.",
+		},
+		"sodium_per_100g": map[string]any{
+			"type": "number", "description": "Grams of sodium per 100 g of food.",
+		},
+		"dietary_fiber_per_100g": map[string]any{
+			"type": "number", "description": "Grams of dietary fiber per 100 g of food.",
+		},
+		"saturated_fat_per_100g": map[string]any{
+			"type": "number", "description": "Grams of saturated fat per 100 g of food.",
+		},
 	},
 	"required": []string{
 		"calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g",
@@ -577,7 +599,7 @@ func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hi
 		promptText += "\n\nThe user has supplied this correction — take it into account: " + hint
 	}
 	messages := []chatMessage{
-		{Role: "system", Content: recognizeSystemPrompt + languageDirective(displayLanguage)},
+		{Role: "system", Content: recognizeSystemPrompt + estimatedProfileUnitsDirective + languageDirective(displayLanguage)},
 		{Role: "user", Content: []map[string]any{
 			{"type": "text", "text": promptText},
 			{"type": "image_url", "image_url": map[string]string{"url": dataURL}},
@@ -595,7 +617,7 @@ func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hi
 // for displayLanguage's meaning.
 func (c *OpenAIClient) Describe(ctx context.Context, description, displayLanguage string) (*RecognizeResult, error) {
 	messages := []chatMessage{
-		{Role: "system", Content: describeSystemPrompt + languageDirective(displayLanguage)},
+		{Role: "system", Content: describeSystemPrompt + estimatedProfileUnitsDirective + languageDirective(displayLanguage)},
 		{Role: "user", Content: description},
 	}
 	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
@@ -706,7 +728,7 @@ func (c *OpenAIClient) Clarify(ctx context.Context, description string, priorIte
 	}
 
 	messages := []chatMessage{
-		{Role: "system", Content: systemPrompt + languageDirective(displayLanguage)},
+		{Role: "system", Content: systemPrompt + estimatedProfileUnitsDirective + languageDirective(displayLanguage)},
 		{Role: "user", Content: instruction + string(contextJSON)},
 	}
 	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
