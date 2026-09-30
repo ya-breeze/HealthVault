@@ -1837,6 +1837,81 @@ test.describe('Nutrition advice chat', () => {
     }
   });
 
+  for (const failure of ['unavailable', 'transport'] as const) {
+    test(`retries the same request after ${failure} without duplicating history`, async ({ page, request }) => {
+      await login(page);
+      const cookies = await cookieHeader(page);
+      const original = await getSettings(request, cookies);
+      await putSettings(request, cookies, { ...original, timezone: 'UTC', display_language: 'ru' });
+      try {
+        await mockLoggingGapApis(page, healthinessNeedsAttentionFixture(), {
+          adviceHandler: route => route.fulfill({ json: {
+            available: true, lines: ['Меньше соли.'], logged_day: '2026-09-05',
+            generated_at: '2026-09-05T06:12:00Z',
+            context: { ...matchingAdviceContext, display_language: 'ru' },
+          } }),
+        });
+        const bodies: Array<Record<string, unknown>> = [];
+        let releaseRetry: (() => void) | undefined;
+        await page.route('**/api/food/advice/chat', async route => {
+          bodies.push(route.request().postDataJSON());
+          // Three complete exchanges plus two failed questions reach the UI turn limit.
+          if (bodies.length <= 3) {
+            await route.fulfill({ json: { available: true, answer: 'Earlier answer.' } });
+          } else if (bodies.length <= 6) {
+            if (failure === 'transport') await route.abort('failed');
+            else await route.fulfill({ json: { available: false, reason: 'unavailable' } });
+          } else {
+            await new Promise<void>(resolve => { releaseRetry = resolve; });
+            await route.fulfill({ json: { available: true, answer: 'Recovered.' } });
+          }
+        });
+        await page.goto('/');
+        const sheet = await openSheet(page);
+        for (let i = 0; i < 3; i++) {
+          await sheet.getByTestId('nutrition-chat-input').fill(`Earlier question ${i}`);
+          await sheet.getByTestId('nutrition-chat-send').click();
+          await expect(sheet.getByTestId('nutrition-chat-assistant')).toHaveCount(i + 1);
+        }
+        await sheet.getByTestId('nutrition-chat-input').fill('Откуда столько натрия?');
+        await sheet.getByTestId('nutrition-chat-send').click();
+        await expect(sheet.getByTestId('nutrition-chat-error')).toBeVisible();
+        // A different question replaces the retry target, then reaches 8 turns.
+        await sheet.getByTestId('nutrition-chat-input').fill('Откуда столько натрия в супе?');
+        await sheet.getByTestId('nutrition-chat-send').click();
+        await expect.poll(() => bodies.length).toBe(5);
+        await expect(sheet.getByTestId('nutrition-chat-pending')).toHaveCount(0);
+        await expect(sheet.getByTestId('nutrition-chat-turn-limit')).toBeVisible();
+        await expect(sheet.getByTestId('nutrition-chat-input')).toBeDisabled();
+        const retry = sheet.getByTestId('nutrition-chat-retry');
+        await expect(retry).toHaveText('Повторить запрос');
+        await retry.click();
+        await expect.poll(() => bodies.length).toBe(6);
+        await expect(retry).toBeEnabled();
+        await expect(sheet.getByTestId('nutrition-chat-error')).toBeVisible();
+        expect(bodies[5]).toEqual(bodies[4]);
+        await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(5);
+        await retry.click();
+        await expect(sheet.getByTestId('nutrition-chat-pending')).toBeVisible();
+        await expect(retry).toBeDisabled();
+        await expect(sheet.getByTestId('nutrition-chat-send')).toBeDisabled();
+        await expect.poll(() => bodies.length).toBe(7);
+        expect(bodies[6]).toEqual(bodies[4]);
+        releaseRetry?.();
+        await expect(sheet.getByTestId('nutrition-chat-assistant').last()).toHaveText('Recovered.');
+        await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(5);
+        await expect(sheet.getByTestId('nutrition-chat-error')).toHaveCount(0);
+        await expect(retry).toHaveCount(0);
+        await sheet.getByTestId('nutrition-chat-close').click();
+        await page.getByTestId('nutrition-advice-discuss').click();
+        await expect(sheet.getByTestId('nutrition-chat-user')).toHaveCount(0);
+        await expect(retry).toHaveCount(0);
+      } finally {
+        await putSettings(request, cookies, original);
+      }
+    });
+  }
+
   test('a failing answer leaves the sheet and the advice usable', async ({ page, request }) => {
     await login(page);
     const cookies = await cookieHeader(page);

@@ -857,6 +857,45 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 	}
 }
 
+func TestOpenAIClient_NutritionChat_GPT4oOmitsReasoningEffort(t *testing.T) {
+	requests := 0
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if _, exists := body["reasoning_effort"]; exists {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":{"message":"Unrecognized request argument supplied: reasoning_effort"}}`)) //nolint:errcheck
+			return
+		}
+		if body["model"] != "gpt-4o-mini" || body["store"] != false || body["tool_choice"] != "auto" {
+			t.Fatalf("model, retention, or tool choice changed: %+v", body)
+		}
+		tools, _ := body["tools"].([]any)
+		if len(tools) != 3 {
+			t.Fatalf("expected history tools, got %d", len(tools))
+		}
+		if requests == 1 {
+			w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"sodium","type":"function","function":{"name":"explain_nutrition_signal","arguments":"{\"signal\":\"sodium\"}"}}]}}]}`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(chatResponse(t, `{"answer":"Soup contributed sodium."}`))) //nolint:errcheck
+	})
+	c.Model = "gpt-4o-mini"
+	executor := &recordingNutritionChatTools{}
+	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
+		Question: "Where is the sodium from?", HistoryTools: executor,
+	})
+	if err != nil {
+		t.Fatalf("NutritionChat: %v", err)
+	}
+	if requests != 2 || len(executor.calls) != 1 || result.Answer != "Soup contributed sodium." {
+		t.Fatalf("history tool round trip failed: requests=%d calls=%d result=%+v", requests, len(executor.calls), result)
+	}
+}
+
 func TestOpenAIClient_NutritionChat_ExecutesAndReplaysHistoryToolCalls(t *testing.T) {
 	requestNumber := 0
 	var secondRequest map[string]any

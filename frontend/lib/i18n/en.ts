@@ -421,6 +421,7 @@ const en = {
   'nutritionChat.inputLabel': 'Your question about this advice',
   'nutritionChat.send': 'Ask',
   'nutritionChat.thinking': 'Thinking…',
+  'nutritionChat.retry': 'Retry request',
   'nutritionChat.unavailable': 'The answer is temporarily unavailable. Try again.',
   'nutritionChat.turnLimit': 'This conversation is full. Close and reopen to start a new one.',
   'nutritionChat.ephemeralNote': 'This conversation is not saved. Closing this panel discards it.',

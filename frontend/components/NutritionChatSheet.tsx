@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   api,
   type NutritionAdviceWindow,
+  type NutritionChatRequest,
   type NutritionChatSignal,
   type NutritionChatSource,
   type NutritionChatTurn,
@@ -50,7 +51,11 @@ export default function NutritionChatSheet({
   const [turns, setTurns] = useState<DisplayTurn[]>([]);
   const [question, setQuestion] = useState('');
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failedRequest, setFailedRequest] = useState<{
+    input: NutritionChatRequest;
+    nextTurns: DisplayTurn[];
+  } | null>(null);
+  const sendingRef = useRef(false);
 
   // Escape closes; Tab is confined to the panel. Both live on the document
   // rather than the panel because focus can legitimately be on the body at
@@ -99,18 +104,16 @@ export default function NutritionChatSheet({
 
   const atTurnLimit = turns.length >= MAX_TURNS;
 
-  async function send() {
+  async function send(retry = false) {
+    if (sendingRef.current) return;
     const asked = question.trim();
-    if (!asked || pending || atTurnLimit) return;
-    // The question joins the log before the answer arrives, so the user can
-    // see what they asked while they wait.
-    const nextTurns: NutritionChatTurn[] = [...turns, { role: 'user', text: asked }];
-    setTurns(nextTurns);
-    setQuestion('');
-    setPending(true);
-    setFailed(false);
-    try {
-      const response = await api.postNutritionChat({
+    if (!retry && (!asked || atTurnLimit)) return;
+    if (retry && !failedRequest) return;
+
+    // A retry reuses the complete failed payload and its displayed question.
+    // The failed question never becomes an extra prior turn or consumes a slot.
+    const request = retry ? failedRequest! : {
+      input: {
         label: healthiness.label,
         reasons: healthiness.reasons,
         window: adviceWindow,
@@ -126,22 +129,34 @@ export default function NutritionChatSheet({
           })
         ),
         eligible_days: healthiness.eligibleDays,
-        // Sources are display-only evidence from prior server tool calls. The
-        // model replays only the words that were already on screen.
+        // Sources stay display-only; prior model turns replay their words.
         turns: turns.map(({ role, text }) => ({ role, text })),
         question: asked,
-      });
+      },
+      nextTurns: [...turns, { role: 'user' as const, text: asked }],
+    };
+    sendingRef.current = true;
+    setPending(true);
+    if (!retry) {
+      setTurns(request.nextTurns);
+      setQuestion('');
+      setFailedRequest(null);
+    }
+    try {
+      const response = await api.postNutritionChat(request.input);
       if (response.available) {
         setTurns([
-          ...nextTurns,
+          ...request.nextTurns,
           { role: 'assistant', text: response.answer, sources: response.sources ?? [] },
         ]);
+        setFailedRequest(null);
       } else {
-        setFailed(true);
+        setFailedRequest(request);
       }
     } catch {
-      setFailed(true);
+      setFailedRequest(request);
     } finally {
+      sendingRef.current = false;
       setPending(false);
     }
   }
@@ -323,10 +338,20 @@ export default function NutritionChatSheet({
           )}
         </div>
 
-        {failed && (
-          <p className="text-xs text-text-muted" data-testid="nutrition-chat-error">
-            {t('nutritionChat.unavailable')}
-          </p>
+        {failedRequest && (
+          <div className="flex flex-wrap items-center gap-2">
+            <p role="status" className="text-xs text-text-muted" data-testid="nutrition-chat-error">
+              {t('nutritionChat.unavailable')}
+            </p>
+            <TapTarget
+              onClick={() => void send(true)}
+              disabled={pending}
+              data-testid="nutrition-chat-retry"
+              className="rounded-lg border border-border px-3 text-sm text-text hover:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t('nutritionChat.retry')}
+            </TapTarget>
+          </div>
         )}
         {atTurnLimit && (
           <p className="text-xs text-text-muted" data-testid="nutrition-chat-turn-limit">

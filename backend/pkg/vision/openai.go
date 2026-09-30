@@ -1068,10 +1068,11 @@ func (c *OpenAIClient) NutritionChat(ctx context.Context, in NutritionChatInput)
 	if in.HistoryTools != nil {
 		tools = nutritionChatTools
 		toolChoice = "auto"
-		// Chat Completions rejects function tools for reasoning models when
-		// reasoning_effort is active. Keep this compatibility setting scoped
-		// to the tool-enabled chat path; the other vision calls stay unchanged.
-		reasoningEffort = "none"
+		// GPT-5 tool chat disables reasoning for compatibility. GPT-4o and
+		// other models reject this argument, so omit it for those models.
+		if strings.HasPrefix(c.Model, "gpt-5") {
+			reasoningEffort = "none"
+		}
 	}
 	totalPromptTokens := 0
 	totalCompletionTokens := 0

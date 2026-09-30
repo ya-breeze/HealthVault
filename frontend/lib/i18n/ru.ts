@@ -290,6 +290,7 @@ const ru: Dictionary = {
   'nutritionChat.inputLabel': 'Ваш вопрос об этом совете',
   'nutritionChat.send': 'Спросить',
   'nutritionChat.thinking': 'Думаю…',
+  'nutritionChat.retry': 'Повторить запрос',
   'nutritionChat.unavailable': 'Ответ временно недоступен. Попробуйте ещё раз.',
   'nutritionChat.turnLimit': 'Разговор заполнен. Закройте и откройте панель, чтобы начать новый.',
   'nutritionChat.ephemeralNote': 'Этот разговор не сохраняется. Закрытие панели его удаляет.',
