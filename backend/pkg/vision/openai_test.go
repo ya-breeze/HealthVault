@@ -18,6 +18,7 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *vision.OpenAIClient 
 	t.Cleanup(srv.Close)
 	c := vision.NewOpenAIClient("test-key", "gpt-5.6-luna")
 	c.BaseURL = srv.URL
+	c.ResponsesURL = srv.URL + "/v1/responses"
 	return c
 }
 
@@ -791,7 +792,11 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		w.Write([]byte(chatResponse(t, //nolint:errcheck
+		assertNutritionResponsesRequest(t, r, capturedBody)
+		if _, offered := capturedBody["tools"]; offered {
+			t.Error("tools offered without an executor")
+		}
+		w.Write([]byte(responsesAnswer(t, //nolint:errcheck
 			`{"answer":"  `+longAnswer+`  "}`)))
 	})
 
@@ -850,252 +855,266 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 	if capturedBody["store"] != false {
 		t.Errorf("expected store:false on the chat request, got %#v", capturedBody["store"])
 	}
-	responseFormat := capturedBody["response_format"].(map[string]any)
-	jsonSchema := responseFormat["json_schema"].(map[string]any)
+	textFormat := capturedBody["text"].(map[string]any)
+	jsonSchema := textFormat["format"].(map[string]any)
 	if jsonSchema["name"] != "nutrition_chat" {
 		t.Errorf("expected nutrition_chat schema name, got %#v", jsonSchema["name"])
 	}
 }
 
-func TestOpenAIClient_NutritionChat_GPT4oOmitsReasoningEffort(t *testing.T) {
+func responsesAnswer(t *testing.T, content string) string {
+	t.Helper()
+	return string(mustMarshal(t, map[string]any{
+		"model": "gpt-6-luna", "status": "completed",
+		"output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": content}}}},
+		"usage":  map[string]any{"input_tokens": 100, "output_tokens": 20},
+	}))
+}
+
+func responsesToolCall(id, name, arguments string) map[string]any {
+	return map[string]any{"type": "function_call", "id": "item-" + id, "call_id": id, "name": name, "arguments": arguments, "status": "completed"}
+}
+
+func responsesToolRound(t *testing.T, output []any) []byte {
+	t.Helper()
+	return mustMarshal(t, map[string]any{"model": "gpt-6-luna", "status": "completed", "output": output, "usage": map[string]any{"input_tokens": 10, "output_tokens": 2}})
+}
+
+func assertNutritionResponsesRequest(t *testing.T, r *http.Request, body map[string]any) {
+	t.Helper()
+	if r.URL.Path != "/v1/responses" {
+		t.Errorf("request went to %q, want Responses endpoint", r.URL.Path)
+	}
+	if r.Header.Get("Authorization") != "Bearer test-key" {
+		t.Errorf("missing provider authorization")
+	}
+	if body["model"] != "gpt-6-luna" || body["store"] != false {
+		t.Errorf("chat model or retention mismatch: %+v", body)
+	}
+	reasoning, _ := body["reasoning"].(map[string]any)
+	if reasoning["effort"] != "high" {
+		t.Errorf("expected high effort: %+v", reasoning)
+	}
+	for _, legacy := range []string{"messages", "reasoning_effort", "response_format", "previous_response_id"} {
+		if _, exists := body[legacy]; exists {
+			t.Errorf("unexpected %s in stateless Responses request", legacy)
+		}
+	}
+	include, _ := body["include"].([]any)
+	if len(include) != 1 || include[0] != "reasoning.encrypted_content" {
+		t.Errorf("encrypted reasoning not requested: %+v", include)
+	}
+	text, _ := body["text"].(map[string]any)
+	format, _ := text["format"].(map[string]any)
+	if format["type"] != "json_schema" || format["name"] != "nutrition_chat" || format["strict"] != true {
+		t.Errorf("missing strict nutrition schema: %+v", format)
+	}
+	input, _ := body["input"].([]any)
+	if len(input) < 2 {
+		t.Fatalf("missing initial messages: %+v", input)
+	}
+	for i, role := range []string{"system", "user"} {
+		message, _ := input[i].(map[string]any)
+		if message["role"] != role || message["content"] == nil {
+			t.Errorf("initial message %d: %+v", i, message)
+		}
+	}
+}
+
+func TestOpenAIClient_NutritionChat_PhotoModelDoesNotOverrideLunaHigh(t *testing.T) {
 	requests := 0
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Fatal(err)
 		}
-		if _, exists := body["reasoning_effort"]; exists {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":{"message":"Unrecognized request argument supplied: reasoning_effort"}}`)) //nolint:errcheck
-			return
-		}
-		if body["model"] != "gpt-4o-mini" || body["store"] != false || body["tool_choice"] != "auto" {
-			t.Fatalf("model, retention, or tool choice changed: %+v", body)
-		}
+		assertNutritionResponsesRequest(t, r, body)
 		tools, _ := body["tools"].([]any)
-		if len(tools) != 3 {
-			t.Fatalf("expected history tools, got %d", len(tools))
+		if len(tools) != 3 || body["tool_choice"] != "auto" {
+			t.Fatalf("missing history tools: %+v", body)
+		}
+		for _, value := range tools {
+			tool := value.(map[string]any)
+			if tool["type"] != "function" || tool["name"] == nil || tool["description"] == nil || tool["parameters"] == nil || tool["strict"] != true {
+				t.Errorf("Responses tool not flattened: %+v", tool)
+			}
+			if _, exists := tool["function"]; exists {
+				t.Error("Chat Completions tool wrapper remained")
+			}
 		}
 		if requests == 1 {
-			w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"sodium","type":"function","function":{"name":"explain_nutrition_signal","arguments":"{\"signal\":\"sodium\"}"}}]}}]}`)) //nolint:errcheck
+			w.Write(responsesToolRound(t, []any{responsesToolCall("sodium", "explain_nutrition_signal", `{"signal":"sodium"}`)}))
 			return
 		}
-		w.Write([]byte(chatResponse(t, `{"answer":"Soup contributed sodium."}`))) //nolint:errcheck
+		w.Write([]byte(responsesAnswer(t, `{"answer":"Soup contributed sodium."}`)))
 	})
 	c.Model = "gpt-4o-mini"
 	executor := &recordingNutritionChatTools{}
-	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
-		Question: "Where is the sodium from?", HistoryTools: executor,
-	})
+	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Question: "Where is the sodium from?", HistoryTools: executor})
 	if err != nil {
-		t.Fatalf("NutritionChat: %v", err)
+		t.Fatal(err)
 	}
 	if requests != 2 || len(executor.calls) != 1 || result.Answer != "Soup contributed sodium." {
-		t.Fatalf("history tool round trip failed: requests=%d calls=%d result=%+v", requests, len(executor.calls), result)
+		t.Fatalf("round trip failed: requests=%d calls=%d result=%+v", requests, len(executor.calls), result)
 	}
 }
 
 func TestOpenAIClient_NutritionChat_ExecutesAndReplaysHistoryToolCalls(t *testing.T) {
-	requestNumber := 0
-	var secondRequest map[string]any
+	requests := 0
+	var second map[string]any
+	output := []any{
+		map[string]any{"type": "reasoning", "id": "reasoning-1", "summary": []any{}, "encrypted_content": "encrypted-state"},
+		responsesToolCall("call-sodium", "explain_nutrition_signal", `{"signal":"sodium"}`),
+		responsesToolCall("call-steps", "get_health_trend", `{"metric":"steps","days":7}`),
+	}
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		requestNumber++
+		requests++
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode request %d: %v", requestNumber, err)
+			t.Fatal(err)
 		}
-		if body["store"] != false {
-			t.Errorf("request %d did not keep store:false", requestNumber)
-		}
-		if body["reasoning_effort"] != "none" {
-			t.Errorf("request %d did not disable reasoning for Chat Completions tools: %+v", requestNumber, body)
-		}
-		if requestNumber == 1 {
-			tools, _ := body["tools"].([]any)
-			if len(tools) != 3 || body["tool_choice"] != "auto" {
-				t.Fatalf("history tools were not offered: %+v", body)
+		assertNutritionResponsesRequest(t, r, body)
+		if requests == 1 {
+			if !strings.Contains(string(mustMarshal(t, body["tools"])), `"fiber"`) {
+				t.Error("missing fiber tool argument")
 			}
-			if encodedTools := string(mustMarshal(t, tools)); !strings.Contains(encodedTools, `"fiber"`) {
-				t.Fatalf("fiber was not offered as a nutrition-signal tool argument: %s", encodedTools)
-			}
-			response, err := json.Marshal(map[string]any{
-				"model": "gpt-5.6-luna-tools",
-				"choices": []map[string]any{{"message": map[string]any{
-					"content": nil,
-					"tool_calls": []map[string]any{
-						{"id": "call-sodium", "type": "function", "function": map[string]any{
-							"name": "explain_nutrition_signal", "arguments": `{"signal":"sodium"}`,
-						}},
-						{"id": "call-steps", "type": "function", "function": map[string]any{
-							"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
-						}},
-					},
-				}}},
-				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 2},
-			})
-			if err != nil {
-				t.Fatalf("marshal tool response: %v", err)
-			}
-			w.Write(response) //nolint:errcheck
+			w.Write(responsesToolRound(t, output))
 			return
 		}
-		secondRequest = body
-		w.Write([]byte(chatResponse(t, `{"answer":"Основной вклад дал Soup; это AI-оценка."}`))) //nolint:errcheck
+		second = body
+		w.Write([]byte(responsesAnswer(t, `{"answer":"Основной вклад дал Soup; это AI-оценка."}`)))
 	})
-
 	executor := &recordingNutritionChatTools{}
-	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
-		Label: "needs_attention", Reasons: []string{"sodium_high"}, DisplayLanguage: "ru",
-		Question: "Откуда столько соли?", HistoryTools: executor,
-	})
+	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Label: "needs_attention", Reasons: []string{"sodium_high"}, DisplayLanguage: "ru", Question: "Откуда столько соли?", HistoryTools: executor})
 	if err != nil {
-		t.Fatalf("NutritionChat: %v", err)
+		t.Fatal(err)
 	}
 	if result.Answer != "Основной вклад дал Soup; это AI-оценка." {
 		t.Fatalf("unexpected answer: %q", result.Answer)
 	}
 	if result.PromptTokens != 110 || result.CompletionTokens != 22 {
-		t.Errorf("usage was not accumulated across tool rounds: %+v", result)
+		t.Errorf("usage was not accumulated: %+v", result)
 	}
-	if len(executor.calls) != 2 || executor.calls[0].name != "explain_nutrition_signal" ||
-		executor.calls[1].name != "get_health_trend" {
-		t.Fatalf("unexpected executed calls: %#v", executor.calls)
+	if len(executor.calls) != 2 || executor.calls[0].name != "explain_nutrition_signal" || executor.calls[1].name != "get_health_trend" {
+		t.Fatalf("unexpected tools: %+v", executor.calls)
 	}
-	messages, _ := secondRequest["messages"].([]any)
-	if len(messages) != 5 {
-		t.Fatalf("second request has %d messages, want system, user, assistant and two tool results", len(messages))
+	input, _ := second["input"].([]any)
+	if len(input) != 7 {
+		t.Fatalf("want two messages, all three output items, two results; got %+v", input)
 	}
-	assistant := messages[2].(map[string]any)
-	if calls, _ := assistant["tool_calls"].([]any); len(calls) != 2 {
-		t.Fatalf("assistant tool calls were not replayed: %+v", assistant)
-	}
-	for i, wantID := range []string{"call-sodium", "call-steps"} {
-		toolMessage := messages[3+i].(map[string]any)
-		if toolMessage["role"] != "tool" || toolMessage["tool_call_id"] != wantID {
-			t.Errorf("tool result %d does not match its call: %+v", i, toolMessage)
+	for i, item := range output {
+		if string(mustMarshal(t, input[2+i])) != string(mustMarshal(t, item)) {
+			t.Errorf("output item %d changed during replay: %+v", i, input[2+i])
 		}
 	}
-	if !strings.Contains(messages[3].(map[string]any)["content"].(string), `"macro_source":"estimated"`) {
-		t.Errorf("source provenance did not reach the model: %+v", messages[3])
+	for i, id := range []string{"call-sodium", "call-steps"} {
+		result := input[5+i].(map[string]any)
+		if result["type"] != "function_call_output" || result["call_id"] != id {
+			t.Errorf("tool result lost matching ID: %+v", result)
+		}
+	}
+	if !strings.Contains(input[5].(map[string]any)["output"].(string), `"macro_source":"estimated"`) {
+		t.Error("source provenance lost")
 	}
 }
 
 func TestOpenAIClient_NutritionChat_BoundsHistoryToolCalls(t *testing.T) {
-	requestNumber := 0
+	requests := 0
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		requestNumber++
-		response, err := json.Marshal(map[string]any{
-			"model": "gpt-5.6-luna-tools",
-			"choices": []map[string]any{{"message": map[string]any{
-				"content": nil,
-				"tool_calls": []map[string]any{{
-					"id": "call-" + strconv.Itoa(requestNumber), "type": "function", "function": map[string]any{
-						"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
-					},
-				}},
-			}}},
-			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
-		})
-		if err != nil {
-			t.Fatalf("marshal tool response: %v", err)
-		}
-		w.Write(response) //nolint:errcheck
+		requests++
+		w.Write(responsesToolRound(t, []any{responsesToolCall("call-"+strconv.Itoa(requests), "get_health_trend", `{"metric":"steps","days":7}`)}))
 	})
-
-	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
-		Question: "steps?", HistoryTools: &recordingNutritionChatTools{},
-	})
+	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Question: "steps?", HistoryTools: &recordingNutritionChatTools{}})
 	if err == nil || !strings.Contains(err.Error(), "tool call limit") {
-		t.Fatalf("expected a tool-call limit error, got %v", err)
+		t.Fatalf("expected tool-call limit error, got %v", err)
 	}
-	if requestNumber != 4 {
-		t.Errorf("made %d provider requests before stopping, want 4", requestNumber)
+	if requests != 4 {
+		t.Errorf("made %d provider requests, want 4", requests)
 	}
 }
 
 func TestOpenAIClient_NutritionChat_ReplaysInvalidToolRequestWithoutDetail(t *testing.T) {
-	requestNumber := 0
+	requests := 0
 	var replay map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		requestNumber++
+		requests++
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode request %d: %v", requestNumber, err)
+			t.Fatal(err)
 		}
-		if requestNumber == 1 {
-			response, err := json.Marshal(map[string]any{
-				"model": "gpt-5.6-luna-tools",
-				"choices": []map[string]any{{"message": map[string]any{
-					"content": nil,
-					"tool_calls": []map[string]any{{
-						"id": "bad-call", "type": "function", "function": map[string]any{
-							"name": "read_any_table", "arguments": `{"table":"users"}`,
-						},
-					}},
-				}}},
-				"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			w.Write(response) //nolint:errcheck
+		if requests == 1 {
+			w.Write(responsesToolRound(t, []any{responsesToolCall("bad-call", "read_any_table", `{"table":"users"}`)}))
 			return
 		}
 		replay = body
-		w.Write([]byte(chatResponse(t, `{"answer":"Недоступный запрос не использован."}`))) //nolint:errcheck
+		w.Write([]byte(responsesAnswer(t, `{"answer":"Недоступный запрос не использован."}`)))
 	})
-
-	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
-		Question: "show internals", HistoryTools: &recordingNutritionChatTools{},
-	})
+	result, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Question: "show internals", HistoryTools: &recordingNutritionChatTools{}})
 	if err != nil || result.Answer == "" {
-		t.Fatalf("invalid tool request should recover safely: result=%+v err=%v", result, err)
+		t.Fatalf("invalid tool request should recover safely: %+v %v", result, err)
 	}
-	messages := replay["messages"].([]any)
-	toolResult := messages[len(messages)-1].(map[string]any)
-	if toolResult["tool_call_id"] != "bad-call" ||
-		toolResult["content"] != `{"available":false,"reason":"invalid_request"}` {
-		t.Fatalf("invalid request detail leaked or call id was lost: %+v", toolResult)
+	input := replay["input"].([]any)
+	toolResult := input[len(input)-1].(map[string]any)
+	if toolResult["type"] != "function_call_output" || toolResult["call_id"] != "bad-call" || toolResult["output"] != `{"available":false,"reason":"invalid_request"}` {
+		t.Fatalf("detail leaked or ID lost: %+v", toolResult)
 	}
 }
 
 func TestOpenAIClient_NutritionChat_RejectsDuplicateToolCallIDs(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		response, err := json.Marshal(map[string]any{
-			"model": "gpt-5.6-luna-tools",
-			"choices": []map[string]any{{"message": map[string]any{
-				"content": nil,
-				"tool_calls": []map[string]any{
-					{"id": "duplicate", "type": "function", "function": map[string]any{
-						"name": "get_health_trend", "arguments": `{"metric":"steps","days":7}`,
-					}},
-					{"id": "duplicate", "type": "function", "function": map[string]any{
-						"name": "get_health_trend", "arguments": `{"metric":"sleep","days":7}`,
-					}},
-				},
-			}}},
-			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		w.Write(response) //nolint:errcheck
+		w.Write(responsesToolRound(t, []any{responsesToolCall("duplicate", "get_health_trend", `{"metric":"steps","days":7}`), responsesToolCall("duplicate", "get_health_trend", `{"metric":"sleep","days":7}`)}))
 	})
-
-	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
-		Question: "trends?", HistoryTools: &recordingNutritionChatTools{},
-	})
+	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Question: "trends?", HistoryTools: &recordingNutritionChatTools{}})
 	if err == nil || !strings.Contains(err.Error(), "invalid tool call") {
-		t.Fatalf("duplicate tool call IDs should fail, got %v", err)
+		t.Fatalf("duplicate IDs should fail, got %v", err)
 	}
 }
 
-func TestOpenAIClient_NutritionChat_RejectsAnEmptyAnswer(t *testing.T) {
+func TestOpenAIClient_NutritionChat_RejectsUnusableResponses(t *testing.T) {
+	cases := []struct {
+		name, body string
+		status     int
+	}{
+		{"empty answer", responsesAnswer(t, `{"answer":"   "}`), 200},
+		{"malformed envelope", `{`, 200},
+		{"malformed answer", responsesAnswer(t, `{"answer":`), 200},
+		{"incomplete", `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"answer\":\"partial\"}"}]}]}`, 200},
+		{"refusal", `{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"Cannot answer."}]}]}`, 200},
+		{"missing output", `{"status":"completed","output":[]}`, 200},
+		{"provider error", `{"error":{"message":"rate limited","type":"rate_limit_error"}}`, 429},
+		{"failed response", `{"status":"failed","error":{"code":"server_error","message":"failed"},"output":[]}`, 200},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				requests++
+				w.WriteHeader(tc.status)
+				w.Write([]byte(tc.body))
+			})
+			if _, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Question: "why?"}); err == nil {
+				t.Fatal("expected unusable response error")
+			}
+			if requests != 1 {
+				t.Errorf("provider errors must not trigger internal retries: %d requests", requests)
+			}
+		})
+	}
+}
+
+func TestOpenAIClient_NutritionChat_RejectsToolCallIDReusedAcrossRounds(t *testing.T) {
+	requests := 0
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(chatResponse(t, `{"answer":"   "}`))) //nolint:errcheck
+		requests++
+		w.Write(responsesToolRound(t, []any{responsesToolCall("reused", "get_health_trend", `{"metric":"steps","days":7}`)}))
 	})
-	if _, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Question: "why?"}); err == nil {
-		t.Fatal("expected an error for a whitespace-only answer")
+	executor := &recordingNutritionChatTools{}
+	_, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{Question: "trends?", HistoryTools: executor})
+	if err == nil || !strings.Contains(err.Error(), "invalid tool call") {
+		t.Fatalf("reused call ID should fail, got %v", err)
+	}
+	if requests != 2 || len(executor.calls) != 1 {
+		t.Fatalf("duplicate call was executed: requests=%d calls=%d", requests, len(executor.calls))
 	}
 }
