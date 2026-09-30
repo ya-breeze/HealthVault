@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   api,
+  ApiError,
+  NutritionChatTransportError,
   type NutritionAdviceWindow,
   type NutritionChatRequest,
   type NutritionChatSignal,
@@ -55,6 +57,7 @@ export default function NutritionChatSheet({
     input: NutritionChatRequest;
     nextTurns: DisplayTurn[];
   } | null>(null);
+  const [failureRetryable, setFailureRetryable] = useState(false);
   const sendingRef = useRef(false);
 
   // Escape closes; Tab is confined to the panel. Both live on the document
@@ -108,7 +111,7 @@ export default function NutritionChatSheet({
     if (sendingRef.current) return;
     const asked = question.trim();
     if (!retry && (!asked || atTurnLimit)) return;
-    if (retry && !failedRequest) return;
+    if (retry && (!failedRequest || !failureRetryable)) return;
 
     // A retry reuses the complete failed payload and its displayed question.
     // The failed question never becomes an extra prior turn or consumes a slot.
@@ -141,20 +144,29 @@ export default function NutritionChatSheet({
       setTurns(request.nextTurns);
       setQuestion('');
       setFailedRequest(null);
+      setFailureRetryable(false);
     }
     try {
       const response = await api.postNutritionChat(request.input);
+      if (!response || typeof response !== 'object') throw new Error('Invalid chat response');
       if (response.available) {
         setTurns([
           ...request.nextTurns,
           { role: 'assistant', text: response.answer, sources: response.sources ?? [] },
         ]);
         setFailedRequest(null);
+        setFailureRetryable(false);
       } else {
         setFailedRequest(request);
+        setFailureRetryable(response.retryable === true);
       }
-    } catch {
+    } catch (error) {
       setFailedRequest(request);
+      // Only classified transport/HTTP failures allow replay. Local errors and
+      // malformed JSON stay final.
+      setFailureRetryable(error instanceof ApiError
+        ? error.status === 408 || error.status === 429 || (error.status >= 500 && error.status < 600)
+        : error instanceof NutritionChatTransportError);
     } finally {
       sendingRef.current = false;
       setPending(false);
@@ -341,16 +353,18 @@ export default function NutritionChatSheet({
         {failedRequest && (
           <div className="flex flex-wrap items-center gap-2">
             <p role="status" className="text-xs text-text-muted" data-testid="nutrition-chat-error">
-              {t('nutritionChat.unavailable')}
+              {t(failureRetryable ? 'nutritionChat.unavailable' : 'nutritionChat.finalError')}
             </p>
-            <TapTarget
-              onClick={() => void send(true)}
-              disabled={pending}
-              data-testid="nutrition-chat-retry"
-              className="rounded-lg border border-border px-3 text-sm text-text hover:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {t('nutritionChat.retry')}
-            </TapTarget>
+            {failureRetryable && (
+              <TapTarget
+                onClick={() => void send(true)}
+                disabled={pending}
+                data-testid="nutrition-chat-retry"
+                className="rounded-lg border border-border px-3 text-sm text-text hover:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('nutritionChat.retry')}
+              </TapTarget>
+            )}
           </div>
         )}
         {atTurnLimit && (

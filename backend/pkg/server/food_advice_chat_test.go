@@ -21,6 +21,7 @@ import (
 
 type chatTestResponse struct {
 	Available bool   `json:"available"`
+	Retryable bool   `json:"retryable"`
 	Reason    string `json:"reason"`
 	Answer    string `json:"answer"`
 	Sources   []struct {
@@ -558,13 +559,18 @@ func TestFoodAdviceChat_ModelFailureIsReportedAsUnavailable(t *testing.T) {
 	configureAdviceTarget(t, st, userID, "en")
 
 	for name, tc := range map[string]struct {
-		client     vision.Client
-		wantReason string
+		client        vision.Client
+		wantReason    string
+		wantRetryable bool
 	}{
 		"a model failure": {
 			client:     &vision.Fake{NutritionChatErr: errors.New("model down: за какие дни?")},
 			wantReason: "unavailable",
 		},
+		"a retryable provider failure": {client: &vision.Fake{NutritionChatErr: fmt.Errorf("wrapped: %w", &vision.NutritionChatError{StatusCode: 503, Retryable: true})}, wantReason: "unavailable", wantRetryable: true},
+		"a final provider failure":     {client: &vision.Fake{NutritionChatErr: &vision.NutritionChatError{StatusCode: 400}}, wantReason: "unavailable"},
+		"a timeout":                    {client: &vision.Fake{NutritionChatErr: context.DeadlineExceeded}, wantReason: "unavailable", wantRetryable: true},
+		"a cancellation":               {client: &vision.Fake{NutritionChatErr: context.Canceled}, wantReason: "unavailable"},
 		// Distinguished the way PostFoodAdvice distinguishes it, so the
 		// response type's two reasons both actually occur.
 		"an unconfigured api key": {client: vision.Unconfigured{}, wantReason: "unconfigured"},
@@ -577,6 +583,16 @@ func TestFoodAdviceChat_ModelFailureIsReportedAsUnavailable(t *testing.T) {
 			}
 			if response.Available || response.Reason != tc.wantReason || response.Answer != "" {
 				t.Fatalf("expected reason %q, got %+v", tc.wantReason, response)
+			}
+			var wire map[string]json.RawMessage
+			if err := json.Unmarshal(w.Body.Bytes(), &wire); err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := wire["retryable"]; !exists {
+				t.Fatal("retryable flag missing")
+			}
+			if response.Retryable != tc.wantRetryable {
+				t.Fatalf("retryable=%t want %t", response.Retryable, tc.wantRetryable)
 			}
 			if strings.Contains(w.Body.String(), "model down") {
 				t.Error("the model's own error text reached the caller")
@@ -593,7 +609,7 @@ func TestFoodAdviceChat_WithoutATargetIsUnavailable(t *testing.T) {
 	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
 
 	w, response := callChat(t, h, newChatRequest(t, userID, familyID, chatBody("why?", nil)))
-	if w.Code != http.StatusOK || response.Available || response.Reason != "unavailable" {
+	if w.Code != http.StatusOK || response.Available || response.Reason != "unavailable" || response.Retryable {
 		t.Fatalf("expected an unavailable response, got %d: %s", w.Code, w.Body.String())
 	}
 	if len(fake.NutritionChatCalls) != 0 {

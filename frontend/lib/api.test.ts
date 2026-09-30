@@ -521,3 +521,45 @@ describe('dashboard read model', () => {
     expect(got.aggregates.steps).toEqual({ status: 'ok', rows: [] });
   });
 });
+
+describe('nutrition chat transport classification', () => {
+  beforeEach(() => { vi.unstubAllGlobals(); });
+
+  it('marks fetch connection failures as transport errors', async () => {
+    vi.resetModules();
+    const { api, NutritionChatTransportError } = await import('./api');
+    installFetch(() => { throw new TypeError('Failed to fetch'); });
+    await expect(api.postNutritionChat({
+      label: 'good', reasons: [], window: {
+        mean_calories: 2000, mean_protein_grams: 100, mean_carbs_grams: 200, mean_fat_grams: 60,
+        mean_sugar_grams: 20, mean_sodium_grams: 2, mean_dietary_fiber_grams: 25, mean_saturated_fat_grams: 10,
+      }, signals: [], eligible_days: 7, turns: [], question: 'why?',
+    })).rejects.toBeInstanceOf(NutritionChatTransportError);
+  });
+
+  it.each([200, 400])('preserves HTTP %s classification when reading the body fails', async status => {
+    vi.resetModules();
+    const { api, ApiError, NutritionChatTransportError } = await import('./api');
+    const response = new Response('', { status });
+    vi.spyOn(response, 'json').mockRejectedValue(new TypeError('Connection closed'));
+    installFetch(() => response);
+    await expect(api.postNutritionChat({
+      label: 'good', reasons: [], window: {
+        mean_calories: 2000, mean_protein_grams: 100, mean_carbs_grams: 200, mean_fat_grams: 60,
+        mean_sugar_grams: 20, mean_sodium_grams: 2, mean_dietary_fiber_grams: 25, mean_saturated_fat_grams: 10,
+      }, signals: [], eligible_days: 7, turns: [], question: 'why?',
+    })).rejects.toBeInstanceOf(status === 200 ? NutritionChatTransportError : ApiError);
+    expect(response.json).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
+  });
+
+  it('keeps malformed JSON final instead of labeling it a connection failure', async () => {
+    const api = await freshApi();
+    installFetch(() => new Response('not JSON', { status: 200 }));
+    await expect(api.postNutritionChat({
+      label: 'good', reasons: [], window: {
+        mean_calories: 2000, mean_protein_grams: 100, mean_carbs_grams: 200, mean_fat_grams: 60,
+        mean_sugar_grams: 20, mean_sodium_grams: 2, mean_dietary_fiber_grams: 25, mean_saturated_fat_grams: 10,
+      }, signals: [], eligible_days: 7, turns: [], question: 'why?',
+    })).rejects.toBeInstanceOf(SyntaxError);
+  });
+});

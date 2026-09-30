@@ -53,7 +53,8 @@ type nutritionResponse struct {
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
 	Error *struct {
-		Message string `json:"message"`
+		Code string `json:"code"`
+		Type string `json:"type"`
 	} `json:"error"`
 }
 
@@ -188,6 +189,17 @@ func (c *OpenAIClient) callNutritionResponse(ctx context.Context, input nutritio
 	}
 	defer resp.Body.Close()
 	body, err = io.ReadAll(resp.Body)
+	// HTTP status remains authoritative even if the provider sends HTML,
+	// malformed JSON, or a body that cannot be read completely.
+	if resp.StatusCode != http.StatusOK {
+		var failure nutritionResponse
+		_ = json.Unmarshal(body, &failure)
+		code, errorType := "", ""
+		if failure.Error != nil {
+			code, errorType = failure.Error.Code, failure.Error.Type
+		}
+		return nil, latency, nutritionChatProviderError(resp.StatusCode, code, errorType)
+	}
 	if err != nil {
 		return nil, latency, fmt.Errorf("read nutrition chat response: %w", err)
 	}
@@ -196,10 +208,7 @@ func (c *OpenAIClient) callNutritionResponse(ctx context.Context, input nutritio
 		return nil, latency, fmt.Errorf("decode nutrition chat response: %w", err)
 	}
 	if result.Error != nil {
-		return nil, latency, fmt.Errorf("vision api error: %s", result.Error.Message)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, latency, fmt.Errorf("vision api status %d", resp.StatusCode)
+		return nil, latency, nutritionChatProviderError(resp.StatusCode, result.Error.Code, result.Error.Type)
 	}
 	if result.Status != "completed" {
 		return nil, latency, fmt.Errorf("nutrition chat response did not complete")
