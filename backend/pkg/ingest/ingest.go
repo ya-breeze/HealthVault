@@ -28,6 +28,10 @@ func Process(db *gorm.DB, userID, familyID, payloadID uuid.UUID, p *PayloadJSON)
 }
 
 func process(db *gorm.DB, userID, familyID, payloadID uuid.UUID, p *PayloadJSON) error {
+	if p.Test {
+		return nil
+	}
+
 	// Interval types keyed on (user_id, start_time)
 	upsertInterval := clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "start_time"}},
