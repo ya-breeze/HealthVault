@@ -12,10 +12,10 @@ State in one shared instruction used by photo, description, and clarification re
 
 - `make test-backend`
 - `make lint`
-- `make test-e2e`
+- `make test-e2e E2E_ARGS='tests/food.spec.ts -g "describes a meal in free text and reaches a terminal or actionable review state"'`
 
 ### Task 1: Make the sodium units explicit
 - [x] Add a shared sodium unit directive to photo, description, and clarification prompt paths, with the 1500 mg per 100 g and 40 g portion example.
 - [x] Describe the units and per-100 g basis for every field in the structured output schema.
-- [ ] Run the validation commands and validate two synthetic meal descriptions against hcw-wip using the real configured provider: one with the explicit label values, and one with plain Russian dry-salami text.
-- [ ] Mark completed
+- [x] Run the validation commands and validate two synthetic meal descriptions against hcw-wip using the real configured provider: one with the explicit label values, and one with plain Russian dry-salami text.
+- [x] Mark completed
