@@ -110,18 +110,4 @@
     <string name="weather_less">Свернуть</string>
     <string name="weather_consent_summary">Примерное местоположение в фоне нужно для сохранения местной погоды.</string>
     <string name="weather_disable_details">При выключении удаляются данные, ожидающие отправки. Уже сохранённая на сервере погода остаётся.</string>
-    <string name="saved_weather_title">Последняя сохранённая погода</string>
-    <string name="saved_weather_loading">Загрузка сохранённой погоды…</string>
-    <string name="saved_weather_values">%1$.1f °C · %2$.0f гПа</string>
-    <string name="saved_weather_day">Открыть этот день</string>
-    <string name="saved_weather_pending">Погода ожидает загрузки.</string>
-    <string name="saved_weather_moving">Нет сохранённой погоды: местоположение изменилось.</string>
-    <string name="saved_weather_accuracy">Нет сохранённой погоды: недостаточная точность местоположения.</string>
-    <string name="saved_weather_missing_location">Нет сохранённой погоды: история местоположения неполная.</string>
-    <string name="saved_weather_empty">За последние семь дней нет сохранённой погоды.</string>
-    <string name="saved_weather_rate_limited">Загрузка погоды временно ограничена. Обновите позже.</string>
-    <string name="saved_weather_access">Для загрузки погоды нужно подтвердить доступ.</string>
-    <string name="saved_weather_sign_in">Войдите снова, чтобы загрузить сохранённую погоду.</string>
-    <string name="saved_weather_error">Не удалось загрузить погоду. Потяните вниз, чтобы повторить.</string>
-    <string name="saved_weather_today">Открыть сегодня</string>
 </resources>

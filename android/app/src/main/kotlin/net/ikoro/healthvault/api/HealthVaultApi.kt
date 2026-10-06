@@ -1,9 +1,6 @@
 package net.ikoro.healthvault.api
 
 import java.io.IOException
-import java.time.Instant
-import java.time.temporal.ChronoUnit
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -154,38 +151,6 @@ class HealthVaultApi(
         relogin.failureOrNull()?.let { return@withSessionGeneration it }
         send()
     }
-
-    /** Read saved history independently of location consent; preserve the initiating account. */
-    fun weatherHistory(now: Instant, generation: Long = secureStore.currentSessionGeneration): ApiResult<WeatherHistory> =
-        cookieJar.withSessionGeneration(generation) {
-            if (!secureStore.isCurrentSession(generation)) {
-                return@withSessionGeneration ApiResult.NetworkFailure(IOException("Session changed"))
-            }
-            val server = secureStore.serverUrl ?: return@withSessionGeneration ApiResult.Unauthenticated
-            val username = secureStore.username
-            val password = secureStore.password
-            val end = now.truncatedTo(ChronoUnit.HOURS)
-            val url = (server.trimEnd('/') + "/api/weather/history").toHttpUrl().newBuilder()
-                .addQueryParameter("from", end.minus(7, ChronoUnit.DAYS).toString())
-                .addQueryParameter("to", end.toString()).build()
-            val request = Request.Builder().url(url).get().build()
-            val historyClient = client.newBuilder().callTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .addInterceptor { chain ->
-                    if (!secureStore.isCurrentSession(generation)) throw IOException("Session changed")
-                    chain.proceed(chain.request())
-                }.build()
-            fun send(): ApiResult<WeatherHistory> = runCatching { historyClient.newCall(request).execute() }.fold(
-                onSuccess = { response -> response.use { classify(it) { body ->
-                    json.decodeFromString<WeatherHistory>(body).requireValid()
-                } } }, onFailure = { ApiResult.NetworkFailure(it) },
-            )
-            val result = send()
-            if (result !is ApiResult.Unauthenticated || !secureStore.isCurrentSession(generation) ||
-                username == null || password == null) return@withSessionGeneration result
-            val relogin = login(server, username, password)
-            relogin.failureOrNull()?.let { return@withSessionGeneration it }
-            send()
-        }
 
     private fun execute(request: Request): ApiResult<TodaySummary> =
         runCatching { client.newCall(request).execute() }

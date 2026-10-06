@@ -102,7 +102,6 @@ fun TodayScreen(
     onOpenSettings: () -> Unit,
 ) {
     var snapshot by remember { mutableStateOf(secureStore.loadSnapshot()) }
-    var weatherRefreshToken by remember { mutableStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<RefreshProblem?>(null) }
     val scope = rememberCoroutineScope()
@@ -207,10 +206,7 @@ fun TodayScreen(
     Surface(modifier = Modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = refreshing,
-            onRefresh = {
-                weatherRefreshToken++
-                scope.launch { refresh() }
-            },
+            onRefresh = { scope.launch { refresh() } },
             modifier = Modifier.fillMaxSize(),
         ) {
             Column(
@@ -260,7 +256,6 @@ fun TodayScreen(
                     // already said what happened, so don't claim to be loading.
                     Text(text = stringResource(R.string.today_loading))
                 }
-                SavedWeatherRow(api, secureStore, weatherRefreshToken)
             }
         }
     }

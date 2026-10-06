@@ -114,18 +114,4 @@
     <string name="weather_less">Hide details</string>
     <string name="weather_consent_summary">Use approximate location in the background to save local weather.</string>
     <string name="weather_disable_details">Turning collection off also deletes observations awaiting upload. Weather already saved on the server is kept.</string>
-    <string name="saved_weather_title">Latest saved weather</string>
-    <string name="saved_weather_loading">Loading saved weather…</string>
-    <string name="saved_weather_values">%1$.1f °C · %2$.0f hPa</string>
-    <string name="saved_weather_day">View this day</string>
-    <string name="saved_weather_pending">Weather retrieval is pending.</string>
-    <string name="saved_weather_moving">No saved weather: the location changed.</string>
-    <string name="saved_weather_accuracy">No saved weather: location accuracy is insufficient.</string>
-    <string name="saved_weather_missing_location">No saved weather: location coverage is incomplete.</string>
-    <string name="saved_weather_empty">No saved weather in the last seven days.</string>
-    <string name="saved_weather_rate_limited">Saved weather is temporarily rate limited. Pull to refresh later.</string>
-    <string name="saved_weather_access">Access verification is required to load saved weather.</string>
-    <string name="saved_weather_sign_in">Sign in again to load saved weather.</string>
-    <string name="saved_weather_error">Could not load saved weather. Pull to retry.</string>
-    <string name="saved_weather_today">View today</string>
 </resources>
