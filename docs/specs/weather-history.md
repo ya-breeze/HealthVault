@@ -38,6 +38,6 @@ This change stores and exposes weather for later analysis. It does not add medic
 ### Task 3: Review and validate the integrated change
 - [x] Document the data model and provider choice in a proposed ADR and describe phone acceptance checks.
 - [x] Pass backend/static checks and the Review Gate.
-- [ ] Deploy the reviewed feature branch only to hcw-wip and pass deployed E2E/API validation.
-- [ ] Publish the PR with exact validation results and unverified phone acceptance; restore/release WIP.
-- [ ] Mark completed.
+- [x] Deploy the reviewed feature branch only to hcw-wip and pass deployed E2E/API validation.
+- [x] Publish the PR with exact validation results and unverified phone acceptance; restore/release WIP.
+- [x] Mark completed.
