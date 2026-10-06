@@ -4,7 +4,7 @@
 
 Weather setup and its explanation occupy most of the Today screen. The owner wants daily actions and settings separated, with details visible only on demand.
 
-## What
+### Task 1: Separate screens and compact weather controls
 
 - [ ] Keep Today focused on the nutrition summary and Add food; open Settings from its header.
 - [ ] Move Weather history and Sign out into a separate Settings screen with header and system Back navigation.
@@ -16,3 +16,7 @@ Weather setup and its explanation occupy most of the Today screen. The owner wan
 ## How
 
 Use the existing Compose activity host with a saveable Settings flag and BackHandler. Keep permission and collection logic in WeatherConsent. Show its detailed explanation through a saveable disclosure. Use existing Material components and English/Russian strings. No backend or weather data changes.
+
+## Validation Commands
+
+`python3 /data/android-build.py HealthVault-worktrees/android-settings/android "testDebugUnitTest lintDebug assembleDebug"`
