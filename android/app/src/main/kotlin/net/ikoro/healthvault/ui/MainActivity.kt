@@ -2,6 +2,7 @@ package net.ikoro.healthvault.ui
 
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.getValue
@@ -17,12 +18,7 @@ import net.ikoro.healthvault.widget.WidgetUpdater
 import net.ikoro.healthvault.work.RefreshScheduler
 import net.ikoro.healthvault.weather.WeatherScheduler
 
-/**
- * The app's single screen host: routes to [SetupScreen] when no session
- * exists and to [TodayScreen] when one does. There is no back-stack-worthy
- * navigation beyond that one fork — see the spec's "the app is thin and
- * read-only".
- */
+/** Hosts setup, the daily summary and the separate settings screen. */
 class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,44 +32,44 @@ class MainActivity : AppCompatActivity() {
         setContent {
             var hasSession by remember { mutableStateOf(app.secureStore.hasSession()) }
             val scope = rememberCoroutineScope()
+            var showingSettings by rememberSaveable { mutableStateOf(false) }
+
+            val signOut: () -> Unit = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        // Clear durable credentials before the cookie jar or UI.
+                        app.secureStore.clearSession()
+                        WeatherScheduler.reconcile(applicationContext)
+                        app.cookieJar.clearInMemory()
+                    }
+                    applyDisplayLanguage("")
+                    WidgetUpdater.updateAll(applicationContext)
+                    showingSettings = false
+                    hasSession = false
+                }
+            }
 
             if (hasSession) {
-                TodayScreen(
-                    api = app.api,
-                    secureStore = app.secureStore,
-                    onSignedOut = {
-                        // Durable session clearing runs on IO; locale reset and
-                        // UI routing happen only after it succeeds. The widget
-                        // must be redrawn only after the session is actually
-                        // gone or it would re-render the signed-in state.
-                        //
-                        // Periodic refresh is tied to widget placement, not
-                        // to the session (RefreshScheduler.ensurePeriodic is
-                        // only ever cancelled by the last widget being
-                        // removed) — a signed-out widget keeps polling and
-                        // keeps rendering the sign-in prompt WidgetState.SignedOut
-                        // maps to, so nothing here needs to touch scheduling.
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                // Clear the durable credentials first. If the
-                                // process dies before the in-memory jar is
-                                // emptied, the next process still starts
-                                // signed out instead of re-logging itself in.
-                                app.secureStore.clearSession()
-                                WeatherScheduler.reconcile(applicationContext)
-                                app.cookieJar.clearInMemory()
-                            }
-                            applyDisplayLanguage("")
-                            WidgetUpdater.updateAll(applicationContext)
-                            hasSession = false
-                        }
-                    },
-                )
+                if (showingSettings) {
+                    SettingsScreen(
+                        secureStore = app.secureStore,
+                        onBack = { showingSettings = false },
+                        onSignedOut = signOut,
+                    )
+                } else {
+                    TodayScreen(
+                        api = app.api,
+                        secureStore = app.secureStore,
+                        onSignedOut = signOut,
+                        onOpenSettings = { showingSettings = true },
+                    )
+                }
             } else {
                 SetupScreen(
                     api = app.api,
                     secureStore = app.secureStore,
                     onSignedIn = {
+                        showingSettings = false
                         hasSession = true
                         scope.launch(Dispatchers.IO) { WeatherScheduler.reconcile(applicationContext) }
                     },
