@@ -4,12 +4,13 @@ import { formatMetricValue, toDisplayUnit } from './dataTypeMeta';
 
 /**
  * A dashboard card's identifier: either a `DataType`-backed Vital Card, or a
- * Food Card with no presence signal of its own (design.md decision 8). This
+ * custom card with no medical presence signal of its own. This
  * union is a small, additive widening over the old `DataType`-only registry,
  * kept deliberately narrow rather than a general "card kind" system.
  */
 export type FoodCardId = 'logging_gap' | 'food_log_history';
-export type CardId = DataType | FoodCardId;
+export type WeatherCardId = 'weather';
+export type CardId = DataType | FoodCardId | WeatherCardId;
 
 /** The registry entries that have their own data-fetch/rendering lifecycle. */
 export function isFoodCard(type: CardId): type is FoodCardId {
@@ -18,7 +19,7 @@ export function isFoodCard(type: CardId): type is FoodCardId {
 
 /** Narrows a registry id to the real `DataType` values accepted by `api.data`. */
 export function isDataTypeCard(type: CardId): type is DataType {
-  return !isFoodCard(type);
+  return !isFoodCard(type) && type !== 'weather';
 }
 
 /**
@@ -44,6 +45,7 @@ export const PRIMARY_METRICS: { type: CardId }[] = [
   { type: 'oxygen_saturation' },
   { type: 'logging_gap' },
   { type: 'food_log_history' },
+  { type: 'weather' },
 ];
 
 /**
@@ -121,14 +123,15 @@ export function hasPresence(presence: Record<string, boolean> | null, type: stri
 }
 
 /**
- * Presence gate for a dashboard card (`CardId`, not just `DataType`). Food
+ * Presence gate for a dashboard card (`CardId`, not just `DataType`). Weather
+ * and Food
  * Cards have no presence signal of their own (design.md decision 8), so a
  * presence response that omits them, or one that incorrectly returns `false`
  * for them, has no effect on whether they're eligible to render. Every real
  * `DataType` delegates to `hasPresence` unchanged.
  */
 export function hasCardPresence(presence: Record<string, boolean> | null, type: CardId): boolean {
-  if (isFoodCard(type)) return true;
+  if (isFoodCard(type) || type === 'weather') return true;
   return hasPresence(presence, type);
 }
 

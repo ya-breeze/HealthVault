@@ -156,3 +156,11 @@ Phone acceptance (not proved by JVM tests or a build):
    observation uploads under the new account.
 6. Check disabled location services, stale fixes and travel. Expect gaps; a trip between samples
    can remain undetected. No claim of a causal health effect is shown.
+
+## Viewing saved weather
+
+Today shows the latest complete saved weather hour from the last seven days, even when location
+collection is off. The row shows its date, time, UTC offset and phone timezone; it does not claim
+current conditions. Tap it to open that local day in the website through Custom Tabs. Missing
+location evidence, pending retrieval and request failures have separate messages. Weather reads
+run independently of nutrition refresh and never hide food actions. Pull to refresh retries both.

@@ -45,18 +45,19 @@ describe('reconcileMetricOrder with Food Cards', () => {
     expect(result.map(m => m.type)).toEqual([
       'logging_gap', 'weight', 'steps', 'heart_rate', 'sleep',
       'heart_rate_variability', 'distance', 'blood_pressure', 'oxygen_saturation',
-      'food_log_history',
+      'food_log_history', 'weather',
     ]);
   });
 
-  it('appends both Food Cards visible for a saved order that predates them', () => {
+  it('appends custom cards visible for a saved order that predates them', () => {
     // A saved order from before either Food Card existed: every current
-    // PRIMARY_METRICS type except the two Food Cards.
+    // PRIMARY_METRICS type except the custom cards.
     const saved = PRIMARY_METRICS.filter(m => isDataTypeCard(m.type)).map(m => ({ type: m.type, hidden: false }));
     const result = reconcileMetricOrder(saved);
-    expect(result.slice(-2)).toEqual([
+    expect(result.slice(-3)).toEqual([
       { type: 'logging_gap', hidden: false },
       { type: 'food_log_history', hidden: false },
+      { type: 'weather', hidden: false },
     ]);
   });
 
@@ -121,5 +122,16 @@ describe('isDataTypeCard', () => {
     expect(isDataTypeCard('steps')).toBe(true);
     expect(isDataTypeCard('logging_gap')).toBe(false);
     expect(isDataTypeCard('food_log_history')).toBe(false);
+  });
+});
+
+
+describe('weather card preferences', () => {
+  it('preserves weather visibility/order without treating weather as a medical DataType', () => {
+    const result = reconcileMetricOrder([{type:'weather',hidden:true}, 'weight']);
+    expect(result[0]).toEqual({type:'weather',hidden:true});
+    expect(isDataTypeCard('weather')).toBe(false);
+    expect(secondaryTypes(DATA_TYPES)).not.toContain('weather');
+    expect(hasCardPresence({weather:false},'weather')).toBe(true);
   });
 });

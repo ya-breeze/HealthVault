@@ -13,6 +13,7 @@ import AuthenticatedShell from '@/components/AuthenticatedShell';
 import VitalCard from '@/components/VitalCard';
 import LoggingGapCard from '@/components/LoggingGapCard';
 import FoodLogHistoryCard from '@/components/FoodLogHistoryCard';
+import WeatherCard from '@/components/WeatherCard';
 import TapTarget from '@/components/ui/TapTarget';
 import { CameraIcon, PencilIcon, HistoryIcon, EyeIcon, EyeOffIcon } from '@/components/icons';
 
@@ -321,7 +322,12 @@ export default function Dashboard() {
               // Food Cards have no /api/data/{type} presence or VitalCard
               // rendering — each owns its own fetch lifecycle and content
               // states instead of reading `vitals`.
-              m.type === 'logging_gap' ? (
+              m.type === 'weather' ? (
+                <WeatherCard key={m.type} timezone={timezone} editing={editing}
+                  onMoveUp={() => moveCard(i, -1)} onMoveDown={() => moveCard(i, 1)}
+                  moveUpDisabled={i === 0} moveDownDisabled={i === presentOrder.length - 1}
+                  hidden={m.hidden} onToggleHidden={() => toggleHidden(i)} controlsDisabled={saving} />
+              ) : m.type === 'logging_gap' ? (
                 <LoggingGapCard
                   key={m.type}
                   timezone={timezone}
