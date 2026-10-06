@@ -62,17 +62,18 @@ type summaryTargetPayload struct {
 // latency on this dashboard-critical response. LastLoggedAt is a pointer so a
 // day with no logged meals yet serializes as null.
 type summaryTodayResponse struct {
-	Date                 string               `json:"date"`
-	CaloriesConsumed     float64              `json:"calories_consumed"`
-	ProteinGramsConsumed float64              `json:"protein_grams_consumed"`
-	CarbsGramsConsumed   float64              `json:"carbs_grams_consumed"`
-	FatGramsConsumed     float64              `json:"fat_grams_consumed"`
-	MealCount            int                  `json:"meal_count"`
-	EatingOccasionsToday int                  `json:"eating_occasions_today"`
-	UsualMealsPerDay     int                  `json:"usual_meals_per_day"`
-	LastLoggedAt         *time.Time           `json:"last_logged_at"`
-	DisplayLanguage      string               `json:"display_language"`
-	Target               summaryTargetPayload `json:"target"`
+	Date                      string               `json:"date"`
+	CaloriesConsumed          float64              `json:"calories_consumed"`
+	ProteinGramsConsumed      float64              `json:"protein_grams_consumed"`
+	CarbsGramsConsumed        float64              `json:"carbs_grams_consumed"`
+	FatGramsConsumed          float64              `json:"fat_grams_consumed"`
+	DietaryFiberGramsConsumed float64              `json:"dietary_fiber_grams_consumed"`
+	MealCount                 int                  `json:"meal_count"`
+	EatingOccasionsToday      int                  `json:"eating_occasions_today"`
+	UsualMealsPerDay          int                  `json:"usual_meals_per_day"`
+	LastLoggedAt              *time.Time           `json:"last_logged_at"`
+	DisplayLanguage           string               `json:"display_language"`
+	Target                    summaryTargetPayload `json:"target"`
 }
 
 // SummaryTodayHandler computes GET /api/summary/today fresh on every call:
@@ -141,17 +142,18 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 		}
 
 		writeJSON(w, summaryTodayResponse{
-			Date:                 summary.Date,
-			CaloriesConsumed:     summary.CaloriesConsumed,
-			ProteinGramsConsumed: summary.ProteinGramsConsumed,
-			CarbsGramsConsumed:   summary.CarbsGramsConsumed,
-			FatGramsConsumed:     summary.FatGramsConsumed,
-			MealCount:            summary.MealCount,
-			EatingOccasionsToday: summary.EatingOccasionsToday,
-			UsualMealsPerDay:     database.ResolveUsualMealsPerDay(settingsJSON),
-			LastLoggedAt:         lastLoggedAt,
-			DisplayLanguage:      displayLanguageFromSettings(settingsJSON),
-			Target:               target,
+			Date:                      summary.Date,
+			CaloriesConsumed:          summary.CaloriesConsumed,
+			ProteinGramsConsumed:      summary.ProteinGramsConsumed,
+			CarbsGramsConsumed:        summary.CarbsGramsConsumed,
+			FatGramsConsumed:          summary.FatGramsConsumed,
+			DietaryFiberGramsConsumed: summary.DietaryFiberGramsConsumed,
+			MealCount:                 summary.MealCount,
+			EatingOccasionsToday:      summary.EatingOccasionsToday,
+			UsualMealsPerDay:          database.ResolveUsualMealsPerDay(settingsJSON),
+			LastLoggedAt:              lastLoggedAt,
+			DisplayLanguage:           displayLanguageFromSettings(settingsJSON),
+			Target:                    target,
 		})
 	}
 }

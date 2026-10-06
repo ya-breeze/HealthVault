@@ -18,21 +18,21 @@ The accepted visual reference is https://artifacts.ikoro.in/healthvault/widget-7
 - `make test-e2e BASE_URL=<verified-hcw-wip-url> E2E_ARGS='--retries=0'`
 
 ### Task 1: Today's fiber contract
-- [ ] Aggregate dietary fiber only from confirmed meals in the existing user's local-day window.
-- [ ] Expose dietary_fiber_grams_consumed and test confirmed/status/day/user isolation and API serialization.
-- [ ] Accept the additive Android field while preserving old-response/cache compatibility.
-- [ ] Mark completed.
+- [x] Aggregate dietary fiber only from confirmed meals in the existing user's local-day window.
+- [x] Expose dietary_fiber_grams_consumed and test confirmed/status/day/user isolation and API serialization.
+- [x] Accept the additive Android field while preserving old-response/cache compatibility.
+- [x] Mark completed.
 
 ### Task 2: Accepted Android widget
-- [ ] Implement green automatic day/night themes, centered calorie hero, no target-text row, rows A and all four wide rails.
-- [ ] Use full-day strict overrun colors and accessible signals without changing FlexWindow's pacing design.
-- [ ] Preserve actions and explicit stale/empty/signed-out/error states; adapt actual sizes and enlarged fonts.
-- [ ] Update picker preview/metadata and localized resources; add meaningful boundary/contract tests.
-- [ ] Mark completed.
+- [x] Implement green automatic day/night themes, centered calorie hero, no target-text row, rows A and all four wide rails.
+- [x] Use full-day strict overrun colors and accessible signals without changing FlexWindow's pacing design.
+- [x] Preserve actions and explicit stale/empty/signed-out/error states; adapt actual sizes and enlarged fonts.
+- [x] Update picker preview/metadata and localized resources; add meaningful boundary/contract tests.
+- [x] Mark completed.
 
 ### Task 3: Review and delivery evidence
-- [ ] Run backend/static/shared-Android build gates and fix findings.
-- [ ] Complete native Review Gate and one best-effort Claude peer review; record actual availability.
+- [x] Run backend/static/shared-Android build gates and fix findings.
+- [x] Complete native Review Gate and one best-effort Claude peer review; record actual availability.
 - [ ] Open a feature PR, validate against the reserved WIP stack, and attach a debug APK with exact revision evidence.
 - [ ] State real-launcher visual acceptance as outstanding for owner/device inspection, separate from build and backend E2E confidence.
 - [ ] Mark completed.

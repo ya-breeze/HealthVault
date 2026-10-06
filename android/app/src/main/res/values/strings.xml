@@ -16,27 +16,38 @@
     <string name="widget_pace_below">Below the expected pace</string>
     <string name="widget_pace_above">Above the expected pace</string>
     <string name="widget_pace_unavailable">Pace unavailable</string>
-    <string name="widget_description">Today’s calorie and nutrient pace; tap to log food</string>
+    <string name="widget_description">Today’s calories and nutrients; tap to log food</string>
     <string name="widget_log_food">Log food</string>
     <string name="widget_refresh">Refresh</string>
     <string name="widget_calorie_target_progress">of %1$d kcal · %2$d%%</string>
     <string name="widget_calories_today">kcal today</string>
     <string name="widget_calories_unit">kcal</string>
     <string name="widget_preview_consumed">1546</string>
-    <string name="widget_preview_percent">✓ 72%</string>
     <string name="widget_preview_target">of 2139 kcal · ✓ 72%</string>
     <string name="widget_preview_protein">P 109g/136g ✓</string>
     <string name="widget_preview_carbs">C 140g/199g ↓</string>
     <string name="widget_preview_fat">F 74g/89g ✓</string>
-    <string name="widget_preview_protein_status">P ✓</string>
-    <string name="widget_preview_carbs_status">C ↓</string>
-    <string name="widget_preview_fat_status">F ✓</string>
     <string name="widget_protein_short">P</string>
     <string name="widget_carbs_short">C</string>
     <string name="widget_fat_short">F</string>
     <string name="widget_macro_of_target">%1$s %2$dg/%3$dg</string>
     <string name="widget_macro_consumed">%1$s %2$dg</string>
-    <string name="widget_macro_compact_value">%1$s%2$d</string>
+
+    <!-- Green home-screen widget. -->
+    <string name="widget_fiber">Dietary fiber</string>
+    <string name="widget_grams_value">%1$dg</string>
+    <string name="widget_goal_exceeded">Daily target exceeded</string>
+    <string name="widget_target_unavailable">Daily target unavailable</string>
+    <string name="widget_goal_progress">Within daily target</string>
+    <string name="widget_protein_name">Protein</string>
+    <string name="widget_fat_name">Fat</string>
+    <string name="widget_carbs_name">Carbohydrates</string>
+    <string name="widget_metric_description">%1$s %2$s. %3$s</string>
+    <string name="widget_calorie_goal">%1$d of %2$d kcal</string>
+    <string name="widget_preview_protein_value">109g</string>
+    <string name="widget_preview_fat_value">74g</string>
+    <string name="widget_preview_carbs_value">140g</string>
+    <string name="widget_preview_fiber_value">23g</string>
 
     <!-- Setup / sign-in -->
     <string name="setup_title">Connect to HealthVault</string>

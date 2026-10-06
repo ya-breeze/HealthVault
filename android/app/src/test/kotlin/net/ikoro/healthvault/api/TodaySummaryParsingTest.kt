@@ -2,6 +2,7 @@ package net.ikoro.healthvault.api
 
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import net.ikoro.healthvault.store.SummarySnapshot
 import net.ikoro.healthvault.widget.PaceLevel
 import net.ikoro.healthvault.widget.paceFor
 import org.junit.Assert.assertEquals
@@ -24,6 +25,7 @@ class TodaySummaryParsingTest {
               "protein_grams_consumed": 80.0,
               "carbs_grams_consumed": 120.0,
               "fat_grams_consumed": 40.0,
+              "dietary_fiber_grams_consumed": 18.25,
               "meal_count": 3,
               "eating_occasions_today": 2,
               "usual_meals_per_day": 3,
@@ -41,6 +43,7 @@ class TodaySummaryParsingTest {
         assertEquals(3, summary.mealCount)
         assertEquals(2, summary.eatingOccasionsToday)
         assertEquals(3, summary.usualMealsPerDay)
+        assertEquals(18.25, summary.dietaryFiberGramsConsumed!!, 0.0)
     }
 
     @Test
@@ -113,9 +116,29 @@ class TodaySummaryParsingTest {
 
         val summary = json.decodeFromString<TodaySummary>(body)
 
+        assertNull(summary.dietaryFiberGramsConsumed)
         assertEquals(0, summary.eatingOccasionsToday)
         assertEquals(0, summary.usualMealsPerDay)
         assertEquals(PaceLevel.GOOD, paceFor(summary, summary.caloriesConsumed, summary.target.calories)?.level)
         assertEquals(PaceLevel.WARNING, paceFor(summary, summary.carbsGramsConsumed, summary.target.carbsGrams)?.level)
+    }
+
+    @Test
+    fun `fiber distinguishes reported zero from missing old response or snapshot data`() {
+        val base = """
+            {
+              "date": "2026-09-02", "calories_consumed": 0, "protein_grams_consumed": 0,
+              "carbs_grams_consumed": 0, "fat_grams_consumed": 0, "meal_count": 0,
+              "display_language": "en",
+              "target": {"available": false, "calories": 0, "protein_grams": 0, "carbs_grams": 0, "fat_grams": 0}
+            }
+        """.trimIndent()
+        assertNull(json.decodeFromString<TodaySummary>(base).dietaryFiberGramsConsumed)
+        val oldSnapshot = """{"summary":$base,"fetchedAtMillis":1234}"""
+        assertNull(json.decodeFromString<SummarySnapshot>(oldSnapshot).summary.dietaryFiberGramsConsumed)
+        for ((field, expected) in listOf("0" to 0.0, "12.75" to 12.75, "null" to null)) {
+            val body = base.replaceFirst("{", "{\"dietary_fiber_grams_consumed\":$field,")
+            assertEquals(expected, json.decodeFromString<TodaySummary>(body).dietaryFiberGramsConsumed)
+        }
     }
 }

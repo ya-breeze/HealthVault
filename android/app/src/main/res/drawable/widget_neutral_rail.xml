@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hatching marks an unavailable target; it never implies a percentage. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp" android:height="8dp" android:viewportWidth="200" android:viewportHeight="8">
+    <path android:fillColor="@color/green_widget_track" android:pathData="M0,0 H200 V8 H0 Z" />
+    <path android:strokeColor="@color/green_widget_muted" android:strokeAlpha="0.45"
+        android:strokeWidth="1" android:fillColor="@android:color/transparent" android:pathData="M-8,8 L0,0 M4,8 L12,0 M16,8 L24,0 M28,8 L36,0 M40,8 L48,0 M52,8 L60,0 M64,8 L72,0 M76,8 L84,0 M88,8 L96,0 M100,8 L108,0 M112,8 L120,0 M124,8 L132,0 M136,8 L144,0 M148,8 L156,0 M160,8 L168,0 M172,8 L180,0 M184,8 L192,0 M196,8 L204,0" />
+</vector>
