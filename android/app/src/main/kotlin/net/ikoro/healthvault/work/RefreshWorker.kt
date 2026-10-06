@@ -90,6 +90,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                     // sign-in prompt, exactly as MainActivity's sign-out does.
                     if (app.secureStore.clearSession(sessionGeneration)) {
                         app.cookieJar.clearInMemory()
+                        net.ikoro.healthvault.weather.WeatherScheduler.reconcile(applicationContext)
                         withContext(Dispatchers.Main) {
                             applyDisplayLanguage("")
                         }

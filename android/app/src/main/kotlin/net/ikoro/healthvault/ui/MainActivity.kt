@@ -3,6 +3,7 @@ package net.ikoro.healthvault.ui
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -14,6 +15,7 @@ import kotlinx.coroutines.withContext
 import net.ikoro.healthvault.HealthVaultApp
 import net.ikoro.healthvault.widget.WidgetUpdater
 import net.ikoro.healthvault.work.RefreshScheduler
+import net.ikoro.healthvault.weather.WeatherScheduler
 
 /**
  * The app's single screen host: routes to [SetupScreen] when no session
@@ -58,6 +60,7 @@ class MainActivity : AppCompatActivity() {
                                 // emptied, the next process still starts
                                 // signed out instead of re-logging itself in.
                                 app.secureStore.clearSession()
+                                WeatherScheduler.reconcile(applicationContext)
                                 app.cookieJar.clearInMemory()
                             }
                             applyDisplayLanguage("")
@@ -70,7 +73,10 @@ class MainActivity : AppCompatActivity() {
                 SetupScreen(
                     api = app.api,
                     secureStore = app.secureStore,
-                    onSignedIn = { hasSession = true },
+                    onSignedIn = {
+                        hasSession = true
+                        scope.launch(Dispatchers.IO) { WeatherScheduler.reconcile(applicationContext) }
+                    },
                 )
             }
         }
@@ -78,6 +84,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        lifecycleScope.launch(Dispatchers.IO) { WeatherScheduler.reconcile(applicationContext) }
         RefreshScheduler.enqueueOneOff(applicationContext)
     }
 }

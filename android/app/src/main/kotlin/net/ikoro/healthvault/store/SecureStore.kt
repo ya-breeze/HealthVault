@@ -11,8 +11,13 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.ikoro.healthvault.api.PersistedCookie
 import net.ikoro.healthvault.api.TodaySummary
+import net.ikoro.healthvault.weather.WeatherObservation
+import java.time.Instant
+import java.util.UUID
 
 private const val PREFS_NAME = "healthvault_secure_store"
+private const val KEY_WEATHER_CONSENT = "weather_consent"
+private const val KEY_WEATHER_QUEUE = "weather_queue"
 private const val KEY_SERVER_URL = "server_url"
 private const val KEY_USERNAME = "username"
 private const val KEY_PASSWORD = "password"
@@ -131,7 +136,9 @@ class SecureStore(private val prefs: SharedPreferences) {
                     .putString(KEY_PASSWORD, password)
                     .remove(KEY_SNAPSHOT)
                     .remove(KEY_REFRESH_FAILED)
-                    .remove(KEY_NEXT_REFRESH_AT),
+                    .remove(KEY_NEXT_REFRESH_AT)
+                    .remove(KEY_WEATHER_CONSENT)
+                    .remove(KEY_WEATHER_QUEUE),
                 "session",
             )
             sessionGeneration++
@@ -189,10 +196,53 @@ class SecureStore(private val prefs: SharedPreferences) {
                 .remove(KEY_SNAPSHOT)
                 .remove(KEY_REFRESH_FAILED)
                 .remove(KEY_NEXT_REFRESH_AT)
+                .remove(KEY_WEATHER_CONSENT)
+                .remove(KEY_WEATHER_QUEUE)
             commitOrThrow(editor, "session clear")
             sessionGeneration++
             return true
         }
+    }
+
+    /** Consent nonce scopes pending work to one opt-in and one authenticated session. */
+    val weatherConsent: String?
+        get() = synchronized(refreshStateLock) { prefs.getString(KEY_WEATHER_CONSENT, null) }
+
+    fun setWeatherEnabled(enabled: Boolean, expectedGeneration: Long): Boolean = synchronized(refreshStateLock) {
+        if (expectedGeneration != sessionGeneration) return false
+        val editor = prefs.edit().remove(KEY_WEATHER_QUEUE)
+        if (enabled && hasSession()) editor.putString(KEY_WEATHER_CONSENT, UUID.randomUUID().toString())
+        else editor.remove(KEY_WEATHER_CONSENT)
+        commitOrThrow(editor, "weather consent")
+        true
+    }
+
+    fun weatherActive(consent: String, generation: Long): Boolean = synchronized(refreshStateLock) {
+        generation == sessionGeneration && hasSession() && weatherConsent == consent
+    }
+
+    fun weatherQueue(consent: String, generation: Long): List<WeatherObservation> = synchronized(refreshStateLock) {
+        if (!weatherActive(consent, generation)) return emptyList()
+        val raw = prefs.getString(KEY_WEATHER_QUEUE, null) ?: return emptyList()
+        runCatching { json.decodeFromString<List<WeatherObservation>>(raw) }.getOrDefault(emptyList())
+    }
+
+    fun enqueueWeather(observation: WeatherObservation, consent: String, generation: Long,
+                       nowMillis: Long = System.currentTimeMillis()): Boolean = synchronized(refreshStateLock) {
+        if (!weatherActive(consent, generation)) return false
+        val queue = (weatherQueue(consent, generation) + observation).filter {
+            val timestamp = runCatching { Instant.parse(it.observedAt).toEpochMilli() }.getOrNull()
+            timestamp != null && nowMillis - timestamp <= WeatherObservation.QUEUE_MAX_AGE_MILLIS
+        }.takeLast(WeatherObservation.MAX_QUEUE_SIZE)
+        commitOrThrow(prefs.edit().putString(KEY_WEATHER_QUEUE, json.encodeToString(queue)), "weather queue")
+        true
+    }
+
+    fun removeWeather(id: String, consent: String, generation: Long): Boolean = synchronized(refreshStateLock) {
+        if (!weatherActive(consent, generation)) return false
+        val remaining = weatherQueue(consent, generation).filterNot { it.id == id }
+        commitOrThrow(prefs.edit().putString(KEY_WEATHER_QUEUE, json.encodeToString(remaining)), "weather queue")
+        true
     }
 
     private fun commitOrThrow(editor: SharedPreferences.Editor, description: String) {

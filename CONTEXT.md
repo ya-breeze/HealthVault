@@ -4,6 +4,20 @@ A personal health-tracking app. Its food-logging capability lets a user photogra
 
 ## Language
 
+### Weather history
+
+**Location Observation**:
+A timestamped approximate position of a user's phone, with its uncertainty. It is evidence about that instant, not a record of the user's route or the location of previously uploaded health measurements.
+_Avoid_: Home location, route point
+
+**Weather Hour**:
+Model-based regional weather for a complete hour supported by compatible Location Observations. It describes outdoor conditions in the region, not the user's personal exposure.
+_Avoid_: Health measurement, personal weather measurement
+
+**Weather Coverage Gap**:
+An interval without supported Weather Hours, with a reason such as insufficient location evidence, movement or pending weather retrieval.
+_Avoid_: Zero weather, normal weather
+
 ### Food logging
 
 **Food Meal**:

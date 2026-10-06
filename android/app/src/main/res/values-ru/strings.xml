@@ -94,4 +94,14 @@
     <string name="target_reason_insufficient_activity_data">Недостаточно данных об активности для нормы.</string>
     <string name="target_reason_unknown">Дневная норма сейчас недоступна.</string>
     <string name="widget_grams_unit">г</string>
+    <string name="weather_title">История погоды</string>
+    <string name="weather_explanation">По желанию собирайте примерное местоположение для сохранения погоды и последующего сопоставления с самочувствием. Координаты округляются примерно до 11 км до хранения и отправки. Android может задержать почасовой сбор. Поездки между замерами могут остаться незамеченными; при неопределённости погода не сохраняется.</string>
+    <string name="weather_enabled">Фоновый сбор включён.</string>
+    <string name="weather_disabled">Фоновый сбор выключен.</string>
+    <string name="weather_disable">Выключить и удалить ожидающие отправки данные</string>
+    <string name="weather_allow_location">Разрешить примерное местоположение</string>
+    <string name="weather_background_explanation">Затем разрешите доступ к местоположению «Всегда» в настройках Android. Оставьте выбранным примерное местоположение. Вернитесь сюда, чтобы включить фоновый сбор.</string>
+    <string name="weather_enable_background">Включить фоновый сбор</string>
+    <string name="weather_open_settings">Открыть настройки местоположения</string>
+    <string name="weather_permission_missing">Нет разрешения на местоположение. Сбор выключен.</string>
 </resources>

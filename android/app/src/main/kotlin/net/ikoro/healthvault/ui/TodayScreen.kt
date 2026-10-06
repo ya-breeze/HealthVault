@@ -238,6 +238,8 @@ fun TodayScreen(
                     )
                 }
 
+                WeatherConsent(secureStore)
+
                 if (current != null) {
                     val summary = current.summary
                     TodayContent(summary)

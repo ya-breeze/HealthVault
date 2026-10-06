@@ -18,6 +18,7 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/off"
 	"github.com/ya-breeze/healthvault/pkg/usda"
 	"github.com/ya-breeze/healthvault/pkg/vision"
+	"github.com/ya-breeze/healthvault/pkg/weather"
 	"github.com/ya-breeze/kin-core/cookies"
 )
 
@@ -97,6 +98,10 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	// JSON 404 for this prefix and never proxies it from an application hostname.
 	r.SkipClean(true)
 	captureBarrier := &sync.RWMutex{}
+	weatherStore := &weather.Store{DB: storage.DB()}
+	weatherCtx, stopWeather := context.WithCancel(ctx)
+	defer stopWeather()
+	go weatherStore.Run(weatherCtx, weather.NewOpenMeteo(), captureBarrier, logger)
 	var backupRunner backupapi.Runner = backupapi.RunnerFunc(backupapi.UnconfiguredRunner)
 	if cfg.BackupSpoolDir != "" && cfg.BackupAgeRecipient != "" && cfg.BackupEncryptionKeyID != "" {
 		backupRunner = &backupapi.SetRunner{DatabasePath: cfg.DBPath, UploadsDir: cfg.UploadsDir,
@@ -123,6 +128,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	// Protected API — data routes implemented in Task 6
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(RequireAuth(jwtSecret, cookieCfg, storage.DB()))
+	api.HandleFunc("/weather/locations", WeatherLocationHandler(weatherStore)).Methods("POST")
+	api.HandleFunc("/weather/history", WeatherHistoryHandler(weatherStore)).Methods("GET")
 	api.HandleFunc("/users/me", meHandler(storage)).Methods("GET")
 	api.HandleFunc("/users/me/settings", GetUserSettingsHandler(storage)).Methods("GET")
 	api.HandleFunc("/users/me/settings", PutUserSettingsHandler(storage)).Methods("PUT")

@@ -124,3 +124,33 @@ Check the real phone at small, 2x2, wide, and intermediate sizes, in both phone 
 larger text. Verify stale data, signed-out state, food-entry return, and refresh as well.
 A debug APK uses a different signing key from a Play-installed build; use signed Internal Testing
 for an update to that installation. Do not uninstall the existing app just to bypass signing.
+
+## Optional background weather history
+
+Enable **Weather history** on the Today screen. Grant approximate foreground location first.
+On Android 10, grant background access in the separate system dialog. On Android 11+, open
+app settings, allow location **all the time**, keep approximate location selected, then return.
+The feature defaults off and needs no home-screen widget. An hourly WorkManager job can run
+late due to Android battery management. It uses the platform network location provider only;
+a disabled/unavailable provider produces gaps. A fix must be at most 15 minutes old in both
+wall time and elapsed realtime. Coordinates round to 0.1 degrees before any persistence.
+Reported accuracy includes the displacement caused by rounding.
+
+An encrypted queue holds at most 336 observations for up to 14 days. Offline collection keeps
+UUID, observation time, rounded coordinates and accuracy unchanged for a later upload.
+Disable, sign out or sign in again to clear consent and pending observations. Permission
+revocation stops collection and clears the queue on the next activity resume or worker run.
+Revocation can kill the process; Android cannot execute app cleanup while it is stopped.
+Already accepted server history is retained. Uploads use the existing session-cookie recovery.
+
+Phone acceptance (not proved by JVM tests or a build):
+
+1. Confirm coarse-only permission and separate background access on Android 10 and 11+.
+2. Enable collection without placing a widget. Verify a background observation after Android
+   permits scheduled work; hourly execution is approximate.
+3. Disable networking. Verify later uploads retain UUID/time and never contain exact coordinates.
+4. Disable collection and revoke permissions. Verify no new observations and pending-data cleanup.
+5. Sign out, replace the account and restart the process. Verify consent remains off and no old
+   observation uploads under the new account.
+6. Check disabled location services, stale fixes and travel. Expect gaps; a trip between samples
+   can remain undetected. No claim of a causal health effect is shown.
