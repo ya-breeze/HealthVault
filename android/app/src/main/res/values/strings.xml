@@ -97,4 +97,5 @@
     <string name="target_reason_missing_goal_weight">Set a goal weight to see a daily target.</string>
     <string name="target_reason_insufficient_activity_data">Not enough activity data yet for a daily target.</string>
     <string name="target_reason_unknown">No daily target available right now.</string>
+    <string name="widget_grams_unit">g</string>
 </resources>
