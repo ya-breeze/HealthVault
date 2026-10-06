@@ -23,7 +23,7 @@ const PRIMARY_METRIC_TYPES = [
   'steps', 'heart_rate', 'sleep', 'heart_rate_variability', 'distance', 'weight',
   'blood_pressure', 'oxygen_saturation',
 ];
-const FOOD_CARD_TYPES = ['logging_gap', 'food_log_history'];
+const CUSTOM_CARD_TYPES = ['logging_gap', 'food_log_history', 'weather'];
 
 const SECONDARY_TYPES = ALL_DATA_TYPES.filter(t => !PRIMARY_METRIC_TYPES.includes(t));
 
@@ -171,14 +171,14 @@ async function withSettingsSave(page: Page, action: () => Promise<unknown>): Pro
 }
 
 // Shared cleanup for tests that reorder the vitals grid: puts Weight back
-// where PRIMARY_METRICS has it, and returns Food Cards to their registry
+// where PRIMARY_METRICS has it, and returns custom cards to their registry
 // positions, so a predictable grid is left for later tests.
 // Every step is best-effort and swallows its own failure — used from a
 // `finally` block, so one broken step (e.g. the page was left mid-reorder by a
 // failed assertion above it) must not hide the real assertion failure that
 // triggered the cleanup.
 //
-// The registry puts Weight 6th of the 10 cards, with the two Food Cards after
+// The registry puts Weight 6th of the 11 cards, with the custom cards after
 // the other DataType-backed cards. The sorter below restores that whole
 // registry order, so it remains correct when either kind of card was moved.
 //
@@ -205,6 +205,7 @@ async function restoreDefaultOrder(page: Page) {
     ...PRIMARY_METRIC_TYPES.map(type => `vital-card-${type}`),
     'logging-gap-card',
     'food-log-history-card',
+    'weather-card',
   ];
   // Sort by the registry order using the card's own move controls. Filtering
   // against the rendered grid keeps this cleanup safe when a presence fixture
@@ -443,7 +444,7 @@ test.describe('Dashboard card reorder', () => {
       // Move the Weight card to the very front, regardless of its current
       // position (this test may run after a prior run left a custom order).
       const moveWeightUp = page.getByRole('button', { name: /move weight up/i });
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < PRIMARY_METRIC_TYPES.length + CUSTOM_CARD_TYPES.length - 1; i++) {
         if (await moveWeightUp.isDisabled()) break;
         await moveWeightUp.click();
       }
@@ -638,8 +639,8 @@ test.describe('Dashboard card visibility', () => {
     try {
       await page.getByRole('button', { name: 'Customize' }).click();
 
-      // Hide all 10 (the 8 DataType-backed vitals plus the two always-present
-      // Food Cards — see hasCardPresence in lib/vitals.ts). Each toggle
+      // Hide all 11 (the 8 DataType-backed vitals plus the three always-present
+      // custom cards — see hasCardPresence in lib/vitals.ts). Each toggle
       // stays in the DOM while editing, so this can walk them by index.
       // Scoped to vitals-grid, not the whole page — More Data has grown its
       // own "-visibility" toggle (more-data-visibility), which would
@@ -647,7 +648,7 @@ test.describe('Dashboard card visibility', () => {
       // presence.
       const toggles = page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]');
       const count = await toggles.count();
-      expect(count).toBe(PRIMARY_METRIC_TYPES.length + FOOD_CARD_TYPES.length);
+      expect(count).toBe(PRIMARY_METRIC_TYPES.length + CUSTOM_CARD_TYPES.length);
       for (let i = 0; i < count; i++) {
         await toggles.nth(i).click();
       }
@@ -682,11 +683,12 @@ test.describe('Dashboard card visibility', () => {
     await expect(grid.locator('> *').nth(1)).toHaveAttribute('data-testid', 'vital-card-steps');
     // ...and the metrics the old shape never mentioned are appended, visible,
     // rather than being dropped or defaulting to hidden — including
-    // both Food Cards, which the pre-visibility shape predates entirely.
-    await expect(grid.locator('> *')).toHaveCount(PRIMARY_METRIC_TYPES.length + FOOD_CARD_TYPES.length);
+    // all custom cards, which the pre-visibility shape predates entirely.
+    await expect(grid.locator('> *')).toHaveCount(PRIMARY_METRIC_TYPES.length + CUSTOM_CARD_TYPES.length);
     await expect(grid.getByTestId('vital-card-sleep')).toBeVisible();
     await expect(grid.getByTestId('logging-gap-card')).toBeVisible();
     await expect(grid.getByTestId('food-log-history-card')).toBeVisible();
+    await expect(grid.getByTestId('weather-card')).toBeVisible();
     await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
   });
 
@@ -898,10 +900,10 @@ test.describe('Data-type presence filtering', () => {
     await expect(page.getByTestId('vital-card-sleep-visibility')).toHaveCount(0);
     // Scoped to vitals-grid so More Data's own "-visibility" toggle
     // (more-data-visibility) isn't counted alongside the primary cards'.
-    // Sleep is excluded by zero presence, but both Food Cards never are
-    // (hasCardPresence, design.md decision 8) — net -1 +2 leaves one more
+    // Sleep is excluded by zero presence, but the three custom cards never are
+    // (hasCardPresence) — net -1 +3 leaves two more
     // control than PRIMARY_METRIC_TYPES.length.
-    await expect(page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1 + FOOD_CARD_TYPES.length);
+    await expect(page.getByTestId('vitals-grid').locator('[data-testid$="-visibility"]')).toHaveCount(PRIMARY_METRIC_TYPES.length - 1 + CUSTOM_CARD_TYPES.length);
 
     // Nothing was changed, so leave without triggering a settings write —
     // same reasoning as restoreAllVisible's own no-op exit.
@@ -1019,15 +1021,15 @@ test.describe('Data-type presence filtering', () => {
 
   // Predates the Food Cards: before them, zero presence across every DataType-backed
   // primary metric meant presentOrder was genuinely empty, so the
-  // `vitals-grid-empty-no-data` placeholder fired. Both Food Cards now always
-  // have presence (hasCardPresence, design.md decision 8) and are members of
+  // `vitals-grid-empty-no-data` placeholder fired. The custom cards now always
+  // have presence (hasCardPresence) and are members of
   // PRIMARY_METRICS, so presentOrder can no longer be empty via presence alone
-  // — the grid falls through to rendering the Food Cards instead, and
+  // — the grid falls through to rendering the custom cards instead, and
   // that placeholder has been removed as unreachable. This is the intended
   // consequence of decision 8 ("always eligible to render"), not a regression:
   // a user with zero vitals data now sees the Food Cards' own content rather
   // than a static dead end.
-  test('zero presence on every DataType-backed metric still renders the grid, with both Food Cards', async ({ page }) => {
+  test('zero presence on every DataType-backed metric still renders the grid, with all custom cards', async ({ page }) => {
     const overrides = Object.fromEntries(PRIMARY_METRIC_TYPES.map(type => [type, false]));
     await page.route('**/api/data-types/presence', route =>
       route.fulfill({ json: presenceFixture(overrides) })
@@ -1036,9 +1038,10 @@ test.describe('Data-type presence filtering', () => {
 
     const grid = page.getByTestId('vitals-grid');
     await expect(grid).toBeVisible();
-    await expect(grid.locator('> *')).toHaveCount(FOOD_CARD_TYPES.length);
+    await expect(grid.locator('> *')).toHaveCount(CUSTOM_CARD_TYPES.length);
     await expect(grid.getByTestId('logging-gap-card')).toBeVisible();
     await expect(grid.getByTestId('food-log-history-card')).toBeVisible();
+    await expect(grid.getByTestId('weather-card')).toBeVisible();
     await expect(page.getByTestId('vitals-grid-empty')).toHaveCount(0);
   });
 

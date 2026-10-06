@@ -425,6 +425,26 @@ export interface PatchMealInput {
 
 // Opaque per-user preferences blob (see the user-settings capability).
 // dashboard_order is its first field; other keys pass through untouched.
+export interface WeatherHour {
+  hour: string;
+  temperature_c: number;
+  apparent_temperature_c: number;
+  relative_humidity_percent: number;
+  surface_pressure_hpa: number;
+  mean_sea_level_pressure_hpa: number;
+  precipitation_mm: number;
+  wind_speed_kmh: number;
+  source: string;
+  model: string;
+  latitude: number;
+  longitude: number;
+  fetched_at: string;
+  first_observation_id: string;
+  last_observation_id: string;
+}
+export interface WeatherGap { from: string; to: string; reason: string }
+export interface WeatherHistory { hours: WeatherHour[]; gaps: WeatherGap[]; units: Record<string, string> }
+
 export interface UserSettings {
   // The vitals-grid arrangement: which cards, in what order, and which are
   // hidden. Two shapes are readable — `{ type, hidden }` is what's written
@@ -891,6 +911,8 @@ export const api = {
     settingsPromise = p;
     return p;
   },
+
+  weatherHistory: (from: string, to: string) => apiFetch<WeatherHistory>(`/weather/history?${new URLSearchParams({from, to})}`),
 
   getDashboardReadModel: () => apiFetch<DashboardReadModel>('/dashboard'),
 
