@@ -65,10 +65,10 @@ export default function WeatherDayClient() {
       <section className="mb-4" data-testid="weather-gaps"><h2 className="text-sm font-semibold mb-2">{t('weather.gaps')}</h2>
         {data.gaps.length? <ul className="text-xs text-text-muted space-y-1">{data.gaps.map((g,i)=><li key={i}>{time(Date.parse(g.from))}–{time(Date.parse(g.to))} · {t(gapKeys[g.reason]||'weather.unknownGap')}</li>)}</ul>:<p className="text-xs text-text-muted">{t('weather.noGaps')}</p>}
       </section>
-      {data.hours.length>0&&<section><h2 className="text-sm font-semibold mb-2">{t('weather.hours')}</h2><div className="space-y-2">{data.hours.map(h=><article key={h.hour} data-testid="weather-hour" className="border border-border rounded-[10px] px-3 py-2 text-xs">
+      {data.hours.length>0&&<details data-testid="weather-hours"><summary className="cursor-pointer min-h-12 py-3 text-sm font-semibold mb-2">{t('weather.hours')} · {data.hours.length}</summary><div className="space-y-2">{data.hours.map(h=><article key={h.hour} data-testid="weather-hour" className="border border-border rounded-[10px] px-3 py-2 text-xs">
         <div className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums"><strong>{new Date(h.hour).toLocaleString(dateLocaleFor(language),{timeZone:zone,month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'shortOffset'})}–{time(Date.parse(h.hour)+3600000)}</strong><span>{t('weather.temperature')} {number(h.temperature_c)} °C</span><span>{t('weather.apparent')} {number(h.apparent_temperature_c)} °C</span><span>{t('weather.humidity')} {number(h.relative_humidity_percent)} %</span><span>{t('weather.wind')} {number(h.wind_speed_kmh)} km/h</span><span>{t('weather.precipitation')} {number(h.precipitation_mm)} mm</span><span>{t('weather.pressure')} {number(h.surface_pressure_hpa)} hPa</span><span>{t('weather.seaPressure')} {number(h.mean_sea_level_pressure_hpa)} hPa</span></div>
         <details className="mt-2 text-text-muted"><summary className="cursor-pointer min-h-8">{t('weather.provenance')}</summary><p>{h.source} · {h.model} · {h.latitude.toFixed(1)}, {h.longitude.toFixed(1)}</p><p>{t('weather.fetched')}: {new Date(h.fetched_at).toLocaleString(dateLocaleFor(language),{timeZone:zone})}</p></details>
-      </article>)}</div></section>}
+      </article>)}</div></details>}
     </>}
     <details className="text-xs text-text-muted mt-4"><summary className="cursor-pointer min-h-8">{t('weather.provenance')}</summary><p>{t('weather.modelNotice')}</p></details>
   </main></AuthenticatedShell>;

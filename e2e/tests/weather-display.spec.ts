@@ -99,6 +99,9 @@ test.describe('saved weather display', () => {
     const day = page.getByTestId('weather-day');
     await expect(day).toBeVisible();
     await expect(day.getByTestId('weather-hour')).toHaveCount(4);
+    const savedHours = day.getByTestId('weather-hours');
+    await expect(savedHours).toHaveJSProperty('open', false);
+    await expect(day.getByTestId('weather-hour').first()).toBeHidden();
     await expect(page.getByTestId('weather-gaps')).toContainText(/mov|travel/i);
     await expect(page.getByTestId('weather-gaps')).toContainText('10:15');
     await expect(page.getByTestId('weather-gaps')).toContainText('11:45');
@@ -110,11 +113,22 @@ test.describe('saved weather display', () => {
       const curve = chart.locator('.recharts-line-curve').first();
       await expect(curve).toHaveAttribute('d', /M.*M/);
     }
-    await expect(day).toContainText('62');
-    await expect(day).toContainText('12.7');
-    await expect(day).toContainText('km/h');
-    await expect(day).toContainText('0.3');
-    await expect(day).toContainText('mm');
+    await savedHours.locator(':scope > summary').click();
+    await expect(savedHours).toHaveJSProperty('open', true);
+    const firstHour = day.getByTestId('weather-hour').first();
+    await expect(firstHour).toBeVisible();
+    await expect(firstHour).toContainText('62');
+    await expect(firstHour).toContainText('12.7');
+    await expect(firstHour).toContainText('km/h');
+    await expect(firstHour).toContainText('0.3');
+    await expect(firstHour).toContainText('mm');
+    const provenance = firstHour.locator('details');
+    const rawModel = provenance.getByText(/ecmwf_ifs025/);
+    await expect(provenance).toHaveJSProperty('open', false);
+    await expect(rawModel).toBeHidden();
+    await provenance.locator(':scope > summary').click();
+    await expect(provenance).toHaveJSProperty('open', true);
+    await expect(rawModel).toBeVisible();
   });
 
   test('day picker requests a different local day and labels Android timezone overrides', async ({ page }) => {
