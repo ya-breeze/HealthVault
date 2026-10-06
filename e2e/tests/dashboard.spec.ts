@@ -793,6 +793,8 @@ test.describe('Dashboard request budget', () => {
       .poll(() => PRIMARY_METRIC_TYPES.every(type => (bucketDayRequests.get(type) ?? 0) >= 1))
       .toBe(true);
 
+    await expect.poll(() => rawWeightRequests).toBeGreaterThan(0);
+
     expect(meRequests, 'exactly one /users/me GET on a fresh navigation').toHaveLength(1);
     expect(settingsRequests, 'exactly one /users/me/settings GET on a fresh navigation').toHaveLength(1);
     for (const type of PRIMARY_METRIC_TYPES) {
