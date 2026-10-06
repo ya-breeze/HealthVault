@@ -57,9 +57,10 @@ internal fun GreenSummaryBody(
     layout: SummaryWidgetLayout,
     isStale: Boolean,
 ) {
-    val sizing = greenWidgetSizing(LocalSize.current, resourceContext.resources.configuration.fontScale)
-    val calories = WidgetMetric(NutritionMetric.PROTEIN, summary.caloriesConsumed, summary.target.takeIf { it.available }?.calories)
     val metrics = widgetMetrics(summary)
+    val sizing = greenWidgetSizing(LocalSize.current, resourceContext.resources.configuration.fontScale, nutrientNumberCharacters(metrics))
+    val calories = WidgetMetric(NutritionMetric.PROTEIN, summary.caloriesConsumed, summary.target.takeIf { it.available }?.calories)
+    val numberWidth = nutrientNumberWidth(metrics, sizing.valueSp, resourceContext.resources.configuration.fontScale)
     val visible = if (sizing.primaryOnly) metrics.filter { it.metric in setOf(NutritionMetric.PROTEIN, NutritionMetric.FIBER) } else metrics
     Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
         Column(
@@ -99,11 +100,14 @@ internal fun GreenSummaryBody(
                     // Full-width widgets use two pairs with a rail for each metric.
                     val ordered = if (sizing.primaryOnly) visible else listOf(metrics[0], metrics[3], metrics[1], metrics[2])
                     ordered.chunked(2).forEach { pair ->
-                        Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                        Row(
+                            modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             pair.forEachIndexed { index, metric ->
                                 if (index > 0) Spacer(modifier = GlanceModifier.width(10.dp))
                                 Column(modifier = GlanceModifier.defaultWeight()) {
-                                    MetricValue(resourceContext, metric, sizing)
+                                    MetricValue(resourceContext, metric, sizing, numberWidth)
                                     Spacer(modifier = GlanceModifier.height(2.dp))
                                     MetricRail(resourceContext, metric, sizing.railDp)
                                 }
@@ -116,13 +120,13 @@ internal fun GreenSummaryBody(
                             modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            MetricLabel(resourceContext, metric, sizing.labelSp)
+                            MetricLabelColumn(resourceContext, metric, sizing.labelSp)
                             Spacer(modifier = GlanceModifier.width(5.dp))
                             if (metric.metric != NutritionMetric.FIBER) {
                                 MetricRail(resourceContext, metric, sizing.railDp, modifier = GlanceModifier.defaultWeight())
                                 Spacer(modifier = GlanceModifier.width(6.dp))
                             }
-                            MetricAmount(resourceContext, metric, sizing.valueSp)
+                            MetricAmount(resourceContext, metric, sizing.valueSp, numberWidth)
                         }
                     }
                 }
@@ -170,11 +174,22 @@ private fun StaleIndicator(context: Context, isStale: Boolean) {
 }
 
 @Composable
-private fun MetricValue(context: Context, metric: WidgetMetric, sizing: GreenWidgetSizing) {
+private fun MetricValue(context: Context, metric: WidgetMetric, sizing: GreenWidgetSizing, numberWidth: Int) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        MetricLabel(context, metric, sizing.labelSp)
+        MetricLabelColumn(context, metric, sizing.labelSp)
         Spacer(modifier = GlanceModifier.width(5.dp))
-        MetricAmount(context, metric, sizing.valueSp)
+        MetricAmount(context, metric, sizing.valueSp, numberWidth)
+    }
+}
+
+@Composable
+private fun MetricLabelColumn(context: Context, metric: WidgetMetric, size: Int) {
+    val scale = context.resources.configuration.fontScale
+    Box(
+        modifier = GlanceModifier.width((size * scale * 1.25f).dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        MetricLabel(context, metric, size)
     }
 }
 
@@ -185,7 +200,8 @@ private fun MetricLabel(context: Context, metric: WidgetMetric, size: Int) {
             provider = ImageProvider(R.drawable.ic_widget_fiber),
             contentDescription = context.getString(R.string.widget_fiber),
             colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurfaceVariant),
-            modifier = GlanceModifier.width(size.dp).height((size + 2).dp),
+            modifier = GlanceModifier.width((size * context.resources.configuration.fontScale).dp)
+                .height(((size + 2) * context.resources.configuration.fontScale).dp),
         )
     } else {
         WidgetText(
@@ -199,21 +215,26 @@ private fun MetricLabel(context: Context, metric: WidgetMetric, size: Int) {
 }
 
 @Composable
-private fun MetricAmount(context: Context, metric: WidgetMetric, size: Int) {
+private fun MetricAmount(context: Context, metric: WidgetMetric, size: Int, numberWidth: Int) {
     Row(verticalAlignment = Alignment.Bottom) {
-        WidgetText(
-            text = metric.consumed?.toInt()?.toString() ?: "—",
-            color = if (metric.exceeded) GlanceTheme.colors.error else GlanceTheme.colors.onSurface,
-            fontSize = size.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-        )
-        if (metric.consumed != null) {
-            Spacer(modifier = GlanceModifier.width(2.dp))
+        Box(modifier = GlanceModifier.width(numberWidth.dp), contentAlignment = Alignment.CenterEnd) {
             WidgetText(
-                text = context.getString(R.string.widget_grams_unit),
-                color = if (metric.exceeded) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
-                fontSize = (size / 2).coerceAtLeast(7).sp, maxLines = 1,
-                modifier = GlanceModifier.padding(bottom = 2.dp),
+                text = metric.consumed?.toInt()?.toString() ?: "—",
+                color = if (metric.exceeded) GlanceTheme.colors.error else GlanceTheme.colors.onSurface,
+                fontSize = size.sp, fontWeight = FontWeight.Bold, maxLines = 1,
             )
+        }
+        Spacer(modifier = GlanceModifier.width(2.dp))
+        val unitSize = (size / 2).coerceAtLeast(7)
+        Box(modifier = GlanceModifier.width((unitSize * context.resources.configuration.fontScale).dp)) {
+            if (metric.consumed != null) {
+                WidgetText(
+                    text = context.getString(R.string.widget_grams_unit),
+                    color = if (metric.exceeded) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
+                    fontSize = unitSize.sp, maxLines = 1,
+                    modifier = GlanceModifier.padding(bottom = 2.dp),
+                )
+            }
         }
     }
 }

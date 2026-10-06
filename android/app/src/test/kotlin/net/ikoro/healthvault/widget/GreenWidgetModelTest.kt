@@ -67,4 +67,61 @@ class GreenWidgetModelTest {
         assertTrue(square.paddingDp >= 10)
         assertTrue(short.showNutrients)
     }
+
+    @Test
+    fun singleAndDoubleCellWidgetsUseLargerCaloriesAndThickerRails() {
+        val single = greenWidgetSizing(DpSize(80.dp, 80.dp), 1f)
+        val double = greenWidgetSizing(DpSize(170.dp, 80.dp), 1f)
+        assertTrue(single.heroSp >= 20)
+        assertTrue(double.heroSp >= 30)
+        assertTrue(single.calorieRailDp >= 7)
+        assertTrue(double.calorieRailDp >= 7)
+        assertFalse(single.showNutrients)
+        assertFalse(double.showNutrients)
+        assertTrue(double.heroSp > single.heroSp)
+    }
+
+    @Test
+    fun wideSurfaceSpendsExtraRoomOnNutrientNumbersAndIcons() {
+        val square = greenWidgetSizing(DpSize(180.dp, 180.dp), 1f)
+        val wide = greenWidgetSizing(DpSize(380.dp, 180.dp), 1f)
+        assertTrue(wide.valueSp > square.valueSp)
+        assertTrue(wide.labelSp > square.labelSp)
+        assertTrue(wide.grid)
+        val short = greenWidgetSizing(DpSize(300.dp, 110.dp), 1f)
+        assertTrue(short.valueSp <= wide.valueSp)
+        assertTrue(short.showNutrients)
+    }
+
+    @Test
+    fun sharedNumberColumnHandlesDifferentDigitsUnknownValuesAndFontScale() {
+        val metrics = listOf(
+            WidgetMetric(NutritionMetric.PROTEIN, 145.0, 128),
+            WidgetMetric(NutritionMetric.FAT, 9.0, 89),
+            WidgetMetric(NutritionMetric.FIBER, null, null),
+        )
+        val width = nutrientNumberWidth(metrics, 22, 1f)
+        assertEquals(width, nutrientNumberWidth(metrics.reversed(), 22, 1f))
+        assertEquals(width, nutrientNumberWidth(listOf(metrics[1]), 22, 1f))
+        assertTrue(nutrientNumberWidth(metrics, 22, 1.5f) > width)
+        assertTrue(nutrientNumberWidth(metrics + WidgetMetric(NutritionMetric.CARBS, 12345.0, 200), 22, 1f) > width)
+    }
+
+    @Test
+    fun tallNarrowGridAndEnlargedFontsKeepTheCompleteRowWithinItsColumn() {
+        for (size in listOf(DpSize(230.dp, 250.dp), DpSize(230.dp, 220.dp), DpSize(110.dp, 220.dp))) {
+            for (scale in listOf(1f, 2f)) {
+                for (characters in listOf(3, 5, 10)) {
+                    val sizing = greenWidgetSizing(size, scale, characters)
+                    val available = if (sizing.grid) (size.width.value - sizing.paddingDp * 2 - 10f) / 2f
+                        else size.width.value - sizing.paddingDp * 2
+                    if (sizing.showNutrients) {
+                        assertTrue(nutrientRowWidth(sizing.valueSp, sizing.grid, scale, characters) <= available)
+                    }
+                }
+            }
+        }
+        assertFalse(greenWidgetSizing(DpSize(110.dp, 220.dp), 2f).showNutrients)
+        assertTrue(greenWidgetSizing(DpSize(230.dp, 220.dp), 2f).showNutrients)
+    }
 }
