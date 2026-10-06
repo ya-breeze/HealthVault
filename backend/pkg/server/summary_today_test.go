@@ -22,17 +22,18 @@ func newSummaryTodayRequest(userID uuid.UUID, query string) *http.Request {
 }
 
 type summaryTodayTestResponse struct {
-	Date                 string     `json:"date"`
-	CaloriesConsumed     float64    `json:"calories_consumed"`
-	ProteinGramsConsumed float64    `json:"protein_grams_consumed"`
-	CarbsGramsConsumed   float64    `json:"carbs_grams_consumed"`
-	FatGramsConsumed     float64    `json:"fat_grams_consumed"`
-	MealCount            int        `json:"meal_count"`
-	EatingOccasionsToday int        `json:"eating_occasions_today"`
-	UsualMealsPerDay     int        `json:"usual_meals_per_day"`
-	LastLoggedAt         *time.Time `json:"last_logged_at"`
-	DisplayLanguage      string     `json:"display_language"`
-	Target               struct {
+	Date                      string     `json:"date"`
+	CaloriesConsumed          float64    `json:"calories_consumed"`
+	ProteinGramsConsumed      float64    `json:"protein_grams_consumed"`
+	CarbsGramsConsumed        float64    `json:"carbs_grams_consumed"`
+	FatGramsConsumed          float64    `json:"fat_grams_consumed"`
+	DietaryFiberGramsConsumed float64    `json:"dietary_fiber_grams_consumed"`
+	MealCount                 int        `json:"meal_count"`
+	EatingOccasionsToday      int        `json:"eating_occasions_today"`
+	UsualMealsPerDay          int        `json:"usual_meals_per_day"`
+	LastLoggedAt              *time.Time `json:"last_logged_at"`
+	DisplayLanguage           string     `json:"display_language"`
+	Target                    struct {
 		Available          bool    `json:"available"`
 		Reason             string  `json:"reason"`
 		Calories           int     `json:"calories"`
@@ -311,7 +312,7 @@ func TestSummaryToday_ReflectsCallersOwnMeals(t *testing.T) {
 	loggedAt := time.Date(today.Year(), today.Month(), today.Day(), 12, 0, 0, 0, time.UTC)
 	confirmed := database.FoodMeal{
 		UserID: userID, Status: database.MealStatusConfirmed, LoggedAt: loggedAt,
-		Name: "Lunch", Calories: 500, ProteinGrams: 30, CarbsGrams: 40, FatGrams: 15,
+		Name: "Lunch", Calories: 500, ProteinGrams: 30, CarbsGrams: 40, FatGrams: 15, DietaryFiberGrams: 6.25,
 	}
 	confirmed.ID = uuid.New()
 	confirmed.FamilyID = familyID
@@ -322,7 +323,7 @@ func TestSummaryToday_ReflectsCallersOwnMeals(t *testing.T) {
 	// last_logged_at, but must not contribute to the macro sums.
 	pending := database.FoodMeal{
 		UserID: userID, Status: database.MealStatusPendingReview, LoggedAt: loggedAt.Add(time.Minute),
-		Name: "Snack", Calories: 999, ProteinGrams: 99, CarbsGrams: 99, FatGrams: 99,
+		Name: "Snack", Calories: 999, ProteinGrams: 99, CarbsGrams: 99, FatGrams: 99, DietaryFiberGrams: 99,
 	}
 	pending.ID = uuid.New()
 	pending.FamilyID = familyID
@@ -348,7 +349,7 @@ func TestSummaryToday_ReflectsCallersOwnMeals(t *testing.T) {
 		t.Errorf("usual_meals_per_day = %d, want stored setting 4", resp.UsualMealsPerDay)
 	}
 	if resp.CaloriesConsumed != 500 || resp.ProteinGramsConsumed != 30 ||
-		resp.CarbsGramsConsumed != 40 || resp.FatGramsConsumed != 15 {
+		resp.CarbsGramsConsumed != 40 || resp.FatGramsConsumed != 15 || resp.DietaryFiberGramsConsumed != 6.25 {
 		t.Errorf("macro sums = %+v, want only the confirmed meal's macros", resp)
 	}
 	if resp.LastLoggedAt == nil {
@@ -380,5 +381,23 @@ func TestSummaryToday_IgnoresUserQueryParam(t *testing.T) {
 	resp := decodeSummaryToday(t, w)
 	if resp.MealCount != 0 {
 		t.Errorf("meal_count = %d, want 0 (caller's own data, not the other user's)", resp.MealCount)
+	}
+}
+
+func TestSummaryToday_ZeroFiberIsPresent(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, _ := seedFoodUser(t, st)
+	w := httptest.NewRecorder()
+	server.SummaryTodayHandler(st).ServeHTTP(w, newSummaryTodayRequest(userID, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	raw, ok := body["dietary_fiber_grams_consumed"]
+	if !ok || string(raw) != "0" {
+		t.Errorf("fiber = %s (present=%v), want explicit 0", raw, ok)
 	}
 }

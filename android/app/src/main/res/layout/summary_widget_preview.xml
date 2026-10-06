@@ -1,152 +1,80 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@drawable/widget_preview_background"
-    android:orientation="vertical"
-    android:gravity="center_vertical"
-    android:padding="4dp">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <ImageView
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:contentDescription="@string/app_name"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/green_widget_background" android:orientation="vertical"
+    android:gravity="center_vertical" android:padding="6dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center" android:orientation="horizontal">
+        <ImageView android:layout_width="20dp" android:layout_height="20dp"
+            android:layout_marginEnd="6dp" android:contentDescription="@string/app_name"
             android:src="@drawable/healthvault_mark" />
-
-        <Space
-            android:layout_width="4dp"
-            android:layout_height="0dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:maxLines="1"
-            android:text="@string/widget_preview_consumed"
-            android:textColor="@color/widget_preview_on_surface"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="2dp"
-            android:maxLines="1"
-            android:text="@string/widget_calories_unit"
-            android:textColor="@color/widget_preview_on_surface_variant"
-            android:textSize="8sp"
-            android:textStyle="bold" />
-
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:maxLines="1"
-            android:text="@string/widget_preview_percent"
-            android:textColor="@color/widget_preview_good"
-            android:textSize="11sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/widget_preview_consumed" android:textColor="@color/green_widget_foreground"
+            android:textSize="30sp" android:textStyle="bold" android:maxLines="1" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="3dp" android:text="@string/widget_calories_unit"
+            android:textColor="@color/green_widget_muted" android:textSize="11sp" android:maxLines="1" />
     </LinearLayout>
-
-    <ProgressBar
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="4dp"
-        android:layout_marginTop="3dp"
-        android:indeterminate="false"
-        android:max="100"
-        android:progress="72"
-        android:progressBackgroundTint="@color/widget_preview_track"
-        android:progressTint="@color/widget_preview_good" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:orientation="horizontal">
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/widget_preview_protein_status"
-                android:textColor="@color/widget_preview_good"
-                android:textSize="7sp" />
-
-            <ProgressBar
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="2dp"
-                android:indeterminate="false"
-                android:max="100"
-                android:progress="80"
-                android:progressBackgroundTint="@color/widget_preview_track"
-                android:progressTint="@color/widget_preview_good" />
-        </LinearLayout>
-
-        <Space android:layout_width="3dp" android:layout_height="0dp" />
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/widget_preview_carbs_status"
-                android:textColor="@color/widget_preview_warning"
-                android:textSize="7sp" />
-
-            <ProgressBar
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="2dp"
-                android:indeterminate="false"
-                android:max="100"
-                android:progress="70"
-                android:progressBackgroundTint="@color/widget_preview_track"
-                android:progressTint="@color/widget_preview_warning" />
-        </LinearLayout>
-
-        <Space android:layout_width="3dp" android:layout_height="0dp" />
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/widget_preview_fat_status"
-                android:textColor="@color/widget_preview_good"
-                android:textSize="7sp" />
-
-            <ProgressBar
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="2dp"
-                android:indeterminate="false"
-                android:max="100"
-                android:progress="83"
-                android:progressBackgroundTint="@color/widget_preview_track"
-                android:progressTint="@color/widget_preview_good" />
-        </LinearLayout>
+    <ProgressBar style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="8dp"
+        android:layout_marginBottom="5dp" android:indeterminate="false" android:max="100" android:progress="72"
+        android:progressBackgroundTint="@color/green_widget_track" android:progressTint="@color/green_widget_progress"
+        android:contentDescription="@string/widget_goal_progress" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="3dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:layout_width="24dp" android:layout_height="wrap_content"
+            android:text="@string/widget_protein_short" android:contentDescription="@string/widget_protein_name"
+            android:textColor="@color/green_widget_foreground" android:textSize="12sp" android:textStyle="bold" />
+        <ProgressBar style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="0dp" android:layout_height="8dp" android:layout_weight="1"
+            android:indeterminate="false" android:max="100" android:progress="80"
+            android:progressBackgroundTint="@color/green_widget_track" android:progressTint="@color/green_widget_progress"
+            android:contentDescription="@string/widget_goal_progress" />
+        <TextView android:layout_width="40dp" android:layout_height="wrap_content"
+            android:layout_marginStart="4dp" android:gravity="end" android:maxLines="1"
+            android:text="@string/widget_preview_protein_value" android:textColor="@color/green_widget_foreground"
+            android:textSize="12sp" android:textStyle="bold" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="3dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:layout_width="24dp" android:layout_height="wrap_content"
+            android:text="@string/widget_fat_short" android:contentDescription="@string/widget_fat_name"
+            android:textColor="@color/green_widget_foreground" android:textSize="12sp" android:textStyle="bold" />
+        <ProgressBar style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="0dp" android:layout_height="8dp" android:layout_weight="1"
+            android:indeterminate="false" android:max="100" android:progress="83"
+            android:progressBackgroundTint="@color/green_widget_track" android:progressTint="@color/green_widget_progress"
+            android:contentDescription="@string/widget_goal_progress" />
+        <TextView android:layout_width="40dp" android:layout_height="wrap_content"
+            android:layout_marginStart="4dp" android:gravity="end" android:maxLines="1"
+            android:text="@string/widget_preview_fat_value" android:textColor="@color/green_widget_foreground"
+            android:textSize="12sp" android:textStyle="bold" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="3dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:layout_width="24dp" android:layout_height="wrap_content"
+            android:text="@string/widget_carbs_short" android:contentDescription="@string/widget_carbs_name"
+            android:textColor="@color/green_widget_foreground" android:textSize="12sp" android:textStyle="bold" />
+        <ProgressBar style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="0dp" android:layout_height="8dp" android:layout_weight="1"
+            android:indeterminate="false" android:max="100" android:progress="70"
+            android:progressBackgroundTint="@color/green_widget_track" android:progressTint="@color/green_widget_progress"
+            android:contentDescription="@string/widget_goal_progress" />
+        <TextView android:layout_width="40dp" android:layout_height="wrap_content"
+            android:layout_marginStart="4dp" android:gravity="end" android:maxLines="1"
+            android:text="@string/widget_preview_carbs_value" android:textColor="@color/green_widget_foreground"
+            android:textSize="12sp" android:textStyle="bold" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="3dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="6dp"
+            android:contentDescription="@string/widget_fiber" android:src="@drawable/ic_widget_fiber" />
+        <ImageView android:layout_width="0dp" android:layout_height="8dp" android:layout_weight="1"
+            android:scaleType="fitXY" android:src="@drawable/widget_neutral_rail"
+            android:contentDescription="@string/widget_target_unavailable" />
+        <TextView android:layout_width="40dp" android:layout_height="wrap_content"
+            android:layout_marginStart="4dp" android:gravity="end" android:maxLines="1"
+            android:text="@string/widget_preview_fiber_value" android:textColor="@color/green_widget_foreground"
+            android:textSize="12sp" android:textStyle="bold" />
     </LinearLayout>
 </LinearLayout>

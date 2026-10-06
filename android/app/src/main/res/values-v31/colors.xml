@@ -8,4 +8,11 @@
     <color name="widget_preview_warning">#8A5A00</color>
     <color name="widget_preview_bad">#D93025</color>
     <color name="widget_preview_track">@android:color/system_neutral2_100</color>
+
+    <!-- Fixed home-screen palette; FlexWindow retains its existing colors. -->
+    <color name="green_widget_background">#DFEDDD</color>
+    <color name="green_widget_foreground">#203D2C</color>
+    <color name="green_widget_muted">#526F58</color>
+    <color name="green_widget_track">#BFD1BB</color>
+    <color name="green_widget_progress">#477C48</color>
 </resources>

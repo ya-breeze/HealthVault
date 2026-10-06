@@ -44,6 +44,9 @@ test.describe('GET /api/summary/today — Android widget contract', () => {
     expect(typeof body.protein_grams_consumed).toBe('number');
     expect(typeof body.carbs_grams_consumed).toBe('number');
     expect(typeof body.fat_grams_consumed).toBe('number');
+    expect(typeof body.dietary_fiber_grams_consumed).toBe('number');
+    expect(Number.isFinite(body.dietary_fiber_grams_consumed)).toBe(true);
+    expect(body.dietary_fiber_grams_consumed).toBeGreaterThanOrEqual(0);
     expectKotlinInt(body.meal_count);
     expectKotlinInt(body.eating_occasions_today);
     expect(body.eating_occasions_today).toBeGreaterThanOrEqual(0);

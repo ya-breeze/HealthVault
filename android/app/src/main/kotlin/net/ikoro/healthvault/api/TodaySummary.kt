@@ -43,4 +43,6 @@ data class TodaySummary(
     @SerialName("last_logged_at") val lastLoggedAt: String? = null,
     @SerialName("display_language") val displayLanguage: String,
     val target: TodaySummaryTarget,
+    // Older servers and cached snapshots omit fiber; absence must not become zero.
+    @SerialName("dietary_fiber_grams_consumed") val dietaryFiberGramsConsumed: Double? = null,
 )

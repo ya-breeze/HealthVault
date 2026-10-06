@@ -236,15 +236,16 @@ func DayRange(
 // HasLastLoggedAt is false (LastLoggedAt the zero time.Time) when there are
 // no rows at all for today.
 type TodaySummaryRow struct {
-	Date                 string
-	CaloriesConsumed     float64
-	ProteinGramsConsumed float64
-	CarbsGramsConsumed   float64
-	FatGramsConsumed     float64
-	MealCount            int
-	EatingOccasionsToday int
-	LastLoggedAt         time.Time
-	HasLastLoggedAt      bool
+	Date                      string
+	CaloriesConsumed          float64
+	ProteinGramsConsumed      float64
+	CarbsGramsConsumed        float64
+	FatGramsConsumed          float64
+	DietaryFiberGramsConsumed float64
+	MealCount                 int
+	EatingOccasionsToday      int
+	LastLoggedAt              time.Time
+	HasLastLoggedAt           bool
 }
 
 // TodaySummary computes userID's Local Day (`LocalDate(now, loc)`) and folds
@@ -274,7 +275,7 @@ func TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now time.Ti
 	windowStart, windowEnd := dayStart.UTC(), dayStart.AddDate(0, 0, 1).UTC()
 
 	var meals []FoodMeal
-	if err := db.Select("status", "calories", "protein_grams", "carbs_grams", "fat_grams", "logged_at").
+	if err := db.Select("status", "calories", "protein_grams", "carbs_grams", "fat_grams", "dietary_fiber_grams", "logged_at").
 		Where("user_id = ? AND logged_at >= ? AND logged_at < ?", userID, windowStart, windowEnd).
 		Find(&meals).Error; err != nil {
 		return TodaySummaryRow{}, fmt.Errorf("query meals: %w", err)
@@ -293,6 +294,7 @@ func TodaySummary(db *gorm.DB, userID uuid.UUID, loc *time.Location, now time.Ti
 			row.ProteinGramsConsumed += m.ProteinGrams
 			row.CarbsGramsConsumed += m.CarbsGrams
 			row.FatGramsConsumed += m.FatGrams
+			row.DietaryFiberGramsConsumed += m.DietaryFiberGrams
 		}
 	}
 	row.EatingOccasionsToday = CollapseOccasions(loggedAt)

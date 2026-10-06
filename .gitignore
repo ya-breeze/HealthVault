@@ -21,6 +21,7 @@ playwright-report/
 # holds a machine-specific sdk.dir path and is never checked in.
 android/local.properties
 android/.gradle/
+android/.kotlin/
 android/app/build/
 android/build/
 android/*.hprof

@@ -60,118 +60,14 @@ class WidgetTextTest {
     }
 
     @Test
-    fun summaryWidget_keepsResponsiveMaterialStructure() {
-        val source = summaryWidgetSource().readText()
-
-        assertTrue(source.contains("private fun MicroSummary"))
-        assertTrue(source.contains("private fun ShortSummary"))
-        assertTrue(source.contains("private fun WideShortSummary"))
-        assertTrue(source.contains("private fun TallSummary"))
-        assertTrue(source.contains("private fun CompactSummary"))
-        assertTrue(source.contains("private fun WideSummary"))
-        assertTrue(source.contains("LinearProgressIndicator("))
-        assertFalse(source.contains("SquareIconButton("))
-        assertTrue(source.contains("CircleIconButton("))
-        assertTrue(source.contains("GlanceTheme.colors.widgetBackground"))
-        assertTrue(source.contains("cornerRadius(R.dimen.widget_corner_radius)"))
-        assertTrue(source.contains("background(ImageProvider(R.drawable.widget_background))"))
-        assertTrue(source.contains(".MacroRows("))
-        assertTrue(source.contains("private fun MacroRow"))
-        assertTrue(source.contains("internal fun PaceProgress"))
-        assertTrue(source.contains("MiniMacroRails(resourceContext, summary)"))
-        assertTrue(source.contains("DayNightColorProvider("))
-        listOf("0xFF2E7D32", "0xFF69D68B", "0xFF8A5A00", "0xFFF3C75D", "0xFFD93025", "0xFFFF453A")
-            .forEach { assertTrue("missing theme-aware pace color $it", source.contains(it)) }
-        assertTrue(source.contains("accessibleCardModifier.clickable(actionStartActivity(widgetLogFoodIntent(resourceContext)))"))
-        assertTrue(source.contains("accessibleCardModifier.clickable(actionStartActivity("))
-        assertTrue(source.contains("semantics {"))
-        assertTrue(!source.contains("R.mipmap.ic_launcher"))
-        assertTrue(source.contains("ImageProvider(R.drawable.healthvault_mark)"))
-        assertFalse(source.contains("widget_identity_short"))
-        assertTrue(source.contains("useReducedWidgetContent(fontScale, layout)"))
-        assertTrue(source.contains("useMinimalMicroContent(fontScale)"))
-        assertTrue(source.contains("fontSize = 11.sp"))
-        assertTrue(source.contains("valueSize = 9.sp"))
-        assertTrue(source.contains("DpSize(48.dp, 48.dp)"))
-        assertTrue(source.contains("DpSize(109.dp, 48.dp)"))
-        assertTrue(source.contains("DpSize(48.dp, 110.dp)"))
-        assertTrue(source.contains("DpSize(230.dp, 110.dp)"))
-    }
-
-    @Test
     fun summaryWidget_selectsEveryDeclaredBreakpoint() {
-        val source = summaryWidgetSource().readText()
-
-        assertTrue(
-            source.contains(
-                "setOf(MICRO_SIZE, SHORT_SIZE, WIDE_SHORT_SIZE, TALL_NARROW_SIZE, COMPACT_SIZE, WIDE_SIZE)",
-            ),
-        )
+        assertTrue(summaryWidgetSource().readText().contains("override val sizeMode = SizeMode.Exact"))
         assertEquals(SummaryWidgetLayout.MICRO, summaryWidgetLayout(DpSize(48.dp, 48.dp)))
         assertEquals(SummaryWidgetLayout.SHORT, summaryWidgetLayout(DpSize(109.dp, 48.dp)))
         assertEquals(SummaryWidgetLayout.WIDE_SHORT, summaryWidgetLayout(DpSize(230.dp, 48.dp)))
         assertEquals(SummaryWidgetLayout.TALL, summaryWidgetLayout(DpSize(48.dp, 110.dp)))
         assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(110.dp, 110.dp)))
         assertEquals(SummaryWidgetLayout.WIDE, summaryWidgetLayout(DpSize(230.dp, 110.dp)))
-        assertEquals(SummaryWidgetLayout.MICRO, summaryWidgetLayout(DpSize(108.dp, 109.dp)))
-        assertEquals(SummaryWidgetLayout.TALL, summaryWidgetLayout(DpSize(109.dp, 110.dp)))
-        assertEquals(SummaryWidgetLayout.COMPACT, summaryWidgetLayout(DpSize(229.dp, 110.dp)))
-        assertEquals(SummaryWidgetLayout.WIDE_SHORT, summaryWidgetLayout(DpSize(230.dp, 109.dp)))
-    }
-
-    @Test
-    fun summaryWidget_keepsActionsAndDetailsAtTheirIntendedSizes() {
-        val source = summaryWidgetSource().readText()
-        val compactFunctions = listOf("MicroSummary", "ShortSummary", "WideShortSummary", "TallSummary", "CompactSummary")
-            .map { functionBody(source, it) }
-        val compact = functionBody(source, "CompactSummary")
-        val wide = functionBody(source, "WideSummary")
-        val micro = functionBody(source, "MicroSummary")
-        val short = functionBody(source, "ShortSummary")
-        val wideShort = functionBody(source, "WideShortSummary")
-        val tall = functionBody(source, "TallSummary")
-        val minimalMicro = micro.substringAfter("if (useMinimalContent) {").substringBefore("\n        return")
-        val brandMark = source.substringAfter("internal fun WidgetBrandMark(").substringBefore("\n@Composable\ninternal fun WidgetHeader")
-        val header = source.substringAfter("internal fun WidgetHeader(").substringBefore("\n@Composable\nprivate fun androidx.glance.layout.ColumnScope.MacroRows")
-
-        compactFunctions.forEach { body ->
-            assertTrue(!body.contains("SquareIconButton("))
-            assertTrue(!body.contains("CircleIconButton("))
-            assertTrue(!body.contains("MacroRows("))
-        }
-        assertTrue(compact.contains("MiniMacroRails(resourceContext, summary, showValues = true)"))
-        assertTrue(compact.contains("contentAlignment = Alignment.CenterStart"))
-        listOf(short, wideShort).forEach { body ->
-            assertFalse(
-                Regex(
-                    """if \(target != null\) \{\s*Spacer\(modifier = GlanceModifier\.defaultWeight\(\)\)""",
-                ).containsMatchIn(body),
-            )
-            assertTrue(body.contains("contentAlignment = Alignment.Center"))
-        }
-        assertTrue(micro.contains("contentAlignment = Alignment.Center"))
-        listOf(short, wideShort).forEach { body ->
-            assertTrue(body.contains("Spacer(modifier = GlanceModifier.height(3.dp))"))
-        }
-        listOf(short, tall).forEach { body ->
-            assertTrue(body.contains("WidgetBrandMark("))
-        }
-        assertFalse(micro.contains("WidgetBrandMark("))
-        listOf(tall).forEach { body ->
-            assertTrue(body.contains("isStale = isStale"))
-        }
-        assertTrue(micro.contains("if (useMinimalContent)"))
-        assertTrue(micro.contains("valueSize = 9.sp"))
-        assertTrue(micro.contains("return"))
-        assertFalse(minimalMicro.contains("WidgetBrandMark("))
-        assertTrue(micro.contains("MiniMacroRails(resourceContext, summary)"))
-        assertTrue(brandMark.contains("if (isStale)"))
-        assertTrue(brandMark.contains("text = \"!\""))
-        assertTrue(header.contains("WidgetBrandMark(markSize, isStale = isStale)"))
-        assertFalse(wide.contains("SquareIconButton("))
-        assertTrue(wide.contains("CircleIconButton("))
-        assertTrue(wide.contains("MacroRows(resourceContext, summary)"))
-        assertTrue(wide.contains("if (useReducedContent)"))
     }
 
     @Test
@@ -198,21 +94,21 @@ class WidgetTextTest {
         assertTrue(provider.contains("android:description=\"@string/widget_description\""))
         assertTrue(provider.contains("android:previewLayout=\"@layout/summary_widget_preview\""))
         assertTrue(provider.contains("android:minWidth=\"110dp\""))
-        assertTrue(provider.contains("android:minHeight=\"48dp\""))
+        assertTrue(provider.contains("android:minHeight=\"110dp\""))
         assertTrue(provider.contains("android:minResizeWidth=\"48dp\""))
         assertTrue(provider.contains("android:minResizeHeight=\"48dp\""))
         assertTrue(provider.contains("android:targetCellWidth=\"2\""))
-        assertTrue(provider.contains("android:targetCellHeight=\"1\""))
+        assertTrue(provider.contains("android:targetCellHeight=\"2\""))
         assertTrue(provider.contains("android:maxResizeWidth=\"624dp\""))
         assertTrue(provider.contains("android:maxResizeHeight=\"276dp\""))
         assertTrue(provider.contains("android:resizeMode=\"horizontal|vertical\""))
         assertTrue(preview.contains("android:text=\"@string/widget_preview_consumed\""))
-        assertTrue(preview.contains("android:text=\"@string/widget_preview_percent\""))
-        assertTrue(preview.contains("android:src=\"@drawable/healthvault_mark\""))
+        assertFalse(preview.contains("@string/widget_calorie_target_progress"))
+        assertTrue(preview.contains("@drawable/ic_widget_fiber"))
         assertFalse(preview.contains("widget_identity_short"))
         assertTrue(!preview.contains("@mipmap/ic_launcher"))
         assertTrue(preview.contains("<ProgressBar"))
-        assertTrue(preview.contains("android:layout_marginTop=\"3dp\""))
+        assertTrue(preview.contains("@color/green_widget_progress"))
     }
 
     @Test

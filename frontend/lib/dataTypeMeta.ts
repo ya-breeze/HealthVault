@@ -133,8 +133,9 @@ export const NUTRITION_MACROS: { key: string; label: keyof Dictionary }[] = [
  */
 export function computeYDomain(values: number[]): [number, number] | undefined {
   if (values.length === 0) return undefined;
-  const dataMin = Math.min(...values);
-  const dataMax = Math.max(...values);
+  // Raw Year history can exceed the engine limit for function arguments.
+  const dataMin = values.reduce((min, value) => Math.min(min, value), Infinity);
+  const dataMax = values.reduce((max, value) => Math.max(max, value), -Infinity);
   const range = dataMax - dataMin;
   const pad = range > 0 ? range * 0.1 : Math.max(Math.abs(dataMax), 1) * 0.02;
   return [dataMin - pad, dataMax + pad];

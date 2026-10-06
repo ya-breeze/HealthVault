@@ -32,6 +32,13 @@ describe('emaSeries', () => {
 });
 
 describe('computeYDomain', () => {
+  it('computes a padded domain for dense annual history without argument overflow', () => {
+    const values = Array.from({ length: 250_000 }, () => 80);
+    values[0] = 40;
+    values[values.length - 1] = 180;
+    expect(computeYDomain(values)).toEqual([26, 194]);
+  });
+
   it('returns undefined for no data', () => {
     expect(computeYDomain([])).toBeUndefined();
   });

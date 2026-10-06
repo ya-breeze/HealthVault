@@ -479,3 +479,46 @@ func TestTodaySummary_LocalDayBoundaryByTimezone(t *testing.T) {
 		t.Errorf("expected only the in-window meal aggregated under the LA-local day, got %+v", got)
 	}
 }
+
+// Fiber follows the same confirmed local-day/user window as the existing macros.
+func TestTodaySummary_DietaryFiberConfirmedLocalDayAndUser(t *testing.T) {
+	db := newCompletenessTestDB(t)
+	userID, familyID := uuid.New(), uuid.New()
+	loc, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+	now := time.Date(2026, 8, 21, 2, 0, 0, 0, time.UTC)
+	start := time.Date(2026, 8, 20, 7, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 0, 1)
+	cases := []struct {
+		user   uuid.UUID
+		status string
+		at     time.Time
+		fiber  float64
+	}{
+		{userID, database.MealStatusConfirmed, start, 3.25},
+		{userID, database.MealStatusConfirmed, now, 4.5},
+		{userID, database.MealStatusConfirmed, start.Add(-time.Nanosecond), 100},
+		{userID, database.MealStatusConfirmed, end, 100},
+		{uuid.New(), database.MealStatusConfirmed, now, 100},
+		{userID, database.MealStatusProcessing, now, 100},
+		{userID, database.MealStatusPendingReview, now, 100},
+		{userID, database.MealStatusPendingClarification, now, 100},
+		{userID, database.MealStatusFailed, now, 100},
+	}
+	for _, c := range cases {
+		meal := database.FoodMeal{UserID: c.user, Status: c.status, LoggedAt: c.at, DietaryFiberGrams: c.fiber}
+		meal.ID, meal.FamilyID = uuid.New(), familyID
+		if err := db.Create(&meal).Error; err != nil {
+			t.Fatalf("create meal: %v", err)
+		}
+	}
+	got, err := database.TodaySummary(db, userID, loc, now)
+	if err != nil {
+		t.Fatalf("TodaySummary: %v", err)
+	}
+	if got.Date != "2026-08-20" || got.DietaryFiberGramsConsumed != 7.75 {
+		t.Errorf("local-day fiber = %+v, want 2026-08-20 and 7.75 g", got)
+	}
+}

@@ -157,6 +157,10 @@ export default function DataTypeClient({ type }: Props) {
   const [zoom, setZoom] = useState<Zoom>('week');
   const [macro, setMacro] = useState<string>('calories');
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [recordPage, setRecordPage] = useState(0);
+  const recordPageCount = Math.max(1, Math.ceil(records.length / 50));
+  const currentRecordPage = Math.min(recordPage, recordPageCount - 1);
+  const visibleRecords = records.slice(currentRecordPage * 50, (currentRecordPage + 1) * 50);
   const [chartRows, setChartRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -254,6 +258,7 @@ export default function DataTypeClient({ type }: Props) {
 
   useEffect(() => {
     setLoading(true);
+    setRecordPage(0);
     setPendingDeleteId(null);
     setDeleteError(null);
 
@@ -437,7 +442,7 @@ export default function DataTypeClient({ type }: Props) {
 
   const stats = {
     avg: mean(primaryAvgSeries),
-    max: primaryMaxSeries.length ? Math.max(...primaryMaxSeries) : 0,
+    max: primaryMaxSeries.length ? primaryMaxSeries.reduce((max, value) => Math.max(max, value), -Infinity) : 0,
     total: primaryAvgSeries.reduce((a, b) => a + b, 0),
   };
   const showTotal = !isBloodPressure && meta?.family === 'cumulative';
@@ -541,7 +546,8 @@ export default function DataTypeClient({ type }: Props) {
     const times = allTimeWeightRecords.map(r => new Date(String(r.time)).getTime());
     const totalRecords = allTimeWeightRecords.length;
     const lifetimeSpanDays = totalRecords > 1
-      ? (Math.max(...times) - Math.min(...times)) / (24 * 60 * 60 * 1000)
+      ? (times.reduce((max, time) => Math.max(max, time), -Infinity)
+        - times.reduce((min, time) => Math.min(min, time), Infinity)) / (24 * 60 * 60 * 1000)
       : 0;
 
     const dates = projectionBucketRows.map(r => String(r.bucket_start));
@@ -980,7 +986,7 @@ export default function DataTypeClient({ type }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {records.map(r => {
+                {visibleRecords.map(r => {
                   const id = r.id as string;
                   const isPending = id === pendingDeleteId;
                   return (
@@ -1032,6 +1038,27 @@ export default function DataTypeClient({ type }: Props) {
                 })}
               </tbody>
             </table>
+          )}
+          {!loading && recordPageCount > 1 && (
+            <div className="flex items-center justify-between gap-3 p-3 border-t border-border">
+              <TapTarget
+                disabled={currentRecordPage === 0 || deleting}
+                onClick={() => { setRecordPage(currentRecordPage - 1); setPendingDeleteId(null); setDeleteError(null); }}
+                className="text-sm px-3 py-2 rounded bg-border disabled:opacity-50"
+              >
+                {t('dataTable.previousPage')}
+              </TapTarget>
+              <span role="status" className="text-xs text-text-muted">
+                {interpolate(t('dataTable.pageIndicator'), { page: currentRecordPage + 1, pages: recordPageCount })}
+              </span>
+              <TapTarget
+                disabled={currentRecordPage === recordPageCount - 1 || deleting}
+                onClick={() => { setRecordPage(currentRecordPage + 1); setPendingDeleteId(null); setDeleteError(null); }}
+                className="text-sm px-3 py-2 rounded bg-border disabled:opacity-50"
+              >
+                {t('dataTable.nextPage')}
+              </TapTarget>
+            </div>
           )}
           {!loading && records.length === 0 && (
             <p className="p-6 text-text-muted text-center text-sm">{t('dataTable.empty')}</p>

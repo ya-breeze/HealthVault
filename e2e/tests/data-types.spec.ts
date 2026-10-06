@@ -398,6 +398,53 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
       .toHaveAttribute('aria-pressed', 'false');
   }
 
+  test('dense record tables page locally, reset on zoom, and clamp after deletion', async ({ page }) => {
+    const now = new Date().toISOString();
+    let records = Array.from({ length: 101 }, (_, index) => ({
+      id: `paged-heart-${index}`, time: now, bpm: 60 + index % 20,
+    }));
+    let rawRequests = 0;
+    await page.route('**/api/data/heart_rate**', route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === 'DELETE') {
+        const id = url.pathname.split('/').pop();
+        records = records.filter(record => record.id !== id);
+        return route.fulfill({ status: 204, body: '' });
+      }
+      if (url.searchParams.has('bucket')) {
+        return route.fulfill({ json: [{ bucket_start: now, count: 101, avg: 70, min: 60, max: 79 }] });
+      }
+      rawRequests += 1;
+      return route.fulfill({ json: records });
+    });
+    await page.goto('/data/heart_rate/');
+    const rows = page.locator('table tbody tr');
+    const next = page.getByRole('button', { name: 'Next records', exact: true });
+    const previous = page.getByRole('button', { name: 'Previous records', exact: true });
+    await expect(rows).toHaveCount(50);
+    await expect(page.getByRole('status')).toHaveText('Page 1 of 3');
+    const requestsBeforePaging = rawRequests;
+    await next.click();
+    await expect(page.getByRole('status')).toHaveText('Page 2 of 3');
+    await expect(rows).toHaveCount(50);
+    await next.click();
+    await expect(rows).toHaveCount(1);
+    await expect(page.getByRole('status')).toHaveText('Page 3 of 3');
+    expect(rawRequests).toBe(requestsBeforePaging);
+    await rows.getByRole('button', { name: 'Delete record', exact: true }).click();
+    await rows.getByRole('button', { name: 'Confirm', exact: true }).click();
+    await expect(page.getByRole('status')).toHaveText('Page 2 of 2');
+    await expect(rows).toHaveCount(50);
+    await previous.click();
+    await expect(page.getByRole('status')).toHaveText('Page 1 of 2');
+    await next.click();
+    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await expect(page.getByRole('status')).toHaveText('Page 1 of 2');
+    await expect(rows).toHaveCount(50);
+    await expect(previous).toBeDisabled();
+  });
+
   test('weight Year-zoom Y-axis does not zero-anchor', async ({ page }) => {
     await page.goto('/data/weight/');
     await page.getByRole('button', { name: 'Year', exact: true }).click();
@@ -413,7 +460,21 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
 
   test('heart_rate Year-zoom Y-axis does not zero-anchor', async ({ page }) => {
     await page.goto('/data/heart_rate/');
-    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await selectAnotherZoomFirst(page);
+    const [chartResponse] = await Promise.all([
+      page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === '/api/data/heart_rate'
+          && url.searchParams.get('bucket') === 'month';
+      }),
+      page.getByRole('button', { name: 'Year', exact: true }).click(),
+    ]);
+    expect(chartResponse.ok()).toBeTruthy();
+    await chartResponse.finished();
+    await expect(page.getByRole('button', { name: 'Year', exact: true }))
+      .toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('Loading…', { exact: true })).not.toBeVisible();
+    await expect(page.locator('.recharts-yAxis-tick-labels text').first()).toBeVisible();
     await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
     const ticks = await yAxisTickTexts(page);
     expect(ticks.length).toBeGreaterThan(0);

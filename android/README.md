@@ -104,3 +104,23 @@ real login call.
 Native camera capture, any write path, and native Google Sign-In are all deferred, matching how
 idea #12 originally scoped them. Every write still goes through the web UI — **Log food** opens
 `<server>/food/upload/` in a Chrome Custom Tab rather than reimplementing the upload flow natively.
+
+
+## Green home-screen nutrition widget (Idea 764)
+
+The resizable home-screen widget follows the phone's light/dark theme with a fixed green palette.
+Calories stay centered and large; the calorie target remains in the accessibility description,
+without a second visible target row. Square sizes use compact protein/fat/carbs/fiber rows;
+wide sizes use two pairs and retain all four rails. Tiny sizes prioritize calories, and larger
+system fonts reduce supporting content instead of clipping it.
+
+A full-day target overrun turns its amount and rail red; equal to target remains green.
+Fiber is summed from confirmed meals for the current local day. The fiber target is not configured,
+so its rail stays neutral. An older server/cache without fiber shows an unknown amount (`—`),
+not zero. The separate FlexWindow design and pacing behavior are unchanged.
+
+The debug APK, shared-container build, and WIP API checks do not prove launcher rendering.
+Check the real phone at small, 2x2, wide, and intermediate sizes, in both phone themes and with
+larger text. Verify stale data, signed-out state, food-entry return, and refresh as well.
+A debug APK uses a different signing key from a Play-installed build; use signed Internal Testing
+for an update to that installation. Do not uninstall the existing app just to bypass signing.
