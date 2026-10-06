@@ -469,6 +469,9 @@ const en = {
   // another display unit (distance and sleep), but the table does not.
   'dataTable.actions': 'Actions',
   'dataTable.loading': 'Loading…',
+  'dataTable.previousPage': 'Previous records',
+  'dataTable.nextPage': 'Next records',
+  'dataTable.pageIndicator': 'Page {page} of {pages}',
   'dataTable.empty': 'No data in this range.',
   'dataTable.confirmDelete': 'Confirm',
   'dataTable.cancelDelete': 'Cancel',

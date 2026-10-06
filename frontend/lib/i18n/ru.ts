@@ -329,6 +329,9 @@ const ru: Dictionary = {
 
   'dataTable.actions': 'Действия',
   'dataTable.loading': 'Загрузка…',
+  'dataTable.previousPage': 'Предыдущие записи',
+  'dataTable.nextPage': 'Следующие записи',
+  'dataTable.pageIndicator': 'Страница {page} из {pages}',
   'dataTable.empty': 'За этот период данных нет.',
   'dataTable.confirmDelete': 'Удалить',
   'dataTable.cancelDelete': 'Отмена',
