@@ -413,7 +413,21 @@ test.describe('Point-in-time Y-axis domain and weight trend line', () => {
 
   test('heart_rate Year-zoom Y-axis does not zero-anchor', async ({ page }) => {
     await page.goto('/data/heart_rate/');
-    await page.getByRole('button', { name: 'Year', exact: true }).click();
+    await selectAnotherZoomFirst(page);
+    const [chartResponse] = await Promise.all([
+      page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === '/api/data/heart_rate'
+          && url.searchParams.get('bucket') === 'month';
+      }),
+      page.getByRole('button', { name: 'Year', exact: true }).click(),
+    ]);
+    expect(chartResponse.ok()).toBeTruthy();
+    await chartResponse.finished();
+    await expect(page.getByRole('button', { name: 'Year', exact: true }))
+      .toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('Loading…', { exact: true })).not.toBeVisible();
+    await expect(page.locator('.recharts-yAxis-tick-labels text').first()).toBeVisible();
     await expect(page.getByText(/something went wrong|error/i)).not.toBeVisible();
     const ticks = await yAxisTickTexts(page);
     expect(ticks.length).toBeGreaterThan(0);
