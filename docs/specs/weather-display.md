@@ -25,4 +25,4 @@ Use the authenticated weather-history API, without changing collection or retent
 - [x] Keep details behind a click, use English/Russian strings and preserve dashboard customization behavior.
 - [x] Add an Android Today weather row, session-safe reads and a timezone-aware link to web day details; collection settings stay separate.
 - [x] Test latest-hour selection, timezone/DST bounds, gaps, error states and account/auth behavior at existing API/helper/UI seams.
-- [ ] Validate mobile layouts, native builds and a deployed WIP interaction; complete the Review Gate and restore WIP before handoff.
+- [x] Validate mobile layouts, native builds and a deployed WIP interaction; complete the Review Gate and restore WIP before handoff.
