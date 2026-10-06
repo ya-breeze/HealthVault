@@ -50,6 +50,7 @@ func Open(l *slog.Logger, dbPath string) (*gorm.DB, error) {
 		&authdb.BlacklistedToken{},
 		&WebhookPayload{},
 		&UserSettings{},
+		&WeatherLocation{}, &WeatherCoverage{}, &WeatherHour{},
 		&Steps{}, &Distance{}, &ActiveCalories{}, &TotalCalories{}, &Hydration{},
 		&HeartRate{}, &HeartRateVariability{}, &Weight{}, &Height{}, &WeightGoal{},
 		&BloodGlucose{}, &OxygenSaturation{}, &BodyTemperature{},

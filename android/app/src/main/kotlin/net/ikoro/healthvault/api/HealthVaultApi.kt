@@ -6,6 +6,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.ikoro.healthvault.store.SecureStore
+import net.ikoro.healthvault.weather.WeatherObservation
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,6 +23,9 @@ private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
  * outside the library in OkHttp 5.
  */
 private val EMPTY_BODY = ByteArray(0).toRequestBody()
+
+@Serializable
+private data class WeatherAccepted(val id: String, val status: String)
 
 @Serializable
 private data class LoginRequest(val username: String, val password: String)
@@ -112,6 +116,40 @@ class HealthVaultApi(
         reLogin.failureOrNull()?.let { return it }
 
         return execute(request)
+    }
+
+    /** Uses the same cookie rotation and credential recovery as summaryToday. */
+    fun uploadWeather(observation: WeatherObservation, consent: String, generation: Long,
+                      allowed: () -> Boolean): ApiResult<Unit> = cookieJar.withSessionGeneration(generation) {
+        fun active() = secureStore.weatherActive(consent, generation) && allowed()
+        if (!active()) return@withSessionGeneration ApiResult.NetworkFailure(IOException("Weather collection stopped"))
+        val server = secureStore.serverUrl ?: return@withSessionGeneration ApiResult.Unauthenticated
+        val username = secureStore.username
+        val password = secureStore.password
+        val request = Request.Builder().url(server.trimEnd('/') + "/api/weather/locations")
+            .post(json.encodeToString(observation).toRequestBody(JSON_MEDIA_TYPE)).build()
+        val weatherClient = client.newBuilder().callTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                if (!active()) throw IOException("Weather collection stopped")
+                chain.proceed(chain.request())
+            }.build()
+        fun send(): ApiResult<Unit> = runCatching { weatherClient.newCall(request).execute() }.fold(
+            onSuccess = { response -> response.use {
+                classify(it) { body ->
+                    check(it.code == 202)
+                    val receipt = json.decodeFromString<WeatherAccepted>(body)
+                    check(receipt.status == "accepted" && receipt.id == observation.id)
+                    Unit
+                }
+            } }, onFailure = { ApiResult.NetworkFailure(it) },
+        )
+        val result = send()
+        if (result !is ApiResult.Unauthenticated || !active() || username == null || password == null) {
+            return@withSessionGeneration result
+        }
+        val relogin = login(server, username, password)
+        relogin.failureOrNull()?.let { return@withSessionGeneration it }
+        send()
     }
 
     private fun execute(request: Request): ApiResult<TodaySummary> =

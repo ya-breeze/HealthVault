@@ -98,4 +98,14 @@
     <string name="target_reason_insufficient_activity_data">Not enough activity data yet for a daily target.</string>
     <string name="target_reason_unknown">No daily target available right now.</string>
     <string name="widget_grams_unit">g</string>
+    <string name="weather_title">Weather history</string>
+    <string name="weather_explanation">Optionally collect approximate location to save weather for later comparison with wellbeing. Coordinates are rounded to about 11 km before storage or upload. Android may delay hourly collection. Travel between samples can be missed; uncertain periods have no weather.</string>
+    <string name="weather_enabled">Background collection enabled.</string>
+    <string name="weather_disabled">Background collection disabled.</string>
+    <string name="weather_disable">Disable and clear pending uploads</string>
+    <string name="weather_allow_location">Allow approximate location</string>
+    <string name="weather_background_explanation">Next, allow location all the time in Android settings. Keep approximate location selected. Return here to enable background collection.</string>
+    <string name="weather_enable_background">Enable background collection</string>
+    <string name="weather_open_settings">Open location settings</string>
+    <string name="weather_permission_missing">Location permission is missing. Collection remains off.</string>
 </resources>
