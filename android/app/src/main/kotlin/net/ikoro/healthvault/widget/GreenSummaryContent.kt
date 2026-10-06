@@ -62,9 +62,15 @@ internal fun GreenSummaryBody(
     val metrics = widgetMetrics(summary)
     val visible = if (sizing.primaryOnly) metrics.filter { it.metric in setOf(NutritionMetric.PROTEIN, NutritionMetric.FIBER) } else metrics
     Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
-        Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = GlanceModifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalAlignment = if (sizing.showNutrients) Alignment.Top else Alignment.CenterVertically,
+        ) {
             val heroModifier = if (sizing.grid) {
-                GlanceModifier.fillMaxWidth().height(48.dp).padding(horizontal = 48.dp)
+                val heroHeight = (sizing.heroSp * resourceContext.resources.configuration.fontScale * 1.25f + 4f)
+                    .coerceIn(30f, 48f)
+                GlanceModifier.fillMaxWidth().height(heroHeight.dp).padding(horizontal = 48.dp)
             } else GlanceModifier.fillMaxWidth()
             Box(modifier = heroModifier, contentAlignment = Alignment.Center) {
                 if (LocalSize.current.width < 110.dp) {
@@ -85,10 +91,10 @@ internal fun GreenSummaryBody(
                 }
             }
 
-            Spacer(modifier = GlanceModifier.height(3.dp))
-            MetricRail(resourceContext, calories, sizing.railDp)
+            Spacer(modifier = GlanceModifier.height(sizing.heroGapDp.dp))
+            MetricRail(resourceContext, calories, sizing.calorieRailDp)
             if (sizing.showNutrients) {
-                Spacer(modifier = GlanceModifier.height(3.dp))
+                Spacer(modifier = GlanceModifier.height(sizing.heroGapDp.dp))
                 if (sizing.grid) {
                     // Full-width widgets use two pairs with a rail for each metric.
                     val ordered = if (sizing.primaryOnly) visible else listOf(metrics[0], metrics[3], metrics[1], metrics[2])
@@ -112,14 +118,14 @@ internal fun GreenSummaryBody(
                         ) {
                             MetricLabel(resourceContext, metric, sizing.labelSp)
                             Spacer(modifier = GlanceModifier.width(5.dp))
-                            MetricRail(resourceContext, metric, sizing.railDp, modifier = GlanceModifier.defaultWeight())
-                            Spacer(modifier = GlanceModifier.width(6.dp))
+                            if (metric.metric != NutritionMetric.FIBER) {
+                                MetricRail(resourceContext, metric, sizing.railDp, modifier = GlanceModifier.defaultWeight())
+                                Spacer(modifier = GlanceModifier.width(6.dp))
+                            }
                             MetricAmount(resourceContext, metric, sizing.valueSp)
                         }
                     }
                 }
-            } else {
-                Spacer(modifier = GlanceModifier.defaultWeight())
             }
         }
         if (layout == SummaryWidgetLayout.WIDE) {
@@ -194,11 +200,22 @@ private fun MetricLabel(context: Context, metric: WidgetMetric, size: Int) {
 
 @Composable
 private fun MetricAmount(context: Context, metric: WidgetMetric, size: Int) {
-    WidgetText(
-        text = metric.consumed?.let { context.getString(R.string.widget_grams_value, it.toInt()) } ?: "—",
-        color = if (metric.exceeded) GlanceTheme.colors.error else GlanceTheme.colors.onSurface,
-        fontSize = size.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-    )
+    Row(verticalAlignment = Alignment.Bottom) {
+        WidgetText(
+            text = metric.consumed?.toInt()?.toString() ?: "—",
+            color = if (metric.exceeded) GlanceTheme.colors.error else GlanceTheme.colors.onSurface,
+            fontSize = size.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        )
+        if (metric.consumed != null) {
+            Spacer(modifier = GlanceModifier.width(2.dp))
+            WidgetText(
+                text = context.getString(R.string.widget_grams_unit),
+                color = if (metric.exceeded) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
+                fontSize = (size / 2).coerceAtLeast(7).sp, maxLines = 1,
+                modifier = GlanceModifier.padding(bottom = 2.dp),
+            )
+        }
+    }
 }
 
 @Composable

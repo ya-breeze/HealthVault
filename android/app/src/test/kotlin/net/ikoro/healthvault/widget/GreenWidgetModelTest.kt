@@ -53,4 +53,18 @@ class GreenWidgetModelTest {
         assertTrue(greenWidgetSizing(DpSize(180.dp, 180.dp), 1.5f).primaryOnly)
         assertFalse(greenWidgetSizing(DpSize(110.dp, 110.dp), 2f).showNutrients)
     }
+
+    @Test
+    fun launcherSizesKeepCalorieEmphasisAndBudgetInsetsForShortSurfaces() {
+        for (size in listOf(DpSize(48.dp, 48.dp), DpSize(180.dp, 180.dp), DpSize(300.dp, 110.dp))) {
+            val sizing = greenWidgetSizing(size, 1f)
+            assertTrue(sizing.calorieRailDp > sizing.railDp)
+            assertTrue(sizing.paddingDp * 2 + sizing.calorieRailDp + sizing.heroGapDp < size.height.value)
+        }
+        val square = greenWidgetSizing(DpSize(180.dp, 180.dp), 1f)
+        val short = greenWidgetSizing(DpSize(300.dp, 110.dp), 1f)
+        assertTrue(square.paddingDp > short.paddingDp)
+        assertTrue(square.paddingDp >= 10)
+        assertTrue(short.showNutrients)
+    }
 }

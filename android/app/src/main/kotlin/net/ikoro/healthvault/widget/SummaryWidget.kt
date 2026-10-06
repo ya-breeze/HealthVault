@@ -265,7 +265,8 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
 
     val cardModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         backgroundModifier
-            .background(GlanceTheme.colors.widgetBackground)
+            // widgetBackground derives from secondaryContainer, not our fixed green background.
+            .background(GlanceTheme.colors.background)
             .cornerRadius(R.dimen.widget_corner_radius)
     } else {
         backgroundModifier.background(ImageProvider(R.drawable.green_widget_background))
@@ -285,14 +286,8 @@ private fun WidgetContent(state: WidgetState, resourceContext: Context) {
             accessibleCardModifier.clickable(actionStartActivity(Intent(resourceContext, MainActivity::class.java)))
     }
 
-    val contentPadding = when (layout) {
-        SummaryWidgetLayout.MICRO -> if (useMinimalMicroContent) 1.dp else 3.dp
-        SummaryWidgetLayout.SHORT -> 4.dp
-        SummaryWidgetLayout.WIDE_SHORT -> 5.dp
-        SummaryWidgetLayout.TALL -> 4.dp
-        SummaryWidgetLayout.COMPACT -> 6.dp
-        SummaryWidgetLayout.WIDE -> 6.dp
-    }
+    val contentPadding = if (layout == SummaryWidgetLayout.MICRO && useMinimalMicroContent) 1.dp
+        else greenWidgetSizing(size, fontScale).paddingDp.dp
 
     Box(modifier = interactiveCardModifier.padding(contentPadding)) {
         when (state) {

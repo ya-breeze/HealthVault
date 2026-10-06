@@ -29,6 +29,9 @@ internal data class GreenWidgetSizing(
     val valueSp: Int,
     val labelSp: Int,
     val railDp: Int,
+    val calorieRailDp: Int,
+    val paddingDp: Int,
+    val heroGapDp: Int,
     val showNutrients: Boolean,
     val grid: Boolean,
     val primaryOnly: Boolean,
@@ -43,7 +46,9 @@ internal fun greenWidgetSizing(size: DpSize, fontScale: Float): GreenWidgetSizin
     val supportsRows = width >= 110f && height >= 110f
     val primaryOnly = supportsRows && scale > 1.15f && height / scale < 145f
     val showNutrients = supportsRows && height / scale >= 95f
-    val contentHeight = (height - 12f).coerceAtLeast(0f)
+    val padding = if (supportsRows) (minOf(width, height) * .068f).toInt().coerceIn(7, 17)
+        else (minOf(width, height) * .06f).toInt().coerceIn(2, 6)
+    val contentHeight = (height - padding * 2).coerceAtLeast(0f)
     val heroWidth = if (grid) (width - 108f).coerceAtLeast(48f) else width
     val hero = when {
         supportsRows -> (contentHeight * .23f / scale).toInt().coerceIn(20, 48)
@@ -55,6 +60,9 @@ internal fun greenWidgetSizing(size: DpSize, fontScale: Float): GreenWidgetSizin
         valueSp = value,
         labelSp = (value * .7f).toInt().coerceAtLeast(9),
         railDp = (height * .04f).toInt().coerceIn(4, 10),
+        calorieRailDp = (height * .055f).toInt().coerceIn(5, 14),
+        paddingDp = padding,
+        heroGapDp = (height * .025f).toInt().coerceIn(3, 8),
         showNutrients = showNutrients,
         grid = grid,
         primaryOnly = primaryOnly,

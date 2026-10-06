@@ -93,4 +93,5 @@
     <string name="target_reason_missing_goal_weight">Укажите целевой вес, чтобы увидеть дневную норму.</string>
     <string name="target_reason_insufficient_activity_data">Недостаточно данных об активности для нормы.</string>
     <string name="target_reason_unknown">Дневная норма сейчас недоступна.</string>
+    <string name="widget_grams_unit">г</string>
 </resources>
