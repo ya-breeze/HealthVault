@@ -384,6 +384,12 @@ test.describe('Chart touch readout — mobile', () => {
     // dispatch call returns — an assertion that retries (not a one-shot
     // textContent() read) is what actually waits for it.
     await expect(label, 'label should change as the finger moves across the plot').not.toHaveText(startLabel ?? '');
+    // The middle move can satisfy the change assertion before the final
+    // requestAnimationFrame runs. Wait for the rightmost touched bucket.
+    const lastLabel = new Date(rows[rows.length - 1].bucket_start).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', timeZone: 'UTC',
+    });
+    await expect(label).toHaveText(lastLabel);
     const movedLabel = await label.textContent();
 
     // Sticky after lift: the label from the last touchmove stays on screen
