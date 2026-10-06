@@ -145,15 +145,25 @@ test.describe('saved weather display', () => {
     await expect(day).toContainText(/timezone from link/i);
     await expect(page.getByTestId('weather-date')).toHaveValue(date);
     const nextDate = recentDate(3);
-    const countBefore = requests.length;
     await page.getByTestId('weather-date').fill(nextDate);
-    await expect.poll(() => requests.length).toBeGreaterThan(countBefore);
-    const latest = requests.at(-1)!;
+    await expect(page).toHaveURL(url => url.searchParams.get('date') === nextDate);
+    await expect(page.getByTestId('weather-date')).toHaveValue(nextDate);
+    const localDay = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Prague', year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+    const requestedNextDay = (url: URL) => {
+      const from = Date.parse(url.searchParams.get('from') ?? '');
+      return Number.isFinite(from) && localDay.format(new Date(from)) === nextDate;
+    };
+    // Settings completion can reissue the old day's query before router
+    // navigation finishes. Wait for the selected day's request itself.
+    await expect.poll(() => requests.some(requestedNextDay)).toBe(true);
+    const latest = [...requests].reverse().find(requestedNextDay)!;
     const from = Date.parse(latest.searchParams.get('from')!);
     const to = Date.parse(latest.searchParams.get('to')!);
     expect(Number.isFinite(from)).toBe(true);
     expect(to - from).toBe(24 * 3_600_000);
-    expect(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Prague', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(from))).toBe(nextDate);
+    expect(localDay.format(new Date(from))).toBe(nextDate);
   });
 
   test('weather remains part of dashboard hide/show customization', async ({ page }) => {

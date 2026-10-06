@@ -20,11 +20,12 @@ export default function WeatherDayClient() {
   const [accountZone,setAccountZone]=useState<string|null>(null);const [settingsError,setSettingsError]=useState(false);
   const [history,setHistory]=useState<WeatherHistory|null>(null);const [error,setError]=useState(false);const [loading,setLoading]=useState(true);const [retry,setRetry]=useState(0);
   const override=params.get('timezone');const zone=weatherTimezone(override||accountZone);const rawDate=params.get('date');
+  const ready=accountZone!==null||!!override;
   const date=rawDate||loggedDayKey(new Date(),zone);const valid=validWeatherDate(date);const today=loggedDayKey(new Date(),zone);
   useEffect(()=>{let cancelled=false;setSettingsError(false);api.getSettings().then(s=>{if(!cancelled)setAccountZone(weatherTimezone(s.timezone));}).catch(()=>{if(!cancelled)setSettingsError(true);});return()=>{cancelled=true;};},[retry]);
   useEffect(()=>{
     let cancelled=false;setHistory(null);setError(false);setLoading(true);
-    if(accountZone===null&&!override)return()=>{cancelled=true;};
+    if(!ready)return()=>{cancelled=true;};
     if(!valid){setLoading(false);return()=>{cancelled=true;};}
     try {
       const range=weatherQueryBounds(date,zone,new Date());
@@ -32,7 +33,7 @@ export default function WeatherDayClient() {
       api.weatherHistory(range.from,range.to).then(validateWeatherHistory).then(h=>{if(!cancelled){setHistory(h);setLoading(false);}}).catch(()=>{if(!cancelled){setError(true);setLoading(false);}});
     } catch {setError(true);setLoading(false);}
     return()=>{cancelled=true;};
-  },[date,zone,valid,accountZone,override,retry]);
+  },[date,zone,valid,ready,retry]);
   function go(next:string){const q=new URLSearchParams({date:next});if(override)q.set('timezone',override);router.push(`/weather/day/?${q}`);}
   const range=valid?(()=>{try{return weatherQueryBounds(date,zone,new Date());}catch{return null;}})():null;
   const data=history&&range?dayWeather(history,range.day.from,range.day.to):null;
