@@ -104,4 +104,10 @@
     <string name="weather_enable_background">Включить фоновый сбор</string>
     <string name="weather_open_settings">Открыть настройки местоположения</string>
     <string name="weather_permission_missing">Нет разрешения на местоположение. Сбор выключен.</string>
+    <string name="settings_title">Настройки</string>
+    <string name="settings_back">Назад</string>
+    <string name="weather_more">Подробнее</string>
+    <string name="weather_less">Свернуть</string>
+    <string name="weather_consent_summary">Примерное местоположение в фоне нужно для сохранения местной погоды.</string>
+    <string name="weather_disable_details">При выключении удаляются данные, ожидающие отправки. Уже сохранённая на сервере погода остаётся.</string>
 </resources>

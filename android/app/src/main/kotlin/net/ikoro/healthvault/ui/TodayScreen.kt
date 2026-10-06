@@ -99,6 +99,7 @@ fun TodayScreen(
     api: HealthVaultApi,
     secureStore: SecureStore,
     onSignedOut: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var snapshot by remember { mutableStateOf(secureStore.loadSnapshot()) }
     var refreshing by remember { mutableStateOf(false) }
@@ -221,7 +222,7 @@ fun TodayScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(text = stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall)
-                    TextButton(onClick = onSignedOut) { Text(stringResource(R.string.today_sign_out)) }
+                    TextButton(onClick = onOpenSettings) { Text(stringResource(R.string.settings_title)) }
                 }
 
                 // A failed refresh names its cause; a snapshot that is merely
@@ -237,8 +238,6 @@ fun TodayScreen(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-
-                WeatherConsent(secureStore)
 
                 if (current != null) {
                     val summary = current.summary

@@ -108,4 +108,10 @@
     <string name="weather_enable_background">Enable background collection</string>
     <string name="weather_open_settings">Open location settings</string>
     <string name="weather_permission_missing">Location permission is missing. Collection remains off.</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
+    <string name="weather_more">More details</string>
+    <string name="weather_less">Hide details</string>
+    <string name="weather_consent_summary">Use approximate location in the background to save local weather.</string>
+    <string name="weather_disable_details">Turning collection off also deletes observations awaiting upload. Weather already saved on the server is kept.</string>
 </resources>

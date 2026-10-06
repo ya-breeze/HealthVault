@@ -127,7 +127,9 @@ for an update to that installation. Do not uninstall the existing app just to by
 
 ## Optional background weather history
 
-Enable **Weather history** on the Today screen. Grant approximate foreground location first.
+Open **Settings** from the Today header and enable **Weather history**. Grant approximate foreground location first.
+The explanation stays collapsed under **More details**; the short disclosure stays visible before enabling.
+Use the switch to disable collection. **Sign out** is also on the Settings screen.
 On Android 10, grant background access in the separate system dialog. On Android 11+, open
 app settings, allow location **all the time**, keep approximate location selected, then return.
 The feature defaults off and needs no home-screen widget. An hourly WorkManager job can run
