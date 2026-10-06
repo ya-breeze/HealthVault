@@ -437,7 +437,7 @@ export default function DataTypeClient({ type }: Props) {
 
   const stats = {
     avg: mean(primaryAvgSeries),
-    max: primaryMaxSeries.length ? Math.max(...primaryMaxSeries) : 0,
+    max: primaryMaxSeries.length ? primaryMaxSeries.reduce((max, value) => Math.max(max, value), -Infinity) : 0,
     total: primaryAvgSeries.reduce((a, b) => a + b, 0),
   };
   const showTotal = !isBloodPressure && meta?.family === 'cumulative';
@@ -541,7 +541,8 @@ export default function DataTypeClient({ type }: Props) {
     const times = allTimeWeightRecords.map(r => new Date(String(r.time)).getTime());
     const totalRecords = allTimeWeightRecords.length;
     const lifetimeSpanDays = totalRecords > 1
-      ? (Math.max(...times) - Math.min(...times)) / (24 * 60 * 60 * 1000)
+      ? (times.reduce((max, time) => Math.max(max, time), -Infinity)
+        - times.reduce((min, time) => Math.min(min, time), Infinity)) / (24 * 60 * 60 * 1000)
       : 0;
 
     const dates = projectionBucketRows.map(r => String(r.bucket_start));

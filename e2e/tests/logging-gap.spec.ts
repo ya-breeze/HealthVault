@@ -650,9 +650,12 @@ test.describe('Logging Gap Card', () => {
       const { windowStart, windowEnd } = loggingGapWindow();
       await mockLoggingGapApis(page, clearGapFixture(), { liveDailyTotals: true });
 
-      const responsePromise = page.waitForResponse(r => r.url().includes('/api/food/daily-totals'), {
-        timeout: 20_000,
-      });
+      const responsePromise = page.waitForResponse(r => {
+        const url = new URL(r.url());
+        return url.pathname === '/api/food/daily-totals'
+          && url.searchParams.get('from') === windowStart
+          && url.searchParams.get('to') === windowEnd;
+      }, { timeout: 20_000 });
       await page.goto('/');
       const response = await responsePromise;
 
