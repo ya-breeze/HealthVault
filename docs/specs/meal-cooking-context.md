@@ -1,12 +1,12 @@
-# Homemade and low-added-salt context during food entry
+# Low-added-salt context during food entry
 
 ## Why
 
-The owner mostly cooks at home with little added salt. Photo recognition cannot see added salt and may assign a normally salted recipe to that food. The owner asks for checkboxes during entry, with homemade and little added salt selected by default, and explicitly marks restaurant or prepared purchased food when entering it.
+The owner reports sodium overestimation despite little added salt. Real-record replay showed that “homemade” has no stable meaning for the model. The owner now asks for only a little-added-salt checkbox.
 
 ## How
 
-Add a shared two-checkbox block to photo and description entry. Both start selected for each new meal. Turning off homemade clears and disables low added salt; turning homemade on restores the default. Submit the explicit cooking context separately from the user's hint or description, and persist it on that meal. Existing meals and API callers that omit context retain unknown preparation context. Feed persisted context into photo recognition, described-meal recognition, retry, clarification, and normal photo reanalysis without changing the provider interface. Low added salt describes cooking only: intrinsic sodium, processed ingredients, sauces, and label values remain relevant. Explicit quantities or corrections override the generic context in model instructions. Initial recognition and normal photo reanalysis can update nutrient estimates. Preserve the existing clarification safeguard that carries forward the original nutrient profile for the same item; clarification alone does not revise that profile. Use normal photo reanalysis to apply a nutrient correction. Keep original description and hint length limits. Structured manual nutrient entry keeps its explicit values. Do not recalculate old meals, infer zero sodium, or change healthiness thresholds.
+Show one shared “Little added salt” checkbox on photo and description entry, selected by default for each new meal. Remove homemade from UI, API types, persisted context, and model guidance. Submit the optional low_added_salt boolean separately from the original hint or description. Omission keeps unknown context; false means added salt is unspecified, not high. True tells the model little salt was added during preparation without assuming origin, a measured amount, or zero sodium. Preserve intrinsic and processed-ingredient sodium and explicit label/quantity precedence. Keep context through recognition, retry, clarification, and normal photo reanalysis. Preserve the existing clarification safeguard that carries forward the original nutrient profile for the same item; clarification alone does not revise it. Structured manual nutrients and original text limits remain unchanged. Do not recalculate old meals or change thresholds. Qualitative guidance cannot guarantee accurate sodium; real-record replay remains a separate diagnostic.
 
 ## Validation Commands
 
@@ -14,20 +14,18 @@ Add a shared two-checkbox block to photo and description entry. Both start selec
 - `make test-frontend`
 - `make lint`
 - `make test-e2e E2E_ARGS='tests/food.spec.ts --retries=0'`
-- Bounded synthetic WIP recognition with homemade/low-added-salt context and explicit sodium on a label; inspect persisted flags, estimates, and subsequent retry/clarification behavior separately from mocked tests.
+- Bounded synthetic WIP recognition with low-added-salt context and explicit sodium on a label; inspect persisted flags, estimates, and subsequent retry/clarification behavior separately from mocked tests.
 
-### Task 1: Persist and apply optional meal preparation context
-- [x] Add optional typed cooking context to meals and photo/description requests, with validation for inconsistent flags and malformed upload JSON.
-- [x] Preserve context across recognition, retry, clarification, and normal reanalysis while leaving omitted context unknown.
-- [x] Add meaningful storage and handler tests for forwarding, persistence, validation, and lifecycle reuse.
+### Task 1: Persist and apply optional meal salt context
+- [ ] Add optional typed cooking context to meals and photo/description requests, with validation for missing or malformed salt flags.
+- [ ] Preserve context across recognition, retry, clarification, and normal reanalysis while leaving omitted context unknown.
+- [ ] Add meaningful storage and handler tests for forwarding, persistence, validation, and lifecycle reuse.
 
-### Task 2: Show and submit preparation checkboxes
-- [x] Add shared localized controls to photo and text entry with the agreed defaults and dependency behavior.
-- [x] Extend API types and submissions without altering user text or structured manual values.
-- [x] Cover photo/text defaults, non-homemade submissions, and low-salt changes in browser tests.
+### Task 2: Show and submit salt checkbox
+- [ ] Add shared localized controls to photo and text entry with the selected default and independent toggle.
+- [ ] Extend API types and submissions without altering user text or structured manual values.
+- [ ] Cover photo/text defaults and checked/unchecked salt submissions in browser tests.
 
 ### Task 3: Validate and review
-- [x] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
-- [x] Mark completed
-
-Validation evidence: backend tests and 291 frontend tests passed. Go vet, E2E typecheck, frontend TypeScript, and diff whitespace checks passed. Android lint skipped because the SDK is unavailable; no Android files changed. Native correctness, standards, and spec/tests reviews found no blocking findings under the stated scope. Claude peer was unavailable after one HTTP 429 weekly-limit attempt. WIP deployed reviewed implementation 9c2c620. The full food browser suite passed 61 tests with one existing provider-dependent synthetic-image test skipped. All eight new preparation tests passed. Both entry paths render Russian controls at 390px without horizontal overflow. Real-provider described-meal probes persisted flags, estimated 0.191 g sodium for a low-salt homemade meal, retained 1.5 g explicitly supplied sodium for a 100 g labelled example, and carried flags through an actual clarification round. The clarification round also demonstrates the existing estimate/reference-resolution limitation described in How. All synthetic probe meals were deleted.
+- [ ] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
+- [ ] Mark completed
