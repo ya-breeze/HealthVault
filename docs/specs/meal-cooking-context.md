@@ -31,8 +31,8 @@ Stage camera captures and picked files in a local preview before any upload. Sho
 - [x] Cover photo/text defaults and checked/unchecked salt submissions in browser tests.
 
 ### Task 3: Stage a photo before recognition
-- [ ] Add preview, post-photo hint editing, replacement/removal, and explicit submission for camera and file paths.
-- [ ] Preserve photo and hint after failures, release object URLs, and cover staged flow, no premature request, submitted hints, and retry in browser tests.
+- [x] Add preview, post-photo hint editing, replacement/removal, and explicit submission for camera and file paths.
+- [x] Preserve photo and hint after failures, release object URLs, and cover staged flow, no premature request, submitted hints, and retry in browser tests.
 
 ### Task 4: Validate and review
 - [ ] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
