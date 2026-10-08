@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import CameraCapture from '@/components/food/CameraCapture';
+import MealCookingContextInputs, { defaultMealCookingContext } from '@/components/food/MealCookingContextInputs';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
 import { MAX_HINT_LENGTH, normalizedUnicodeLength, unicodeLength } from '@/lib/foodGuidance';
@@ -16,6 +17,7 @@ export default function FoodUploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [showHint, setShowHint] = useState(false);
   const [hint, setHint] = useState('');
+  const [cookingContext, setCookingContext] = useState(defaultMealCookingContext);
 
   const upload = async (file: File) => {
     const trimmedHint = hint.trim();
@@ -26,7 +28,7 @@ export default function FoodUploadPage() {
     setUploading(true);
     setError(null);
     try {
-      const meal = await api.uploadMeal(file, trimmedHint);
+      const meal = await api.uploadMeal(file, trimmedHint, cookingContext);
       router.push(`/food/review/?meal=${meal.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
@@ -55,6 +57,7 @@ export default function FoodUploadPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            <MealCookingContextInputs value={cookingContext} onChange={setCookingContext} />
             {showHint ? (
               <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
                 <label htmlFor="meal-hint" className="block text-sm font-medium text-gray-900 dark:text-white">

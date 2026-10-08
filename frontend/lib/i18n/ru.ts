@@ -501,6 +501,11 @@ const ru: Dictionary = {
   "weather.incomplete_hour": "Недостаточно данных для полного часа",
   "weather.unknownGap": "Погода недоступна",
   "weather.retry": "Повторить",
+  'cookingContext.title': 'Приготовление',
+  'cookingContext.homemade': 'Домашняя еда',
+  'cookingContext.lowAddedSalt': 'Мало добавленной соли',
+  'cookingContext.hint': 'Эти сведения помогают оценить натрий в блюде.',
+
 };
 
 export default ru;

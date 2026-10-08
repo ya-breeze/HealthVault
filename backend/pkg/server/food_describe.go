@@ -40,9 +40,10 @@ const (
 // logged_at are optional: name defaults to the description itself
 // (truncated), logged_at to now.
 type describeMealRequest struct {
-	Description string     `json:"description"`
-	Name        string     `json:"name,omitempty"`
-	LoggedAt    *time.Time `json:"logged_at,omitempty"`
+	Description    string          `json:"description"`
+	Name           string          `json:"name,omitempty"`
+	LoggedAt       *time.Time      `json:"logged_at,omitempty"`
+	CookingContext json.RawMessage `json:"cooking_context,omitempty"`
 }
 
 // CreateDescribedMeal handles POST /api/food/meals/describe: text-only
@@ -88,6 +89,11 @@ func (h *foodHandlers) CreateDescribedMeal(w http.ResponseWriter, r *http.Reques
 		http.Error(w, fmt.Sprintf("description must be at most %d characters", maxDescriptionLength), http.StatusBadRequest)
 		return
 	}
+	cookingContext, err := parseCookingContext(req.CookingContext)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	loggedAt := time.Now().UTC()
 	if req.LoggedAt != nil {
@@ -104,11 +110,12 @@ func (h *foodHandlers) CreateDescribedMeal(w http.ResponseWriter, r *http.Reques
 
 	familyID := FamilyIDFromCtx(r)
 	meal := database.FoodMeal{
-		UserID:      claims.UserID,
-		Status:      database.MealStatusProcessing,
-		LoggedAt:    loggedAt,
-		Name:        name,
-		Description: description,
+		UserID:         claims.UserID,
+		Status:         database.MealStatusProcessing,
+		LoggedAt:       loggedAt,
+		Name:           name,
+		Description:    description,
+		CookingContext: cookingContext,
 	}
 	meal.ID = uuid.New()
 	meal.FamilyID = familyID
@@ -150,7 +157,7 @@ func truncateWithEllipsis(s string, n int) string {
 // Recognize/Clarify.
 func (h *foodHandlers) runDescribeAnalysis(ctx context.Context, meal *database.FoodMeal, lease time.Time) error {
 	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
-	recognized, err := h.vision.Describe(ctx, meal.Description, displayLanguage)
+	recognized, err := h.vision.Describe(ctx, withCookingContext(meal, meal.Description), displayLanguage)
 	if err != nil {
 		return err
 	}

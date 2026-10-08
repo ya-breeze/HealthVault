@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ManualMealItemInput } from '@/lib/api';
 import ManualItemEditor from '@/components/food/ManualItemEditor';
+import MealCookingContextInputs, { defaultMealCookingContext } from '@/components/food/MealCookingContextInputs';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
 import BottomActionBar from '@/components/ui/BottomActionBar';
@@ -25,6 +26,7 @@ export default function ManualMealPage() {
   const [loggedAt, setLoggedAt] = useState(() => new Date().toISOString().slice(0, 16));
 
   const [description, setDescription] = useState('');
+  const [cookingContext, setCookingContext] = useState(defaultMealCookingContext);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +64,7 @@ export default function ManualMealPage() {
         description: trimmed,
         name: name || undefined,
         logged_at: loggedAtISO(),
+        cooking_context: cookingContext,
       });
       router.push(`/food/review/?meal=${meal.id}`);
     } catch (err) {
@@ -136,6 +139,9 @@ export default function ManualMealPage() {
           {normalizedUnicodeLength(description)}/{MAX_DESCRIPTION_LENGTH}
         </p>
         <p className="mt-1 mb-4 text-sm text-gray-500 dark:text-gray-400">{t('describe.disclosure')}</p>
+        {!showStructured && (
+          <div className="mb-4"><MealCookingContextInputs value={cookingContext} onChange={setCookingContext} /></div>
+        )}
 
         {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 

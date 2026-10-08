@@ -318,10 +318,16 @@ export interface FoodItem {
   saturated_fat_grams: number;
 }
 
+export interface MealCookingContext {
+  homemade: boolean;
+  low_added_salt: boolean;
+}
+
 export interface FoodMeal {
   id: string;
   photo_path?: string;
   description?: string;
+  cooking_context?: MealCookingContext;
   status: MealStatus;
   logged_at: string;
   name: string;
@@ -1087,16 +1093,17 @@ export const api = {
   deleteCustomFood: (id: string): Promise<void> =>
     apiFetchNoBody(`/food/custom/${id}`, { method: 'DELETE' }),
 
-  uploadMeal: (file: File, hint = ''): Promise<FoodMeal> => {
+  uploadMeal: (file: File, hint = '', cookingContext?: MealCookingContext): Promise<FoodMeal> => {
     const form = new FormData();
     form.append('photo', file);
     const normalizedHint = hint.trim();
     if (normalizedHint) form.append('hint', normalizedHint);
+    if (cookingContext) form.append('cooking_context', JSON.stringify(cookingContext));
     return apiFetchForm('/food/meals', form);
   },
   createManualMeal: (input: { name?: string; logged_at?: string; items: ManualMealItemInput[] }) =>
     apiFetch<FoodMeal>('/food/meals/manual', { method: 'POST', body: JSON.stringify(input) }),
-  describeMeal: (input: { description: string; name?: string; logged_at?: string }) =>
+  describeMeal: (input: { description: string; name?: string; logged_at?: string; cooking_context?: MealCookingContext }) =>
     apiFetch<FoodMeal>('/food/meals/describe', { method: 'POST', body: JSON.stringify(input) }),
   getMeal: (id: string) => apiFetch<FoodMeal>(`/food/meals/${id}`),
   mealPhotoUrl: (id: string) => `${BASE}/food/meals/${id}/photo`,

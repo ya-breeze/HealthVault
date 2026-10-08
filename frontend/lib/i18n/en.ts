@@ -25,6 +25,7 @@
 // covered, including the complete data-detail writable form (AddRecordForm).
 // See dataDetail.* and addRecord.* below.)
 //
+// The shared MealCookingContextInputs controls are translated on both entry paths.
 // app/food/manual/page.tsx is now partly translated, not wholly English: its
 // description-first entry path (the textarea, name/time inputs, character
 // counter, disclosure, and submit) uses the describe.* keys below, since a
@@ -655,6 +656,11 @@ const en = {
   "weather.incomplete_hour": "Insufficient evidence for a complete hour",
   "weather.unknownGap": "Weather unavailable",
   "weather.retry": "Retry",
+  'cookingContext.title': 'Preparation',
+  'cookingContext.homemade': 'Homemade food',
+  'cookingContext.lowAddedSalt': 'Little salt added during cooking',
+  'cookingContext.hint': 'These details help estimate the meal’s sodium.',
+
 };
 
 export default en;

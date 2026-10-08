@@ -37,6 +37,11 @@ func newMealUploadRequest(t *testing.T, filename string, data []byte, hint ...st
 			t.Fatalf("write hint: %v", err)
 		}
 	}
+	if len(hint) > 1 {
+		if err := mw.WriteField("cooking_context", hint[1]); err != nil {
+			t.Fatalf("write cooking context: %v", err)
+		}
+	}
 	if err := mw.Close(); err != nil {
 		t.Fatalf("close multipart writer: %v", err)
 	}

@@ -259,6 +259,66 @@ test.describe('Custom foods', () => {
   });
 });
 
+test.describe('Meal preparation context', () => {
+  for (const entry of ['photo', 'description'] as const) {
+    test(`${entry} defaults and checkbox dependency`, async ({ page }) => {
+      await login(page);
+      await page.goto(entry === 'photo' ? '/food/upload/' : '/food/manual/');
+      const homemade = page.getByTestId('meal-homemade');
+      const lowSalt = page.getByTestId('meal-low-added-salt');
+      await expect(homemade).toBeChecked();
+      await expect(lowSalt).toBeChecked();
+      await lowSalt.uncheck();
+      await expect(homemade).toBeChecked();
+      await homemade.uncheck();
+      await expect(lowSalt).not.toBeChecked();
+      await expect(lowSalt).toBeDisabled();
+      await homemade.check();
+      await expect(lowSalt).toBeEnabled();
+      await expect(lowSalt).toBeChecked();
+      if (entry === 'description') {
+        await page.getByTestId('describe-structured-toggle').click();
+        await expect(homemade).not.toBeVisible();
+      }
+    });
+
+    for (const choice of ['default', 'home-normal-salt', 'outside'] as const) {
+      test(`${entry} submits ${choice} preparation separately from text`, async ({ page }) => {
+        await login(page);
+        let submitted: unknown;
+        let multipart = '';
+        const endpoint = entry === 'photo' ? '**/api/food/meals' : '**/api/food/meals/describe';
+        await page.route(endpoint, async route => {
+          if (route.request().method() !== 'POST') return route.continue();
+          if (entry === 'photo') multipart = route.request().postData() ?? '';
+          else submitted = route.request().postDataJSON();
+          return route.fulfill({ status: 201, json: mockFoodMeal({ id: 'context-entry', status: 'pending_review' }) });
+        });
+        await page.goto(entry === 'photo' ? '/food/upload/' : '/food/manual/');
+        if (choice === 'home-normal-salt') await page.getByTestId('meal-low-added-salt').uncheck();
+        if (choice === 'outside') await page.getByTestId('meal-homemade').uncheck();
+        const context = { homemade: choice !== 'outside', low_added_salt: choice === 'default' };
+        if (entry === 'photo') {
+          await page.getByRole('button', { name: 'Add a hint (optional)' }).click();
+          await page.getByLabel('Photo hint (optional)').fill('chicken, two grams of salt added');
+          await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+        } else {
+          await page.getByTestId('describe-textarea').fill('chicken, two grams of salt added');
+          await page.getByTestId('describe-submit').click();
+        }
+        await page.waitForURL(/meal=context-entry/);
+        if (entry === 'photo') {
+          expect(multipart).toContain('name="cooking_context"');
+          expect(multipart).toContain(JSON.stringify(context));
+          expect(multipart).toContain('chicken, two grams of salt added');
+        } else {
+          expect(submitted).toMatchObject({ description: 'chicken, two grams of salt added', cooking_context: context });
+        }
+      });
+    }
+  }
+});
+
 test.describe('Photo upload', () => {
   test('includes an optional initial hint in the multipart upload', async ({ page }) => {
     await login(page);

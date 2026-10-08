@@ -53,6 +53,8 @@ type FoodMeal struct {
 	// entry, persisted so the meal is recoverable if analysis fails or is
 	// retried. Empty for photo meals and for structured manual entries.
 	Description string `gorm:"type:text" json:"description,omitempty"`
+	// Nil preserves unknown preparation for legacy meals and callers without context.
+	CookingContext *MealCookingContext `gorm:"serializer:json;type:text" json:"cooking_context,omitempty"`
 
 	// Aggregate over items whose MacroSource is reference or manual, written on confirm.
 	Calories          float64 `gorm:"not null;default:0" json:"calories"`
@@ -65,6 +67,12 @@ type FoodMeal struct {
 	SaturatedFatGrams float64 `gorm:"not null;default:0" json:"saturated_fat_grams"`
 
 	Items []FoodItem `gorm:"foreignKey:MealID" json:"items,omitempty"`
+}
+
+// MealCookingContext records the owner's preparation choices, not a measured salt amount.
+type MealCookingContext struct {
+	Homemade     bool `json:"homemade"`
+	LowAddedSalt bool `json:"low_added_salt"`
 }
 
 // ClarifyEntry is one question/answer pair, persisted so later rounds can replay
