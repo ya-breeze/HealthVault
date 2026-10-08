@@ -16,11 +16,14 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/vision"
 )
 
-const homemadeLowSaltJSON = `{"homemade":true,"low_added_salt":true}`
+const lowSaltJSON = `{"low_added_salt":true}`
 
 func assertCookingGuidance(t *testing.T, text string) {
 	t.Helper()
-	for _, part := range []string{"homemade with little salt", "intrinsic sodium", "label values", "user corrections"} {
+	if strings.Contains(text, "homemade") {
+		t.Fatal("model guidance still infers homemade food")
+	}
+	for _, part := range []string{"little salt was added", "intrinsic sodium", "label values", "user corrections"} {
 		if !strings.Contains(text, part) {
 			t.Errorf("missing %q in model guidance: %q", part, text)
 		}
@@ -33,7 +36,7 @@ func TestCookingContext_PhotoPersistsAcrossRetryClarifyAndReanalyze(t *testing.T
 	fake := &vision.Fake{RecognizeErr: context.DeadlineExceeded}
 	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
 	w := httptest.NewRecorder()
-	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "meal.jpg", fakeJPEGBytes, "chicken", homemadeLowSaltJSON), userID))
+	h.CreateMeal(w, withClaims(newMealUploadRequest(t, "meal.jpg", fakeJPEGBytes, "chicken", lowSaltJSON), userID))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -45,7 +48,7 @@ func TestCookingContext_PhotoPersistsAcrossRetryClarifyAndReanalyze(t *testing.T
 	if err := st.DB().First(&stored, "id = ?", created.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if stored.CookingContext == nil || !stored.CookingContext.Homemade || !stored.CookingContext.LowAddedSalt {
+	if stored.CookingContext == nil || !stored.CookingContext.LowAddedSalt {
 		t.Fatalf("context did not survive database round trip: %+v", stored.CookingContext)
 	}
 	assertCookingGuidance(t, fake.RecognizeCalls[0].Hint)
@@ -99,7 +102,7 @@ func TestCookingContext_DescriptionPersistsAndRetryUsesContext(t *testing.T) {
 	fake := &vision.Fake{DescribeErr: context.DeadlineExceeded}
 	h := server.NewFoodHandlers(st, nil, t.TempDir()).WithVision(fake, 10<<20, time.Second)
 	w := httptest.NewRecorder()
-	h.CreateDescribedMeal(w, withClaims(describeMealHTTPRequest(map[string]any{"description": "  chicken  ", "cooking_context": json.RawMessage(homemadeLowSaltJSON)}), userID))
+	h.CreateDescribedMeal(w, withClaims(describeMealHTTPRequest(map[string]any{"description": "  chicken  ", "cooking_context": json.RawMessage(lowSaltJSON)}), userID))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -128,7 +131,7 @@ func TestCookingContext_DescriptionPersistsAndRetryUsesContext(t *testing.T) {
 }
 
 func TestCookingContext_InvalidInputHasNoSideEffects(t *testing.T) {
-	for _, raw := range []string{`{`, `{}`, `true`, `{"homemade":"yes","low_added_salt":true}`, `{"homemade":false,"low_added_salt":true}`} {
+	for _, raw := range []string{`{`, `{}`, `true`, `{"low_added_salt":"yes"}`, `{"low_added_salt":null}`} {
 		t.Run(raw, func(t *testing.T) {
 			st := newFoodTestStorage(t)
 			userID, _ := seedFoodUser(t, st)
@@ -159,7 +162,7 @@ func TestCookingContext_InvalidInputHasNoSideEffects(t *testing.T) {
 }
 
 func TestCookingContext_UnknownAndExplicitFalseRemainDistinct(t *testing.T) {
-	for _, c := range []*database.MealCookingContext{nil, {Homemade: false, LowAddedSalt: false}, {Homemade: true, LowAddedSalt: false}} {
+	for _, c := range []*database.MealCookingContext{nil, {LowAddedSalt: false}} {
 		st := newFoodTestStorage(t)
 		userID, _ := seedFoodUser(t, st)
 		fake := &vision.Fake{}
@@ -186,7 +189,7 @@ func TestCookingContext_UnknownAndExplicitFalseRemainDistinct(t *testing.T) {
 			if meal.CookingContext == nil || *meal.CookingContext != *c {
 				t.Fatalf("false flags lost: %+v", meal.CookingContext)
 			}
-			if strings.Contains(fake.DescribeCalls[0].Description, "with little salt") {
+			if strings.Contains(fake.DescribeCalls[0].Description, "little salt was added") {
 				t.Fatal("unchecked low salt was treated as low salt")
 			}
 		}

@@ -17,14 +17,14 @@ Show one shared “Little added salt” checkbox on photo and description entry,
 - Bounded synthetic WIP recognition with low-added-salt context and explicit sodium on a label; inspect persisted flags, estimates, and subsequent retry/clarification behavior separately from mocked tests.
 
 ### Task 1: Persist and apply optional meal salt context
-- [ ] Add optional typed cooking context to meals and photo/description requests, with validation for missing or malformed salt flags.
-- [ ] Preserve context across recognition, retry, clarification, and normal reanalysis while leaving omitted context unknown.
-- [ ] Add meaningful storage and handler tests for forwarding, persistence, validation, and lifecycle reuse.
+- [x] Add optional typed cooking context to meals and photo/description requests, with validation for missing or malformed salt flags.
+- [x] Preserve context across recognition, retry, clarification, and normal reanalysis while leaving omitted context unknown.
+- [x] Add meaningful storage and handler tests for forwarding, persistence, validation, and lifecycle reuse.
 
 ### Task 2: Show and submit salt checkbox
-- [ ] Add shared localized controls to photo and text entry with the selected default and independent toggle.
-- [ ] Extend API types and submissions without altering user text or structured manual values.
-- [ ] Cover photo/text defaults and checked/unchecked salt submissions in browser tests.
+- [x] Add shared localized controls to photo and text entry with the selected default and independent toggle.
+- [x] Extend API types and submissions without altering user text or structured manual values.
+- [x] Cover photo/text defaults and checked/unchecked salt submissions in browser tests.
 
 ### Task 3: Validate and review
 - [ ] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.

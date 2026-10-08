@@ -69,9 +69,8 @@ type FoodMeal struct {
 	Items []FoodItem `gorm:"foreignKey:MealID" json:"items,omitempty"`
 }
 
-// MealCookingContext records the owner's preparation choices, not a measured salt amount.
+// MealCookingContext records the owner's added-salt choice, not a measured salt amount.
 type MealCookingContext struct {
-	Homemade     bool `json:"homemade"`
 	LowAddedSalt bool `json:"low_added_salt"`
 }
 

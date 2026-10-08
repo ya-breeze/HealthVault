@@ -502,7 +502,6 @@ const ru: Dictionary = {
   "weather.unknownGap": "Погода недоступна",
   "weather.retry": "Повторить",
   'cookingContext.title': 'Приготовление',
-  'cookingContext.homemade': 'Домашняя еда',
   'cookingContext.lowAddedSalt': 'Мало добавленной соли',
   'cookingContext.hint': 'Эти сведения помогают оценить натрий в блюде.',
 

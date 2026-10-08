@@ -261,28 +261,24 @@ test.describe('Custom foods', () => {
 
 test.describe('Meal preparation context', () => {
   for (const entry of ['photo', 'description'] as const) {
-    test(`${entry} defaults and checkbox dependency`, async ({ page }) => {
+    test(`${entry} defaults to one independent salt checkbox`, async ({ page }) => {
       await login(page);
       await page.goto(entry === 'photo' ? '/food/upload/' : '/food/manual/');
-      const homemade = page.getByTestId('meal-homemade');
+      await expect(page.getByTestId('meal-homemade')).toHaveCount(0);
       const lowSalt = page.getByTestId('meal-low-added-salt');
-      await expect(homemade).toBeChecked();
       await expect(lowSalt).toBeChecked();
-      await lowSalt.uncheck();
-      await expect(homemade).toBeChecked();
-      await homemade.uncheck();
-      await expect(lowSalt).not.toBeChecked();
-      await expect(lowSalt).toBeDisabled();
-      await homemade.check();
       await expect(lowSalt).toBeEnabled();
+      await lowSalt.uncheck();
+      await expect(lowSalt).not.toBeChecked();
+      await lowSalt.check();
       await expect(lowSalt).toBeChecked();
       if (entry === 'description') {
         await page.getByTestId('describe-structured-toggle').click();
-        await expect(homemade).not.toBeVisible();
+        await expect(lowSalt).not.toBeVisible();
       }
     });
 
-    for (const choice of ['default', 'home-normal-salt', 'outside'] as const) {
+    for (const choice of ['default', 'unspecified'] as const) {
       test(`${entry} submits ${choice} preparation separately from text`, async ({ page }) => {
         await login(page);
         let submitted: unknown;
@@ -295,9 +291,8 @@ test.describe('Meal preparation context', () => {
           return route.fulfill({ status: 201, json: mockFoodMeal({ id: 'context-entry', status: 'pending_review' }) });
         });
         await page.goto(entry === 'photo' ? '/food/upload/' : '/food/manual/');
-        if (choice === 'home-normal-salt') await page.getByTestId('meal-low-added-salt').uncheck();
-        if (choice === 'outside') await page.getByTestId('meal-homemade').uncheck();
-        const context = { homemade: choice !== 'outside', low_added_salt: choice === 'default' };
+        if (choice === 'unspecified') await page.getByTestId('meal-low-added-salt').uncheck();
+        const context = { low_added_salt: choice === 'default' };
         if (entry === 'photo') {
           await page.getByRole('button', { name: 'Add a hint (optional)' }).click();
           await page.getByLabel('Photo hint (optional)').fill('chicken, two grams of salt added');

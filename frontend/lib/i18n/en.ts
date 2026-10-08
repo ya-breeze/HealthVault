@@ -657,7 +657,6 @@ const en = {
   "weather.unknownGap": "Weather unavailable",
   "weather.retry": "Retry",
   'cookingContext.title': 'Preparation',
-  'cookingContext.homemade': 'Homemade food',
   'cookingContext.lowAddedSalt': 'Little salt added during cooking',
   'cookingContext.hint': 'These details help estimate the meal’s sodium.',
 

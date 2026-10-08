@@ -319,7 +319,6 @@ export interface FoodItem {
 }
 
 export interface MealCookingContext {
-  homemade: boolean;
   low_added_salt: boolean;
 }
 
