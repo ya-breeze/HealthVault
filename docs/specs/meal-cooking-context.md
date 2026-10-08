@@ -35,5 +35,7 @@ Stage camera captures and picked files in a local preview before any upload. Sho
 - [x] Preserve photo and hint after failures, release object URLs, and cover staged flow, no premature request, submitted hints, and retry in browser tests.
 
 ### Task 4: Validate and review
-- [ ] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
-- [ ] Mark completed
+- [x] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
+- [x] Mark completed
+
+Validation evidence: backend tests, 291 frontend tests, Go vet, E2E TypeScript, frontend TypeScript and whitespace checks passed. Native correctness, standards, and spec/tests reviews are clean. Claude peer unavailable after one HTTP 429 weekly-quota attempt. WIP deployed reviewed implementation 64ea7e8. Full food browser suite: 62 passed, one existing provider-dependent synthetic-image case skipped. Post-file and post-camera hint editing, no premature upload, checked/unchecked salt submission, duplicate guard, failure/retry, same-file replacement, photo removal, camera cancellation and URL cleanup passed. Mobile preview at 390px has no horizontal overflow and sends no request before explicit submission. The prior salt-only provider probes verified persisted salt context and explicit-label precedence; the photo staging update does not change that backend.
