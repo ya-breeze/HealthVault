@@ -16,9 +16,9 @@ Allow established general nutrition knowledge for food examples and practical su
 - Exercise the deployed WIP chat with synthetic Russian questions about unsaturated-fat foods, supplied saturated-fat estimates, and a contradictory prior answer. Inspect actual configured-model answers separately from mocked tests.
 
 ### Task 1: Clarify the answer and evidence instructions
-- [ ] Permit practical food advice from general nutrition knowledge without inventing personal quantities.
-- [ ] Require a direct answer to the current question and distinguish supplied estimates from missing measurements.
-- [ ] Explain saturated-fat grams and energy-share evidence and correction of contradictory prior answers.
-- [ ] Extend provider-request coverage for the saturated-fat evidence and follow-up question.
+- [x] Permit practical food advice from general nutrition knowledge without inventing personal quantities.
+- [x] Require a direct answer to the current question and distinguish supplied estimates from missing measurements.
+- [x] Explain saturated-fat grams and energy-share evidence and correction of contradictory prior answers.
+- [x] Extend provider-request coverage for the saturated-fat evidence and follow-up question.
 - [ ] Run validation, Review Gate, and bounded real-model WIP probes.
 - [ ] Mark completed

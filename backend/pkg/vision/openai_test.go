@@ -802,25 +802,29 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 
 	got, err := c.NutritionChat(context.Background(), vision.NutritionChatInput{
 		Label:   "needs_attention",
-		Reasons: []string{"sodium_high"},
+		Reasons: []string{"sodium_high", "saturated_fat_high"},
 		Signals: []vision.NutritionChatSignal{{
 			Code: "sodium", Value: 4.1, Unit: "gramsPerDay", Verdict: "far",
 			Reason: "sodium_high", OffBoundary: 2.3, FarBoundary: &farBoundary,
+		}, {
+			Code: "saturated_fat", Value: 0.12, Unit: "share", Verdict: "off",
+			Reason: "saturated_fat_high", OffBoundary: 0.1,
 		}},
 		EligibleDays:          5,
 		WindowDays:            7,
 		MeanCalories:          1820.5,
 		MeanSodiumGrams:       4.1,
 		MeanDietaryFiberGrams: 12.5,
+		MeanSaturatedFatGrams: 26.7,
 		TargetCalories:        2500,
 		TargetProteinGrams:    110,
 		DisplayLanguage:       "ru",
 		CurrentLoggedDay:      "2026-09-14",
 		Turns: []vision.NutritionChatTurn{
-			{Role: "user", Text: "я уже уменьшил соль"},
-			{Role: "assistant", Text: "за какие дни?"},
+			{Role: "user", Text: "сколько насыщенных жиров?"},
+			{Role: "assistant", Text: "количество не определено"},
 		},
-		Question: "за какие дни это считается?",
+		Question: "откуда брать ненасыщенные жиры?",
 	})
 	if err != nil {
 		t.Fatalf("NutritionChat: %v", err)
@@ -843,10 +847,13 @@ func TestOpenAIClient_NutritionChat_SendsEvidenceAndTurnsAndBoundsTheAnswer(t *t
 	for _, want := range []string{
 		`\"label\":\"needs_attention\"`, `\"eligible_days\":5`, `\"window_days\":7`,
 		`\"off_boundary\":2.3`, `\"far_boundary\":3.5`,
-		`\"question\":\"за какие дни это считается?\"`,
+		`\"question\":\"откуда брать ненасыщенные жиры?\"`,
 		`\"role\":\"user\"`, `\"role\":\"assistant\"`,
 		`\"display_language\":\"ru\"`, `\"current_logged_day\":\"2026-09-14\"`,
 		`\"mean_dietary_fiber_grams\":12.5`,
+		`\"mean_saturated_fat_grams\":26.7`,
+		`\"code\":\"saturated_fat\"`, `\"value\":0.12`, `\"off_boundary\":0.1`,
+		`\"text\":\"количество не определено\"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("expected %s in the chat request: %s", want, body)
