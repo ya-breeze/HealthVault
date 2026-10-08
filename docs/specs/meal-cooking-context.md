@@ -27,5 +27,7 @@ Show one shared “Little added salt” checkbox on photo and description entry,
 - [x] Cover photo/text defaults and checked/unchecked salt submissions in browser tests.
 
 ### Task 3: Validate and review
-- [ ] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
-- [ ] Mark completed
+- [x] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
+- [x] Mark completed
+
+Validation evidence: backend tests, 291 frontend tests, Go vet, E2E TypeScript, frontend TypeScript, and whitespace checks passed. Android lint skipped because no SDK is available; no Android files changed. Three native review angles are clean; Claude peer unavailable after one HTTP 429 weekly-quota attempt. WIP deployed reviewed implementation bd793f2. Full food suite: 59 passed, one existing provider-dependent synthetic-image case skipped; all six salt-control scenarios passed. Both entry paths show only the checked salt flag in Russian at 390px without overflow. Real-provider WIP probes persisted only low_added_salt, returned a usable low-salt estimate, and preserved the explicit 1.5 g label sodium. Synthetic meals were deleted.
