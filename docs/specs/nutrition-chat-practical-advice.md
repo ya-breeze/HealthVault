@@ -20,5 +20,5 @@ Allow established general nutrition knowledge for food examples and practical su
 - [x] Require a direct answer to the current question and distinguish supplied estimates from missing measurements.
 - [x] Explain saturated-fat grams and energy-share evidence and correction of contradictory prior answers.
 - [x] Extend provider-request coverage for the saturated-fat evidence and follow-up question.
-- [ ] Run validation, Review Gate, and bounded real-model WIP probes.
-- [ ] Mark completed
+- [x] Run validation, Review Gate, and bounded real-model WIP probes.
+- [x] Mark completed
