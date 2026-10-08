@@ -55,6 +55,11 @@ func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	cookingContext, err := parseCookingContext([]byte(r.FormValue("cooking_context")))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	familyID := FamilyIDFromCtx(r)
 	mealID := uuid.New()
@@ -69,10 +74,11 @@ func (h *foodHandlers) CreateMeal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	meal := database.FoodMeal{
-		UserID:    claims.UserID,
-		PhotoPath: relPath,
-		Status:    database.MealStatusProcessing,
-		LoggedAt:  time.Now().UTC(),
+		UserID:         claims.UserID,
+		PhotoPath:      relPath,
+		Status:         database.MealStatusProcessing,
+		LoggedAt:       time.Now().UTC(),
+		CookingContext: cookingContext,
 	}
 	meal.ID = mealID
 	meal.FamilyID = familyID
@@ -195,7 +201,7 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 		return err
 	}
 	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
-	recognized, err := h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), hint, displayLanguage)
+	recognized, err := h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), withCookingContext(meal, hint), displayLanguage)
 	if err != nil {
 		return err
 	}

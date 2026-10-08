@@ -259,7 +259,155 @@ test.describe('Custom foods', () => {
   });
 });
 
+test.describe('Meal preparation context', () => {
+  for (const entry of ['photo', 'description'] as const) {
+    test(`${entry} defaults to one independent salt checkbox`, async ({ page }) => {
+      await login(page);
+      await page.goto(entry === 'photo' ? '/food/upload/' : '/food/manual/');
+      await expect(page.getByTestId('meal-homemade')).toHaveCount(0);
+      const lowSalt = page.getByTestId('meal-low-added-salt');
+      await expect(lowSalt).toBeChecked();
+      await expect(lowSalt).toBeEnabled();
+      await lowSalt.uncheck();
+      await expect(lowSalt).not.toBeChecked();
+      await lowSalt.check();
+      await expect(lowSalt).toBeChecked();
+      if (entry === 'description') {
+        await page.getByTestId('describe-structured-toggle').click();
+        await expect(lowSalt).not.toBeVisible();
+      }
+    });
+
+    for (const choice of ['default', 'unspecified'] as const) {
+      test(`${entry} submits ${choice} preparation separately from text`, async ({ page }) => {
+        await login(page);
+        let submitted: unknown;
+        let multipart = '';
+        const endpoint = entry === 'photo' ? '**/api/food/meals' : '**/api/food/meals/describe';
+        await page.route(endpoint, async route => {
+          if (route.request().method() !== 'POST') return route.continue();
+          if (entry === 'photo') multipart = route.request().postData() ?? '';
+          else submitted = route.request().postDataJSON();
+          return route.fulfill({ status: 201, json: mockFoodMeal({ id: 'context-entry', status: 'pending_review' }) });
+        });
+        await page.goto(entry === 'photo' ? '/food/upload/' : '/food/manual/');
+        if (choice === 'unspecified') await page.getByTestId('meal-low-added-salt').uncheck();
+        const context = { low_added_salt: choice === 'default' };
+        if (entry === 'photo') {
+          await page.getByRole('button', { name: 'Add a hint (optional)' }).click();
+          await page.getByLabel('Photo hint (optional)').fill('chicken, two grams of salt added');
+          await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+          await page.getByTestId('photo-analyze').click();
+        } else {
+          await page.getByTestId('describe-textarea').fill('chicken, two grams of salt added');
+          await page.getByTestId('describe-submit').click();
+        }
+        await page.waitForURL(/meal=context-entry/);
+        if (entry === 'photo') {
+          expect(multipart).toContain('name="cooking_context"');
+          expect(multipart).toContain(JSON.stringify(context));
+          expect(multipart).toContain('chicken, two grams of salt added');
+        } else {
+          expect(submitted).toMatchObject({ description: 'chicken, two grams of salt added', cooking_context: context });
+        }
+      });
+    }
+  }
+});
+
 test.describe('Photo upload', () => {
+  test('edits a hint and salt choice after picking a photo without premature upload', async ({ page }) => {
+    await login(page);
+    let uploadBody = '';
+    let calls = 0;
+    await page.route('**/api/food/meals', route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      calls++;
+      uploadBody = route.request().postData() ?? '';
+      return route.fulfill({ status: 201, json: mockFoodMeal({ id: 'post-photo-hint' }) });
+    });
+    await page.goto('/food/upload/');
+    await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    await expect(page.getByTestId('photo-preview')).toBeVisible();
+    await expect(page.getByLabel('Photo hint (optional)')).toBeVisible();
+    expect(uploadBody).toBe('');
+    await page.getByLabel('Photo hint (optional)').fill('  chicken breast, no sauce  ');
+    await page.getByTestId('meal-low-added-salt').uncheck();
+    await page.getByTestId('photo-analyze').evaluate(button => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await page.waitForURL(/meal=post-photo-hint/);
+    expect(uploadBody).toContain('chicken breast, no sauce');
+    expect(uploadBody).toContain('{"low_added_salt":false}');
+    expect(calls).toBe(1);
+  });
+
+  test('keeps the photo and edited hint after upload failure for explicit retry', async ({ page }) => {
+    await login(page);
+    let calls = 0;
+    const bodies: string[] = [];
+    await page.route('**/api/food/meals', route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      calls++;
+      bodies.push(route.request().postData() ?? '');
+      return calls === 1
+        ? route.fulfill({ status: 503, body: 'Temporary upload failure' })
+        : route.fulfill({ status: 201, json: mockFoodMeal({ id: 'retried-draft' }) });
+    });
+    await page.goto('/food/upload/');
+    await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    await page.getByLabel('Photo hint (optional)').fill('chicken with rice');
+    await page.getByTestId('photo-analyze').click();
+    await expect(page.getByText('Temporary upload failure')).toBeVisible();
+    await expect(page.getByTestId('photo-preview')).toBeVisible();
+    await expect(page.getByLabel('Photo hint (optional)')).toHaveValue('chicken with rice');
+    expect(calls).toBe(1);
+    await page.getByLabel('Photo hint (optional)').fill('chicken with rice, no sauce');
+    await page.getByTestId('photo-analyze').click();
+    await page.waitForURL(/meal=retried-draft/);
+    expect(calls).toBe(2);
+    expect(bodies[1]).toContain('name="photo"');
+    expect(bodies[1]).toContain('chicken with rice, no sauce');
+  });
+
+  test('replaces and removes a local photo without losing the hint or leaking preview URLs', async ({ page }) => {
+    await page.addInitScript(() => {
+      const revoke = URL.revokeObjectURL.bind(URL);
+      URL.revokeObjectURL = url => {
+        document.documentElement.dataset.lastRevokedPhoto = url;
+        revoke(url);
+      };
+    });
+    await login(page);
+    let calls = 0;
+    await page.route('**/api/food/meals', route => {
+      if (route.request().method() === 'POST') calls++;
+      return route.continue();
+    });
+    await page.goto('/food/upload/');
+    const picker = page.locator('input[type="file"]');
+    await picker.setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    const preview = page.getByTestId('photo-preview');
+    await expect(preview).toBeVisible();
+    const firstUrl = await preview.getAttribute('src');
+    await page.getByLabel('Photo hint (optional)').fill('keep this hint');
+    await picker.setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    await expect(preview).not.toHaveAttribute('src', firstUrl!);
+    await expect(page.locator('html')).toHaveAttribute('data-last-revoked-photo', firstUrl!);
+    const secondUrl = await preview.getAttribute('src');
+    await page.getByRole('button', { name: 'Take Photo' }).click();
+    await expect(page.getByTestId('camera-capture-overlay')).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(preview).toHaveAttribute('src', secondUrl!);
+    await page.getByTestId('photo-remove').click();
+    await expect(preview).toHaveCount(0);
+    await expect(page.getByTestId('photo-analyze')).toHaveCount(0);
+    await expect(page.locator('html')).toHaveAttribute('data-last-revoked-photo', secondUrl!);
+    await expect(page.getByLabel('Photo hint (optional)')).toHaveValue('keep this hint');
+    expect(calls).toBe(0);
+  });
+
   test('includes an optional initial hint in the multipart upload', async ({ page }) => {
     await login(page);
     let uploadBody = '';
@@ -275,6 +423,7 @@ test.describe('Photo upload', () => {
     await page.getByRole('button', { name: 'Add a hint (optional)' }).click();
     await page.getByLabel('Photo hint (optional)').fill('grilled chicken with red beans');
     await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    await page.getByTestId('photo-analyze').click();
     await page.waitForURL(/meal=hinted-upload/);
     expect(uploadBody).toContain('name="hint"');
     expect(uploadBody).toContain('grilled chicken with red beans');
@@ -293,6 +442,7 @@ test.describe('Photo upload', () => {
     await expect(page.getByText('500/500')).toBeVisible();
     await page.getByLabel('Photo hint (optional)').fill('🙂'.repeat(501));
     await page.locator('input[type="file"]').setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    await page.getByTestId('photo-analyze').click();
     await expect(page.getByText('Hint must be at most 500 characters')).toBeVisible();
     expect(uploadCalls).toBe(0);
   });
@@ -327,9 +477,13 @@ test.describe('Photo upload', () => {
     await page.getByLabel('Photo hint (optional)').fill('red beans');
     await page.getByRole('button', { name: 'Take Photo' }).click();
     await page.getByRole('button', { name: 'Capture' }).click();
+    await expect(page.getByTestId('photo-preview')).toBeVisible();
+    expect(uploadBody).toBe('');
+    await page.getByLabel('Photo hint (optional)').fill('red beans added after capture');
+    await page.getByTestId('photo-analyze').click();
     await page.waitForURL(/meal=camera-upload/);
     expect(uploadBody).toContain('name="photo"');
-    expect(uploadBody).toContain('red beans');
+    expect(uploadBody).toContain('red beans added after capture');
   });
 
   test('uploads a photo and reaches a terminal or actionable review state', async ({ page, request }) => {
@@ -339,6 +493,7 @@ test.describe('Photo upload', () => {
     await page.goto('/food/upload/');
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles(path.join(__dirname, 'fixtures', 'meal.jpg'));
+    await page.getByTestId('photo-analyze').click();
 
     // The upload request blocks on the synchronous vision call, so this can
     // take a while; the page navigates to the review route once it returns.

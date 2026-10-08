@@ -144,6 +144,10 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
+	// Keep a photo meal's description empty so Clarify retains photo-origin framing.
+	if guidance := cookingContextGuidance(meal); guidance != "" {
+		history = append([]vision.ClarifyTurn{{Question: "Meal preparation context", Answer: guidance}}, history...)
+	}
 	recognized, err := h.vision.Clarify(ctx, meal.Description, priorItems, history, displayLanguage)
 	if err == nil {
 		carryForwardPriorFields(priorItems, recognized.Items, displayLanguage)

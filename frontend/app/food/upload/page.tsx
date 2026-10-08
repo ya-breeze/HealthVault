@@ -1,42 +1,66 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import CameraCapture from '@/components/food/CameraCapture';
+import MealCookingContextInputs, { defaultMealCookingContext } from '@/components/food/MealCookingContextInputs';
+import { useLanguage } from '@/components/LanguageContext';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
 import { MAX_HINT_LENGTH, normalizedUnicodeLength, unicodeLength } from '@/lib/foodGuidance';
 
 export default function FoodUploadPage() {
   const router = useRouter();
+  const { t } = useLanguage();
+  const uploadInFlight = useRef(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  useEffect(() => {
+    if (!selectedFile) { setPreviewUrl(''); return; }
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHint, setShowHint] = useState(false);
   const [hint, setHint] = useState('');
+  const [cookingContext, setCookingContext] = useState(defaultMealCookingContext);
 
-  const upload = async (file: File) => {
+  const upload = async () => {
+    if (!selectedFile || uploadInFlight.current) return;
     const trimmedHint = hint.trim();
     if (unicodeLength(trimmedHint) > MAX_HINT_LENGTH) {
       setError(`Hint must be at most ${MAX_HINT_LENGTH} characters`);
       return;
     }
+    uploadInFlight.current = true;
     setUploading(true);
     setError(null);
     try {
-      const meal = await api.uploadMeal(file, trimmedHint);
+      const meal = await api.uploadMeal(selectedFile, trimmedHint, cookingContext);
       router.push(`/food/review/?meal=${meal.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
+      uploadInFlight.current = false;
       setUploading(false);
     }
   };
 
+  const stagePhoto = (file: File) => {
+    setSelectedFile(file);
+    setShowHint(true);
+    setError(null);
+  };
+
   const handleFilePicked = () => {
     const file = fileRef.current?.files?.[0];
-    if (file) upload(file);
+    if (file) stagePhoto(file);
+    if (fileRef.current) fileRef.current.value = '';
   };
 
   return (
@@ -55,6 +79,20 @@ export default function FoodUploadPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            {selectedFile && previewUrl && (
+              <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+                {/* The selected photo is a local object URL, released when replaced or removed. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={previewUrl} alt={t('photoDraft.preview')} data-testid="photo-preview"
+                  className="max-h-64 w-full rounded-lg object-contain" />
+                <TapTarget onClick={() => { setSelectedFile(null); setError(null); }}
+                  data-testid="photo-remove"
+                  className="mt-2 w-full text-sm text-gray-600 dark:text-gray-300">
+                  {t('photoDraft.remove')}
+                </TapTarget>
+              </div>
+            )}
+            <MealCookingContextInputs value={cookingContext} onChange={setCookingContext} />
             {showHint ? (
               <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
                 <label htmlFor="meal-hint" className="block text-sm font-medium text-gray-900 dark:text-white">
@@ -81,6 +119,12 @@ export default function FoodUploadPage() {
                 className="rounded-lg border border-dashed border-gray-300 px-4 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
               >
                 Add a hint (optional)
+              </TapTarget>
+            )}
+            {selectedFile && (
+              <TapTarget onClick={upload} data-testid="photo-analyze"
+                className="rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white">
+                {t('photoDraft.analyze')}
               </TapTarget>
             )}
             <TapTarget
@@ -124,7 +168,7 @@ export default function FoodUploadPage() {
           onClose={() => setShowCamera(false)}
           onCapture={file => {
             setShowCamera(false);
-            upload(file);
+            stagePhoto(file);
           }}
         />
       )}
