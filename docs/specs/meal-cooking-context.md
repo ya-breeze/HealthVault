@@ -27,5 +27,7 @@ Add a shared two-checkbox block to photo and description entry. Both start selec
 - [x] Cover photo/text defaults, non-homemade submissions, and low-salt changes in browser tests.
 
 ### Task 3: Validate and review
-- [ ] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
-- [ ] Mark completed
+- [x] Run tests, static checks, Review Gate, WIP deployment, browser validation, and real-provider probes.
+- [x] Mark completed
+
+Validation evidence: backend tests and 291 frontend tests passed. Go vet, E2E typecheck, frontend TypeScript, and diff whitespace checks passed. Android lint skipped because the SDK is unavailable; no Android files changed. Native correctness, standards, and spec/tests reviews found no blocking findings under the stated scope. Claude peer was unavailable after one HTTP 429 weekly-limit attempt. WIP deployed reviewed implementation 9c2c620. The full food browser suite passed 61 tests with one existing provider-dependent synthetic-image test skipped. All eight new preparation tests passed. Both entry paths render Russian controls at 390px without horizontal overflow. Real-provider described-meal probes persisted flags, estimated 0.191 g sodium for a low-salt homemade meal, retained 1.5 g explicitly supplied sodium for a 100 g labelled example, and carried flags through an actual clarification round. The clarification round also demonstrates the existing estimate/reference-resolution limitation described in How. All synthetic probe meals were deleted.
