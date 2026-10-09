@@ -122,10 +122,8 @@ internal fun GreenSummaryBody(
                         ) {
                             MetricLabelColumn(resourceContext, metric, sizing.labelSp)
                             Spacer(modifier = GlanceModifier.width(5.dp))
-                            if (metric.metric != NutritionMetric.FIBER) {
-                                MetricRail(resourceContext, metric, sizing.railDp, modifier = GlanceModifier.defaultWeight())
-                                Spacer(modifier = GlanceModifier.width(6.dp))
-                            }
+                            MetricRail(resourceContext, metric, sizing.railDp, modifier = GlanceModifier.defaultWeight())
+                            Spacer(modifier = GlanceModifier.width(6.dp))
                             MetricAmount(resourceContext, metric, sizing.valueSp, numberWidth)
                         }
                     }

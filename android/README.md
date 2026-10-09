@@ -110,7 +110,8 @@ idea #12 originally scoped them. Every write still goes through the web UI — *
 
 The resizable home-screen widget follows the phone's light/dark theme with a fixed green palette.
 Calories stay centered and large; the calorie target remains in the accessibility description,
-without a second visible target row. Square sizes use compact protein/fat/carbs/fiber rows;
+without a second visible target row. Square sizes use compact protein/fat/carbs/fiber rows with
+aligned amount columns and a rail for every nutrient;
 wide sizes use two pairs and retain all four rails. Tiny sizes prioritize calories, and larger
 system fonts reduce supporting content instead of clipping it.
 
