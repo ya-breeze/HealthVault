@@ -38,7 +38,7 @@ func TestCaptureBarrierKeepsBackupStatusReadinessAndMCPReachable(t *testing.T) {
 	handler := captureAwareHandler(router, barrier)
 	barrier.Lock()
 	defer barrier.Unlock()
-	for _, path := range []string{"/internal/backups/v1/status", "/internal/ready", "/mcp"} {
+	for _, path := range []string{"/internal/backups/v1/status", "/internal/ready", "/mcp", "/phone-mcp"} {
 		completed := make(chan int, 1)
 		go func() {
 			recorder := httptest.NewRecorder()

@@ -183,6 +183,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	// If the token is empty the endpoint responds 503 so it is never accidentally open.
 	mcpHandler := mcpserver.Handler(storage)
 	r.PathPrefix("/mcp").Handler(requireBearerToken(cfg.MCPToken, mcpHandler))
+	r.Handle("/phone-mcp", fh.PhoneMCPHandler(cfg.PhoneMCPToken, cfg.PhoneMCPUserID, captureBarrier))
 
 	// Keep all HTTP operations mutually compatible with a backup capture. The
 	// backup runner takes the exclusive side while it snapshots SQLite and
@@ -205,12 +206,13 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 func captureAwareHandler(router http.Handler, captureBarrier *sync.RWMutex) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		// Backup status and read-only readiness must remain reachable while a
-		// capture waits or runs. MCP tools are read-only, and a stream may
+		// capture waits or runs. Administrative MCP tools are read-only; phone
+		// tools acquire the barrier individually. An MCP stream may
 		// remain open indefinitely.
 		if strings.HasPrefix(req.URL.Path, "/internal/backups/") ||
 			req.URL.Path == "/internal/backups" ||
 			req.URL.Path == "/internal/ready" ||
-			req.URL.Path == "/mcp" || strings.HasPrefix(req.URL.Path, "/mcp/") {
+			req.URL.Path == "/mcp" || strings.HasPrefix(req.URL.Path, "/mcp/") || req.URL.Path == "/phone-mcp" {
 			router.ServeHTTP(w, req)
 			return
 		}

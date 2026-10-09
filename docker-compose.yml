@@ -11,6 +11,8 @@ services:
       HCW_JWT_SECRET: ${HCW_JWT_SECRET:?HCW_JWT_SECRET must be set}
       HCW_COOKIE_SECURE: ${HCW_COOKIE_SECURE:-true}
       HCW_MCP_TOKEN: ${HCW_MCP_TOKEN:-}
+      HCW_PHONE_MCP_TOKEN: ${HCW_PHONE_MCP_TOKEN:-}
+      HCW_PHONE_MCP_USER_ID: ${HCW_PHONE_MCP_USER_ID:-}
       # Empty disables the webhook instead of accepting unauthenticated payloads.
       HCW_WEBHOOK_TOKEN: ${HCW_WEBHOOK_TOKEN:-}
       # Cloudflare Access sign-in exchange (POST /api/auth/cf-access). All

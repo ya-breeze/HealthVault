@@ -16,7 +16,9 @@ import (
 )
 
 type clarifyMealRequest struct {
-	Answers []string `json:"answers"`
+	Answers         []string `json:"answers"`
+	ExpectedRound   *int     `json:"expected_round,omitempty"`
+	ExpectedVersion string   `json:"expected_version,omitempty"`
 }
 
 // ClarifyMeal handles POST /api/food/meals/{id}/clarify: submits answers to
@@ -75,12 +77,21 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	if req.ExpectedRound != nil && *req.ExpectedRound != pendingRound {
+		http.Error(w, "clarification round changed; reload meal", http.StatusConflict)
+		return
+	}
 	if len(req.Answers) != len(pendingIdx) {
 		http.Error(w, "answers must match the number of pending questions", http.StatusBadRequest)
 		return
 	}
+	if req.ExpectedVersion != "" && req.ExpectedVersion != meal.UpdatedAt.UTC().Format(time.RFC3339Nano) {
+		http.Error(w, "clarification questions changed; reload meal", http.StatusConflict)
+		return
+	}
 	for i, idx := range pendingIdx {
 		entries[idx].Answer = req.Answers[i]
+		entries[idx].RequestVersion = req.ExpectedVersion
 	}
 
 	logBytes, err := json.Marshal(entries)

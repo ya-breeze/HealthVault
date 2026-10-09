@@ -13,6 +13,8 @@ type Config struct {
 	JWTSecret      string
 	CookieSecure   bool
 	MCPToken       string // required bearer token for /mcp; if empty, /mcp is disabled
+	PhoneMCPToken  string // separate private-tunnel credential for a fixed user
+	PhoneMCPUserID string // UUID; no caller-selected identity
 	WebhookToken   string // required X-HCW-Webhook-Token for /webhook; empty disables it
 	BackupAPIToken string // private project-owned backup API; if empty, job creation is disabled
 
@@ -57,6 +59,8 @@ func Load() (*Config, error) {
 		JWTSecret:             viper.GetString("JWT_SECRET"),
 		CookieSecure:          viper.GetBool("COOKIE_SECURE"),
 		MCPToken:              viper.GetString("MCP_TOKEN"),
+		PhoneMCPToken:         viper.GetString("PHONE_MCP_TOKEN"),
+		PhoneMCPUserID:        viper.GetString("PHONE_MCP_USER_ID"),
 		WebhookToken:          viper.GetString("WEBHOOK_TOKEN"),
 		BackupAPIToken:        viper.GetString("BACKUP_API_TOKEN"),
 		BackupSpoolDir:        viper.GetString("BACKUP_SPOOL_DIR"),
