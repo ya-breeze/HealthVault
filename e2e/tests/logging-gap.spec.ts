@@ -1506,8 +1506,8 @@ test.describe('Nutrition advice (nutrition card middle row)', () => {
   });
 });
 
-// Restores the Logging Gap card to its default state (visible, last among
-// the vitals-grid cards — see PRIMARY_METRICS in frontend/lib/vitals.ts) so a
+// Restores the Logging Gap card to the test baseline (visible, last among
+// the currently rendered vitals-grid cards) so a
 // failed assertion in one test doesn't leak a hidden/reordered card into the
 // next. Best-effort throughout, matching dashboard.spec.ts's
 // restoreDefaultOrder/restoreAllVisible: this runs from `finally` and
@@ -1532,7 +1532,8 @@ async function restoreLoggingGapDefault(page: Page) {
   }
 
   const moveDown = page.getByRole('button', { name: 'Move Nutrition down' });
-  for (let i = 0; i < 9; i++) {
+  const maxMoves = await page.getByTestId('vitals-grid').locator('> *').count();
+  for (let i = 0; i < maxMoves - 1; i++) {
     if (await moveDown.isDisabled().catch(() => true)) break;
     await moveDown.click().catch(() => {});
     changed = true;
@@ -1595,7 +1596,8 @@ test.describe('Logging Gap Card in Edit mode', () => {
       await page.getByRole('button', { name: 'Customize' }).click();
 
       const moveUp = page.getByRole('button', { name: 'Move Nutrition up' });
-      for (let i = 0; i < 9; i++) {
+      const maxMoves = await grid.locator('> *').count();
+      for (let i = 0; i < maxMoves - 1; i++) {
         if (await moveUp.isDisabled()) break;
         await moveUp.click();
       }

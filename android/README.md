@@ -1,6 +1,6 @@
 # HealthVault Android client
 
-A thin, read-only native client (`net.ikoro.healthvault`) plus home-screen and Samsung FlexWindow widgets, all reading
+A thin native client (`net.ikoro.healthvault`) plus home-screen and Samsung FlexWindow widgets, all reading
 `GET /api/summary/today`. See `docs/specs/build-the-native-android-app-and-its-hom.md` for the
 full design, and `docs/adr/ADR-014-android-client-in-repo.md` /
 `docs/adr/ADR-015-android-cookie-session-auth.md` for why it's built the way it is.
@@ -101,8 +101,8 @@ real login call.
 
 ## What this app deliberately does not do
 
-Native camera capture, any write path, and native Google Sign-In are all deferred, matching how
-idea #12 originally scoped them. Every write still goes through the web UI — **Log food** opens
+Native camera capture, native food entry, and native Google Sign-In remain deferred.
+Food entry still goes through the web UI — **Log food** opens
 `<server>/food/upload/` in a Chrome Custom Tab rather than reimplementing the upload flow natively.
 
 
@@ -115,9 +115,12 @@ aligned amount columns and a rail for every nutrient;
 wide sizes use two pairs and retain all four rails. Tiny sizes prioritize calories, and larger
 system fonts reduce supporting content instead of clipping it.
 
-A full-day target overrun turns its amount and rail red; equal to target remains green.
-Fiber is summed from confirmed meals for the current local day. The fiber target is not configured,
-so its rail stays neutral. An older server/cache without fiber shows an unknown amount (`—`),
+A calorie or macro target overrun turns its amount and rail red; equal to target remains green.
+Fiber is summed from confirmed meals for the current local day. Its adult reference target is
+25 g/day, independent of weight and macro target availability. Open **Settings → Fiber target**
+to save a manual target (1–200 g) or reset to the reference. Known under-18 profiles receive no
+automatic adult target. Fiber stays green above its target. An older server/cache without a
+fiber target keeps a neutral rail; missing fiber consumption shows an unknown amount (`—`),
 not zero. The separate FlexWindow design and pacing behavior are unchanged.
 
 The debug APK, shared-container build, and WIP API checks do not prove launcher rendering.
@@ -157,3 +160,21 @@ Phone acceptance (not proved by JVM tests or a build):
    observation uploads under the new account.
 6. Check disabled location services, stale fixes and travel. Expect gaps; a trip between samples
    can remain undetected. No claim of a causal health effect is shown.
+
+## Sync diagnostics
+
+Open **Settings → Diagnostics** to see the last successful summary refresh, current summary
+error, recent request history and pending reports. Use **Send reports** to upload manually.
+Successful summary or weather synchronization also schedules an upload without blocking the
+original operation. Existing synchronization retries remain unchanged.
+
+The encrypted phone journal retains at most 200 events for 14 days. It records closed technical
+categories, timestamps, duration, attempts, HTTP status, app version, Android API level and
+request IDs. It excludes response bodies, exception messages, credentials, health and location
+data. Sign-out or account replacement clears the local journal and pending reports.
+The server accepts authenticated reports only for the current user, deduplicates retries and
+retains at most 1000 events per user for 30 days. Server API logs include the same request ID.
+
+This feature adds no alerts, crash SDK or extra automatic recovery. JVM tests cover storage,
+acknowledgments, classification and API contracts. Builds do not prove phone rendering or
+Android process lifecycle behavior; this project has no instrumented device tests.

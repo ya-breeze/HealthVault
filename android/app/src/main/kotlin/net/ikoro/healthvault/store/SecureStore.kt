@@ -14,6 +14,8 @@ import net.ikoro.healthvault.api.TodaySummary
 import net.ikoro.healthvault.weather.WeatherObservation
 import java.time.Instant
 import java.util.UUID
+import net.ikoro.healthvault.diagnostics.DiagnosticEvent
+import net.ikoro.healthvault.diagnostics.DiagnosticJournal
 
 private const val PREFS_NAME = "healthvault_secure_store"
 private const val KEY_WEATHER_CONSENT = "weather_consent"
@@ -25,6 +27,7 @@ private const val KEY_COOKIES = "cookies"
 private const val KEY_SNAPSHOT = "snapshot"
 private const val KEY_REFRESH_FAILED = "refresh_failed"
 private const val KEY_NEXT_REFRESH_AT = "next_refresh_at"
+private const val KEY_DIAGNOSTICS = "diagnostics"
 
 @Serializable
 data class SummarySnapshot(val summary: TodaySummary, val fetchedAtMillis: Long)
@@ -138,7 +141,8 @@ class SecureStore(private val prefs: SharedPreferences) {
                     .remove(KEY_REFRESH_FAILED)
                     .remove(KEY_NEXT_REFRESH_AT)
                     .remove(KEY_WEATHER_CONSENT)
-                    .remove(KEY_WEATHER_QUEUE),
+                    .remove(KEY_WEATHER_QUEUE)
+                    .remove(KEY_DIAGNOSTICS),
                 "session",
             )
             sessionGeneration++
@@ -198,6 +202,7 @@ class SecureStore(private val prefs: SharedPreferences) {
                 .remove(KEY_NEXT_REFRESH_AT)
                 .remove(KEY_WEATHER_CONSENT)
                 .remove(KEY_WEATHER_QUEUE)
+                .remove(KEY_DIAGNOSTICS)
             commitOrThrow(editor, "session clear")
             sessionGeneration++
             return true
@@ -242,6 +247,46 @@ class SecureStore(private val prefs: SharedPreferences) {
         if (!weatherActive(consent, generation)) return false
         val remaining = weatherQueue(consent, generation).filterNot { it.id == id }
         commitOrThrow(prefs.edit().putString(KEY_WEATHER_QUEUE, json.encodeToString(remaining)), "weather queue")
+        true
+    }
+
+    fun diagnosticJournal(generation: Long = currentSessionGeneration,
+                          nowMillis: Long = System.currentTimeMillis()): DiagnosticJournal = synchronized(refreshStateLock) {
+        if (generation != sessionGeneration || !hasSession()) return DiagnosticJournal()
+        val raw = prefs.getString(KEY_DIAGNOSTICS, null)
+        val saved = raw?.let { runCatching { json.decodeFromString<DiagnosticJournal>(it) }.getOrNull() }
+            ?: DiagnosticJournal()
+        val events = saved.events.filter {
+            val time = runCatching { Instant.parse(it.occurredAt).toEpochMilli() }.getOrNull()
+            time != null && time >= nowMillis - DiagnosticJournal.MAX_AGE_MILLIS
+        }.takeLast(DiagnosticJournal.MAX_EVENTS)
+        saved.copy(events = events, pendingIds = saved.pendingIds.filter { id -> events.any { it.id == id } })
+    }
+
+    fun recordDiagnostic(event: DiagnosticEvent, generation: Long): Boolean = synchronized(refreshStateLock) {
+        if (generation != sessionGeneration || !hasSession()) return false
+        val saved = diagnosticJournal(generation)
+        val previous = saved.events.lastOrNull { it.operation == event.operation }
+        val success = event.category == "success"
+        val recovered = success && previous != null && previous.category !in setOf("success", "recovered")
+        val recorded = event.copy(
+            category = if (recovered) "recovered" else event.category,
+            attempt = if (previous != null && previous.category !in setOf("success", "recovered"))
+                (previous.attempt + 1).coerceAtMost(1000000) else 1,
+        )
+        val events = (saved.events + recorded).takeLast(DiagnosticJournal.MAX_EVENTS)
+        val pending = (saved.pendingIds + recorded.id).filter { id -> events.any { it.id == id } }
+        val journal = saved.copy(events = events, pendingIds = pending,
+            lastSummarySuccess = if (event.operation == "summary" && success) event.occurredAt else saved.lastSummarySuccess)
+        commitOrThrow(prefs.edit().putString(KEY_DIAGNOSTICS, json.encodeToString(journal)), "diagnostic journal")
+        true
+    }
+
+    fun acknowledgeDiagnostics(ids: Set<String>, generation: Long): Boolean = synchronized(refreshStateLock) {
+        if (generation != sessionGeneration || !hasSession()) return false
+        val saved = diagnosticJournal(generation)
+        commitOrThrow(prefs.edit().putString(KEY_DIAGNOSTICS,
+            json.encodeToString(saved.copy(pendingIds = saved.pendingIds.filterNot { it in ids }))), "diagnostic receipt")
         true
     }
 

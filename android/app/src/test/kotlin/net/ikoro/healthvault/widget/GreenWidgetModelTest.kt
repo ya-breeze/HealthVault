@@ -7,6 +7,13 @@ import org.junit.Test
 
 class GreenWidgetModelTest {
     @Test
+    fun fiberProgressUsesTargetAsMinimumWithoutOverrunWarning() {
+        assertEquals(.76f, WidgetMetric(NutritionMetric.FIBER, 19.0, 25).fraction!!, .001f)
+        assertEquals(1f, WidgetMetric(NutritionMetric.FIBER, 35.0, 25).fraction!!, 0f)
+        assertFalse(WidgetMetric(NutritionMetric.FIBER, 35.0, 25).exceeded)
+        assertNull(WidgetMetric(NutritionMetric.FIBER, 19.0, null).fraction)
+    }
+    @Test
     fun fullDayOverrunIsStrictAndDoesNotDependOnMealPace() {
         assertFalse(WidgetMetric(NutritionMetric.PROTEIN, 127.99, 128).exceeded)
         assertFalse(WidgetMetric(NutritionMetric.PROTEIN, 128.0, 128).exceeded)

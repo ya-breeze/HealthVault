@@ -1,6 +1,14 @@
 package net.ikoro.healthvault.api
 
 import java.io.IOException
+import java.time.Instant
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+import net.ikoro.healthvault.diagnostics.DiagnosticEvent
+import net.ikoro.healthvault.diagnostics.networkCategory
+import okhttp3.Interceptor
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -28,6 +36,15 @@ private val EMPTY_BODY = ByteArray(0).toRequestBody()
 private data class WeatherAccepted(val id: String, val status: String)
 
 @Serializable
+private data class DiagnosticBatch(val events: List<DiagnosticEvent>)
+@Serializable
+private data class DiagnosticReceipt(@kotlinx.serialization.SerialName("accepted_ids") val acceptedIds: List<String>)
+@Serializable
+private data class FiberSetting(val grams: Int?)
+
+private data class ObservedRequest(val id: String, val operation: String, val generation: Long, val started: Long, var recorded: Boolean = false)
+
+@Serializable
 private data class LoginRequest(val username: String, val password: String)
 
 /**
@@ -42,15 +59,65 @@ class HealthVaultApi(
     private val secureStore: SecureStore,
     private val cookieJar: SessionCookieJar,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val diagnosticEnvironment: () -> Pair<String, Int> = { "unknown" to 26 },
+    private val onSuccessfulSync: (Long) -> Unit = {},
 ) {
-    private val plainClient = OkHttpClient.Builder()
-        .addInterceptor(cookieJar.sessionGenerationInterceptor())
-        .cookieJar(cookieJar)
-        .build()
+    private val uploadLock = ReentrantLock()
+    private val observer = Interceptor { chain ->
+        val operation = when (chain.request().url.encodedPath) {
+            "/api/summary/today" -> "summary"
+            "/api/weather/locations" -> "weather"
+            "/api/auth/login" -> "auth_login"
+            "/api/auth/refresh" -> "auth_refresh"
+            else -> null
+        }
+        if (operation == null) return@Interceptor chain.proceed(chain.request())
+        val observed = ObservedRequest(UUID.randomUUID().toString(), operation,
+            cookieJar.pinnedSessionGeneration, System.nanoTime())
+        val request = chain.request().newBuilder().header("X-Request-ID", observed.id)
+            .tag(ObservedRequest::class.java, observed).build()
+        try {
+            val response = chain.proceed(request)
+            if (!response.isSuccessful) {
+                val category = when {
+                    response.code == 401 -> "unauthenticated"
+                    response.code == 429 -> "rate_limited"
+                    response.request.url.host.endsWith("cloudflareaccess.com") ||
+                        (response.code < 500 && response.header("Content-Type")?.contains("text/html") == true) -> "access_challenge"
+                    response.isSuccessful -> "success"
+                    else -> "server"
+                }
+                record(observed, category, response.code)
+            }
+            response
+        } catch (e: IOException) {
+            record(observed, networkCategory(e))
+            throw e
+        }
+    }
 
-    private val client = plainClient.newBuilder()
-        .addInterceptor(RefreshInterceptor { doRefresh() })
-        .build()
+    private fun record(observed: ObservedRequest, category: String, code: Int = 0) {
+        // Diagnostics must never turn a successful primary request into a failure.
+        observed.recorded = true
+        runCatching {
+            val (version, sdk) = diagnosticEnvironment()
+            secureStore.recordDiagnostic(DiagnosticEvent(
+                id = UUID.randomUUID().toString(), occurredAt = Instant.now().toString(),
+                operation = observed.operation, category = category, requestId = observed.id,
+                httpCode = code, durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - observed.started),
+                appVersion = version.replace(Regex("[^a-zA-Z0-9.+_-]"), "_").take(80).ifEmpty { "unknown" }, androidApi = sdk,
+            ), observed.generation)
+        }
+    }
+
+    private fun buildClient(recoverAuth: Boolean): OkHttpClient {
+        val builder = OkHttpClient.Builder().cookieJar(cookieJar)
+            .addInterceptor(cookieJar.sessionGenerationInterceptor())
+        if (recoverAuth) builder.addInterceptor(RefreshInterceptor { doRefresh() })
+        return builder.addInterceptor(observer).build()
+    }
+    private val plainClient = buildClient(false)
+    private val client = buildClient(true)
 
     fun login(serverUrl: String, username: String, password: String): ApiResult<Unit> {
         val body = json.encodeToString(LoginRequest(username, password)).toRequestBody(JSON_MEDIA_TYPE)
@@ -73,7 +140,7 @@ class HealthVaultApi(
             .post(EMPTY_BODY)
             .build()
         return try {
-            plainClient.newCall(request).execute().use { it.isSuccessful }
+            plainClient.newCall(request).execute().use { classify(it) {} is ApiResult.Success }
         } catch (e: IOException) {
             false
         }
@@ -98,7 +165,9 @@ class HealthVaultApi(
     fun summaryToday(): ApiResult<TodaySummary> = cookieJar.withSessionGeneration(
         secureStore.currentSessionGeneration,
     ) {
-        summaryTodayForPinnedSession()
+        val result = summaryTodayForPinnedSession()
+        if (result is ApiResult.Success) runCatching { onSuccessfulSync(cookieJar.pinnedSessionGeneration) }
+        result
     }
 
     private fun summaryTodayForPinnedSession(): ApiResult<TodaySummary> {
@@ -145,11 +214,58 @@ class HealthVaultApi(
         )
         val result = send()
         if (result !is ApiResult.Unauthenticated || !active() || username == null || password == null) {
+            if (result is ApiResult.Success) runCatching { onSuccessfulSync(cookieJar.pinnedSessionGeneration) }
             return@withSessionGeneration result
         }
         val relogin = login(server, username, password)
         relogin.failureOrNull()?.let { return@withSessionGeneration it }
-        send()
+        val retried = send()
+        if (retried is ApiResult.Success) runCatching { onSuccessfulSync(cookieJar.pinnedSessionGeneration) }
+        retried
+    }
+
+    /** Sends only this session's pending events. Failure leaves every unacknowledged ID intact. */
+    fun sendDiagnostics(generation: Long = secureStore.currentSessionGeneration): ApiResult<Int> = uploadLock.withLock {
+        cookieJar.withSessionGeneration(generation) {
+            val server = secureStore.serverUrl ?: return@withSessionGeneration ApiResult.Unauthenticated
+            var count = 0
+            // At most four bounded batches; never chase an unbounded concurrently growing queue.
+            repeat(4) {
+                val journal = secureStore.diagnosticJournal(generation)
+                val events = journal.events.filter { it.id in journal.pendingIds }.take(50)
+                if (events.isEmpty()) return@withSessionGeneration ApiResult.Success(count)
+                if (!secureStore.isCurrentSession(generation)) return@withSessionGeneration ApiResult.Unauthenticated
+                val request = Request.Builder().url(server.trimEnd('/') + "/api/diagnostics/events")
+                    .post(json.encodeToString(DiagnosticBatch(events)).toRequestBody(JSON_MEDIA_TYPE)).build()
+                val result = runCatching { plainClient.newBuilder().callTimeout(30, TimeUnit.SECONDS).build().newCall(request).execute() }.fold(
+                    onSuccess = { response -> response.use {
+                        classify(it) { body ->
+                            check(it.code == 202)
+                            val ids = json.decodeFromString<DiagnosticReceipt>(body).acceptedIds
+                            check(ids.toSet() == events.map { e -> e.id }.toSet())
+                            ids.toSet()
+                        }
+                    } }, onFailure = { ApiResult.NetworkFailure(it) },
+                )
+                if (result !is ApiResult.Success) return@withSessionGeneration result.failureOrNull()!!
+                if (!secureStore.acknowledgeDiagnostics(result.value, generation)) return@withSessionGeneration ApiResult.Unauthenticated
+                count += result.value.size
+            }
+            ApiResult.Success(count)
+        }
+    }
+
+    fun setFiberTarget(grams: Int?): ApiResult<Unit> {
+        val generation = secureStore.currentSessionGeneration
+        return cookieJar.withSessionGeneration(generation) {
+            val server = secureStore.serverUrl ?: return@withSessionGeneration ApiResult.Unauthenticated
+            val request = Request.Builder().url(server.trimEnd('/') + "/api/users/me/fiber-target")
+                .put(json.encodeToString(FiberSetting(grams)).toRequestBody(JSON_MEDIA_TYPE)).build()
+            runCatching { client.newCall(request).execute() }.fold(
+                onSuccess = { response -> response.use { classify(it) { body -> json.decodeFromString<FiberSetting>(body); Unit } } },
+                onFailure = { ApiResult.NetworkFailure(it) },
+            )
+        }
     }
 
     private fun execute(request: Request): ApiResult<TodaySummary> =
@@ -160,23 +276,43 @@ class HealthVaultApi(
             )
 
     private fun <T> classify(response: Response, parse: (String) -> T): ApiResult<T> {
+        val observed = response.request.tag(ObservedRequest::class.java)
+        val body = try { response.body?.string() ?: "" } catch (e: IOException) {
+            if (observed != null) record(observed, networkCategory(e), response.code)
+            return ApiResult.NetworkFailure(e)
+        }
         val outcome = classifyRawResponse(
             code = response.code,
             contentType = response.header("Content-Type"),
-            body = response.body?.string() ?: "",
+            body = body,
             // response.request.url reflects the *final* URL after OkHttp's
             // default redirect-following, so a Cloudflare Access challenge
             // that redirected to its own login host is visible here.
             finalUrlHost = response.request.url.host,
             retryAfterHeader = response.header("Retry-After"),
         )
+        if (observed != null && !observed.recorded && outcome !is RawOutcome.Success) {
+            val category = when (outcome) {
+                is RawOutcome.Unauthenticated -> "unauthenticated"
+                is RawOutcome.RateLimited -> "rate_limited"
+                is RawOutcome.AccessChallenge -> "access_challenge"
+                else -> "server"
+            }
+            record(observed, category, response.code)
+        }
         return when (outcome) {
             is RawOutcome.Unauthenticated -> ApiResult.Unauthenticated
             is RawOutcome.RateLimited -> ApiResult.RateLimited(outcome.retryAfter)
             is RawOutcome.AccessChallenge -> ApiResult.AccessChallenge
             is RawOutcome.ServerError -> ApiResult.ServerError(outcome.code, outcome.body)
-            is RawOutcome.Success -> runCatching { ApiResult.Success(parse(outcome.body)) }
-                .getOrElse { ApiResult.ServerError(response.code, "unparseable response") }
+            is RawOutcome.Success -> {
+                val parsed = runCatching { ApiResult.Success(parse(outcome.body)) }
+                    .getOrElse { ApiResult.ServerError(response.code, "unparseable response") }
+                if (observed != null && (!observed.recorded || parsed !is ApiResult.Success)) {
+                    record(observed, if (parsed is ApiResult.Success) "success" else "invalid_response", response.code)
+                }
+                parsed
+            }
         }
     }
 }

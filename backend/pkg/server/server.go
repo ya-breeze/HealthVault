@@ -93,6 +93,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 		WithOFF(offIndex)
 
 	r := mux.NewRouter()
+	r.Use(RequestDiagnostics(logger))
 	registerReadinessRoute(r, storage.DB())
 	// Internal backup calls are private backend routes. nginx returns an explicit
 	// JSON 404 for this prefix and never proxies it from an application hostname.
@@ -134,6 +135,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/users/me/settings", GetUserSettingsHandler(storage)).Methods("GET")
 	api.HandleFunc("/users/me/settings", PutUserSettingsHandler(storage)).Methods("PUT")
 	api.HandleFunc("/users/me/nutrition-target", NutritionTargetHandler(storage)).Methods("GET")
+	api.HandleFunc("/diagnostics/events", DiagnosticsHandler(storage)).Methods("GET", "POST")
+	api.HandleFunc("/users/me/fiber-target", FiberTargetHandler(storage)).Methods("PUT")
 	api.HandleFunc("/summary/today", SummaryTodayHandler(storage)).Methods("GET")
 	api.HandleFunc("/dashboard", DashboardHandler(storage)).Methods("GET")
 	// Note: /data/summary must be registered before /data/{type} to avoid

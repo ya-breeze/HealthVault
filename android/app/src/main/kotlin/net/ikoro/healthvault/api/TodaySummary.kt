@@ -19,6 +19,7 @@ data class TodaySummaryTarget(
     @SerialName("protein_grams") val proteinGrams: Int,
     @SerialName("carbs_grams") val carbsGrams: Int,
     @SerialName("fat_grams") val fatGrams: Int,
+    @SerialName("dietary_fiber_grams") val dietaryFiberGrams: Int? = null,
 )
 
 /**

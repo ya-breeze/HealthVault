@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
         setContent {
             var hasSession by remember { mutableStateOf(app.secureStore.hasSession()) }
             val scope = rememberCoroutineScope()
+            var showingDiagnostics by rememberSaveable { mutableStateOf(false) }
             var showingSettings by rememberSaveable { mutableStateOf(false) }
 
             val signOut: () -> Unit = {
@@ -44,15 +45,20 @@ class MainActivity : AppCompatActivity() {
                     }
                     applyDisplayLanguage("")
                     WidgetUpdater.updateAll(applicationContext)
+                    showingDiagnostics = false
                     showingSettings = false
                     hasSession = false
                 }
             }
 
             if (hasSession) {
-                if (showingSettings) {
+                if (showingDiagnostics) {
+                    DiagnosticsScreen(app.api, app.secureStore, onBack = { showingDiagnostics = false })
+                } else if (showingSettings) {
                     SettingsScreen(
                         secureStore = app.secureStore,
+                        api = app.api,
+                        onOpenDiagnostics = { showingDiagnostics = true },
                         onBack = { showingSettings = false },
                         onSignedOut = signOut,
                     )
@@ -69,6 +75,7 @@ class MainActivity : AppCompatActivity() {
                     api = app.api,
                     secureStore = app.secureStore,
                     onSignedIn = {
+                        showingDiagnostics = false
                         showingSettings = false
                         hasSession = true
                         scope.launch(Dispatchers.IO) { WeatherScheduler.reconcile(applicationContext) }

@@ -139,6 +139,8 @@ class SessionCookieJar(private val secureStore: SecureStore) : CookieJar {
         withSessionGeneration(generation) { chain.proceed(chain.request()) }
     }
 
+    internal val pinnedSessionGeneration: Long get() = requestGeneration.get() ?: secureStore.currentSessionGeneration
+
     internal fun <T> withSessionGeneration(generation: Long, block: () -> T): T {
         val previous = requestGeneration.get()
         requestGeneration.set(generation)
