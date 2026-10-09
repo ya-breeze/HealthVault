@@ -11,3 +11,5 @@ Use the existing cookie session and encrypted Android preferences for a bounded 
 ## Consequences
 
 The server owns the evidence without a third-party telemetry SDK. Offline evidence survives process restarts but can be lost through retention, queue bounds or sign-out. A failed diagnostic upload never changes the primary sync result. Reporting remains unavailable until a newer server accepts the endpoint. Alerts and crash reporting remain separate work.
+
+> **Update (2026-10-09):** The owner extended server retention to 365 days from receipt and removed the per-user 1000-event cap. Reads still return the latest 100 events; ingestion prunes expired records. See [the retention spec](../specs/diagnostics-year-retention.md).

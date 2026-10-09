@@ -173,7 +173,8 @@ categories, timestamps, duration, attempts, HTTP status, app version, Android AP
 request IDs. It excludes response bodies, exception messages, credentials, health and location
 data. Sign-out or account replacement clears the local journal and pending reports.
 The server accepts authenticated reports only for the current user, deduplicates retries and
-retains at most 1000 events per user for 30 days. Server API logs include the same request ID.
+retains events for 365 days from server receipt, without a per-user event count cap. Server API
+logs include the same request ID.
 
 This feature adds no alerts, crash SDK or extra automatic recovery. JVM tests cover storage,
 acknowledgments, classification and API contracts. Builds do not prove phone rendering or

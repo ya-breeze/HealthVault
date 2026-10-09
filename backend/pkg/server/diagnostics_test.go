@@ -88,14 +88,14 @@ func TestDiagnosticIngestionIsolationValidationAndReceipts(t *testing.T) {
 	}
 }
 
-func TestDiagnosticRetention(t *testing.T) {
+func TestDiagnosticRetentionDoesNotCapYearHistory(t *testing.T) {
 	st := newFoodTestStorage(t)
 	u, f := seedFoodUser(t, st)
 	rows := make([]database.ClientDiagnosticEvent, 1002)
 	for i := range rows {
 		rows[i] = database.ClientDiagnosticEvent{UserID: u, ID: uuid.NewString(), ReceivedAt: time.Now().UTC().Add(-time.Hour)}
 	}
-	rows[0].ReceivedAt = time.Now().UTC().Add(-31 * 24 * time.Hour)
+	rows[0].ReceivedAt = time.Now().UTC().Add(-364 * 24 * time.Hour)
 	if err := st.DB().CreateInBatches(rows, 100).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -107,22 +107,34 @@ func TestDiagnosticRetention(t *testing.T) {
 	}
 	var count int64
 	st.DB().Model(&database.ClientDiagnosticEvent{}).Where("user_id = ?", u).Count(&count)
-	if count != 1000 {
-		t.Fatal("retention cap", count)
+	if count != 1003 {
+		t.Fatal("year history truncated", count)
+	}
+	w = httptest.NewRecorder()
+	server.DiagnosticsHandler(st)(w, withClaimsFamily(httptest.NewRequest("GET", "/api/diagnostics/events", nil), u, f))
+	var out struct {
+		Events []database.ClientDiagnosticEvent `json:"events"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 || len(out.Events) != 100 {
+		t.Fatalf("bounded read: status=%d events=%d error=%v", w.Code, len(out.Events), err)
 	}
 }
 
 func TestDiagnosticAgeRetentionAndClockSkew(t *testing.T) {
 	st := newFoodTestStorage(t)
 	u, f := seedFoodUser(t, st)
-	old := database.ClientDiagnosticEvent{UserID: u, ID: uuid.NewString(), ReceivedAt: time.Now().UTC().Add(-31 * 24 * time.Hour)}
+	old := database.ClientDiagnosticEvent{UserID: u, ID: uuid.NewString(), ReceivedAt: time.Now().UTC().Add(-366 * 24 * time.Hour)}
 	if err := st.DB().Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+	retained := database.ClientDiagnosticEvent{UserID: u, ID: uuid.NewString(), ReceivedAt: time.Now().UTC().Add(-364 * 24 * time.Hour)}
+	if err := st.DB().Create(&retained).Error; err != nil {
 		t.Fatal(err)
 	}
 	h := server.DiagnosticsHandler(st)
 	w := httptest.NewRecorder()
 	h(w, withClaimsFamily(httptest.NewRequest("GET", "/api/diagnostics/events", nil), u, f))
-	if w.Code != 200 || strings.Contains(w.Body.String(), old.ID) {
+	if w.Code != 200 || strings.Contains(w.Body.String(), old.ID) || !strings.Contains(w.Body.String(), retained.ID) {
 		t.Fatal("expired read", w.Body.String())
 	}
 	body := fmt.Sprintf(`{"events":[{"id":"%s","occurred_at":"%s","operation":"summary","category":"success","request_id":"%s","attempt":1,"app_version":"1.0","android_api":36}]}`, uuid.NewString(), time.Now().UTC().Add(24*time.Hour).Format(time.RFC3339Nano), uuid.NewString())
@@ -135,6 +147,10 @@ func TestDiagnosticAgeRetentionAndClockSkew(t *testing.T) {
 	st.DB().Model(&database.ClientDiagnosticEvent{}).Where("user_id = ? AND id = ?", u, old.ID).Count(&count)
 	if count != 0 {
 		t.Fatal("expired row retained")
+	}
+	st.DB().Model(&database.ClientDiagnosticEvent{}).Where("user_id = ? AND id = ?", u, retained.ID).Count(&count)
+	if count != 1 {
+		t.Fatal("year-old history pruned")
 	}
 }
 

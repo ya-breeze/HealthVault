@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const diagnosticRetention = 365 * 24 * time.Hour
+
 var diagnosticVersion = regexp.MustCompile(`^[a-zA-Z0-9.+_-]{1,80}$`)
 var errDiagnosticConflict = errors.New("diagnostic id conflict")
 
@@ -59,7 +61,7 @@ func DiagnosticsHandler(storage database.Storage) http.HandlerFunc {
 		now := time.Now().UTC()
 		if r.Method == http.MethodGet {
 			events := []database.ClientDiagnosticEvent{}
-			if err := storage.DB().Where("user_id = ? AND received_at >= ?", claims.UserID, now.Add(-30*24*time.Hour)).Order("received_at DESC, id DESC").Limit(100).Find(&events).Error; err != nil {
+			if err := storage.DB().Where("user_id = ? AND received_at >= ?", claims.UserID, now.Add(-diagnosticRetention)).Order("received_at DESC, id DESC").Limit(100).Find(&events).Error; err != nil {
 				http.Error(w, "query error", 500)
 				return
 			}
@@ -102,11 +104,10 @@ func DiagnosticsHandler(storage database.Storage) http.HandlerFunc {
 					return errDiagnosticConflict
 				}
 			}
-			if err := tx.Where("user_id = ? AND received_at < ?", claims.UserID, now.Add(-30*24*time.Hour)).Delete(&database.ClientDiagnosticEvent{}).Error; err != nil {
+			if err := tx.Where("user_id = ? AND received_at < ?", claims.UserID, now.Add(-diagnosticRetention)).Delete(&database.ClientDiagnosticEvent{}).Error; err != nil {
 				return err
 			}
-			keep := tx.Model(&database.ClientDiagnosticEvent{}).Select("id").Where("user_id = ?", claims.UserID).Order("received_at DESC, id DESC").Limit(1000)
-			return tx.Where("user_id = ? AND id NOT IN (?)", claims.UserID, keep).Delete(&database.ClientDiagnosticEvent{}).Error
+			return nil
 		})
 		if errors.Is(err, errDiagnosticConflict) {
 			http.Error(w, "event id conflict", 409)
