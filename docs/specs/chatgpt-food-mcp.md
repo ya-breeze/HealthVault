@@ -20,17 +20,30 @@ Use the private tunnel with a server-side bearer header and a fixed synthetic WI
 - Protocol smoke on deployed WIP: describe, replay, clarify if needed, confirm, replay confirm, cross-user rejection, and read-back.
 
 ### Task 1: Add recoverable meal creation
-- [ ] Persist optional bounded request ID and fingerprint atomically with the described meal.
-- [ ] Return the original meal for matching replays; reject conflicting inputs.
-- [ ] Cover concurrent replays, restart/reload, missing request IDs, and conflicts.
-- [ ] Mark completed.
+- [x] Persist optional bounded request ID and fingerprint atomically with the described meal.
+- [x] Return the original meal for matching replays; reject conflicting inputs.
+- [x] Cover concurrent replays, restart/reload, missing request IDs, and conflicts.
+- [x] Mark completed.
 
 ### Task 2: Add fixed-user phone MCP tools
-- [ ] Add disabled-by-default dedicated token/user configuration and stateless endpoint.
-- [ ] Reuse food handlers under per-call backup locking and fixed user claims.
-- [ ] Return bounded structured meal results with accurate status and clarification rounds.
-- [ ] Protect clarification and confirmation retries; expose existing retry recovery.
-- [ ] Cover auth, identity isolation, workflow, recovery, and backup behavior through protocol tests.
-- [ ] Document private-tunnel header configuration and WIP operation.
-- [ ] Run Review Gate, deploy and validate WIP, and record the actual validation level.
-- [ ] Mark completed.
+- [x] Add disabled-by-default dedicated token/user configuration and stateless endpoint.
+- [x] Reuse food handlers under per-call backup locking and fixed user claims.
+- [x] Return bounded structured meal results with accurate status and clarification rounds.
+- [x] Protect clarification and confirmation retries; expose existing retry recovery.
+- [x] Cover auth, identity isolation, workflow, recovery, and backup behavior through protocol tests.
+- [x] Document private-tunnel header configuration and WIP operation.
+- [x] Run Review Gate, deploy and validate WIP, and record the actual validation level.
+- [x] Mark completed.
+
+
+## Validation results
+
+Implementation commit: `1a1ea6ea66f477100feb9bdb3cd553add7262ca0`. HealthVault WIP stack 50 runs the feature branch. The running backend binary matches the independently built pinned-source image: SHA-256 `4fb229477e5bbd2dbcb91e888dd5db606f44c6fd78e10bb479c328e8bfe4f06e`. The running nginx configuration matches the committed file. Production and the VM are unchanged.
+
+`make test-backend` and `make lint` pass. Android lint is skipped because no SDK is available; this change touches no Android code. Native correctness, standards, and spec/test reviews are clean. Claude's system peer review completed. Its valid replay, draft-nutrition, and coverage findings were addressed and verified by the final native review; no unaddressed finding remains.
+
+The full WIP browser run exercised 326 tests: 315 passed, one skipped, and ten failed. Eight failures were caused by an omitted test webhook credential; two timed out. The ten failed tests were rerun serially with the credential supplied through the environment, `--retries=0`, and traces: all ten passed in 19.8 seconds. Thus 325 distinct tests passed across the full run and targeted rerun. Secret-bearing trace archives were removed after validation.
+
+Deployed protocol validation passed initialization, exactly five tools, a description draft, persistent request replay, confirmation, confirmation replay, read-back, conflicting request rejection, caller-selected-user rejection, missing-meal rejection, and missing-bearer rejection. The synthetic 100 g banana meal returned 89 kcal after confirmation. The validation record was deleted through the owned data API, and its absence was verified. Clarification generations and returned-version transitions are covered by HTTP protocol tests.
+
+The temporary tunnel runtime now targets WIP `/phone-mcp` with its dedicated server-side bearer. Control-plane polling works. ChatGPT discovery and a phone meal command still require the owner to refresh the existing personal plugin and test it. The runtime's readiness diagnostic reports malformed optional OAuth discovery because WIP nginx returns the SPA for metadata paths; this does not gate the client's Noauth JSON-RPC dispatcher. Permanent deployment should target the private backend directly, where absent metadata returns 404. No production account is configured.

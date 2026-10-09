@@ -29,3 +29,6 @@ The pilot uses `hcw-wip`, a synthetic account, and tunnel `tunnel_6ac942c121d481
 Infisical recovery for the tunnel key: project `pilot`, environment `dogfood`, root path `/`, secret `OPENAI_MCP_TUNNEL_WIP_API_KEY`. The phone bearer is recovered from project `pilot`, environment `dogfood`, root path `/`, secret `HCW_PHONE_MCP_WIP_TOKEN`. Portainer consumes its managed `HCW_PHONE_MCP_TOKEN` environment setting. The pilot launcher passes both secrets in memory to the runtime environment and keeps no plaintext key copy. Runtime metadata and the health URL are in the protected directory `/tmp/healthvault-mcp-tunnel-pilot-01a12217/`; they do not contain secrets.
 
 The production account and deployment are not configured by this change. Require the owner to approve the reviewed PR and the concrete VM plan before changing production.
+
+
+The temporary WIP runtime's `/readyz` can report a discovery failure because nginx returns HTML for nonexistent OAuth metadata. The MCP endpoint itself and the authenticated protocol workflow are verified. This diagnostic does not stop the tunnel client's Noauth dispatcher. For permanent deployment, target the backend directly so nonexistent metadata returns 404. Verify actual ChatGPT discovery after selecting **Refresh**; a healthy local protocol check alone does not prove a phone command was delivered.
