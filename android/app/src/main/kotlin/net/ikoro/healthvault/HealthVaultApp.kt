@@ -1,6 +1,7 @@
 package net.ikoro.healthvault
 
 import android.app.Application
+import kotlinx.coroutines.launch
 import net.ikoro.healthvault.api.HealthVaultApi
 import net.ikoro.healthvault.api.SessionCookieJar
 import net.ikoro.healthvault.store.SecureStore
@@ -14,7 +15,15 @@ import net.ikoro.healthvault.store.SecureStore
  */
 class HealthVaultApp : Application() {
 
+    private val diagnosticScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
     val secureStore: SecureStore by lazy { SecureStore.create(this) }
     val cookieJar: SessionCookieJar by lazy { SessionCookieJar(secureStore) }
-    val api: HealthVaultApi by lazy { HealthVaultApi(secureStore, cookieJar) }
+    val api: HealthVaultApi by lazy { HealthVaultApi(secureStore, cookieJar, diagnosticEnvironment = {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        "${info.versionName ?: "unknown"}" to android.os.Build.VERSION.SDK_INT
+    }, onSuccessfulSync = { generation ->
+        diagnosticScope.launch { runCatching { api.sendDiagnostics(generation) } }
+    }) }
 }

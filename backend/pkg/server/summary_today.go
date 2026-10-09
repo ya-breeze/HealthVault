@@ -40,6 +40,7 @@ import (
 // Carrying them here means the numbers and their derivation always come from
 // the same computeNutritionTargetForProfile call and can never disagree.
 type summaryTargetPayload struct {
+	DietaryFiberGrams  *int    `json:"dietary_fiber_grams"`
 	Available          bool    `json:"available"`
 	Reason             string  `json:"reason,omitempty"`
 	Calories           int     `json:"calories"`
@@ -118,7 +119,7 @@ func SummaryTodayHandler(storage database.Storage) http.HandlerFunc {
 			writeQueryError(w, "summary today: compute nutrition target", err, claims.UserID)
 			return
 		}
-		target := summaryTargetPayload{Available: unavailableReason == ""}
+		target := summaryTargetPayload{Available: unavailableReason == "", DietaryFiberGrams: fiberTarget(settingsJSON, now)}
 		if unavailableReason != "" {
 			target.Reason = unavailableReason
 		} else {

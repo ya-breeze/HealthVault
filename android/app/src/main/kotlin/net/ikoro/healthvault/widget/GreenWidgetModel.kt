@@ -6,7 +6,7 @@ import net.ikoro.healthvault.api.TodaySummary
 internal enum class NutritionMetric { PROTEIN, FAT, CARBS, FIBER }
 
 internal data class WidgetMetric(val metric: NutritionMetric, val consumed: Double?, val target: Int?) {
-    val exceeded: Boolean get() = target != null && target >= 0 && consumed != null && consumed > target
+    val exceeded: Boolean get() = metric != NutritionMetric.FIBER && target != null && target >= 0 && consumed != null && consumed > target
     val fraction: Float? get() = when {
         target == null || target < 0 || consumed == null -> null
         target == 0 -> if (consumed > 0) 1f else 0f
@@ -20,7 +20,7 @@ internal fun widgetMetrics(summary: TodaySummary): List<WidgetMetric> {
         WidgetMetric(NutritionMetric.PROTEIN, summary.proteinGramsConsumed, target?.proteinGrams),
         WidgetMetric(NutritionMetric.FAT, summary.fatGramsConsumed, target?.fatGrams),
         WidgetMetric(NutritionMetric.CARBS, summary.carbsGramsConsumed, target?.carbsGrams),
-        WidgetMetric(NutritionMetric.FIBER, summary.dietaryFiberGramsConsumed, null),
+        WidgetMetric(NutritionMetric.FIBER, summary.dietaryFiberGramsConsumed, summary.target.dietaryFiberGrams),
     )
 }
 

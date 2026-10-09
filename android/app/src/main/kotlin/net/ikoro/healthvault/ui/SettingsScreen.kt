@@ -24,7 +24,8 @@ import net.ikoro.healthvault.R
 import net.ikoro.healthvault.store.SecureStore
 
 @Composable
-fun SettingsScreen(secureStore: SecureStore, onBack: () -> Unit, onSignedOut: () -> Unit) {
+fun SettingsScreen(secureStore: SecureStore, api: net.ikoro.healthvault.api.HealthVaultApi,
+                   onOpenDiagnostics: () -> Unit, onBack: () -> Unit, onSignedOut: () -> Unit) {
     BackHandler(onBack = onBack)
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -40,6 +41,10 @@ fun SettingsScreen(secureStore: SecureStore, onBack: () -> Unit, onSignedOut: ()
                 Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
                 TextButton(onClick = onBack) { Text(stringResource(R.string.settings_back)) }
             }
+            FiberTargetSetting(api, secureStore)
+            HorizontalDivider()
+            TextButton(onClick = onOpenDiagnostics) { Text(stringResource(R.string.diagnostics_title)) }
+            HorizontalDivider()
             WeatherConsent(secureStore)
             HorizontalDivider()
             TextButton(onClick = onSignedOut) { Text(stringResource(R.string.today_sign_out)) }

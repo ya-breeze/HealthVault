@@ -285,7 +285,9 @@ internal fun greenWidgetContentDescription(context: Context, state: WidgetState)
             NutritionMetric.FIBER -> R.string.widget_fiber
         })
         val amount = metric.consumed?.let { context.getString(R.string.widget_grams_value, it.toInt()) } ?: "—"
-        val status = context.getString(when {
+        val fiberGoal = if (metric.metric == NutritionMetric.FIBER && metric.target != null)
+            context.getString(R.string.widget_fiber_goal, metric.target) else ""
+        val status = fiberGoal + " " + context.getString(when {
             metric.exceeded -> R.string.widget_goal_exceeded
             metric.target == null -> R.string.widget_target_unavailable
             else -> R.string.widget_goal_progress
