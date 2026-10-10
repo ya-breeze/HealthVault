@@ -26,15 +26,15 @@ Validate synthetic WIP data before review handoff. Actual owner ChatGPT activity
 
 ### Task 1: Implement owner-local activity evidence
 
-- [ ] Implement exact-instant local activity aggregation with existing step collapse and explicit missing/overlap evidence.
-- [ ] Implement bounded owned exercise pagination, nullable optional fields and explicit units.
-- [ ] Register discoverable read-only tools and preserve existing food write/read behavior.
-- [ ] Document interval allocation, coverage, calories and owner ChatGPT acceptance steps.
-- [ ] Mark completed.
+- [x] Implement exact-instant local activity aggregation with existing step collapse and explicit missing/overlap evidence.
+- [x] Implement bounded owned exercise pagination, nullable optional fields and explicit units.
+- [x] Register discoverable read-only tools and preserve existing food write/read behavior.
+- [x] Document interval allocation, coverage, calories and owner ChatGPT acceptance steps.
+- [x] Mark completed.
 
 ### Task 2: Validate reviewed implementation on WIP
 
-- [ ] Test owner isolation, mixed offsets, DST, midnight allocation, collapse across days, missing versus zero, deletion, cursors and read-only state.
-- [ ] Run backend/static checks and native plus independent peer Review Gate; fix verified findings before deployment.
+- [x] Test owner isolation, mixed offsets, DST, midnight allocation, collapse across days, missing versus zero, deletion, cursors and read-only state.
+- [x] Run backend/static checks and native plus independent peer Review Gate; fix verified findings before deployment.
 - [ ] Validate deployed WIP protocol and browser E2E; record exact revision and remaining owner phone acceptance.
 - [ ] Mark completed.
