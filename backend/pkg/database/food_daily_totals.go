@@ -36,9 +36,8 @@ type DailyTotal struct {
 }
 
 // DailyTotalsRange computes, for userID across the inclusive Logged-Day
-// range [from, to] (both YYYY-MM-DD strings in loc — the caller is
-// responsible for clamping `to` to exclude today before calling this, same
-// contract as DayRange), one DailyTotal entry per day: the sum of that
+// range [from, to] (both YYYY-MM-DD calendar dates in loc), one DailyTotal
+// entry per day: the sum of that
 // Logged Day's `confirmed`-status FoodMeal.Calories, plus a count of that
 // day's rows in any other status. A day with no confirmed meals gets a zero
 // entry rather than being omitted, so callers can index by date without a
@@ -51,14 +50,16 @@ type DailyTotal struct {
 // two results (the Logging Gap computation does) would otherwise read that
 // day's under-counted total as fact. Reporting the non-confirmed count
 // alongside the sum lets it exclude such a day instead.
+// Today is supported; callers must label it partial. Completed-day UI callers
+// retain their own clamp, while personal MCP retrieval explicitly allows today.
 func DailyTotalsRange(
 	db *gorm.DB, userID uuid.UUID, loc *time.Location, from, to string,
 ) ([]DailyTotal, error) {
-	fromDate, err := time.ParseInLocation("2006-01-02", from, loc)
+	fromDate, err := time.Parse("2006-01-02", from)
 	if err != nil {
 		return nil, fmt.Errorf("parse from date %q: %w", from, err)
 	}
-	toDate, err := time.ParseInLocation("2006-01-02", to, loc)
+	toDate, err := time.Parse("2006-01-02", to)
 	if err != nil {
 		return nil, fmt.Errorf("parse to date %q: %w", to, err)
 	}
@@ -71,7 +72,10 @@ func DailyTotalsRange(
 	// FoodMeal.LoggedAt is stored UTC-normalized, and go-sqlite3 stores
 	// time.Time as TEXT preserving whatever offset it's given, so the window
 	// bound must itself be UTC-offset to compare correctly.
-	windowStart, windowEnd := fromDate.UTC(), toDate.AddDate(0, 0, 1).UTC()
+	windowStart, windowEnd, err := LocalDayWindow(from, to, loc)
+	if err != nil {
+		return nil, err
+	}
 
 	var meals []FoodMeal
 	if err := db.Select(

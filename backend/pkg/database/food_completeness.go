@@ -157,11 +157,25 @@ type DayCompleteness struct {
 func DayRange(
 	db *gorm.DB, userID uuid.UUID, loc *time.Location, threshold int, from, to string,
 ) ([]DayCompleteness, error) {
-	fromDate, err := time.ParseInLocation("2006-01-02", from, loc)
+	return dayRange(db, userID, loc, threshold, from, to, true)
+}
+
+// DayRangeReadOnly reports the same completeness states without deleting stale
+// confirmation rows. Evidence retrieval must not change the owner's records.
+func DayRangeReadOnly(
+	db *gorm.DB, userID uuid.UUID, loc *time.Location, threshold int, from, to string,
+) ([]DayCompleteness, error) {
+	return dayRange(db, userID, loc, threshold, from, to, false)
+}
+
+func dayRange(
+	db *gorm.DB, userID uuid.UUID, loc *time.Location, threshold int, from, to string, cleanup bool,
+) ([]DayCompleteness, error) {
+	fromDate, err := time.Parse("2006-01-02", from)
 	if err != nil {
 		return nil, fmt.Errorf("parse from date %q: %w", from, err)
 	}
-	toDate, err := time.ParseInLocation("2006-01-02", to, loc)
+	toDate, err := time.Parse("2006-01-02", to)
 	if err != nil {
 		return nil, fmt.Errorf("parse to date %q: %w", to, err)
 	}
@@ -178,7 +192,10 @@ func DayRange(
 	// non-zero offset) would then string-compare incorrectly against the
 	// UTC-offset stored rows even when the underlying instants are ordered
 	// correctly — silently returning zero meals for a real day.
-	windowStart, windowEnd := fromDate.UTC(), toDate.AddDate(0, 0, 1).UTC()
+	windowStart, windowEnd, err := LocalDayWindow(from, to, loc)
+	if err != nil {
+		return nil, err
+	}
 
 	var meals []FoodMeal
 	if err := db.Select("logged_at").
@@ -218,7 +235,7 @@ func DayRange(
 		})
 	}
 
-	if len(staleDates) > 0 {
+	if cleanup && len(staleDates) > 0 {
 		if err := db.Unscoped().
 			Where("user_id = ? AND local_date IN ?", userID, staleDates).
 			Delete(&FoodDayCompletion{}).Error; err != nil {

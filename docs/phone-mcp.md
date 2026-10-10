@@ -22,7 +22,21 @@ Use `describe_food_meal` with a new `request_id` for each intended meal. Reuse t
 
 Use `get_food_meal` to recover the current state after a lost response. Use `retry_food_meal` on a failed or stale processing meal. Keep the existing meal ID. The connection cannot select another user or call administrative tools.
 
-## WIP pilot
+## Read recorded food
+
+Use `list_food_meals` for the connected user's meal history. Use `get_food_daily_totals` for complete daily sums independent of history pagination. Set `period` to `yesterday` (default), `today`, `last_7_days`, or `range` with inclusive `start_date` and `end_date`. Seven-day periods exclude today. Explicit ranges support up to 92 calendar days, including older records.
+
+Keep the period unchanged and pass `next_cursor` into the next history call until it is empty. Use `get_food_meal` for full meal details when a summary reports `text_truncated`. Report the returned dates and timezone. Energy is kcal; nutrient fields ending in `_grams` are grams. Sodium means elemental sodium, not added salt.
+
+Set an IANA timezone such as `Europe/Prague` in HealthVault settings. If `timezone_fallback` is true, configure that setting before assuming day boundaries match the app. Legacy `Local` settings use explicit UTC in MCP; the app may use the server timezone.
+
+Count only confirmed meals in nutrition totals. Explain unconfirmed meals and unknown/estimated nutrient counts. An empty day means no recorded food, not fasting. Day completeness uses the same occasion-count heuristic and stored owner date flags as HealthVault. Meal changes can make an older flag outdated. Read-only queries never clean up flags. Retract and reconfirm a day's completeness in HealthVault when needed. Today reports `completeness: null`, basis `not_evaluated_today`, and `partial_today: true`; it has no completeness verdict.
+
+After an approved rollout, open the existing HealthVault connection in ChatGPT settings and select **Refresh**. Confirm that the two read tools appear. Start a new chat with HealthVault selected and ask “Расскажи, сколько я вчера всего скушал”. Check the dates, meal list and confirmed totals against HealthVault. Then ask about today and the last seven completed days. Local protocol and WIP checks do not establish that ChatGPT used the updated tools; verify this phone scenario separately.
+
+## Historical WIP pilot
+
+The following notes describe the initial WIP pilot. Do not redirect an existing production connection to WIP for acceptance testing.
 
 The pilot uses `hcw-wip`, a synthetic account, and tunnel `tunnel_6ac942c121d48191bfa9aabd07afe83f`. Test records belong to WIP. The initial runtime is temporary in the agent container; permanent supervision and production VM deployment are separate steps.
 
