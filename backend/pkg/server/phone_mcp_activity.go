@@ -25,18 +25,20 @@ type phoneActivityResult struct {
 }
 
 type phoneExercise struct {
-	ExerciseID      string    `json:"exercise_id"`
-	LocalDate       string    `json:"local_date"`
-	StartTime       time.Time `json:"start_time"`
-	EndTime         time.Time `json:"end_time"`
-	ExerciseType    string    `json:"exercise_type"`
-	TextTruncated   bool      `json:"text_truncated"`
-	DurationSeconds int       `json:"duration_seconds"`
-	DistanceMeters  *float64  `json:"distance_meters"`
-	Steps           *int      `json:"steps"`
-	AvgCadenceSpm   *float64  `json:"avg_cadence_steps_per_minute"`
-	MaxCadenceSpm   *float64  `json:"max_cadence_steps_per_minute"`
-	StrideLengthM   *float64  `json:"stride_length_meters"`
+	ExerciseID          string    `json:"exercise_id"`
+	LocalDate           string    `json:"local_date"`
+	StartTime           time.Time `json:"start_time"`
+	EndTime             time.Time `json:"end_time"`
+	ExerciseType        string    `json:"exercise_type"`
+	ExerciseTypeName    *string   `json:"exercise_type_name"`
+	ExerciseTypeMapping string    `json:"exercise_type_mapping"`
+	TextTruncated       bool      `json:"text_truncated"`
+	DurationSeconds     int       `json:"duration_seconds"`
+	DistanceMeters      *float64  `json:"distance_meters"`
+	Steps               *int      `json:"steps"`
+	AvgCadenceSpm       *float64  `json:"avg_cadence_steps_per_minute"`
+	MaxCadenceSpm       *float64  `json:"max_cadence_steps_per_minute"`
+	StrideLengthM       *float64  `json:"stride_length_meters"`
 }
 
 type phoneExerciseResult struct {
@@ -61,6 +63,7 @@ var phoneActivityNotes = []string{
 	"Whole intervals belong to their local start date, even across midnight. Intervals starting before the selected period are omitted; no proportional counts or duration are invented.",
 	"Steps use Step Interval Collapse across the selected period: covered intervals drop; partial overlaps remain whole. Different period boundaries can change collapse. This is not complete deduplication or exact daily activity.",
 	"Exercise durations and calorie intervals are summed as recorded and may overlap. Exercise steps are not added to daily steps. Do not add active and total calories together or infer energy balance from this evidence.",
+	"exercise_type preserves the stored value. Use exercise_type_name for readable names. health_connect mapping interprets numeric values using Android Health Connect session constants, not device/source provenance. stored_text names preserve supplied text. unknown mapping has a null name; do not invent a workout type.",
 	"Calories are kcal, duration is seconds, distance/stride are meters, cadence is steps per minute. Null exercise fields are unavailable; zero is a stored value. Exercise calories and device/origin provenance are unavailable.",
 }
 
@@ -99,7 +102,7 @@ func (h *foodHandlers) addPhoneActivityTools(s *mcp.Server, id uuid.UUID, barrie
 		}
 		return nil, out, nil
 	})
-	mcp.AddTool(s, &mcp.Tool{Name: "list_activity_exercises", Description: "List connected user's stored exercise sessions by local start date. Default yesterday. Follow next_cursor for the complete list. Returns stored type, interval, duration, nullable distance/steps/cadence/stride; no exercise kcal or device provenance. Use get_activity_daily_totals for complete aggregates independent of pagination.", Annotations: read}, func(ctx context.Context, _ *mcp.CallToolRequest, in phoneHistoryInput) (*mcp.CallToolResult, phoneExerciseResult, error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "list_activity_exercises", Description: "List connected user's stored exercise sessions by local start date. Default yesterday. Follow next_cursor for the complete list. Returns stored type plus readable exercise_type_name and explicit mapping; unknown numeric codes have a null name. Returns interval, duration, nullable distance/steps/cadence/stride; no exercise kcal or device provenance. Use get_activity_daily_totals for complete aggregates independent of pagination.", Annotations: read}, func(ctx context.Context, _ *mcp.CallToolRequest, in phoneHistoryInput) (*mcp.CallToolResult, phoneExerciseResult, error) {
 		barrier.RLock()
 		defer barrier.RUnlock()
 		p, loc, _, err := h.phoneReadPeriod(id, in.phonePeriodInput)
@@ -137,8 +140,8 @@ func (h *foodHandlers) addPhoneActivityTools(s *mcp.Server, id uuid.UUID, barrie
 				out.HasMore = true
 				break
 			}
-			kind, truncated := phoneShortText(row.ExerciseType)
-			out.Exercises = append(out.Exercises, phoneExercise{ExerciseID: row.ID.String(), LocalDate: database.LocalDate(row.StartTime, loc), StartTime: row.StartTime, EndTime: row.EndTime, ExerciseType: kind, TextTruncated: truncated, DurationSeconds: row.DurationSeconds, DistanceMeters: row.DistanceMeters, Steps: row.Steps, AvgCadenceSpm: row.AvgCadenceSpm, MaxCadenceSpm: row.MaxCadenceSpm, StrideLengthM: row.StrideLengthM})
+			kind, typeName, mapping, truncated := phoneExerciseType(row.ExerciseType)
+			out.Exercises = append(out.Exercises, phoneExercise{ExerciseID: row.ID.String(), LocalDate: database.LocalDate(row.StartTime, loc), StartTime: row.StartTime, EndTime: row.EndTime, ExerciseType: kind, ExerciseTypeName: typeName, ExerciseTypeMapping: mapping, TextTruncated: truncated, DurationSeconds: row.DurationSeconds, DistanceMeters: row.DistanceMeters, Steps: row.Steps, AvgCadenceSpm: row.AvgCadenceSpm, MaxCadenceSpm: row.MaxCadenceSpm, StrideLengthM: row.StrideLengthM})
 		}
 		if out.HasMore {
 			last := out.Exercises[len(out.Exercises)-1]

@@ -8,7 +8,7 @@ The owner confirmed activity reads through ChatGPT, but eight sessions appeared 
 
 ## How
 
-Keep the existing bounded exercise_type value and add nullable exercise_type_name plus exercise_type_mapping. Decode the published Health Connect session constants into readable English names; ChatGPT can translate these names into the conversation language. Mark this interpretation as health_connect, not evidence of a device or source. Unknown numeric codes and empty values have no name and mapping unknown. Preserve bounded nonnumeric names as stored_text without pretending they were decoded. Decode the original value before truncation so a truncated numeric prefix cannot become a known type. Keep text_truncated truthful for both returned text fields.
+Keep the existing bounded exercise_type value and add nullable exercise_type_name plus exercise_type_mapping. Decode the published Health Connect session constants into readable English names; ChatGPT can translate these names into the conversation language. Mark this interpretation as health_connect, not evidence of a device or source. Unknown numeric codes and empty values have no name and mapping unknown. Preserve bounded nonnumeric names as stored_text without pretending they were decoded. Decode the original value before truncation so a truncated numeric prefix cannot become a known type. Keep text_truncated truthful for both returned text fields. Numeric values with a sign or truncated raw text remain unknown. Accept surrounding whitespace and bounded leading zeros without changing the stored text.
 
 Use the Android reference https://developer.android.com/reference/androidx/health/connect/client/records/ExerciseSessionRecord and the AndroidX source https://github.com/androidx/androidx/blob/androidx-main/health/connect/connect-client/src/main/java/androidx/health/connect/client/records/ExerciseSessionRecord.kt verified on 2026-10-10. Preserve database rows, ingestion, hcimport behavior, owner isolation, pagination and activity totals. Do not migrate historical records or change UI. Update MCP descriptions and documentation, with a patch server version.
 
@@ -22,15 +22,15 @@ Use the Android reference https://developer.android.com/reference/androidx/healt
 
 ### Task 1: Return safe names with raw exercise types
 
-- [ ] Implement the verified Health Connect name lookup and explicit mapping evidence.
-- [ ] Add nullable names to exercise evidence while preserving raw type, bounds and pagination.
-- [ ] Update tool guidance and document known, unknown and stored text behavior.
-- [ ] Mark completed.
+- [x] Implement the verified Health Connect name lookup and explicit mapping evidence.
+- [x] Add nullable names to exercise evidence while preserving raw type, bounds and pagination.
+- [x] Update tool guidance and document known, unknown and stored text behavior.
+- [x] Mark completed.
 
 ### Task 2: Validate the follow-up before owner rollout
 
-- [ ] Test walking/running, other workout, further enum values, unknown numeric codes, stored text and truncation through the protocol.
-- [ ] Run backend/static checks and the native plus best-effort peer Review Gate.
+- [x] Test walking/running, other workout, further enum values, unknown numeric codes, stored text and truncation through the protocol.
+- [x] Run backend/static checks and the native plus best-effort peer Review Gate.
 - [ ] Verify actual WIP source bytes, decoded synthetic protocol responses and full browser E2E.
 - [ ] Record WIP evidence and the pending approved production rollout and owner ChatGPT check.
 - [ ] Mark completed.

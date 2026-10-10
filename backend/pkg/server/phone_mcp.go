@@ -147,7 +147,7 @@ func (h *foodHandlers) PhoneMCPHandler(token, userID string, barrier *sync.RWMut
 	if barrier == nil {
 		barrier = &sync.RWMutex{}
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: "healthvault-food", Version: "1.2.0"}, &mcp.ServerOptions{Instructions: "Record meals only for the connected HealthVault user. describe_food_meal creates a draft. " +
+	s := mcp.NewServer(&mcp.Implementation{Name: "healthvault-food", Version: "1.2.1"}, &mcp.ServerOptions{Instructions: "Record meals only for the connected HealthVault user. describe_food_meal creates a draft. " +
 		"Keep request_id unchanged on retries. Read saved and status; only confirmed means saved in daily totals. Draft totals preview analyzed items, and missing macros contribute no known nutrients. " +
 		"Ask the returned clarification questions and pass expected_round and expected_version unchanged. Show names and portions before confirming when they are uncertain. " +
 		"An explicit user request to record a clearly specified meal authorizes confirmation; never invent missing answers. " +
