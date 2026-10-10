@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/ya-breeze/healthvault/pkg/database"
 )
@@ -40,6 +42,7 @@ const (
 // logged_at are optional: name defaults to the description itself
 // (truncated), logged_at to now.
 type describeMealRequest struct {
+	RequestID      string          `json:"request_id,omitempty"`
 	Description    string          `json:"description"`
 	Name           string          `json:"name,omitempty"`
 	LoggedAt       *time.Time      `json:"logged_at,omitempty"`
@@ -109,6 +112,30 @@ func (h *foodHandlers) CreateDescribedMeal(w http.ResponseWriter, r *http.Reques
 	}
 
 	familyID := FamilyIDFromCtx(r)
+	requestID := strings.TrimSpace(req.RequestID)
+	if len(requestID) > 128 {
+		http.Error(w, "request_id must be at most 128 bytes", http.StatusBadRequest)
+		return
+	}
+	if req.LoggedAt != nil {
+		utc := req.LoggedAt.UTC()
+		req.LoggedAt = &utc
+	}
+	// Exclude generated time so an interrupted request can be replayed later.
+	input, err := json.Marshal(struct {
+		Description string
+		Name        string
+		LoggedAt    *time.Time
+		Context     *database.MealCookingContext
+	}{description, name, req.LoggedAt, cookingContext})
+	if err != nil {
+		http.Error(w, "encode error", http.StatusInternalServerError)
+		return
+	}
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256(input))
+	if requestID != "" && h.replayDescribedMeal(w, claims.UserID, requestID, fingerprint) {
+		return
+	}
 	meal := database.FoodMeal{
 		UserID:         claims.UserID,
 		Status:         database.MealStatusProcessing,
@@ -119,7 +146,15 @@ func (h *foodHandlers) CreateDescribedMeal(w http.ResponseWriter, r *http.Reques
 	}
 	meal.ID = uuid.New()
 	meal.FamilyID = familyID
+	if requestID != "" {
+		meal.RequestID = &requestID
+		meal.RequestFingerprint = fingerprint
+	}
 	if err := h.storage.DB().Create(&meal).Error; err != nil {
+		// The unique index closes the concurrent first-insert race.
+		if requestID != "" && h.replayDescribedMeal(w, claims.UserID, requestID, fingerprint) {
+			return
+		}
 		http.Error(w, "create error", http.StatusInternalServerError)
 		return
 	}
@@ -133,6 +168,25 @@ func (h *foodHandlers) CreateDescribedMeal(w http.ResponseWriter, r *http.Reques
 	}
 	result, err := h.reloadIfSuperseded(&meal, applied)
 	writeReloadedMeal(w, result, err, http.StatusCreated)
+}
+
+func (h *foodHandlers) replayDescribedMeal(w http.ResponseWriter, userID uuid.UUID, requestID, fingerprint string) bool {
+	var meal database.FoodMeal
+	err := h.storage.DB().Unscoped().Where("user_id = ? AND request_id = ?", userID, requestID).First(&meal).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false
+	}
+	if err != nil {
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return true
+	}
+	if meal.DeletedAt.Valid || meal.RequestFingerprint != fingerprint {
+		http.Error(w, "request_id already used for another or deleted meal", http.StatusConflict)
+		return true
+	}
+	owned, err := h.loadOwnedMeal(meal.ID, userID)
+	writeReloadedMeal(w, owned, err, http.StatusOK)
+	return true
 }
 
 // truncateWithEllipsis returns s unchanged if it has at most n runes,

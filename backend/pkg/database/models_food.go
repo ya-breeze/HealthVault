@@ -41,14 +41,17 @@ const MaxClarifyRounds = 3
 // processing before the vision call runs, so no analysis outcome can lose the photo.
 type FoodMeal struct {
 	models.TenantModel
-	UserID       uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
-	PhotoPath    string    `gorm:"type:text" json:"photo_path,omitempty"` // relative to the uploads dir; empty for manual entries
-	Status       string    `gorm:"type:varchar(32);not null;default:'processing'" json:"status"`
-	LoggedAt     time.Time `gorm:"not null;index" json:"logged_at"`
-	Name         string    `gorm:"type:text" json:"name"`
-	RawResponse  string    `gorm:"type:text" json:"raw_response,omitempty"` // last structured response from the vision model
-	ClarifyRound int       `gorm:"not null;default:0" json:"clarify_round"`
-	ClarifyLog   string    `gorm:"type:text" json:"clarify_log,omitempty"` // JSON []ClarifyEntry, accumulated across rounds
+	UserID uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_food_meal_request" json:"user_id"`
+	// Reserve a replay key with the initial row, including failed analyses.
+	RequestID          *string   `gorm:"uniqueIndex:idx_food_meal_request" json:"-"`
+	RequestFingerprint string    `json:"-"`
+	PhotoPath          string    `gorm:"type:text" json:"photo_path,omitempty"` // relative to the uploads dir; empty for manual entries
+	Status             string    `gorm:"type:varchar(32);not null;default:'processing'" json:"status"`
+	LoggedAt           time.Time `gorm:"not null;index" json:"logged_at"`
+	Name               string    `gorm:"type:text" json:"name"`
+	RawResponse        string    `gorm:"type:text" json:"raw_response,omitempty"` // last structured response from the vision model
+	ClarifyRound       int       `gorm:"not null;default:0" json:"clarify_round"`
+	ClarifyLog         string    `gorm:"type:text" json:"clarify_log,omitempty"` // JSON []ClarifyEntry, accumulated across rounds
 	// Description is the user's own free-text account of a described manual
 	// entry, persisted so the meal is recoverable if analysis fails or is
 	// retried. Empty for photo meals and for structured manual entries.
@@ -77,9 +80,10 @@ type MealCookingContext struct {
 // ClarifyEntry is one question/answer pair, persisted so later rounds can replay
 // the full history instead of re-asking what the user already answered.
 type ClarifyEntry struct {
-	Round    int    `json:"round"`
-	Question string `json:"question"`
-	Answer   string `json:"answer"`
+	Round          int    `json:"round"`
+	Question       string `json:"question"`
+	Answer         string `json:"answer"`
+	RequestVersion string `json:"request_version,omitempty"`
 }
 
 // FoodItem is one food within a meal. UserID is denormalized from the parent
