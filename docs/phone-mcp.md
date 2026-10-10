@@ -32,3 +32,5 @@ The production account and deployment are not configured by this change. Require
 
 
 The temporary WIP runtime's `/readyz` can report a discovery failure because nginx returns HTML for nonexistent OAuth metadata. The MCP endpoint itself and the authenticated protocol workflow are verified. This diagnostic does not stop the tunnel client's Noauth dispatcher. For permanent deployment, target the backend directly so nonexistent metadata returns 404. Verify actual ChatGPT discovery after selecting **Refresh**; a healthy local protocol check alone does not prove a phone command was delivered.
+
+On 2026-10-10 the owner refreshed the ChatGPT connection and confirmed that a phone meal command worked against WIP. The pilot now uses native managed runtime alias `healthvault-wip-food`, launched through `tunnel-client runtimes connect`; the foreground test process has been replaced. Production VM installation remains a separate deployment.
