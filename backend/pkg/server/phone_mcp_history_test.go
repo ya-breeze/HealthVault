@@ -173,7 +173,7 @@ func TestPhoneHistoryTodayCompletenessAndValidation(t *testing.T) {
 	}
 	// Missing configured identity must also block the newly added read tools.
 	missing := server.NewFoodHandlers(st, nil, t.TempDir()).PhoneMCPHandler("test-phone-token", uuid.NewString(), nil)
-	for _, tool := range []string{"get_food_daily_totals", "list_food_meals", "get_activity_daily_totals", "list_activity_exercises"} {
+	for _, tool := range []string{"get_food_daily_totals", "list_food_meals", "get_activity_daily_totals", "list_activity_exercises", "get_nutrition_goals"} {
 		if phoneCall(t, missing, tool, map[string]any{})["isError"] != true {
 			t.Fatal("missing identity accepted")
 		}
@@ -218,10 +218,16 @@ func TestPhoneHistoryDiscoveryAndSelectorSchema(t *testing.T) {
 			if err := json.Unmarshal([]byte(body), &reply); err != nil {
 				t.Fatal(err)
 			}
-			if len(reply.Result.Tools) != 9 {
+			if len(reply.Result.Tools) != 10 {
 				t.Fatalf("tools: %s", body)
 			}
 			for _, tool := range reply.Result.Tools {
+				if tool.Name == "get_nutrition_goals" {
+					props, _ := tool.InputSchema["properties"].(map[string]any)
+					if len(props) != 0 || tool.Annotations["readOnlyHint"] != true || tool.Annotations["idempotentHint"] != true || tool.Annotations["openWorldHint"] != false {
+						t.Fatalf("goals schema/annotations: %+v", tool)
+					}
+				}
 				if tool.Name == "list_food_meals" || tool.Name == "get_food_daily_totals" || tool.Name == "get_activity_daily_totals" || tool.Name == "list_activity_exercises" {
 					props := tool.InputSchema["properties"].(map[string]any)
 					if _, ok := props["period"]; !ok {

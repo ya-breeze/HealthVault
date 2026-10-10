@@ -48,6 +48,18 @@ Queries reject periods with more than 50,000 candidate rows in any metric and as
 
 After an approved activity rollout, refresh the existing HealthVault connection in ChatGPT. Confirm `get_activity_daily_totals` and `list_activity_exercises` appear. In a new chat with HealthVault selected, ask “Сколько я вчера прошёл и какие тренировки записаны?”. Compare the returned dates, recorded steps and exercise sessions with HealthVault. Repeat for seven completed days and confirm missing records are described as unavailable. Verify an actual tool call in ChatGPT; local protocol checks alone do not prove phone acceptance. Keep Idea 1009 open until this check passes.
 
+## Read current nutrition goals
+
+Use `get_nutrition_goals` with empty arguments before comparing intake with the connected user's goals. The tool returns current HealthVault calorie and macro targets from the same calculation as `/api/users/me/nutrition-target`, including its measurement and activity basis. Calories and BMR are kcal per day. Macro and fiber targets are grams per day. Basis weights are kg and height is meters.
+
+Read `nutrition.available`, `unavailable_reason` and nullable `values`. Missing profile, measurements, goal weight or sufficient activity data makes the macro target unavailable. Do not replace null with zero or invent personal targets. `activity_source` distinguishes a configured override from inferred steps using the existing nutrition-target algorithm.
+
+Fiber is independent. `fiber.source` is `configured`, `default`, or `unavailable_under_18`. The default is the existing application's 25 grams, including when the profile is missing. It is not a saved personal target. Minors without a configured value receive null. This tool exposes no goals for other nutrients and changes no settings or records.
+
+Report `as_of`, `local_date`, `timezone` and `timezone_fallback`. Goals follow the existing HTTP target's timezone rules: legacy `Local` uses the server timezone and reports fallback. Configure an IANA timezone before assuming its date matches food/activity MCP dates. These are today's calculated targets. Comparing them with past food does not establish historical goals. The calorie formula uses BMR times activity and does not prescribe a deficit. ChatGPT can perform comparisons, describe trends and suggest changes from existing evidence; no separate analysis tools are needed.
+
+After the approved rollout, refresh the existing HealthVault connection and confirm `get_nutrition_goals` appears. In a new chat with HealthVault selected, ask “Какие у меня сейчас цели питания и как вчерашнее питание с ними соотносится?”. Verify the tool call, values and any missing-data explanation against HealthVault. This phone acceptance is separate from local protocol and WIP validation.
+
 ## Historical WIP pilot
 
 The following notes describe the initial WIP pilot. Do not redirect an existing production connection to WIP for acceptance testing.

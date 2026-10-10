@@ -11,18 +11,24 @@ import (
 )
 
 func fiberTarget(settings string, now time.Time) *int {
+	grams, _ := resolveFiberTarget(settings, now)
+	return grams
+}
+
+// resolveFiberTarget also identifies the source without changing the shared rules.
+func resolveFiberTarget(settings string, now time.Time) (*int, string) {
 	var obj map[string]json.RawMessage
 	_ = json.Unmarshal([]byte(settings), &obj)
 	var n int
 	if json.Unmarshal(obj["fiber_target_grams"], &n) == nil && n >= 1 && n <= 200 {
-		return &n
+		return &n, "configured"
 	}
 	p := parseUserProfile(settings)
 	if p.HasBirthdate && calendarAge(p.Birthdate, now) < 18 {
-		return nil
+		return nil, "unavailable_under_18"
 	}
 	n = 25
-	return &n
+	return &n, "default"
 }
 
 // Patch only the fiber setting inside a transaction, retaining other preferences.
