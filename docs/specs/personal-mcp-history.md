@@ -36,5 +36,15 @@ Use stored IANA timezone settings. Legacy `Local` settings fall back explicitly 
 - [x] Test protocol discovery/calls, ownership, invalid arguments, empty periods, deleted rows, unknown macros and pagination ties.
 - [x] Test local midnight and DST periods, partial today, completeness basis and persistent read-only state.
 - [x] Run backend tests, static checks and Review Gate; fix verified findings.
-- [ ] Validate deployed WIP protocol and relevant E2E cases; document exact revision and tool-refresh/owner ChatGPT acceptance steps.
-- [ ] Mark completed.
+- [x] Validate deployed WIP protocol and relevant E2E cases; document exact revision and tool-refresh/owner ChatGPT acceptance steps.
+- [x] Mark completed.
+
+## Validation evidence
+
+On 2026-10-10, backend tests and static checks passed. Review Gate completed with three native Codex review angles and independent Claude peer review; verified findings were fixed before deployment.
+
+`hcw-wip` served implementation revision `78c433dbb183322469f3cce5adc5c42d73d9db58`. Its running backend binary matched the pinned source build byte-for-byte (SHA-256 `e7cbc6fd958468796ca04da6b3a06a6fed8f132fd321112b78df433f8fa93ac1`). MCP discovery returned seven tools, including two read-only history tools. Synthetic protocol checks passed for tied-time pagination, foreign-user exclusion, unchanged persisted meal records, partial today, seven completed days and empty history. Fixtures were removed and baseline totals restored.
+
+The final full browser run against WIP passed 325 tests with one skipped, with retries disabled. An earlier run lacked the required webhook fixture token and hit one mobile logout navigation assertion. All nine affected cases passed in a targeted rerun with the correct environment, then the final full run passed without application changes.
+
+Production remains unchanged. Owner acceptance in ChatGPT is pending after an approved rollout; `docs/phone-mcp.md` specifies tool refresh and yesterday/today/week checks. These WIP results do not establish phone acceptance.
