@@ -31,6 +31,16 @@ Use the Android reference https://developer.android.com/reference/androidx/healt
 
 - [x] Test walking/running, other workout, further enum values, unknown numeric codes, stored text and truncation through the protocol.
 - [x] Run backend/static checks and the native plus best-effort peer Review Gate.
-- [ ] Verify actual WIP source bytes, decoded synthetic protocol responses and full browser E2E.
-- [ ] Record WIP evidence and the pending approved production rollout and owner ChatGPT check.
-- [ ] Mark completed.
+- [x] Verify actual WIP source bytes, decoded synthetic protocol responses and full browser E2E.
+- [x] Record WIP evidence and the pending approved production rollout and owner ChatGPT check.
+- [x] Mark completed.
+
+Validation evidence: full backend tests, Go vet and lint passed. The new protocol test covers 20 persisted sessions, including the owner-reported 79 and 56 codes, further Health Connect values, unknowns, signed codes, bounded leading zeros, whitespace, Unicode text and truncated numeric input. The test re-reads stored rows to verify unchanged raw types and duration.
+
+Native Codex correctness, standards and specification reviews passed. Independent Claude system review completed; verified signed-code and truncated-numeric findings were fixed, and a new final gate completed without blocking findings. Malformed nonnumeric strings remain stored_text under the stated text contract; no workout is inferred from them.
+
+WIP implementation 1321357b2bb1807609d05241560f7b379a6889f8 advertises MCP version 1.2.1. Its backend binary SHA-256 c2fa061b92c8f1c7305e52f84f4fefd2c6fc3465818bc548b137513781462e40 matches the pinned reference build byte for byte. Synthetic exercise pages return 79/Walking and 56/Running with health_connect mapping. Owner filtering, interval totals, pagination and unchanged persisted records pass. Synthetic health rows were removed and baseline activity and food records restored.
+
+The initial browser invocation could not launch because the required Playwright Chromium binary was absent. That invocation was stopped. After installing the matching local browser, the complete suite passed 325 scenarios and skipped one with retries disabled. No application changes were required.
+
+Production still runs activity release 8bce4c4. This PR awaits owner-approved merge and VM rollout, followed by an actual refreshed ChatGPT exercise-name check. The owner already confirmed production activity reads and requested this naming follow-up; Idea 1009 remains open until that feedback is resolved.
