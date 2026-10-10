@@ -15,17 +15,17 @@ These are current calculated targets, not historical targets or a prescribed cal
 `make test-e2e E2E_ARGS=--retries=0` against hcw-wip
 
 ### Task 1: Expose current goals
-- [ ] Add the fixed-owner read-only tool and advertise its current-only semantics.
-- [ ] Reuse shared macro computation and fiber resolution with explicit sources, units and missing-data reasons.
-- [ ] Document the contract and ChatGPT refresh check.
-- [ ] Mark completed.
+- [x] Add the fixed-owner read-only tool and advertise its current-only semantics.
+- [x] Reuse shared macro computation and fiber resolution with explicit sources, units and missing-data reasons.
+- [x] Document the contract and ChatGPT refresh check.
+- [x] Mark completed.
 
 ### Task 2: Verify the contract
-- [ ] Test HTTP target parity, owner isolation, future rows, fresh settings and missing goals/data.
-- [ ] Test independent configured/default/unavailable fiber and read-only behavior.
-- [ ] Verify discovery, identity rejection and database error handling.
-- [ ] Run backend tests, static checks and native plus cross-platform Review Gate.
-- [ ] Mark completed.
+- [x] Test HTTP target parity, owner isolation, future rows, fresh settings and missing goals/data.
+- [x] Test independent configured/default/unavailable fiber and read-only behavior.
+- [x] Verify discovery, identity rejection and database error handling.
+- [x] Run backend tests, static checks and native plus cross-platform Review Gate.
+- [x] Mark completed.
 
 ### Task 3: Validate WIP
 - [ ] Verify hcw-wip class, pinned runtime source identity and ten-tool MCP discovery.
