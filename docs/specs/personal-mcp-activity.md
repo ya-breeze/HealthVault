@@ -36,5 +36,13 @@ Validate synthetic WIP data before review handoff. Actual owner ChatGPT activity
 
 - [x] Test owner isolation, mixed offsets, DST, midnight allocation, collapse across days, missing versus zero, deletion, cursors and read-only state.
 - [x] Run backend/static checks and native plus independent peer Review Gate; fix verified findings before deployment.
-- [ ] Validate deployed WIP protocol and browser E2E; record exact revision and remaining owner phone acceptance.
-- [ ] Mark completed.
+- [x] Validate deployed WIP protocol and browser E2E; record exact revision and remaining owner phone acceptance.
+- [x] Mark completed.
+
+Validation evidence: backend tests and static checks passed. Native Codex review passed correctness, repository standards and specification checks. The independent Claude peer was unavailable due to HTTP 429 session usage quota; one attempt produced no completed review.
+
+Deployed hcw-wip runs implementation b340ce54b52bdf7d1adcf6b597888207d1a8ab8c. Its backend binary SHA-256 is f26256b29aff5576da9b9db5a9b432b20970a32ef7f981f96b157cb9d0ae5899 and matches the pinned reference build byte for byte. All nine MCP tools are discoverable. Synthetic protocol checks verified owned and foreign records, interval collapse, midnight allocation, nullable zero and missing values, separate calorie sums, exercise pagination and unchanged persisted records after reads. Synthetic health rows were removed and the original activity and food baselines were restored.
+
+The first full browser run passed 324 scenarios, skipped one and failed an existing Settings navigation prerequisite before its observer-cleanup assertion. That scenario passed alone with tracing. A fresh full run then passed 325 scenarios and skipped one, with retries disabled and no application changes between runs. The first navigation failure's cause remains unproven. Frontend and E2E sources are unchanged by this PR.
+
+Production still runs b638286 history support. Owner ChatGPT activity acceptance remains pending after an approved merge and VM rollout; Idea 1009 stays open until that check passes.
