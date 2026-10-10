@@ -22,7 +22,7 @@ type phonePeriodInput struct {
 
 type phoneHistoryInput struct {
 	phonePeriodInput
-	Limit  int    `json:"limit,omitempty" jsonschema:"Meals per page, 1 to 20; default 10."`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Records per page, 1 to 20; default 10."`
 	Cursor string `json:"cursor,omitempty" jsonschema:"Opaque next_cursor from the preceding page; keep the period and dates identical."`
 }
 

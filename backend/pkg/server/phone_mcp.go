@@ -147,14 +147,16 @@ func (h *foodHandlers) PhoneMCPHandler(token, userID string, barrier *sync.RWMut
 	if barrier == nil {
 		barrier = &sync.RWMutex{}
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: "healthvault-food", Version: "1.1.0"}, &mcp.ServerOptions{Instructions: "Record meals only for the connected HealthVault user. describe_food_meal creates a draft. " +
+	s := mcp.NewServer(&mcp.Implementation{Name: "healthvault-food", Version: "1.2.0"}, &mcp.ServerOptions{Instructions: "Record meals only for the connected HealthVault user. describe_food_meal creates a draft. " +
 		"Keep request_id unchanged on retries. Read saved and status; only confirmed means saved in daily totals. Draft totals preview analyzed items, and missing macros contribute no known nutrients. " +
 		"Ask the returned clarification questions and pass expected_round and expected_version unchanged. Show names and portions before confirming when they are uncertain. " +
 		"An explicit user request to record a clearly specified meal authorizes confirmation; never invent missing answers. " +
 		"Use get_food_meal after interrupted calls; retry_food_meal recovers failed or stale processing meals without creating another row. " +
 		"For questions about yesterday or a period, use list_food_meals and get_food_daily_totals instead of chat memory. Follow next_cursor until empty for a complete meal list. " +
 		"Report resolved dates and timezone, confirmed totals and coverage. These are recorded-food totals, not proof of everything eaten. Unknown nutrients are not measured zeros; estimates are not measurements. " +
-		"An empty day means no recorded food, not fasting. Today is partial. Completeness is a logging heuristic or owner assertion, never proof of complete intake. Sodium grams are elemental sodium, not added salt."})
+		"An empty day means no recorded food, not fasting. Today is partial. Completeness is a logging heuristic or owner assertion, never proof of complete intake. Sodium grams are elemental sodium, not added salt. " +
+		"For activity questions use get_activity_daily_totals and list_activity_exercises. Follow exercise next_cursor. Missing records are not zero activity, and record counts are not full-day sensor coverage. " +
+		"Respect whole-interval allocation and overlap notes. Never add active and total calories, or exercise steps to daily steps. Device provenance and exercise calories are unavailable."})
 	run := func(ctx context.Context, operation func(*auth.Claims) (*database.FoodMeal, error)) (*mcp.CallToolResult, phoneMealResult, error) {
 		// The outer stream is exempt from capture locking. Every tool, including
 		// identity resolution and replay reads, takes the shared lock here.
@@ -247,6 +249,7 @@ func (h *foodHandlers) PhoneMCPHandler(token, userID string, barrier *sync.RWMut
 		})
 	})
 	h.addPhoneHistoryTools(s, id, barrier)
+	h.addPhoneActivityTools(s, id, barrier)
 	stream := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{Stateless: true})
 	return requireBearerToken(token, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 32*1024)

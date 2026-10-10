@@ -34,6 +34,18 @@ Count only confirmed meals in nutrition totals. Explain unconfirmed meals and un
 
 After an approved rollout, open the existing HealthVault connection in ChatGPT settings and select **Refresh**. Confirm that the two read tools appear. Start a new chat with HealthVault selected and ask “Расскажи, сколько я вчера всего скушал”. Check the dates, meal list and confirmed totals against HealthVault. Then ask about today and the last seven completed days. Local protocol and WIP checks do not establish that ChatGPT used the updated tools; verify this phone scenario separately.
 
+## Read recorded activity
+
+Use `get_activity_daily_totals` for recorded steps, exercise duration and separate active/total kcal over the same local periods. Use `list_activity_exercises` for stored exercise sessions. Exercise pages default to 10 records, maximum 20; follow `next_cursor` with the same dates and timezone. Daily aggregates do not depend on exercise pagination. A shortened exercise type reports `text_truncated`.
+
+Null totals mean no records, not zero movement or energy. Zero with records is a stored aggregate; inspect kept/dropped step counts before interpreting zero steps. Counts of recorded intervals or days never establish full-day sensor coverage. Today is partial. Exercise distance and stride are meters, duration is seconds, cadence is steps per minute and energy is kcal. Null exercise fields are unavailable; optional zero is a recorded value. Normalized rows cannot establish a device/origin or exercise calories, and raw webhook JSON is not exposed.
+
+Whole intervals belong to the local date of their start. A cross-midnight record stays in its start day; its count or duration is not divided proportionally. Records starting before the selected period are omitted. Steps apply HealthVault's existing Step Interval Collapse across the selected period: covered intervals drop, partial overlaps remain whole. Different period bounds can change which records collapse. These totals are recorded evidence with incomplete overlap removal. Exercises and calorie intervals retain their recorded overlaps. Never add exercise steps to step totals, or active kcal to total kcal. Do not infer calorie balance or sensor coverage from these values.
+
+Queries reject periods with more than 50,000 candidate rows in any metric and ask for a shorter period. Evidence results are capped at 64 KiB. A response-size error asks for a shorter period or smaller exercise page instead of silently truncating aggregates.
+
+After an approved activity rollout, refresh the existing HealthVault connection in ChatGPT. Confirm `get_activity_daily_totals` and `list_activity_exercises` appear. In a new chat with HealthVault selected, ask “Сколько я вчера прошёл и какие тренировки записаны?”. Compare the returned dates, recorded steps and exercise sessions with HealthVault. Repeat for seven completed days and confirm missing records are described as unavailable. Verify an actual tool call in ChatGPT; local protocol checks alone do not prove phone acceptance. Keep Idea 1009 open until this check passes.
+
 ## Historical WIP pilot
 
 The following notes describe the initial WIP pilot. Do not redirect an existing production connection to WIP for acceptance testing.
