@@ -28,7 +28,9 @@ These are current calculated targets, not historical targets or a prescribed cal
 - [x] Mark completed.
 
 ### Task 3: Validate WIP
-- [ ] Verify hcw-wip class, pinned runtime source identity and ten-tool MCP discovery.
-- [ ] Verify goals against the existing HTTP endpoint and preserve synthetic WIP data after the probe.
-- [ ] Run the full deployed browser suite and record results.
-- [ ] Mark completed.
+- [x] Verify hcw-wip class, pinned runtime source identity and ten-tool MCP discovery.
+- [x] Verify goals against the existing HTTP endpoint and preserve synthetic WIP data after the probe.
+- [x] Run the full deployed browser suite and record results.
+- [x] Mark completed.
+
+Validation evidence: backend suite and `make lint` passed on 2026-10-10; Android lint skipped because no SDK is installed. Native correctness, standards and spec/tests reviews completed. Claude peer completed; legacy Local timezone parity and missing identity-test findings were fixed and verified. WIP deployed application revision `d3e6528946f4a72c192a2d65bfbef7096f8d905d`; actual backend binary SHA-256 `947732ef7a31c48418c300dfc01956b2f78349acf838f445501cf674025a34ed` matched the pinned build, and nginx configuration matched source. MCP 1.3.0 exposed ten tools. Protocol probes passed HTTP goals parity, owner isolation, fresh settings and read-only checks; synthetic records were removed and original settings/record baselines restored. Full deployed Chromium suite: 325 passed, 1 skipped, retries disabled, one worker (5.5 minutes). Production rollout and refreshed owner ChatGPT acceptance remain separate approved steps.
