@@ -2,7 +2,7 @@
 
 ## Why
 
-The owner uses Idea Store for every repository and Home for the ecosystem dependency map.
+The owner uses Idea Store as the tracker for every repository.
 Engineering skills need explicit tracker operations and triage interpretations so they use
 the existing lifecycle and preserve project ownership.
 
@@ -10,8 +10,10 @@ the existing lifecycle and preserve project ownership.
 
 Add the approved Agent skills block and repository-local tracker, triage and domain guidance.
 Update CLAUDE.md when present; otherwise update or create AGENTS.md.
-Keep existing instructions outside the block unchanged. Preserve the single-context layout.
-Refer cross-repository exploration to Home. Change documentation only.
+Preserve existing instructions except their absolute filesystem references. Remove the
+external environment-rule pointer. Preserve the single-context layout.
+Use repository-relative documentation pointers without requiring an external ecosystem
+map. Change documentation only.
 
 ## Validation Commands
 
@@ -22,6 +24,6 @@ git diff main...HEAD -- AGENTS.md CLAUDE.md docs/agents/
 - [x] Add or update the Agent skills block without duplicating it.
 - [x] Configure Idea Store, native dependencies and guarded writes.
 - [x] Map the five standard triage roles to lifecycle conditions and actions.
-- [x] Configure single-context domain docs and the existing Home map pointer.
+- [x] Configure single-context domain docs without a required external map or checkout path.
 - [x] Verify documentation, existing instruction preservation and Review Gate results.
 - [x] Mark completed.

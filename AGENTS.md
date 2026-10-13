@@ -1,12 +1,10 @@
 # Agent instructions
 
-Follow `/data/AGENTS.md` when it exists.
-
 ## Agent skills
 
 ### Issue tracker
 
-Track all work in Idea Store, including artifact-host.
+Track this repository's work in Idea Store.
 Read `docs/agents/issue-tracker.md` before tracker operations.
 
 ### Triage labels
