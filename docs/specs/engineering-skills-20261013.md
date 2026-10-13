@@ -16,12 +16,12 @@ Refer cross-repository exploration to Home. Change documentation only.
 ## Validation Commands
 
 git diff --check
-python3 /tmp/engineering_skills_validate_01a13644.py
+git diff main...HEAD -- AGENTS.md CLAUDE.md docs/agents/
 
 ### Task 1: Configure the repository
-- [ ] Add or update the Agent skills block without duplicating it.
-- [ ] Configure Idea Store, native dependencies and guarded writes.
-- [ ] Map the five standard triage roles to lifecycle conditions and actions.
-- [ ] Configure single-context domain docs and the existing Home map pointer.
-- [ ] Verify documentation, existing instruction preservation and Review Gate results.
-- [ ] Mark completed.
+- [x] Add or update the Agent skills block without duplicating it.
+- [x] Configure Idea Store, native dependencies and guarded writes.
+- [x] Map the five standard triage roles to lifecycle conditions and actions.
+- [x] Configure single-context domain docs and the existing Home map pointer.
+- [x] Verify documentation, existing instruction preservation and Review Gate results.
+- [x] Mark completed.
