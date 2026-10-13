@@ -14,6 +14,7 @@ import net.ikoro.healthvault.api.TodaySummary
 import net.ikoro.healthvault.weather.WeatherObservation
 import java.time.Instant
 import java.util.UUID
+import net.ikoro.healthvault.diagnostics.recordedDiagnostic
 import net.ikoro.healthvault.diagnostics.DiagnosticEvent
 import net.ikoro.healthvault.diagnostics.DiagnosticJournal
 
@@ -28,6 +29,7 @@ private const val KEY_SNAPSHOT = "snapshot"
 private const val KEY_REFRESH_FAILED = "refresh_failed"
 private const val KEY_NEXT_REFRESH_AT = "next_refresh_at"
 private const val KEY_DIAGNOSTICS = "diagnostics"
+private const val KEY_SESSION_GENERATION = "session_generation"
 
 @Serializable
 data class SummarySnapshot(val summary: TodaySummary, val fetchedAtMillis: Long)
@@ -74,7 +76,8 @@ class SecureStore(private val prefs: SharedPreferences) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val refreshStateLock = Any()
-    private var sessionGeneration = 0L
+    // WorkManager input and browser saved state survive process death.
+    private var sessionGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L)
 
     var serverUrl: String?
         get() = prefs.getString(KEY_SERVER_URL, null)
@@ -137,6 +140,7 @@ class SecureStore(private val prefs: SharedPreferences) {
                     .putString(KEY_SERVER_URL, serverUrl)
                     .putString(KEY_USERNAME, username)
                     .putString(KEY_PASSWORD, password)
+                    .putLong(KEY_SESSION_GENERATION, sessionGeneration + 1)
                     .remove(KEY_SNAPSHOT)
                     .remove(KEY_REFRESH_FAILED)
                     .remove(KEY_NEXT_REFRESH_AT)
@@ -194,6 +198,7 @@ class SecureStore(private val prefs: SharedPreferences) {
         synchronized(refreshStateLock) {
             if (expectedSessionGeneration != null && expectedSessionGeneration != sessionGeneration) return false
             val editor = prefs.edit()
+                .putLong(KEY_SESSION_GENERATION, sessionGeneration + 1)
                 .remove(KEY_USERNAME)
                 .remove(KEY_PASSWORD)
                 .remove(KEY_COOKIES)
@@ -266,14 +271,8 @@ class SecureStore(private val prefs: SharedPreferences) {
     fun recordDiagnostic(event: DiagnosticEvent, generation: Long): Boolean = synchronized(refreshStateLock) {
         if (generation != sessionGeneration || !hasSession()) return false
         val saved = diagnosticJournal(generation)
-        val previous = saved.events.lastOrNull { it.operation == event.operation }
         val success = event.category == "success"
-        val recovered = success && previous != null && previous.category !in setOf("success", "recovered")
-        val recorded = event.copy(
-            category = if (recovered) "recovered" else event.category,
-            attempt = if (previous != null && previous.category !in setOf("success", "recovered"))
-                (previous.attempt + 1).coerceAtMost(1000000) else 1,
-        )
+        val recorded = recordedDiagnostic(event, saved.events)
         val events = (saved.events + recorded).takeLast(DiagnosticJournal.MAX_EVENTS)
         val pending = (saved.pendingIds + recorded.id).filter { id -> events.any { it.id == id } }
         val journal = saved.copy(events = events, pendingIds = pending,

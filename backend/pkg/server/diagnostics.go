@@ -34,20 +34,65 @@ func validDiagnostic(e database.ClientDiagnosticEvent) bool {
 	if err != nil || re != nil || id == uuid.Nil || rid == uuid.Nil || e.ID != id.String() || e.RequestID != rid.String() {
 		return false
 	}
-	switch e.Operation {
-	case "summary", "weather", "auth_login", "auth_refresh":
+	if !validDiagnosticStage(e.Operation, e.Category) {
+		return false
+	}
+	if e.WorkID != "" {
+		workID, err := uuid.Parse(e.WorkID)
+		if err != nil || workID == uuid.Nil || e.WorkID != workID.String() {
+			return false
+		}
+	}
+	switch e.Trigger {
+	case "", "food_entry", "manual", "app_resume", "placement", "periodic", "retry":
 	default:
 		return false
 	}
-	switch e.Category {
-	case "success", "recovered", "unauthenticated", "rate_limited", "access_challenge", "dns", "timeout", "tls", "network", "server", "invalid_response":
+	switch e.Provider {
+	case "", "home", "flex_window":
 	default:
+		return false
+	}
+	if e.SnapshotAgeMillis != nil && *e.SnapshotAgeMillis < 0 {
 		return false
 	}
 	// Phone clocks can be skewed. Retention uses the server receipt time.
 	return !e.OccurredAt.IsZero() &&
 		e.HTTPCode >= 0 && e.HTTPCode <= 599 && (e.HTTPCode == 0 || e.HTTPCode >= 100) && e.DurationMillis >= 0 && e.DurationMillis <= 24*60*60*1000 &&
 		e.Attempt >= 1 && e.Attempt <= 1000000 && diagnosticVersion.MatchString(e.AppVersion) && e.AndroidAPI >= 26 && e.AndroidAPI <= 100
+}
+
+// Widget stages use a closed vocabulary; arbitrary client text is never persisted.
+func validDiagnosticStage(operation, category string) bool {
+	allowed := map[string][]string{
+		"widget_browser":  {"launched", "returned", "cancelled", "failed"},
+		"widget_work":     {"enqueue_requested", "replacement_requested", "started", "deferred", "cancelled", "failed", "success"},
+		"widget_snapshot": {"success", "rejected"},
+		"widget_redraw":   {"started", "success", "failed", "cancelled"},
+	}
+	if categories, widget := allowed[operation]; widget {
+		for _, c := range categories {
+			if category == c {
+				return true
+			}
+		}
+		return false
+	}
+	switch operation {
+	case "summary", "weather", "auth_login", "auth_refresh", "widget_fetch":
+	default:
+		return false
+	}
+	switch category {
+	case "success", "recovered", "unauthenticated", "rate_limited", "access_challenge", "dns", "timeout", "tls", "network", "server", "invalid_response":
+		return true
+	default:
+		return false
+	}
+}
+
+func sameOptional[T comparable](a, b *T) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
 
 // DiagnosticsHandler is self-only. Receipts are emitted only after the transaction commits.
@@ -100,6 +145,12 @@ func DiagnosticsHandler(storage database.Storage) http.HandlerFunc {
 					return err
 				}
 				old.ReceivedAt = e.ReceivedAt
+				if !sameOptional(old.SnapshotAgeMillis, e.SnapshotAgeMillis) || !sameOptional(old.SnapshotChanged, e.SnapshotChanged) {
+					return errDiagnosticConflict
+				}
+				// Compare optional metadata by value, not decoder/ORM pointer identity.
+				old.SnapshotAgeMillis = e.SnapshotAgeMillis
+				old.SnapshotChanged = e.SnapshotChanged
 				if old != e {
 					return errDiagnosticConflict
 				}

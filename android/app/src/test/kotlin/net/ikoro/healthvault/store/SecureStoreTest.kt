@@ -89,4 +89,29 @@ class SecureStoreTest {
         assertFalse(store.refreshFailed)
         assertEquals(0L, store.nextRefreshAtMillis)
     }
+    @Test
+    fun `queued flow remains valid when the process restarts`() {
+        val prefs = FakeSharedPreferences()
+        val initial = SecureStore(prefs)
+        initial.saveSession("https://example.com", "alice", "secret")
+        val captured = initial.currentSessionGeneration
+        val restarted = SecureStore(prefs)
+        assertTrue(restarted.isCurrentSession(captured))
+        assertEquals(captured, restarted.currentSessionGeneration)
+    }
+
+    @Test
+    fun `old queued flow stays invalid after account replacement and process restart`() {
+        val prefs = FakeSharedPreferences()
+        val legacy = SecureStore(prefs)
+        val old = legacy.currentSessionGeneration
+        legacy.saveSession("https://example.com", "bob", "secret")
+        val restarted = SecureStore(prefs)
+        assertFalse(restarted.isCurrentSession(old))
+        val beforeSignOut = restarted.currentSessionGeneration
+        restarted.clearSession()
+        assertFalse(SecureStore(prefs).isCurrentSession(beforeSignOut))
+        assertEquals(restarted.currentSessionGeneration, SecureStore(prefs).currentSessionGeneration)
+    }
+
 }

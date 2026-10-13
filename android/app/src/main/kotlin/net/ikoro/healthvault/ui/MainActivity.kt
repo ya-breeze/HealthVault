@@ -88,6 +88,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         lifecycleScope.launch(Dispatchers.IO) { WeatherScheduler.reconcile(applicationContext) }
-        RefreshScheduler.enqueueOneOff(applicationContext)
+        RefreshScheduler.enqueueOneOff(applicationContext, trigger = "app_resume")
     }
 }

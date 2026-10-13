@@ -177,7 +177,7 @@ class WidgetTextTest {
         assertTrue(source.contains("getGlanceIds(FlexWindowSummaryWidget::class.java)"))
         assertTrue(source.contains("WidgetUpdater.placementCounts(context).shouldCancelPeriodic"))
         assertTrue(source.contains("RefreshScheduler.ensurePeriodic(context)"))
-        assertTrue(source.contains("RefreshScheduler.enqueueOneOff(context)"))
+        assertTrue(source.contains("RefreshScheduler.enqueueOneOff(context, trigger = \"placement\")"))
 
         val none = WidgetPlacementCounts(home = 0, flexWindow = 0)
         assertEquals(0, none.total)
@@ -197,13 +197,13 @@ class WidgetTextTest {
         val source = appSource("src/main/kotlin/net/ikoro/healthvault/work/RefreshWorker.kt").readText()
         val persistedHoldoff = source
             .substringAfter("if (nextRefreshAt > now)")
-            .substringBefore("when (val result")
+            .substringBefore("val fetchStarted")
         val newRateLimit = source
             .substringAfter("is ApiResult.RateLimited")
             .substringBefore("is ApiResult.Unauthenticated")
 
         listOf(persistedHoldoff, newRateLimit).forEach { branch ->
-            val redraw = branch.indexOf("WidgetUpdater.updateAll(applicationContext)")
+            val redraw = branch.indexOf("WidgetUpdater.updateAll(applicationContext, diagnostics)")
             val replace = branch.indexOf("RefreshScheduler.enqueueOneOff(applicationContext")
             assertTrue("expected a widget redraw in the refresh branch", redraw >= 0)
             assertTrue("expected a replacement one-off in the refresh branch", replace >= 0)

@@ -21,6 +21,11 @@ data class DiagnosticEvent(
     @kotlinx.serialization.EncodeDefault val attempt: Int = 1,
     @SerialName("app_version") val appVersion: String,
     @SerialName("android_api") val androidApi: Int,
+    @SerialName("work_id") val workId: String = "",
+    val trigger: String = "",
+    val provider: String = "",
+    @SerialName("snapshot_age_millis") val snapshotAgeMillis: Long? = null,
+    @SerialName("snapshot_changed") val snapshotChanged: Boolean? = null,
 )
 
 @Serializable

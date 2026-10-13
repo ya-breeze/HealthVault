@@ -1,6 +1,8 @@
 package net.ikoro.healthvault.work
 
 import android.content.Context
+import net.ikoro.healthvault.HealthVaultApp
+import net.ikoro.healthvault.diagnostics.WidgetFlow
 import androidx.work.BackoffPolicy
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -30,9 +32,14 @@ private const val ONE_OFF_WORK_NAME = "healthvault-refresh-one-off"
  * returns Result.retry(), so the actual request still backs off.
  */
 object RefreshScheduler {
+    const val PERIODIC_TAG = "healthvault-widget-periodic"
+    const val FLOW_ID = "widget_flow_id"
+    const val FLOW_GENERATION = "widget_flow_generation"
+    const val FLOW_TRIGGER = "widget_flow_trigger"
 
     fun ensurePeriodic(context: Context) {
         val request = PeriodicWorkRequestBuilder<RefreshWorker>(30, TimeUnit.MINUTES)
+            .addTag(PERIODIC_TAG)
             .build()
         WorkManager.getInstance(context)
             .enqueueUniquePeriodicWork(PERIODIC_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
@@ -42,8 +49,11 @@ object RefreshScheduler {
         WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
     }
 
-    fun enqueueOneOff(context: Context, initialDelay: Duration = ZERO) {
+    fun enqueueOneOff(context: Context, initialDelay: Duration = ZERO, trigger: String = "manual", flow: WidgetFlow? = null) {
+        val app = context.applicationContext as HealthVaultApp
+        val traceFlow = flow?.copy(trigger = trigger) ?: WidgetFlow(generation = app.secureStore.currentSessionGeneration, trigger = trigger)
         val request = OneTimeWorkRequestBuilder<RefreshWorker>()
+            .setInputData(widgetWorkData(traceFlow))
             .setInitialDelay(initialDelay.toJavaDuration())
             // Backs off retries WorkManager itself schedules on Result.retry()
             // (e.g. a transient network error inside doWork before this
@@ -53,7 +63,16 @@ object RefreshScheduler {
             // Retry-After delay.
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
             .build()
-        WorkManager.getInstance(context)
-            .enqueueUniqueWork(ONE_OFF_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+        val diagnostics = app.widgetDiagnostics(traceFlow, request.id.toString())
+        app.recordWidgetReplacement(traceFlow, request.id.toString())
+        diagnostics.event("widget_work", "enqueue_requested")
+        try {
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(ONE_OFF_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+        } catch (failure: Exception) {
+            diagnostics.event("widget_work", if (failure is kotlinx.coroutines.CancellationException) "cancelled" else "failed")
+            app.uploadWidgetDiagnostics(traceFlow.generation)
+            throw failure
+        }
     }
 }
