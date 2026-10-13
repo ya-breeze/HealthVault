@@ -27,8 +27,18 @@ Validation scope: run the focused diagnostic ingestion, existing Android summary
 - [x] Mark completed
 
 ### Task 3: Validate and review
-- [ ] Run backend and Android tests, static checks and build.
-- [ ] Complete native and best-effort Claude peer Review Gate.
-- [ ] Validate ingestion and existing E2E against WIP; identify the missing real-device browser-return proof explicitly.
-- [ ] Publish a draft PR with the exact validation scope and remaining device acceptance.
-- [ ] Mark completed
+- [x] Run backend and Android tests, static checks and build.
+- [x] Complete native and best-effort Claude peer Review Gate.
+- [x] Validate ingestion and existing E2E against WIP; identify the missing real-device browser-return proof explicitly.
+- [x] Publish a draft PR with the exact validation scope and remaining device acceptance.
+- [x] Mark completed
+
+## Validation evidence
+
+Code commit `37aa20e40d31b4eb44fcf8cc266a1afde0c8fc63` passed the backend suite, `make lint`, and shared Android `testDebugUnitTest lintDebug assembleDebug` (106 tests, no failures). The local Makefile skips Android without an SDK; the shared SDK builder supplies the actual Android test/lint/build evidence. Two process-reconstruction regression tests failed before the durable-generation fix and passed afterwards.
+
+Native correctness, standards and spec review completed without remaining findings. Claude's system peer review completed; confirmed issues were fixed, shared Bundle keys replaced duplicated literals, and a boundary test verifies the agreed nonnegative int64 snapshot age contract. Physical browser/launcher acceptance remains unverified.
+
+The WIP diagnostics, existing summary-contract and authentication E2E suites passed all 10 tests with retries disabled on the code commit above. The first attempt preceded actual server replacement and lacked the matching browser; installing Chromium and waiting for the new runtime resolved those prerequisites. Synthetic event ingestion, acknowledgement, persistence, replay and invalid-metadata rejection were verified. WIP was then restored to its original `main` branch; stack status and rejection of the feature-only API stage signature confirm runtime restoration.
+
+Draft PR: https://github.com/ya-breeze/HealthVault/pull/115. No merge, production deployment or Google Play upload occurred. Subsequent commits contain only this validation evidence and task completion ticks.
