@@ -25,7 +25,7 @@ abstract class RefreshingSummaryWidgetReceiver : GlanceAppWidgetReceiver() {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
         // onEnabled runs only for the first instance. onUpdate also runs when
         // each later instance is placed, so every placement gets fresh data.
-        RefreshScheduler.enqueueOneOff(context)
+        RefreshScheduler.enqueueOneOff(context, trigger = "placement")
     }
 
     override fun onDisabled(context: Context) {
@@ -48,10 +48,11 @@ class FlexWindowSummaryWidgetReceiver : RefreshingSummaryWidgetReceiver() {
 
 /** Forces every placed widget instance to recompute — used after sign-out and by RefreshWorker. */
 object WidgetUpdater {
-    suspend fun updateAll(context: Context) {
+    suspend fun updateAll(context: Context, diagnostics: net.ikoro.healthvault.diagnostics.WidgetDiagnostics? = null) {
         updateBothWidgetProviders(
             updateHome = { SummaryWidget().updateAll(context) },
             updateFlexWindow = { FlexWindowSummaryWidget().updateAll(context) },
+            diagnostics = diagnostics,
         )
     }
 
@@ -78,22 +79,39 @@ internal data class WidgetPlacementCounts(val home: Int, val flexWindow: Int) {
 internal suspend fun updateBothWidgetProviders(
     updateHome: suspend () -> Unit,
     updateFlexWindow: suspend () -> Unit,
+    diagnostics: net.ikoro.healthvault.diagnostics.WidgetDiagnostics? = null,
 ) {
     var firstFailure: Throwable? = null
 
     try {
-        updateHome()
+        submitWidgetUpdate("home", diagnostics, updateHome)
     } catch (failure: Throwable) {
         if (failure is CancellationException) throw failure
         firstFailure = failure
     }
 
     try {
-        updateFlexWindow()
+        submitWidgetUpdate("flex_window", diagnostics, updateFlexWindow)
     } catch (failure: Throwable) {
         if (failure is CancellationException) throw failure
         if (firstFailure == null) firstFailure = failure else firstFailure.addSuppressed(failure)
     }
 
     firstFailure?.let { throw it }
+}
+
+/** Success means Glance accepted the update, not that the launcher rendered it. */
+internal suspend fun submitWidgetUpdate(provider: String,
+    diagnostics: net.ikoro.healthvault.diagnostics.WidgetDiagnostics?, update: suspend () -> Unit) {
+    diagnostics?.event("widget_redraw", "started", provider = provider)
+    val started = System.nanoTime()
+    try {
+        update()
+        diagnostics?.event("widget_redraw", "success", provider = provider,
+            durationMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started))
+    } catch (failure: Exception) {
+        diagnostics?.event("widget_redraw", if (failure is CancellationException) "cancelled" else "failed", provider = provider,
+            durationMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started))
+        throw failure
+    }
 }

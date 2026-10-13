@@ -179,3 +179,12 @@ logs include the same request ID.
 This feature adds no alerts, crash SDK or extra automatic recovery. JVM tests cover storage,
 acknowledgments, classification and API contracts. Builds do not prove phone rendering or
 Android process lifecycle behavior; this project has no instrumented device tests.
+
+Widget refresh diagnostics also record browser launch/return, work scheduling and replacement requests,
+worker execution, aggregate fetch outcomes, snapshot acceptance/change/age and each provider update
+submission. A shared flow UUID and WorkManager UUID correlate these stages. These records contain
+no food content, health values, server URLs or exception text. Widget telemetry writes use a bounded
+background queue. Update submission success does not prove launcher rendering. Existing queued work
+without a trigger tag is left unspecified rather than labeled periodic. Session generation persists
+atomically with login/logout so saved flows survive process recreation and stay isolated across accounts.
+The server must support the extended diagnostic contract before publishing this Android update.

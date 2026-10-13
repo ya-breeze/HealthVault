@@ -23,7 +23,7 @@ class WidgetLogFoodActivityTest {
             .substringAfter("registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {")
             .substringBefore("\n    }")
 
-        assertTrue(resultCallback.contains("RefreshScheduler.enqueueOneOff(applicationContext)"))
+        assertTrue(resultCallback.contains("RefreshScheduler.enqueueOneOff(applicationContext, trigger = \"food_entry\", flow = flow)"))
         assertTrue(resultCallback.indexOf("RefreshScheduler.enqueueOneOff") < resultCallback.indexOf("finish()"))
         assertTrue(source.contains("if (savedInstanceState != null) return"))
         assertTrue(source.contains("app.secureStore.serverUrl"))

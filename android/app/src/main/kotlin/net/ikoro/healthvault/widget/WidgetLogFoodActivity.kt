@@ -23,21 +23,38 @@ internal fun widgetLogFoodUrl(serverUrl: String?): String? {
  * task without showing another HealthVault screen.
  */
 class WidgetLogFoodActivity : ComponentActivity() {
+    private lateinit var flow: net.ikoro.healthvault.diagnostics.WidgetFlow
     private val logFood = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        RefreshScheduler.enqueueOneOff(applicationContext)
+        val app = application as HealthVaultApp
+        app.widgetDiagnostics(flow).event("widget_browser", "returned")
+        RefreshScheduler.enqueueOneOff(applicationContext, trigger = "food_entry", flow = flow)
         finish()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(RefreshScheduler.FLOW_ID, flow.id)
+        outState.putLong(RefreshScheduler.FLOW_GENERATION, flow.generation)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val app = application as HealthVaultApp
+        flow = net.ikoro.healthvault.diagnostics.WidgetFlow(
+            id = savedInstanceState?.getString(RefreshScheduler.FLOW_ID) ?: java.util.UUID.randomUUID().toString(),
+            generation = savedInstanceState?.getLong(RefreshScheduler.FLOW_GENERATION) ?: app.secureStore.currentSessionGeneration,
+            trigger = "food_entry",
+        )
+
         // ComponentActivity restores the pending Activity Result registration
         // after process recreation. Relaunching here would open a second tab.
         if (savedInstanceState != null) return
 
-        val app = application as HealthVaultApp
         val url = widgetLogFoodUrl(app.secureStore.serverUrl)
         if (url == null) {
+            app.widgetDiagnostics(flow).event("widget_browser", "failed")
+            app.uploadWidgetDiagnostics(flow.generation)
             finish()
             return
         }
@@ -45,6 +62,14 @@ class WidgetLogFoodActivity : ComponentActivity() {
         val intent = CustomTabsIntent.Builder().build().intent.apply {
             data = Uri.parse(url)
         }
-        logFood.launch(intent)
+        try {
+            logFood.launch(intent)
+            app.widgetDiagnostics(flow).event("widget_browser", "launched")
+        } catch (failure: Exception) {
+            app.widgetDiagnostics(flow).event("widget_browser",
+                if (failure is kotlinx.coroutines.CancellationException) "cancelled" else "failed")
+            app.uploadWidgetDiagnostics(flow.generation)
+            throw failure
+        }
     }
 }

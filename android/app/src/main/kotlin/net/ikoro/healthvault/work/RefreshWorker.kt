@@ -29,8 +29,31 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
     override suspend fun doWork(): Result {
         val app = applicationContext as HealthVaultApp
-        var workResult = Result.success()
+        val currentGeneration = app.secureStore.currentSessionGeneration
+        var history = emptyList<net.ikoro.healthvault.diagnostics.DiagnosticEvent>()
+        net.ikoro.healthvault.diagnostics.diagnosticBestEffort {
+            history = app.secureStore.diagnosticJournal(currentGeneration).events
+        }
+        val flow = widgetWorkFlow(inputData, tags, currentGeneration, id.toString(), runAttemptCount > 0, history)
+        val diagnostics = app.widgetDiagnostics(flow, id.toString(), runAttemptCount + 1)
+        diagnostics.event("widget_work", "started")
+        try {
+            return refresh(app, diagnostics)
+        } catch (failure: Exception) {
+            diagnostics.event("widget_work", if (failure is kotlinx.coroutines.CancellationException) "cancelled" else "failed")
+            throw failure
+        } finally {
+            // HTTP success uploads before snapshot/redraw. Queue another bounded upload
+            // after terminal widget stages, outside the cancelled worker's coroutine.
+            app.uploadWidgetDiagnostics(flow.generation)
+        }
+    }
 
+    private suspend fun refresh(app: HealthVaultApp,
+        diagnostics: net.ikoro.healthvault.diagnostics.WidgetDiagnostics): Result {
+        var workResult = Result.success()
+        var deferred = false
+        val flow = diagnostics.flow
         if (app.secureStore.hasSession()) {
             val sessionGeneration = app.secureStore.currentSessionGeneration
             val now = System.currentTimeMillis()
@@ -40,17 +63,31 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                 // respects the same persisted server holdoff. Re-enqueueing
                 // also restores the delayed one-off if another trigger used
                 // REPLACE to wake this worker before Retry-After elapsed.
-                WidgetUpdater.updateAll(applicationContext)
-                RefreshScheduler.enqueueOneOff(applicationContext, (nextRefreshAt - now).milliseconds)
+                WidgetUpdater.updateAll(applicationContext, diagnostics)
+                diagnostics.event("widget_work", "deferred")
+                RefreshScheduler.enqueueOneOff(applicationContext, (nextRefreshAt - now).milliseconds, trigger = "retry", flow = flow)
                 return Result.success()
             }
 
-            when (val result = app.api.summaryToday()) {
+            val fetchStarted = System.nanoTime()
+            val result = app.api.summaryToday(sessionGeneration)
+            if (result is ApiResult.NetworkFailure && result.cause is kotlinx.coroutines.CancellationException) throw result.cause
+            diagnostics.fetch(result, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - fetchStarted))
+            when (result) {
                 is ApiResult.Success -> {
-                    app.secureStore.saveSnapshot(
-                        SummarySnapshot(result.value, System.currentTimeMillis()),
-                        sessionGeneration,
+                    var prior: SummarySnapshot? = null
+                    var comparisonAvailable = false
+                    net.ikoro.healthvault.diagnostics.diagnosticBestEffort {
+                        prior = app.secureStore.loadSnapshot()
+                        comparisonAvailable = true
+                    }
+                    val fetchedAt = System.currentTimeMillis()
+                    val accepted = app.secureStore.saveSnapshot(
+                        SummarySnapshot(result.value, fetchedAt), sessionGeneration,
                     )
+                    diagnostics.event("widget_snapshot", if (accepted) "success" else "rejected",
+                        snapshotAgeMillis = net.ikoro.healthvault.diagnostics.snapshotAge(fetchedAt, prior?.fetchedAtMillis),
+                        snapshotChanged = if (comparisonAvailable) prior?.summary != result.value else null)
                     app.secureStore.saveRefreshState(
                         failed = false,
                         nextAttemptAtMillis = 0L,
@@ -76,8 +113,9 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                         // so scheduling can cancel this worker. Redraw first;
                         // otherwise a 429 can leave the visible widget looking
                         // current until the delayed replacement eventually runs.
-                        WidgetUpdater.updateAll(applicationContext)
-                        RefreshScheduler.enqueueOneOff(applicationContext, delayMillis.milliseconds)
+                        WidgetUpdater.updateAll(applicationContext, diagnostics)
+                        diagnostics.event("widget_work", "deferred")
+                        RefreshScheduler.enqueueOneOff(applicationContext, delayMillis.milliseconds, trigger = "retry", flow = flow)
                         return Result.success()
                     }
                 }
@@ -106,6 +144,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                         expectedSessionGeneration = sessionGeneration,
                     )
                     workResult = Result.retry()
+                    deferred = true
                 }
                 is ApiResult.AccessChallenge,
                 is ApiResult.ServerError,
@@ -120,7 +159,8 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             }
         }
 
-        WidgetUpdater.updateAll(applicationContext)
+        WidgetUpdater.updateAll(applicationContext, diagnostics)
+        diagnostics.event("widget_work", if (deferred) "deferred" else "success")
         return workResult
     }
 }

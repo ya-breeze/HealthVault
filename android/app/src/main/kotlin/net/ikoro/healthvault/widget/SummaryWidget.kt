@@ -466,6 +466,6 @@ internal fun flexWindowLogFoodActivityOptions() =
 /** The widget's own refresh affordance: enqueues an immediate one-off update (work/RefreshScheduler.kt). */
 class RefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        net.ikoro.healthvault.work.RefreshScheduler.enqueueOneOff(context)
+        net.ikoro.healthvault.work.RefreshScheduler.enqueueOneOff(context, trigger = "manual")
     }
 }

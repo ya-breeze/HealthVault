@@ -162,8 +162,8 @@ class HealthVaultApi(
      * make a network blip look like an account problem — and, worse, invite
      * the caller to discard a session that is still perfectly valid.
      */
-    fun summaryToday(): ApiResult<TodaySummary> = cookieJar.withSessionGeneration(
-        secureStore.currentSessionGeneration,
+    fun summaryToday(generation: Long = secureStore.currentSessionGeneration): ApiResult<TodaySummary> = cookieJar.withSessionGeneration(
+        generation,
     ) {
         val result = summaryTodayForPinnedSession()
         if (result is ApiResult.Success) runCatching { onSuccessfulSync(cookieJar.pinnedSessionGeneration) }

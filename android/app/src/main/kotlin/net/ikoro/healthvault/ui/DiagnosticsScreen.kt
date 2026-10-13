@@ -54,6 +54,11 @@ fun DiagnosticsScreen(api: HealthVaultApi, store: SecureStore, onBack: () -> Uni
                 Text("${diagnosticCategory(event.category)} · HTTP ${event.httpCode.takeIf { it > 0 } ?: "—"} · ${event.durationMillis} ms")
                 Text(stringResource(R.string.diagnostics_attempt, event.attempt, event.appVersion, event.androidApi))
                 Text("ID: ${event.requestId}", style = MaterialTheme.typography.bodySmall)
+                if (event.workId.isNotEmpty()) Text(stringResource(R.string.diagnostics_work_id, event.workId), style = MaterialTheme.typography.bodySmall)
+                if (event.trigger.isNotEmpty()) Text(stringResource(R.string.diagnostics_trigger, diagnosticTrigger(event.trigger)), style = MaterialTheme.typography.bodySmall)
+                if (event.provider.isNotEmpty()) Text(stringResource(R.string.diagnostics_provider, diagnosticProvider(event.provider)), style = MaterialTheme.typography.bodySmall)
+                event.snapshotAgeMillis?.let { Text(stringResource(R.string.diagnostics_snapshot_age, it / 1000), style = MaterialTheme.typography.bodySmall) }
+                event.snapshotChanged?.let { Text(stringResource(if (it) R.string.diagnostics_snapshot_changed else R.string.diagnostics_snapshot_unchanged), style = MaterialTheme.typography.bodySmall) }
                 HorizontalDivider()
             }
         }
@@ -62,6 +67,11 @@ fun DiagnosticsScreen(api: HealthVaultApi, store: SecureStore, onBack: () -> Uni
 
 @Composable
 private fun diagnosticOperation(operation: String): String = stringResource(when (operation) {
+    "widget_browser" -> R.string.diagnostics_widget_browser
+    "widget_work" -> R.string.diagnostics_widget_work
+    "widget_fetch" -> R.string.diagnostics_widget_fetch
+    "widget_snapshot" -> R.string.diagnostics_widget_snapshot
+    "widget_redraw" -> R.string.diagnostics_widget_redraw
     "summary" -> R.string.diagnostics_summary
     "weather" -> R.string.diagnostics_weather
     "auth_login" -> R.string.diagnostics_login
@@ -70,6 +80,15 @@ private fun diagnosticOperation(operation: String): String = stringResource(when
 
 @Composable
 private fun diagnosticCategory(category: String): String = stringResource(when (category) {
+    "launched" -> R.string.diagnostics_launched
+    "returned" -> R.string.diagnostics_returned
+    "replacement_requested" -> R.string.diagnostics_replacement_requested
+    "enqueue_requested" -> R.string.diagnostics_enqueue_requested
+    "started" -> R.string.diagnostics_started
+    "deferred" -> R.string.diagnostics_deferred
+    "cancelled" -> R.string.diagnostics_cancelled
+    "failed" -> R.string.diagnostics_stage_failed
+    "rejected" -> R.string.diagnostics_rejected
     "success" -> R.string.diagnostics_ok
     "recovered" -> R.string.diagnostics_recovered
     "unauthenticated" -> R.string.diagnostics_unauthenticated
@@ -81,4 +100,22 @@ private fun diagnosticCategory(category: String): String = stringResource(when (
     "network" -> R.string.diagnostics_network
     "server" -> R.string.diagnostics_server
     else -> R.string.diagnostics_invalid
+})
+
+@Composable
+private fun diagnosticTrigger(trigger: String): String = stringResource(when (trigger) {
+    "food_entry" -> R.string.diagnostics_trigger_food
+    "manual" -> R.string.diagnostics_trigger_manual
+    "app_resume" -> R.string.diagnostics_trigger_resume
+    "placement" -> R.string.diagnostics_trigger_placement
+    "periodic" -> R.string.diagnostics_trigger_periodic
+    "retry" -> R.string.diagnostics_trigger_retry
+    else -> R.string.diagnostics_unknown
+})
+
+@Composable
+private fun diagnosticProvider(provider: String): String = stringResource(when (provider) {
+    "home" -> R.string.diagnostics_provider_home
+    "flex_window" -> R.string.diagnostics_provider_flex
+    else -> R.string.diagnostics_unknown
 })
