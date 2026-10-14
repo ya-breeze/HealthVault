@@ -1,29 +1,26 @@
-# Configure engineering skills for Idea Store
+# Configure repository domain docs
 
 ## Why
 
-The owner uses Idea Store as the tracker for every repository.
-Engineering skills need explicit tracker operations and triage interpretations so they use
-the existing lifecycle and preserve project ownership.
+Agents need repository-specific domain guidance while the agent environment supplies tracker
+and triage configuration.
 
 ## How
 
-Add the approved Agent skills block and repository-local tracker, triage and domain guidance.
-Update CLAUDE.md when present; otherwise update or create AGENTS.md.
-Preserve existing instructions except their absolute filesystem references. Remove the
-external environment-rule pointer. Preserve the single-context layout.
-Use repository-relative documentation pointers without requiring an external ecosystem
-map. Change documentation only.
+Keep the repository's own instructions and its single-context domain documentation.
+Use repository-relative documents. Keep environment tracker and triage settings outside this
+repository. Preserve existing instructions and operational boundaries. Where existing instructions
+refer to an external environment rule or absolute filesystem location, use repository-local
+configuration and runbooks for the relevant operational facts. Change documentation only.
 
 ## Validation Commands
 
 git diff --check
-git diff main...HEAD -- AGENTS.md CLAUDE.md docs/agents/
+git diff origin/main...HEAD -- AGENTS.md CLAUDE.md docs/agents/
 
 ### Task 1: Configure the repository
-- [x] Add or update the Agent skills block without duplicating it.
-- [x] Configure Idea Store, native dependencies and guarded writes.
-- [x] Map the five standard triage roles to lifecycle conditions and actions.
-- [x] Configure single-context domain docs without a required external map or checkout path.
-- [x] Verify documentation, existing instruction preservation and Review Gate results.
+- [x] Keep the repository's own instructions and one relative domain-doc pointer.
+- [x] Ensure no repository-level tracker or triage configuration files or sections remain.
+- [x] Preserve single-context domain guidance and relevant operational boundaries.
+- [x] Verify relative links, absence of environment coupling and Review Gate results.
 - [x] Mark completed.
