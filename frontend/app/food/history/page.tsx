@@ -18,6 +18,8 @@ interface DayTotals {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number | null;
+  confirmedMeals: number;
 }
 
 interface DayGroup {
@@ -60,7 +62,7 @@ function groupByDay(meals: MealSummary[], locale: string | undefined, timezone: 
         dateKey,
         label: loggedDayLabel(d, locale, timezone),
         meals: [],
-        totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+        totals: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, confirmedMeals: 0 },
       });
     }
 
@@ -71,6 +73,9 @@ function groupByDay(meals: MealSummary[], locale: string | undefined, timezone: 
       group.totals.protein += meal.protein_grams;
       group.totals.carbs += meal.carbs_grams;
       group.totals.fat += meal.fat_grams;
+      group.totals.confirmedMeals += 1;
+      group.totals.fiber = group.totals.fiber === null || meal.dietary_fiber_grams == null
+        ? null : group.totals.fiber + meal.dietary_fiber_grams;
     }
   }
 
@@ -203,9 +208,12 @@ export default function FoodHistoryPage() {
   const dayGroups = groupByDay(meals, dateLocaleFor(language), timezone);
 
   return (
-    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <main className="max-w-md mx-auto px-6 py-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('history.title')}</h1>
+    <AuthenticatedShell className="min-h-screen bg-bg">
+      <main className="hv-page">
+        <div className="hv-page-heading">
+          <div><h1>{t('history.title')}</h1><p className="text-sm text-text-muted mt-2">{t('redesign.review.mealsNutrientsAndDiaryCompleteness')}</p></div>
+          <TapTarget as="a" href="/food/upload/" className="hidden sm:inline-flex items-center rounded-xl bg-accent text-bg-elevated px-5 text-sm font-semibold">{t('redesign.review.addFood')}</TapTarget>
+        </div>
 
         <HistorySettingsPanel
           timezone={storedTimezone}
@@ -213,15 +221,15 @@ export default function FoodHistoryPage() {
           onSaved={handleSettingsSaved}
         />
 
-        {loading && <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">{t('review.loading')}</p>}
+        {loading && <p className="text-sm text-text-muted text-center py-6">{t('review.loading')}</p>}
         {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
         {!loading && meals.length === 0 && !error && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">{t('history.noMeals')}</p>
+          <p className="text-sm text-text-muted text-center py-6">{t('history.noMeals')}</p>
         )}
 
         {dayGroups.map(day => (
-          <div key={day.dateKey} className="mb-5">
-            <div data-testid="day-header" className="mb-2 px-1">
+          <section key={day.dateKey} data-testid="food-day-section" data-date={day.dateKey} className="hv-card mb-6">
+            <div data-testid="day-header" className="mb-3 pb-4 border-b border-border">
               {/* Two rows, because the date, the completeness control and the day's
                   totals cannot share one at a phone width — their combined natural
                   width is roughly 457px against 342px of content at 390px, and the
@@ -231,35 +239,38 @@ export default function FoodHistoryPage() {
                   onto its own line instead of compressing into the gap and
                   re-wrapping inside its own pill. */}
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{day.label}</h2>
+                <h2 className="text-sm font-semibold text-text">{day.label}</h2>
                 <DayCompletenessControl
                   date={day.dateKey}
                   state={completeness[day.dateKey]}
                   onChange={handleCompletenessChange}
                 />
               </div>
-              <div data-testid="day-total" className="flex items-baseline gap-2 mt-0.5">
-                <span data-testid="day-total-calories" className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+              <div data-testid="day-total" className="flex flex-wrap items-baseline gap-x-3 gap-y-2 mt-3">
+                <span data-testid="day-total-calories" className="text-sm font-semibold text-text tabular-nums">
                   {Math.round(day.totals.calories)} {t('unit.kcal')}
                 </span>
-                <span data-testid="day-total-macros" className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                <span data-testid="day-total-macros" className="text-xs text-text-muted tabular-nums">
                   {t('unit.proteinShort')}{' '}
                   {Math.round(day.totals.protein)}{t('unit.grams')} · {t('unit.carbsShort')}{' '}
                   {Math.round(day.totals.carbs)}{t('unit.grams')} · {t('unit.fatShort')}{' '}
                   {Math.round(day.totals.fat)}{t('unit.grams')}
                 </span>
+                <span data-testid="day-total-fiber" className="text-xs text-accent tabular-nums">
+                  {t('item.fiber')}{' '}{day.totals.confirmedMeals === 0 || day.totals.fiber === null ? '—' : `${day.totals.fiber.toFixed(1)}${t('unit.grams')}`}
+                </span>
               </div>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
+            <div className="bg-bg-elevated rounded-xl shadow-sm border border-border divide-y divide-border">
               {day.meals.map(meal => (
                 <TapTarget
                   key={meal.id}
                   as="a"
                   href={`/food/review/?meal=${meal.id}`}
-                  className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  className="flex items-center justify-between gap-3 px-2 py-4 hover:bg-bg transition-colors"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    <p className="text-sm font-medium text-text truncate">
                       {meal.name || t('review.mealFallbackName')}
                     </p>
                     {/* Time only: the day header directly above already names the
@@ -267,26 +278,29 @@ export default function FoodHistoryPage() {
                         stored zone, not the browser's, or a row can show a time
                         belonging to a different day than the header it sits under.
                         See loggedDayTime. */}
-                    <p data-testid="meal-meta" className="text-xs text-gray-500 dark:text-gray-400">
+                    <p data-testid="meal-meta" className="text-xs text-text-muted">
                       {loggedDayTime(new Date(meal.logged_at), dateLocaleFor(language), timezone)} · {mealStatusLabel(t, meal.status)}
                     </p>
                   </div>
                   {meal.status === 'confirmed' && (
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums flex-shrink-0">
+                    <span className="text-sm font-semibold text-text tabular-nums flex-shrink-0">
                       {Math.round(meal.calories)} {t('unit.kcal')}
+                      <span className="block text-xs font-normal text-text-muted mt-1" data-testid={`meal-row-fiber-${meal.id}`}>
+                        {t('item.fiber')}{' '}{meal.dietary_fiber_grams == null ? '—' : `${meal.dietary_fiber_grams.toFixed(1)}${t('unit.grams')}`}
+                      </span>
                     </span>
                   )}
                 </TapTarget>
               ))}
             </div>
-          </div>
+          </section>
         ))}
 
         {hasMore && meals.length > 0 && (
           <TapTarget
             onClick={loadMore}
             disabled={loadingMore}
-            className="mt-4 w-full rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+            className="mt-4 w-full rounded-lg text-sm font-medium border border-border text-text-muted hover:border-accent hover:text-accent disabled:opacity-50"
           >
             {loadingMore ? t('history.loadingMore') : t('history.loadOlder')}
           </TapTarget>

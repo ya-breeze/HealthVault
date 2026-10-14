@@ -11,49 +11,143 @@
 // (ReviewClient, MealItemRow and its ItemResolver panel), meal history, the
 // custom-food catalog list, and the Expert Mode toggle.
 //
-// Still English regardless of Display Language: the import and login screens;
-// app/food/upload/page.tsx; and the food components not on the review path:
-// AddItemForm, CameraCapture, ClarifyModal, CustomFoodModal,
-// DeleteMealControl, MacroSummary, ManualItemEditor, MealMetaEditor and
-// ReanalyzeControl. (AddItemForm's own chrome is English, but the
-// ItemResolver panel it embeds is covered, so that form is partly translated
-// rather than wholly English. The per-type data detail pages are likewise
-// partly translated: their metric heading, raw record table, steps
-// diagnostic disclosure, zoom/macro controls, every chart series name and
-// tooltip, the Avg/Max/Total/BMI summary row, the BMI category and the
-// weight trend-projection copy, and the route's loading fallback are all
-// covered, including the complete data-detail writable form (AddRecordForm).
-// See dataDetail.* and addRecord.* below.)
-//
-// The shared MealCookingContextInputs controls are translated on both entry paths.
-// app/food/manual/page.tsx is now partly translated, not wholly English: its
-// description-first entry path (the textarea, name/time inputs, character
-// counter, disclosure, and submit) uses the describe.* keys below, since a
-// Russian description is the central case this path exists for. The
-// structured item-by-item form it demotes behind a collapsed disclosure
-// stays English, unchanged, along with the components it's built from
-// (ManualItemEditor is already in the list above) — with two exceptions that
-// belong to the disclosure rather than to the form: the control that closes
-// it again (describe.backToDescribe) and the warning that a typed
-// description will not be used by the structured submit
-// (describe.descriptionUnusedHere). Both exist only because the two submit
-// paths are mutually exclusive, which is a property of the description path,
-// and a Russian user who typed a Russian description is precisely who needs
-// to be told it is about to be discarded.
-//
-// This list is not just a comment: the display-language spec's out-of-scope
-// paragraph defers to it by name ("the food entry/editing chrome enumerated
-// in the frontend dictionary's scope comment"), so it is the normative
-// enumeration and has to be updated in the same commit as any coverage
-// change. Three rounds of code review have now corrected it rather than the
-// code: it claimed the food-logging screens wholesale while the resolver
-// panel was uncovered, it went stale when the dashboard was scoped in, and it
-// listed only components — so the two page shells a Russian user reaches by
-// tapping "Фото" or "Вручную" were English with nothing disclosing it.
-//
-// Extending coverage is adding keys here plus their ru.ts counterparts, and
-// updating this list; nothing else has to change.
+// The approved redesign also localizes page headings/navigation/help for food
+// entry, history and review; Custom Foods; settings, login and import; metric
+// and weather detail shells; meal nutrition, metadata, clarification and
+// reanalysis controls. Every translated string belongs in this dictionary and
+// ru.ts so missing counterparts fail the type check. Existing ingredient-input
+// field labels in ManualItemEditor, AddItemForm, CustomFoodModal and camera
+// helper copy retain their original English where no dictionary key is used.
+// Extend this enumeration whenever translation coverage changes.
 const en = {
+  "redesign.nutrition.confirmedOnly": "Confirmed meals only",
+  "redesign.nutrition.protein": "Protein",
+  "redesign.nutrition.carbs": "Carbs",
+  "redesign.nutrition.fat": "Fat",
+  "redesign.entry.uploadTitle": "Log a Meal",
+  "redesign.entry.uploadSubtitle": "Use a photo, a description or individual foods.",
+  "redesign.entry.backToDiary": "Food diary",
+  "redesign.entry.optionsLabel": "Food entry options",
+  "redesign.entry.photo": "Photo",
+  "redesign.entry.manualModes": "Description / by food",
+  "redesign.entry.catalog": "Custom Foods",
+  "redesign.entry.manualSubtitle": "Describe your meal, then review the result before confirming.",
+  "redesign.entry.catalogSubtitle": "Save a food once and reuse it in your diary.",
+  "redesign.entry.sectionsLabel": "Food sections",
+  "redesign.entry.diary": "Food diary",
+  "redesign.entry.search": "Search",
+  "redesign.entry.foodName": "Food name",
+  "redesign.entry.noMatchingFoods": "No matching foods.",
+  "redesign.entry.gramsPer100g": "g / 100g",
+  "redesign.pages.settings.loadFailed": "Failed to load your profile.",
+  "redesign.pages.settings.required": "Birthdate and sex are required.",
+  "redesign.pages.settings.birthdateInvalid": "Enter a valid birthdate: not in the future, and implying an age between 5 and 120.",
+  "redesign.pages.settings.saved": "Profile saved",
+  "redesign.pages.settings.saveFailed": "Could not save your profile. Try again.",
+  "redesign.pages.settings.fiberInvalid": "Enter a whole-number fiber target between 1 and 200 g.",
+  "redesign.pages.settings.fiberSaved": "Fiber target saved",
+  "redesign.pages.settings.fiberSaveFailed": "Could not save fiber target. Try again.",
+  "redesign.pages.settings.subtitle": "Your profile, goals and preferences.",
+  "redesign.pages.settings.profile": "Profile",
+  "redesign.pages.settings.birthdate": "Birthdate",
+  "redesign.pages.settings.sex": "Sex",
+  "redesign.pages.settings.select": "Select…",
+  "redesign.pages.settings.male": "Male",
+  "redesign.pages.settings.female": "Female",
+  "redesign.pages.settings.activity": "Activity level",
+  "redesign.pages.settings.automatic": "Automatic (based on steps)",
+  "redesign.pages.settings.fiberLabel": "Fiber target, g/day (optional)",
+  "redesign.pages.settings.fiberDefault": "Use default",
+  "redesign.pages.settings.fiberHelp": "Leave blank to use the default: 25 g/day for adults. Under 18, set an explicit target. This target is independent of calorie goals.",
+  "redesign.pages.settings.saveFiber": "Save fiber target",
+  "redesign.pages.settings.measurements": "Body measurements",
+  "redesign.pages.settings.activity.sedentary": "Sedentary",
+  "redesign.pages.settings.activity.light": "Lightly active",
+  "redesign.pages.settings.activity.moderate": "Moderately active",
+  "redesign.pages.settings.activity.active": "Very active",
+  "redesign.pages.settings.activity.very_active": "Extra active",
+  "redesign.pages.import.failed": "Import failed",
+  "redesign.pages.import.importing": "Importing…",
+  "redesign.pages.import.submit": "Import",
+  "redesign.pages.import.complete": "Import complete",
+  "redesign.pages.import.type": "Type",
+  "redesign.pages.import.records": "Records",
+  "redesign.pages.import.title": "Import Data",
+  "redesign.pages.import.subtitle": "Bring your health history together.",
+  "redesign.pages.import.healthConnectTitle": "Import Health Connect",
+  "redesign.pages.import.healthConnectDescription": "Upload the zip archive exported from Android's Health Connect app to import your health history.",
+  "redesign.pages.import.healthConnectFile": "Health Connect archive (.zip)",
+  "redesign.pages.import.libraTitle": "Import Libra",
+  "redesign.pages.import.libraDescription": "Upload the CSV exported from the Libra weight-tracking app to import your weight history.",
+  "redesign.pages.import.libraFile": "Libra export (.csv)",
+  "redesign.pages.login.notAuthorized": "Your Google account is not authorized for HealthVault.",
+  "redesign.pages.login.verificationFailed": "Verification with Google failed.",
+  "redesign.pages.login.invalidCredentials": "Invalid credentials",
+  "redesign.pages.login.subtitle": "Your health, in one place.",
+  "redesign.pages.login.google": "Continue with Google",
+  "redesign.pages.login.or": "or",
+  "redesign.pages.login.username": "Username",
+  "redesign.pages.login.password": "Password",
+  "redesign.pages.login.submit": "Sign in",
+  "redesign.pages.login.second": "{count} second",
+  "redesign.pages.login.seconds": "{count} seconds",
+  "redesign.pages.login.minute": "{count} minute",
+  "redesign.pages.login.minutes": "{count} minutes",
+  "redesign.pages.login.lockout": "Too many sign-in attempts. Try again in {duration}.",
+  "redesign.pages.login.lockoutUnknown": "Too many sign-in attempts. Try again shortly.",
+  "redesign.review.mealsNutrientsAndDiaryCompleteness": "Meals, nutrients and diary completeness.",
+  "redesign.review.addFood": "Add food",
+  "redesign.review.noMealSpecified": "No meal specified.",
+  "redesign.review.backToDiary": "Back to diary",
+  "redesign.review.mealPhoto": "Meal photo",
+  "redesign.review.foodsAndPortions": "Foods and portions",
+  "redesign.review.mealNutrition": "Meal nutrition",
+  "redesign.review.loggedTotalsUpdateAsYouEditItems": "Logged totals update as you edit items.",
+  "redesign.review.totalsWillBeCalculatedWhenYouConfirm": "Totals will be calculated when you confirm.",
+  "redesign.review.pleaseEnterAValidDateAndTime": "Please enter a valid date and time",
+  "redesign.review.mealUpdated": "Meal updated",
+  "redesign.review.failedToUpdateMeal": "Failed to update meal",
+  "redesign.review.editNametime": "Edit name/time",
+  "redesign.review.mealName": "Meal name",
+  "redesign.review.dateAndTime": "Date and time",
+  "redesign.review.aHintIsRequired": "A hint is required",
+  "redesign.review.reanalysisComplete": "Reanalysis complete",
+  "redesign.review.reanalysisFailedTheMealIsUnchangedYou": "Reanalysis failed — the meal is unchanged. You can try again.",
+  "redesign.review.refreshedWithLatestChange": "Refreshed with latest change",
+  "redesign.review.anotherOperationTookOverThisMealWhile": "Another operation took over this meal while reanalyzing — showing its current state.",
+  "redesign.review.anotherOperationTookOverThisMealAnd": "Another operation took over this meal, and refreshing failed. Reload to see its current state.",
+  "redesign.review.reanalysisFailed": "Reanalysis failed",
+  "redesign.review.improveAnalysis": "Improve analysis",
+  "redesign.review.thisReplacesAllCurrentItemsAndRequires": "This replaces all current items and requires review again.",
+  "redesign.review.analysisMode": "Analysis mode",
+  "redesign.review.hint": "Hint",
+  "redesign.review.expert": "Expert",
+  "redesign.review.whatDidTheModelMiss": "What did the model miss?",
+  "redesign.review.egGrilledChickenWithRedBeans": "e.g. grilled chicken with red beans",
+  "redesign.review.nameEachIngredientSuppliedWeightsAreUsed": "Name each ingredient. Supplied weights are used exactly; blank weights are estimated from the photo.",
+  "redesign.review.ingredient": "Ingredient",
+  "redesign.review.redBeans": "Red beans",
+  "redesign.review.grams": "Grams",
+  "redesign.review.auto": "Auto",
+  "redesign.review.removeIngredient": "Remove ingredient",
+  "redesign.review.addIngredient": "Add ingredient",
+  "redesign.review.reanalyzing": "Reanalyzing…",
+  "redesign.review.reanalyze": "Reanalyze",
+  "redesign.review.hintMustBeAtMostMaxCharacters": "Hint must be at most {max} characters",
+  "redesign.review.ingredientIndexNeedsAName": "Ingredient {index} needs a name",
+  "redesign.review.ingredientNamesMustBeAtMostMax": "Ingredient names must be at most {max} characters",
+  "redesign.review.ingredientIndexWeightMustBeGreaterThan": "Ingredient {index} weight must be greater than zero",
+  "redesign.review.combinedIngredientNamesMustBeAtMost": "Combined ingredient names must be at most {max} characters",
+  "redesign.review.failedToSubmitAnswers": "Failed to submit answers",
+  "redesign.review.aCoupleOfQuestions": "A couple of questions",
+  "redesign.review.theModelWasNotSureAboutYour": "The model was not sure about your meal. Only your answers are sent, without a photo.",
+  "redesign.review.submitting": "Submitting…",
+  "redesign.review.submit": "Submit",
+  'redesign.review.reviewHeading': 'Review meal',
+  "header.space": "Personal space",
+  "sidebar.caption": "YOUR HEALTH",
+  "dashboard.overviewTitle": "Every day, a little clearer",
+  "dashboard.overviewSubtitle": "Your health and food diary in one place.",
   'header.customFoods': 'Custom Foods',
   'header.import': 'Import',
   'header.webhook': 'Webhook',

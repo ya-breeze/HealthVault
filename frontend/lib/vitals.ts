@@ -35,15 +35,15 @@ export function isDataTypeCard(type: CardId): type is DataType {
  * one the dashboard actually renders would be the other one.
  */
 export const PRIMARY_METRICS: { type: CardId }[] = [
+  { type: 'logging_gap' },
+  { type: 'weight' },
   { type: 'steps' },
-  { type: 'heart_rate' },
   { type: 'sleep' },
+  { type: 'heart_rate' },
   { type: 'heart_rate_variability' },
   { type: 'distance' },
-  { type: 'weight' },
   { type: 'blood_pressure' },
   { type: 'oxygen_saturation' },
-  { type: 'logging_gap' },
   { type: 'food_log_history' },
   { type: 'weather' },
 ];

@@ -126,14 +126,14 @@ export default function Header({ me }: { me: Me }) {
   };
 
   return (
-    <header className="bg-bg-elevated border-b border-border px-6 py-4">
+    <header className="hv-header bg-bg-elevated border-b border-border px-6 py-4">
       {/* `flex-nowrap sm:flex-wrap`, not a removed `flex-wrap`: wrapping is
           what made the mobile header grow instead of shrink, but this is one
           class on a container shared with the desktop rendering, and desktop
           keeps its current behaviour exactly — including that the full
           control set can still wrap between 640px and ~768px, which predates
           this change and is out of its scope. */}
-      <div className="max-w-4xl mx-auto flex justify-between items-center flex-nowrap sm:flex-wrap gap-3">
+      <div className="max-w-[1260px] mx-auto flex justify-between items-center flex-nowrap sm:flex-wrap gap-3">
         {/* A TapTarget now: with the nav controls gone below the breakpoint
             this and the badge are all the header renders, so this link is
             covered by mobile-touch-targets' "every interactive control the
@@ -150,10 +150,11 @@ export default function Header({ me }: { me: Me }) {
         <TapTarget
           as={Link}
           href="/"
-          className="shrink-0 flex items-center text-xl font-extrabold tracking-tight text-text"
+          className="hv-header-brand shrink-0 flex items-center text-xl font-extrabold tracking-tight text-text"
         >
           HealthVault
         </TapTarget>
+        <span className="hv-header-space hidden">{t('header.space')}</span>
         <div className="flex items-center gap-2 flex-nowrap sm:flex-wrap min-w-0">
           {/* The badge is the widest variable-length element the mobile
               header still carries, so it is the one that gives way rather

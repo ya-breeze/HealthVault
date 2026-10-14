@@ -110,9 +110,9 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
       // its own plus the goal/height shortcuts), so each needs to be
       // addressable on its own rather than by a shared label.
       data-testid={`add-record-${type}`}
-      className="flex flex-wrap items-end gap-3 bg-bg-elevated rounded-[12px] border border-border p-4 mb-4"
+      className="hv-card flex flex-wrap items-end gap-4 mb-6"
     >
-      <label className="flex flex-col gap-1">
+      <label className="flex min-w-0 flex-col gap-2">
         <span className="text-xs text-text-muted">
           {spec && unit
             ? interpolate(t('addRecord.valueWithUnit'), { unit })
@@ -125,11 +125,11 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
           onChange={e => setValue(e.target.value)}
           min={spec?.min}
           max={spec?.max}
-          className="w-28 border border-border rounded-md px-2 py-1.5 text-sm bg-bg text-text"
+          className="w-32 min-h-12 border border-border rounded-xl px-3 py-2 text-sm bg-bg text-text"
           required
         />
       </label>
-      <label className="flex flex-col gap-1">
+      <label className="flex min-w-0 flex-col gap-2">
         <span className="text-xs text-text-muted">{t('addRecord.time')}</span>
         <input
           type="datetime-local"
@@ -140,13 +140,13 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
           // un-deletable. The API rejects it too — this just surfaces the
           // limit before the round-trip.
           max={maxLocalDateTime()}
-          className="border border-border rounded-md px-2 py-1.5 text-sm bg-bg text-text"
+          className="max-w-full min-h-12 border border-border rounded-xl px-3 py-2 text-sm bg-bg text-text"
         />
       </label>
       <TapTarget
         type="submit"
         disabled={saving}
-        className="rounded-md text-sm font-medium bg-accent text-bg-elevated px-4 py-1.5 disabled:opacity-50"
+        className="rounded-xl text-sm font-semibold bg-accent text-bg-elevated px-4 py-1.5 disabled:opacity-50"
       >
         {saving ? t('addRecord.saving') : t('addRecord.add')}
       </TapTarget>
@@ -154,7 +154,7 @@ export default function AddRecordForm({ type, onSuccess, onCancel }: Props) {
         <TapTarget
           type="button"
           onClick={onCancel}
-          className="rounded-md text-sm font-medium bg-border text-text px-4 py-1.5"
+          className="rounded-xl text-sm font-semibold bg-border text-text px-4 py-1.5"
         >
           {t('addRecord.cancel')}
         </TapTarget>

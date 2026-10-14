@@ -2,15 +2,20 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
+import { useLanguage } from '@/components/LanguageContext';
+import { interpolate, type Dictionary } from '@/lib/i18n';
 import { accessSignInSuppressed, clearAccessSignInSuppression } from '@/lib/session';
 
 // Renders the limiter's retry hint as something a person can act on. Seconds
 // below a minute, whole minutes above it — "try again in 90 seconds" reads
 // worse than "in 2 minutes", and the backoff schedule reaches 30 minutes.
-function formatRetryAfter(seconds: number): string {
-  if (seconds < 60) return `${Math.max(1, seconds)} second${seconds === 1 ? '' : 's'}`;
-  const minutes = Math.ceil(seconds / 60);
-  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+type Translate = (key: keyof Dictionary) => string;
+function formatRetryAfter(seconds: number, t: Translate): string {
+  const count = seconds < 60 ? Math.max(1, seconds) : Math.ceil(seconds / 60);
+  const key = seconds < 60
+    ? (count === 1 ? 'redesign.pages.login.second' : 'redesign.pages.login.seconds')
+    : (count === 1 ? 'redesign.pages.login.minute' : 'redesign.pages.login.minutes');
+  return interpolate(t(key), { count });
 }
 
 // A 429 from /auth/login is a lockout, not a bad password, and the two need
@@ -19,7 +24,7 @@ function formatRetryAfter(seconds: number): string {
 // backoff each time. The body carries retry_after_seconds; if it is missing
 // or unparsable the message still has to say "locked out", just without a
 // duration.
-function lockoutMessage(body: string): string {
+function lockoutMessage(body: string, t: Translate): string {
   let seconds = 0;
   try {
     const parsed = JSON.parse(body) as { retry_after_seconds?: number };
@@ -27,12 +32,13 @@ function lockoutMessage(body: string): string {
   } catch {
     // Not the structured body — fall through to the durationless message.
   }
-  if (seconds > 0) return `Too many sign-in attempts. Try again in ${formatRetryAfter(seconds)}.`;
-  return 'Too many sign-in attempts. Try again shortly.';
+  if (seconds > 0) return interpolate(t('redesign.pages.login.lockout'), { duration: formatRetryAfter(seconds, t) });
+  return t('redesign.pages.login.lockoutUnknown');
 }
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -57,8 +63,8 @@ export default function LoginPage() {
       }
       setAccessMessage(
         err instanceof ApiError && err.status === 403
-          ? 'Your Google account is not authorized for HealthVault.'
-          : 'Verification with Google failed.'
+          ? t('redesign.pages.login.notAuthorized')
+          : t('redesign.pages.login.verificationFailed')
       );
     }
   };
@@ -93,17 +99,18 @@ export default function LoginPage() {
       router.push('/');
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
-        setError(lockoutMessage(err.message));
+        setError(lockoutMessage(err.message, t));
         return;
       }
-      setError('Invalid credentials');
+      setError(t('redesign.pages.login.invalidCredentials'));
     }
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-      <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 w-80 space-y-4">
-        <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white">HealthVault</h1>
+    <main className="min-h-screen flex items-center justify-center bg-bg px-5 py-10">
+      <form onSubmit={handleSubmit} className="hv-card w-full max-w-md space-y-5">
+        <h1 className="text-3xl font-bold tracking-tight text-center text-text">HealthVault</h1>
+        <p className="text-sm text-text-muted text-center">{t('redesign.pages.login.subtitle')}</p>
         {!accessHidden && (
           <div className="space-y-2">
             {accessMessage && (
@@ -116,31 +123,35 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={handleAccessSignIn}
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="min-h-12 w-full border border-border rounded-xl px-4 py-3 font-semibold text-text hover:bg-bg transition-colors"
             >
-              Continue with Google
+              {t('redesign.pages.login.google')}
             </button>
-            <div className="text-center text-xs text-gray-400 dark:text-gray-500">or</div>
+            <div className="text-center text-xs text-text-muted">{t('redesign.pages.login.or')}</div>
           </div>
         )}
-        {error && <p className="text-red-500 dark:text-red-400 text-sm">{error}</p>}
+        {error && <p role="alert" className="text-red-600 dark:text-red-400 text-sm">{error}</p>}
         <input
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Username"
+          className="min-h-12 w-full border border-border rounded-xl px-4 py-3 bg-bg-elevated text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+          placeholder={t('redesign.pages.login.username')}
+          aria-label={t('redesign.pages.login.username')}
+          autoComplete="username"
           value={username}
           onChange={e => setUsername(e.target.value)}
           required
         />
         <input
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-12 w-full border border-border rounded-xl px-4 py-3 bg-bg-elevated text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent"
           type="password"
-          placeholder="Password"
+          placeholder={t('redesign.pages.login.password')}
+          aria-label={t('redesign.pages.login.password')}
+          autoComplete="current-password"
           value={password}
           onChange={e => setPassword(e.target.value)}
           required
         />
-        <button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-medium transition-colors">
-          Sign in
+        <button className="min-h-12 w-full bg-accent hover:opacity-90 text-bg-elevated rounded-xl px-4 py-3 font-semibold transition-colors">
+          {t('redesign.pages.login.submit')}
         </button>
       </form>
     </main>

@@ -159,14 +159,14 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
   if (loading) {
     return (
-      <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <p className="p-6 text-gray-500 dark:text-gray-400 text-center text-sm">{t('review.loading')}</p>
+      <AuthenticatedShell className="min-h-screen bg-bg">
+        <p className="p-6 text-text-muted text-center text-sm">{t('review.loading')}</p>
       </AuthenticatedShell>
     );
   }
   if (loadError || !meal) {
     return (
-      <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <AuthenticatedShell className="min-h-screen bg-bg">
         <div className="p-6 text-center">
           <p className="text-sm text-red-600 dark:text-red-400">{loadError ?? t('review.mealNotFound')}</p>
         </div>
@@ -187,45 +187,47 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     (meal.status === 'failed' || meal.status === 'pending_review' || meal.status === 'confirmed');
 
   return (
-    <AuthenticatedShell className={`min-h-screen bg-gray-50 dark:bg-gray-900 ${showConfirmBar ? 'pb-24' : ''}`}>
-      <main className="max-w-md mx-auto px-6 py-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-          {meal.name || t('review.mealFallbackName')}
-        </h1>
+    <AuthenticatedShell className={`min-h-screen bg-bg ${showConfirmBar ? 'pb-24' : ''}`}>
+      <main className="hv-page">
+        <div className="hv-page-heading">
+          <div><h1>{t('redesign.review.reviewHeading')}</h1></div>
+          <TapTarget as="a" href="/food/history/" className="rounded-xl border border-border px-4 text-sm text-accent">{t('redesign.review.backToDiary')}</TapTarget>
+        </div>
         {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
           <div className="mb-3">
             <MealMetaEditor meal={meal} onUpdated={applyMealUpdate} />
           </div>
         )}
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+        <div className="hv-card flex items-center justify-between mb-6">
+          <div className="min-w-0"><h2 className="text-lg font-semibold text-text break-words">{meal.name || t('review.mealFallbackName')}</h2>
+          <span className="text-sm font-medium text-text-muted">
             {mealStatusLabel(t, meal.status)}
-          </span>
+          </span></div>
           {meal.photo_path && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={api.mealPhotoUrl(mealId)}
-              alt="Meal"
-              className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-gray-700"
+              alt={t('redesign.review.mealPhoto')}
+              className="w-24 h-24 rounded-xl object-cover border border-border"
             />
           )}
         </div>
 
         {meal.description && (
-          <div className="mb-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 px-4 py-3">
-            <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">
+          <div className="mb-4 bg-bg-elevated rounded-xl border border-border px-4 py-3">
+            <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
               {t('review.descriptionLabel')}
             </p>
-            <p className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{meal.description}</p>
+            <p className="text-sm text-text whitespace-pre-wrap">{meal.description}</p>
           </div>
         )}
 
         {meal.status === 'processing' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 text-center">
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('review.stillAnalyzing')}</p>
+          <div className="bg-bg-elevated rounded-xl shadow-sm border border-border p-6 text-center">
+            <p className="text-sm text-text-muted mb-3">{t('review.stillAnalyzing')}</p>
             <TapTarget
               onClick={load}
-              className="flex items-center justify-center mx-auto text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              className="flex items-center justify-center mx-auto text-sm text-accent hover:underline"
             >
               {t('review.refresh')}
             </TapTarget>
@@ -246,14 +248,16 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
         )}
 
         {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
-          <>
-            <MacroSummary meal={meal} />
-            <div className="mt-3 flex justify-end">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,1fr)] items-start">
+            <div className="lg:col-start-2 lg:row-start-1"><MacroSummary meal={meal} /></div>
+            <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">{t('redesign.review.foodsAndPortions')}</h2>
               <ExpertModeToggle checked={expertMode} onChange={setExpertMode} />
             </div>
-            <div className="mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 px-4">
+            <div className="hv-card mt-2">
               {items.length === 0 ? (
-                <p className="py-4 text-sm text-gray-500 dark:text-gray-400 text-center">{t('review.noItems')}</p>
+                <p className="py-4 text-sm text-text-muted text-center">{t('review.noItems')}</p>
               ) : (
                 items.map(item => (
                   <MealItemRow key={item.id} mealId={mealId} item={item} onUpdated={applyMealUpdate} expertMode={expertMode} />
@@ -262,7 +266,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
             </div>
 
             {items.some(item => item.off_code) && (
-              <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
+              <p className="mt-2 text-[11px] text-text-muted">
                 {t('review.offAttributionPrefix')}
                 <a
                   href="https://world.openfoodfacts.org/"
@@ -286,7 +290,8 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
             )}
 
             <AddItemForm mealId={mealId} onAdded={applyMealUpdate} expertMode={expertMode} />
-          </>
+            </div>
+          </div>
         )}
 
         {canReanalyze && <ReanalyzeControl mealId={mealId} onReanalyzed={applyMealUpdate} />}
@@ -299,7 +304,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
             no pending questions to show, in which case the modal itself
             doesn't render and this would be the only copy. */}
         {!showClarifyModal && (
-          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="mt-6 pt-4 border-t border-border">
             <DeleteMealControl mealId={mealId} queueDelete={queueDelete} />
           </div>
         )}
@@ -310,7 +315,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
           <TapTarget
             onClick={handleConfirm}
             disabled={!canConfirm}
-            className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+            className="w-full rounded-lg text-sm font-medium bg-accent hover:opacity-90 text-bg-elevated disabled:opacity-50"
           >
             {busy ? t('review.confirming') : t('review.confirmMeal')}
           </TapTarget>

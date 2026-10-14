@@ -174,7 +174,7 @@ test.describe('Settings lost-update race', () => {
       await page.getByLabel('Sex').selectOption('female');
 
       const profileSaved = await withSettingsSave(page, () =>
-        page.getByRole('button', { name: 'Save' }).click()
+        page.getByRole('button', { name: 'Save', exact: true }).click()
       );
       expect(profileSaved).toBe(true);
 
@@ -186,8 +186,8 @@ test.describe('Settings lost-update race', () => {
       await expect(page.locator('#display-language')).toHaveValue('ru');
 
       await page.reload();
-      await expect(page.getByLabel('Birthdate')).toHaveValue('1990-05-15');
-      await expect(page.getByLabel('Sex')).toHaveValue('female');
+      await expect(page.getByLabel('Дата рождения', { exact: true })).toHaveValue('1990-05-15');
+      await expect(page.getByRole('combobox', { name: 'Пол', exact: true })).toHaveValue('female');
       await expect(page.locator('#display-language')).toHaveValue('ru');
     } finally {
       await withSettingsSave(page, () =>
@@ -258,7 +258,7 @@ test.describe('Profile form', () => {
     // typical required select.
     await page.getByLabel('Birthdate').fill('');
     await page.getByLabel('Sex').selectOption('');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Birthdate and sex are required.')).toBeVisible();
   });
 
@@ -267,7 +267,7 @@ test.describe('Profile form', () => {
     await page.getByLabel('Sex').selectOption('male');
     await page.getByLabel('Activity level').selectOption('active');
 
-    const saved = await withSettingsSave(page, () => page.getByRole('button', { name: 'Save' }).click());
+    const saved = await withSettingsSave(page, () => page.getByRole('button', { name: 'Save', exact: true }).click());
     expect(saved).toBe(true);
     await expect(page.getByText('Profile saved')).toBeVisible();
 

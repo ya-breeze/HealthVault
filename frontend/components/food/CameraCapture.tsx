@@ -81,13 +81,13 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
     >
       <div
         data-testid="camera-capture-card"
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md w-full max-h-full overflow-hidden flex flex-col"
+        className="bg-bg-elevated border border-border rounded-2xl shadow-xl max-w-xl w-full max-h-full overflow-hidden flex flex-col"
       >
-        <div className="shrink-0 px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">Take a photo</p>
+        <div className="shrink-0 px-4 py-3 border-b border-border flex justify-between items-center">
+          <p className="text-sm font-semibold text-text">Take a photo</p>
           <TapTarget
             onClick={onClose}
-            className="flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm"
+            className="flex items-center justify-center text-text-muted hover:text-text text-sm"
           >
             Cancel
           </TapTarget>
@@ -123,7 +123,7 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-contain rounded-lg bg-black"
+              className="w-full h-full object-contain rounded-xl bg-black"
             />
           )}
           <canvas ref={canvasRef} className="hidden" />
@@ -132,7 +132,7 @@ export default function CameraCapture({ onCapture, onClose }: Props) {
           <div className="shrink-0 px-4 pb-4">
             <TapTarget
               onClick={capture}
-              className="w-full rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+              className="w-full rounded-xl text-sm font-medium bg-accent hover:bg-accent/90 text-bg-elevated"
             >
               Capture
             </TapTarget>

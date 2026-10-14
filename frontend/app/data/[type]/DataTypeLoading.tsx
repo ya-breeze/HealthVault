@@ -9,5 +9,5 @@ import { useLanguage } from '@/components/LanguageContext';
 // run at all.
 export default function DataTypeLoading() {
   const { t } = useLanguage();
-  return <div className="p-6 text-gray-500">{t('dataDetail.loading')}</div>;
+  return <div role="status" className="hv-page text-text-muted">{t('dataDetail.loading')}</div>;
 }

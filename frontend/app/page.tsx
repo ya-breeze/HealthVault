@@ -15,7 +15,7 @@ import LoggingGapCard from '@/components/LoggingGapCard';
 import FoodLogHistoryCard from '@/components/FoodLogHistoryCard';
 import WeatherCard from '@/components/WeatherCard';
 import TapTarget from '@/components/ui/TapTarget';
-import { CameraIcon, PencilIcon, HistoryIcon, EyeIcon, EyeOffIcon } from '@/components/icons';
+import { CameraIcon, PencilIcon, HistoryIcon, EyeIcon, EyeOffIcon, SettingsIcon } from '@/components/icons';
 
 const SECONDARY_TYPES = secondaryTypes(DATA_TYPES);
 
@@ -268,27 +268,16 @@ export default function Dashboard() {
 
   return (
     <AuthenticatedShell className="min-h-screen bg-bg">
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-3">
-          <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent">
-            {t('dashboard.vitalsHeading')}
-          </p>
+      <main className="hv-page">
+        <div className="hv-dashboard-heading">
+          <div><p className="hv-eyebrow">HEALTHVAULT / {t('sidebar.caption')}</p><h1>{t('dashboard.overviewTitle')}</h1><p className="hv-subtitle mt-2">{t('dashboard.overviewSubtitle')}</p></div>
           {editing ? (
-            <TapTarget
-              onClick={handleDone}
-              disabled={saving}
-              className="px-3 rounded-md border border-accent text-accent text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
-            >
-              {saving ? t('dashboard.saving') : t('dashboard.done')}
+            <TapTarget onClick={handleDone} disabled={saving} className="hv-dashboard-gear mt-6 text-accent" aria-label={saving ? t('dashboard.saving') : t('dashboard.done')} title={t('dashboard.done')}>
+              {saving ? <span aria-hidden="true">…</span> : <svg aria-hidden="true" viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="m5 12 4 4L19 6"/></svg>}
             </TapTarget>
           ) : (
-            <TapTarget
-              onClick={() => setEditing(true)}
-              disabled={!dashboardReady}
-              title={dashboardReady ? undefined : t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}
-              className="px-3 rounded-md border border-border text-text-muted hover:border-accent hover:text-accent transition-colors text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
-            >
-              {t('dashboard.customize')}
+            <TapTarget onClick={() => setEditing(true)} disabled={!dashboardReady} className="hv-dashboard-gear mt-6" aria-label={t('dashboard.customize')} title={dashboardReady ? t('dashboard.customize') : t(settingsStatus === 'error' ? 'dashboard.orderLoadFailed' : 'dashboard.loadingOrder')}>
+              <SettingsIcon aria-hidden="true" className="w-5 h-5"/>
             </TapTarget>
           )}
         </div>
@@ -317,7 +306,7 @@ export default function Dashboard() {
             {t('dashboard.allCardsHidden')}
           </p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-8" data-testid="vitals-grid">
+          <div className={`hv-dashboard-grid grid grid-cols-2 sm:grid-cols-4 mb-8 ${editing ? 'hv-editing-grid' : ''}`} data-testid="vitals-grid">
             {presentOrder.map((m, i) => (editing || !m.hidden) && (
               // Food Cards have no /api/data/{type} presence or VitalCard
               // rendering — each owns its own fetch lifecycle and content
@@ -431,7 +420,7 @@ export default function Dashboard() {
             except when there's nothing present to show at all, in which case
             neither mode renders the section or its toggle. */}
         {presentSecondaryTypes.length > 0 && (editing || !moreDataHidden) && (
-          <div data-testid="more-data" data-hidden={moreDataHidden ? 'true' : 'false'}>
+          <div className="hv-card" data-testid="more-data" data-hidden={moreDataHidden ? 'true' : 'false'}>
             <div className="flex items-center justify-between mb-3">
               <p className={`font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-accent${editing && moreDataHidden ? ' opacity-40' : ''}`}>
                 {t('dashboard.moreData')}

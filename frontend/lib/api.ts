@@ -421,6 +421,7 @@ export interface MealSummary {
   protein_grams: number;
   carbs_grams: number;
   fat_grams: number;
+  dietary_fiber_grams?: number | null;
 }
 
 export interface PatchMealInput {
@@ -451,6 +452,7 @@ export interface WeatherGap { from: string; to: string; reason: string }
 export interface WeatherHistory { hours: WeatherHour[]; gaps: WeatherGap[]; units: Record<string, string> }
 
 export interface UserSettings {
+  fiber_target_grams?: number;
   // The vitals-grid arrangement: which cards, in what order, and which are
   // hidden. Two shapes are readable — `{ type, hidden }` is what's written
   // today, while a bare string is the pre-visibility shape saved before
@@ -692,9 +694,10 @@ export interface NutritionTarget {
 // the dashboard. A backend test asserts the keys are present; if that ever
 // changes, these fields become optional and every read site needs `?? 0`.
 export type TodaySummaryTarget =
-  | { available: false; reason: NutritionTargetUnmetReason }
+  | { available: false; reason: NutritionTargetUnmetReason; dietary_fiber_grams?: number | null }
   | {
       available: true;
+      dietary_fiber_grams?: number | null;
       calories: number;
       protein_grams: number;
       carbs_grams: number;
@@ -825,6 +828,7 @@ export interface TodaySummary {
   protein_grams_consumed: number;
   carbs_grams_consumed: number;
   fat_grams_consumed: number;
+  dietary_fiber_grams_consumed?: number | null;
   meal_count: number;
   last_logged_at: string | null;
   display_language: string;

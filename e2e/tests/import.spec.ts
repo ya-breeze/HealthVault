@@ -16,7 +16,7 @@ async function login(page: import('@playwright/test').Page) {
 test.describe('Import page', () => {
   test('import nav link is visible on dashboard', async ({ page }) => {
     await login(page);
-    await expect(page.getByRole('link', { name: /import/i })).toBeVisible();
+    await expect(page.locator('header').getByRole('link', { name: /import/i })).toBeVisible();
   });
 
   test('import page loads with file input', async ({ page }) => {

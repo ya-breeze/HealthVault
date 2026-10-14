@@ -61,33 +61,33 @@ export default function CustomFoodModal({ initial, onSave, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-sm w-full p-6">
-        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center max-h-dvh px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="bg-bg-elevated border border-border rounded-2xl shadow-xl max-w-xl w-full max-h-full overflow-y-auto p-6 sm:p-8" role="dialog" aria-labelledby="custom-food-title">
+        <h2 id="custom-food-title" className="text-xl font-semibold text-text mb-6">
           {initial ? 'Edit Custom Food' : 'New Custom Food'}
-        </p>
+        </h2>
 
         <label className="block mb-3">
-          <span className="text-xs text-gray-600 dark:text-gray-300">Name</span>
+          <span className="text-xs text-text-muted">Name</span>
           <input
             type="text"
             value={name}
             onChange={e => setName(e.target.value)}
-            className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            className="mt-1 w-full border border-border rounded-xl px-3 py-2 text-base bg-bg-elevated text-text"
           />
         </label>
 
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Per 100g</p>
-        <div className="grid grid-cols-2 gap-2">
+        <p className="text-xs text-text-muted mb-2">Per 100g</p>
+        <div className="grid grid-cols-2 gap-4">
           {FIELDS.map(([key, label]) => (
-            <label key={key} className="text-xs text-gray-600 dark:text-gray-300">
+            <label key={key} className="text-xs text-text-muted">
               {label}
               <input
                 type="number"
                 step="any"
                 value={values[key]}
                 onChange={e => setValues({ ...values, [key]: Number(e.target.value) })}
-                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="mt-0.5 w-full border border-border rounded-xl px-2 py-1 text-base bg-bg-elevated text-text"
               />
             </label>
           ))}
@@ -95,17 +95,17 @@ export default function CustomFoodModal({ initial, onSave, onClose }: Props) {
 
         {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-        <div className="mt-5 flex gap-2">
+        <div className="mt-6 flex gap-3">
           <TapTarget
             onClick={onClose}
-            className="flex-1 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            className="flex-1 rounded-xl text-sm font-medium bg-bg text-text hover:bg-bg"
           >
             Cancel
           </TapTarget>
           <TapTarget
             onClick={handleSave}
             disabled={saving}
-            className="flex-1 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+            className="flex-1 rounded-xl text-sm font-medium bg-accent hover:bg-accent/90 text-bg-elevated disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save'}
           </TapTarget>

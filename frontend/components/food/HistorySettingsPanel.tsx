@@ -80,17 +80,17 @@ export default function HistorySettingsPanel({ timezone, usualMealsPerDay, onSav
   };
 
   return (
-    <div className="mb-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
+    <div className="mb-4 rounded-xl border border-border bg-bg-elevated overflow-hidden">
       <TapTarget
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
+        className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-text"
       >
         <span>{t('historySettings.title')}</span>
-        <span className="text-gray-400" aria-hidden="true">{open ? '▲' : '▼'}</span>
+        <span className="text-text-muted" aria-hidden="true">{open ? '▲' : '▼'}</span>
       </TapTarget>
       {open && (
-        <div className="px-4 pb-4 pt-3 space-y-3 border-t border-gray-100 dark:border-gray-700">
-          <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+        <div className="px-4 pb-4 pt-3 space-y-3 border-t border-border">
+          <label className="block text-xs font-medium text-text-muted">
             {t('historySettings.timezoneLabel')}
             <select
               value={tzValue}
@@ -98,7 +98,7 @@ export default function HistorySettingsPanel({ timezone, usualMealsPerDay, onSav
                 setDirty(true);
                 setTzValue(e.target.value);
               }}
-              className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white px-2 py-1.5"
+              className="mt-1 block w-full rounded-md border border-border bg-bg-elevated text-sm text-text px-2 py-1.5"
             >
               {zones.map(z => (
                 <option key={z} value={z}>
@@ -107,7 +107,7 @@ export default function HistorySettingsPanel({ timezone, usualMealsPerDay, onSav
               ))}
             </select>
           </label>
-          <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+          <label className="block text-xs font-medium text-text-muted">
             {t('historySettings.mealsPerDayLabel')}
             <input
               type="number"
@@ -117,13 +117,13 @@ export default function HistorySettingsPanel({ timezone, usualMealsPerDay, onSav
                 setDirty(true);
                 setMealsValue(e.target.value);
               }}
-              className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white px-2 py-1.5"
+              className="mt-1 block w-full rounded-md border border-border bg-bg-elevated text-sm text-text px-2 py-1.5"
             />
           </label>
           <TapTarget
             onClick={handleSave}
             disabled={saving}
-            className="w-full rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50 py-1.5"
+            className="w-full rounded-lg text-sm font-medium border border-border text-text-muted hover:border-accent hover:text-accent disabled:opacity-50 py-1.5"
           >
             {saving ? t('historySettings.saving') : t('historySettings.save')}
           </TapTarget>

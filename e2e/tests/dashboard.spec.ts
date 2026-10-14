@@ -249,7 +249,7 @@ test.describe('Dashboard', () => {
   });
 
   test('shows logged-in username in the header', async ({ page }) => {
-    await expect(page.getByText(USER, { exact: true })).toBeVisible();
+    await expect(page.getByTestId('user-badge').getByText(USER, { exact: true })).toBeVisible();
   });
 
   test('vitals grid card links to its data page', async ({ page }) => {

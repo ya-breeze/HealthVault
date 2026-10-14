@@ -6,7 +6,7 @@ import AuthenticatedShell from '@/components/AuthenticatedShell';
 import AddRecordForm from '@/components/AddRecordForm';
 import TapTarget from '@/components/ui/TapTarget';
 import { useLanguage } from '@/components/LanguageContext';
-import { SUPPORTED_LANGUAGES, LanguageCode } from '@/lib/i18n';
+import { SUPPORTED_LANGUAGES, LanguageCode, type Dictionary } from '@/lib/i18n';
 import { useToast } from '@/components/Toast';
 
 type ActivityOverride = NonNullable<UserSettings['activity_override']>;
@@ -15,12 +15,12 @@ type ActivityOverride = NonNullable<UserSettings['activity_override']>;
 // derived from the enum values themselves — 'active' and 'very_active' do
 // not positionally match their tier names ("Very active" / "Extra active").
 // See design.md's activity_override -> tier-name table.
-const ACTIVITY_TIERS: [ActivityOverride, string][] = [
-  ['sedentary', 'Sedentary'],
-  ['light', 'Lightly active'],
-  ['moderate', 'Moderately active'],
-  ['active', 'Very active'],
-  ['very_active', 'Extra active'],
+const ACTIVITY_TIERS: [ActivityOverride, keyof Dictionary][] = [
+  ['sedentary', 'redesign.pages.settings.activity.sedentary'],
+  ['light', 'redesign.pages.settings.activity.light'],
+  ['moderate', 'redesign.pages.settings.activity.moderate'],
+  ['active', 'redesign.pages.settings.activity.active'],
+  ['very_active', 'redesign.pages.settings.activity.very_active'],
 ];
 
 const ACTIVITY_OVERRIDE_VALUES = new Set(ACTIVITY_TIERS.map(([value]) => value));
@@ -83,6 +83,8 @@ export default function SettingsPage() {
   const { showToast } = useToast();
 
   const [birthdate, setBirthdate] = useState('');
+  const [fiberTarget, setFiberTarget] = useState('');
+  const [savingFiber, setSavingFiber] = useState(false);
   const [sex, setSex] = useState<'' | 'male' | 'female'>('');
   const [activityOverride, setActivityOverride] = useState<'' | ActivityOverride>('');
   const [loading, setLoading] = useState(true);
@@ -113,6 +115,7 @@ export default function SettingsPage() {
     api.getSettings()
       .then(s => {
         setBirthdate(normalizeBirthdate(s.birthdate));
+        setFiberTarget(typeof s.fiber_target_grams === 'number' && Number.isInteger(s.fiber_target_grams) && s.fiber_target_grams >= 1 && s.fiber_target_grams <= 200 ? String(s.fiber_target_grams) : '');
         setSex(normalizeSex(s.sex));
         setActivityOverride(normalizeActivityOverride(s.activity_override));
       })
@@ -121,18 +124,18 @@ export default function SettingsPage() {
           router.push('/login');
           return;
         }
-        setError('Failed to load your profile.');
+        setError(t('redesign.pages.settings.loadFailed'));
       })
       .finally(() => setLoading(false));
   }, [router]);
 
   const handleSave = async () => {
     if (!birthdate || !sex) {
-      setError('Birthdate and sex are required.');
+      setError(t('redesign.pages.settings.required'));
       return;
     }
     if (!isValidBirthdate(birthdate)) {
-      setError('Enter a valid birthdate: not in the future, and implying an age between 5 and 120.');
+      setError(t('redesign.pages.settings.birthdateInvalid'));
       return;
     }
     setError(null);
@@ -143,27 +146,44 @@ export default function SettingsPage() {
         sex,
         activity_override: activityOverride || undefined,
       });
-      showToast('Profile saved', 'success');
+      showToast(t('redesign.pages.settings.saved'), 'success');
     } catch {
-      showToast('Could not save your profile. Try again.', 'error');
+      showToast(t('redesign.pages.settings.saveFailed'), 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  const handleSaveFiber = async () => {
+    const fiber = fiberTarget.trim() ? Number(fiberTarget) : undefined;
+    if (fiber !== undefined && (!Number.isInteger(fiber) || fiber < 1 || fiber > 200)) {
+      setError(t('redesign.pages.settings.fiberInvalid'));
+      return;
+    }
+    setError(null);
+    setSavingFiber(true);
+    try {
+      await updateSettings({fiber_target_grams: fiber});
+      showToast(t('redesign.pages.settings.fiberSaved'), 'success');
+    } catch {
+      showToast(t('redesign.pages.settings.fiberSaveFailed'), 'error');
+    } finally {setSavingFiber(false);}
+  };
+
   return (
     <AuthenticatedShell className="min-h-screen bg-bg">
-      <main className="max-w-md mx-auto px-6 py-8">
-        <h1 className="text-xl font-bold text-text mb-6">Settings</h1>
+      <main className="hv-page">
+        <div className="hv-page-heading"><div><h1>{t('header.settings')}</h1><p className="text-text-muted mt-2">{t('redesign.pages.settings.subtitle')}</p></div></div>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-start">
 
-        <section>
-          <h2 className="text-sm font-semibold text-text mb-4">Profile</h2>
+        <section className="hv-card">
+          <h2 className="text-lg font-semibold text-text mb-6">{t('redesign.pages.settings.profile')}</h2>
 
           {loading ? (
-            <p className="text-sm text-text-muted">Loading…</p>
+            <p className="text-sm text-text-muted">{t('review.loading')}</p>
           ) : (
-            <div className="space-y-4">
-              <label className="block">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <label className="block min-w-0">
                 <span className="text-xs text-text-muted" id="display-language-label">
                   {t('header.language')}
                 </span>
@@ -176,7 +196,7 @@ export default function SettingsPage() {
                   onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                     handleLanguageChange(e.target.value as LanguageCode)
                   }
-                  className="mt-1 w-full border border-border rounded-md px-3 bg-bg text-text disabled:opacity-60"
+                  className="mt-1 w-full border border-border rounded-xl px-3 bg-bg text-text disabled:opacity-60"
                 >
                   {SUPPORTED_LANGUAGES.map(l => (
                     <option key={l.code} value={l.code}>{l.label}</option>
@@ -184,58 +204,69 @@ export default function SettingsPage() {
                 </TapTarget>
               </label>
 
-              <label className="block">
-                <span className="text-xs text-text-muted">Birthdate</span>
+              <label className="block min-w-0">
+                <span className="text-xs text-text-muted">{t('redesign.pages.settings.birthdate')}</span>
                 <TapTarget
                   as="input"
                   type="date"
                   value={birthdate}
                   onChange={(e: ChangeEvent<HTMLInputElement>) => setBirthdate(e.target.value)}
-                  className="mt-1 w-full border border-border rounded-md px-3 bg-bg text-text"
+                  className="mt-1 w-full border border-border rounded-xl px-3 bg-bg text-text"
                 />
               </label>
 
-              <label className="block">
-                <span className="text-xs text-text-muted">Sex</span>
+              <label className="block min-w-0">
+                <span className="text-xs text-text-muted">{t('redesign.pages.settings.sex')}</span>
                 <TapTarget
                   as="select"
                   value={sex}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                     setSex(e.target.value as '' | 'male' | 'female')
                   }
-                  className="mt-1 w-full border border-border rounded-md px-3 bg-bg text-text"
+                  className="mt-1 w-full border border-border rounded-xl px-3 bg-bg text-text"
                 >
-                  <option value="">Select…</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
+                  <option value="">{t('redesign.pages.settings.select')}</option>
+                  <option value="male">{t('redesign.pages.settings.male')}</option>
+                  <option value="female">{t('redesign.pages.settings.female')}</option>
                 </TapTarget>
               </label>
 
-              <label className="block">
-                <span className="text-xs text-text-muted">Activity level</span>
+              <label className="block min-w-0">
+                <span className="text-xs text-text-muted">{t('redesign.pages.settings.activity')}</span>
                 <TapTarget
                   as="select"
                   value={activityOverride}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                     setActivityOverride(e.target.value as '' | ActivityOverride)
                   }
-                  className="mt-1 w-full border border-border rounded-md px-3 bg-bg text-text"
+                  className="mt-1 w-full border border-border rounded-xl px-3 bg-bg text-text"
                 >
-                  <option value="">Automatic (based on steps)</option>
+                  <option value="">{t('redesign.pages.settings.automatic')}</option>
                   {ACTIVITY_TIERS.map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
+                    <option key={value} value={value}>{t(label)}</option>
                   ))}
                 </TapTarget>
               </label>
 
-              {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+              <div className="sm:col-span-2">
+                <label htmlFor="fiber-target" className="text-xs text-text-muted">{t('redesign.pages.settings.fiberLabel')}</label>
+                <TapTarget as="input" id="fiber-target" aria-describedby="fiber-target-help" type="number" min={1} max={200} step={1} value={fiberTarget}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setFiberTarget(e.target.value)}
+                  placeholder={t('redesign.pages.settings.fiberDefault')}
+                  className="mt-1 w-full border border-border rounded-xl px-3 bg-bg text-text" />
+                <p id="fiber-target-help" className="mt-2 text-xs leading-relaxed text-text-muted">{t('redesign.pages.settings.fiberHelp')}</p>
+                <TapTarget onClick={handleSaveFiber} disabled={loading || savingFiber} data-testid="save-fiber-target" className="mt-3 rounded-xl bg-accent text-bg-elevated px-4 text-sm font-semibold disabled:opacity-50">{savingFiber ? t('addRecord.saving') : t('redesign.pages.settings.saveFiber')}</TapTarget>
+
+              </div>
+
+              {error && <p role="alert" className="sm:col-span-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
               <TapTarget
                 onClick={handleSave}
                 disabled={saving}
-                className="w-full rounded-lg text-sm font-medium bg-accent text-bg-elevated hover:opacity-90 disabled:opacity-50"
+                className="sm:col-span-2 w-full rounded-xl text-sm font-semibold bg-accent text-bg-elevated hover:opacity-90 disabled:opacity-50"
               >
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? t('addRecord.saving') : t('resolver.save')}
               </TapTarget>
             </div>
           )}
@@ -249,8 +280,8 @@ export default function SettingsPage() {
           gated on whether a record already exists: this section's whole point is to stay
           reachable afterward, and independently of the profile fetch above.
         */}
-        <section className="mt-8">
-          <h2 className="text-sm font-semibold text-text mb-4">Body measurements</h2>
+        <section className="hv-card">
+          <h2 className="text-lg font-semibold text-text mb-6">{t('redesign.pages.settings.measurements')}</h2>
 
           <div className="space-y-3">
             {showHeightForm ? (
@@ -264,7 +295,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => setShowHeightForm(true)}
                 data-testid="settings-set-height"
-                className="rounded-md text-sm font-medium bg-border text-text px-4 py-1.5"
+                className="rounded-xl text-sm font-medium bg-border text-text px-4 py-1.5"
               >
                 {t('dataDetail.setHeight')}
               </TapTarget>
@@ -281,13 +312,14 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => setShowGoalForm(true)}
                 data-testid="settings-set-goal"
-                className="rounded-md text-sm font-medium bg-border text-text px-4 py-1.5"
+                className="rounded-xl text-sm font-medium bg-border text-text px-4 py-1.5"
               >
                 {t('dataDetail.setGoal')}
               </TapTarget>
             )}
           </div>
         </section>
+        </div>
       </main>
     </AuthenticatedShell>
   );

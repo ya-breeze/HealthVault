@@ -89,7 +89,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
   };
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+    <div className="border border-border bg-bg rounded-2xl p-4 sm:p-5">
       <div className="flex justify-between items-start gap-2 mb-2">
         <input
           type="text"
@@ -100,23 +100,23 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
             setSelected(null);
             update({ name: e.target.value, fdc_id: undefined, custom_food_id: undefined });
           }}
-          className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+          className="min-w-0 flex-1 border border-border rounded-xl px-3 py-3 text-base bg-bg-elevated text-text"
         />
         <TapTarget
           onClick={() => onRemove(index)}
-          className="flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-base"
+          className="flex items-center justify-center rounded text-text-muted hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-base"
           aria-label="Remove item"
         >
           ✕
         </TapTarget>
       </div>
 
-      <div className="flex gap-4 mb-2 border-b border-gray-200 dark:border-gray-700 text-xs" role="tablist" aria-label={`Item resolution mode for ${item.name || `item ${index + 1}`}`}>
+      <div className="flex gap-4 mb-2 border-b border-border text-xs" role="tablist" aria-label={`Item resolution mode for ${item.name || `item ${index + 1}`}`}>
         <TapTarget
           role="tab"
           aria-selected={item.source === 'reference'}
           onClick={() => update({ source: 'reference' })}
-          className={tabClass(item.source === 'reference', 'border-blue-600 text-blue-900 dark:text-blue-200')}
+          className={tabClass(item.source === 'reference', 'border-accent text-accent')}
         >
           Search food
         </TapTarget>
@@ -124,7 +124,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
           role="tab"
           aria-selected={item.source === 'manual'}
           onClick={() => update({ source: 'manual' })}
-          className={tabClass(item.source === 'manual', 'border-blue-600 text-blue-900 dark:text-blue-200')}
+          className={tabClass(item.source === 'manual', 'border-accent text-accent')}
         >
           Enter macros
         </TapTarget>
@@ -139,22 +139,22 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
               placeholder="grams"
               value={item.weight_grams ?? ''}
               onChange={e => update({ weight_grams: Number(e.target.value) })}
-              className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="flex-1 min-w-0 border border-border rounded-xl px-2 py-1 text-base bg-bg-elevated text-text"
             />
-            <span className="text-xs text-gray-400">g</span>
+            <span className="text-xs text-text-muted">g</span>
             <TapTarget
               onClick={search}
               disabled={searching || !query}
-              className="px-3 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+              className="px-3 rounded-xl text-xs font-medium bg-accent hover:bg-accent/90 text-bg-elevated disabled:opacity-50"
             >
               {searching ? 'Searching…' : 'Search'}
             </TapTarget>
           </div>
-          <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+          <p className="mt-1 text-[10px] text-text-muted">
             New search terms may be sent to an external model provider for translation.
           </p>
           {translatedQuery && (
-            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-blue-700 dark:text-blue-300">
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-accent">
               <span>
                 Searched as: <strong>{translatedQuery}</strong>
               </span>
@@ -177,13 +177,13 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
             </p>
           )}
           {results && !selected && (
-            <ul className="mt-2 max-h-56 overflow-auto divide-y divide-gray-100 dark:divide-gray-700">
-              {results.length === 0 && <li className="py-1 text-xs text-gray-400">No matches.</li>}
+            <ul className="mt-2 max-h-56 overflow-auto divide-y divide-border">
+              {results.length === 0 && <li className="py-1 text-xs text-text-muted">No matches.</li>}
               {results.map((r, i) => (
                 <li key={i}>
                   <TapTarget
                     onClick={() => pick(r)}
-                    className="w-full flex items-center text-left text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
+                    className="w-full flex items-center text-left text-xs text-text hover:text-accent"
                   >
                     {r.name} ({Math.round(r.profile.calories_per_100g)} kcal/100g)
                   </TapTarget>
@@ -193,7 +193,7 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-4">
           {(
             [
               ['calories', 'Calories'], ['protein_grams', 'Protein (g)'], ['carbs_grams', 'Carbs (g)'],
@@ -201,14 +201,14 @@ export default function ManualItemEditor({ index, item, onChange, onRemove }: Pr
               ['dietary_fiber_grams', 'Fiber (g)'], ['saturated_fat_grams', 'Saturated fat (g)'],
             ] as const
           ).map(([key, label]) => (
-            <label key={key} className="text-xs text-gray-600 dark:text-gray-300">
+            <label key={key} className="text-xs text-text-muted">
               {label}
               <input
                 type="number"
                 step="any"
                 value={item[key] ?? 0}
                 onChange={e => update({ [key]: Number(e.target.value) } as Partial<ManualMealItemInput>)}
-                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="mt-0.5 w-full border border-border rounded-xl px-2 py-1 text-base bg-bg-elevated text-text"
               />
             </label>
           ))}

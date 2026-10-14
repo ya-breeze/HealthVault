@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api, ManualMealItemInput } from '@/lib/api';
 import ManualItemEditor from '@/components/food/ManualItemEditor';
 import MealCookingContextInputs, { defaultMealCookingContext } from '@/components/food/MealCookingContextInputs';
@@ -98,110 +99,120 @@ export default function ManualMealPage() {
   };
 
   return (
-    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-24">
-      <main className="max-w-md mx-auto px-6 py-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('describe.title')}</h1>
-
-        <div className="flex flex-col sm:flex-row gap-2 mb-4">
-          <label className="flex-1 text-sm text-gray-700 dark:text-gray-300">
-            {t('describe.nameLabel')}
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-            />
-          </label>
-          <label className="text-sm text-gray-700 dark:text-gray-300">
-            {t('describe.whenLabel')}
-            <input
-              type="datetime-local"
-              value={loggedAt}
-              onChange={e => setLoggedAt(e.target.value)}
-              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-2 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-            />
-          </label>
+    <AuthenticatedShell className="min-h-screen bg-bg pb-24">
+      <main className="hv-page">
+        <div className="hv-page-heading">
+          <div><h1>{t('describe.title')}</h1><p>{t('redesign.entry.manualSubtitle')}</p></div>
+          <TapTarget as={Link} href="/food/history/" className="inline-flex items-center justify-center rounded-xl border border-border bg-bg-elevated px-5 text-sm font-semibold text-text">{t('redesign.entry.backToDiary')}</TapTarget>
         </div>
+        <nav aria-label={t('redesign.entry.optionsLabel')} className="mb-6 flex flex-wrap gap-2">
+          <TapTarget as={Link} href="/food/upload/" className="inline-flex items-center justify-center rounded-xl px-5 text-sm text-text-muted hover:bg-bg-elevated">{t('redesign.entry.photo')}</TapTarget>
+          <TapTarget as={Link} href="/food/manual/" aria-current="page" className="inline-flex items-center justify-center rounded-xl bg-accent/10 px-5 text-sm font-semibold text-accent">{t('redesign.entry.manualModes')}</TapTarget>
+          <TapTarget as={Link} href="/food/custom/" className="inline-flex items-center justify-center rounded-xl px-5 text-sm text-text-muted hover:bg-bg-elevated">{t('redesign.entry.catalog')}</TapTarget>
+        </nav>
+        <section className="hv-card mx-auto max-w-3xl">
 
-        <label htmlFor="meal-description" className="block text-sm font-medium text-gray-900 dark:text-white">
-          {t('describe.textareaLabel')}
-        </label>
-        <textarea
-          id="meal-description"
-          data-testid="describe-textarea"
-          value={description}
-          onChange={e => setDescription(e.target.value)}
-          rows={4}
-          placeholder={t('describe.placeholder')}
-          className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-        />
-        <p className="mt-1 text-right text-xs text-gray-400">
-          {normalizedUnicodeLength(description)}/{MAX_DESCRIPTION_LENGTH}
-        </p>
-        <p className="mt-1 mb-4 text-sm text-gray-500 dark:text-gray-400">{t('describe.disclosure')}</p>
-        {!showStructured && (
-          <div className="mb-4"><MealCookingContextInputs value={cookingContext} onChange={setCookingContext} /></div>
-        )}
-
-        {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
-
-        {/* Hidden while the structured form is open, so the page never shows
-            two green submit buttons at once. They post to different endpoints
-            with different outcomes and neither carries the other's input, so
-            a user who tapped the wrong one would silently lose what they
-            typed. The disclosure's own label says "instead", and the control
-            below reverses it. */}
-        {!showStructured && (
-          <TapTarget
-            onClick={handleDescribeSubmit}
-            disabled={saving}
-            data-testid="describe-submit"
-            className="w-full mb-6 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-          >
-            {saving ? t('describe.submitting') : t('describe.submit')}
-          </TapTarget>
-        )}
-
-        {showStructured ? (
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Log a Meal Manually</h2>
-            {description.trim() && (
-              <p className="mb-3 text-sm text-amber-700 dark:text-amber-400">
-                {t('describe.descriptionUnusedHere')}
-              </p>
-            )}
-            <div className="flex flex-col gap-3 mb-4">
-              {items.map((item, i) => (
-                <ManualItemEditor key={i} index={i} item={item} onChange={updateItem} onRemove={removeItem} />
-              ))}
-            </div>
-
-            <TapTarget
-              onClick={() => setItems(prev => [...prev, emptyItem()])}
-              className="w-full mb-4 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            >
-              + Add item
-            </TapTarget>
-
-            {structuredError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{structuredError}</p>}
-
-            <TapTarget
-              onClick={() => setShowStructured(false)}
-              data-testid="describe-structured-back"
-              className="w-full rounded-lg border border-dashed border-gray-300 px-4 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
-            >
-              {t('describe.backToDescribe')}
-            </TapTarget>
+          <div className="flex flex-col sm:flex-row gap-5 mb-6">
+            <label className="flex-1 text-sm text-text">
+              {t('describe.nameLabel')}
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="mt-1 w-full border border-border rounded-xl px-3 py-2 text-base bg-bg-elevated text-text"
+              />
+            </label>
+            <label className="text-sm text-text">
+              {t('describe.whenLabel')}
+              <input
+                type="datetime-local"
+                value={loggedAt}
+                onChange={e => setLoggedAt(e.target.value)}
+                className="mt-1 w-full border border-border rounded-xl px-2 py-2 text-base bg-bg-elevated text-text"
+              />
+            </label>
           </div>
-        ) : (
-          <TapTarget
-            onClick={() => setShowStructured(true)}
-            data-testid="describe-structured-toggle"
-            className="w-full rounded-lg border border-dashed border-gray-300 px-4 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
-          >
-            {t('describe.structuredToggle')}
-          </TapTarget>
-        )}
+
+          <label htmlFor="meal-description" className="block text-sm font-medium text-text">
+            {t('describe.textareaLabel')}
+          </label>
+          <textarea
+            id="meal-description"
+            data-testid="describe-textarea"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            rows={4}
+            placeholder={t('describe.placeholder')}
+            className="mt-1 w-full rounded-xl border border-border bg-bg-elevated px-3 py-2 text-base text-text"
+          />
+          <p className="mt-1 text-right text-xs text-text-muted">
+            {normalizedUnicodeLength(description)}/{MAX_DESCRIPTION_LENGTH}
+          </p>
+          <p className="mt-1 mb-4 text-sm text-text-muted">{t('describe.disclosure')}</p>
+          {!showStructured && (
+            <div className="mb-4"><MealCookingContextInputs value={cookingContext} onChange={setCookingContext} /></div>
+          )}
+
+          {error && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+          {/* Hidden while the structured form is open, so the page never shows
+              two green submit buttons at once. They post to different endpoints
+              with different outcomes and neither carries the other's input, so
+              a user who tapped the wrong one would silently lose what they
+              typed. The disclosure's own label says "instead", and the control
+              below reverses it. */}
+          {!showStructured && (
+            <TapTarget
+              onClick={handleDescribeSubmit}
+              disabled={saving}
+              data-testid="describe-submit"
+              className="w-full mb-6 rounded-xl text-sm font-medium bg-accent hover:bg-accent/90 text-bg-elevated disabled:opacity-50"
+            >
+              {saving ? t('describe.submitting') : t('describe.submit')}
+            </TapTarget>
+          )}
+
+          {showStructured ? (
+            <div className="border-t border-border pt-6">
+              <h2 className="text-base font-semibold text-text mb-3">Log a Meal Manually</h2>
+              {description.trim() && (
+                <p className="mb-3 text-sm text-amber-700 dark:text-amber-400">
+                  {t('describe.descriptionUnusedHere')}
+                </p>
+              )}
+              <div className="flex flex-col gap-5 mb-5">
+                {items.map((item, i) => (
+                  <ManualItemEditor key={i} index={i} item={item} onChange={updateItem} onRemove={removeItem} />
+                ))}
+              </div>
+
+              <TapTarget
+                onClick={() => setItems(prev => [...prev, emptyItem()])}
+                className="w-full mb-4 rounded-xl text-sm font-medium bg-bg text-text hover:bg-bg"
+              >
+                + Add item
+              </TapTarget>
+
+              {structuredError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{structuredError}</p>}
+
+              <TapTarget
+                onClick={() => setShowStructured(false)}
+                data-testid="describe-structured-back"
+                className="w-full rounded-xl border border-dashed border-border px-4 text-sm font-medium text-text-muted hover:border-accent hover:text-accent"
+              >
+                {t('describe.backToDescribe')}
+              </TapTarget>
+            </div>
+          ) : (
+            <TapTarget
+              onClick={() => setShowStructured(true)}
+              data-testid="describe-structured-toggle"
+              className="w-full rounded-xl border border-dashed border-border px-4 text-sm font-medium text-text-muted hover:border-accent hover:text-accent"
+            >
+              {t('describe.structuredToggle')}
+            </TapTarget>
+          )}
+        </section>
       </main>
 
       {/* Only rendered once the structured form is disclosed: this bar, and
@@ -220,7 +231,7 @@ export default function ManualMealPage() {
           <TapTarget
             onClick={handleStructuredSubmit}
             disabled={structuredSaving}
-            className="w-full rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+            className="w-full rounded-xl text-sm font-medium bg-accent hover:bg-accent/90 text-bg-elevated disabled:opacity-50"
           >
             {structuredSaving ? 'Saving…' : 'Save Meal'}
           </TapTarget>

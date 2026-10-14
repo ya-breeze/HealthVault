@@ -236,7 +236,7 @@ export default function ItemResolver({
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && search()}
-              className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="flex-1 border border-border rounded-md px-2 py-1.5 text-base bg-bg-elevated text-text"
             />
             <TapTarget
               onClick={search}
@@ -246,7 +246,7 @@ export default function ItemResolver({
               {searching ? '…' : t('resolver.search')}
             </TapTarget>
           </div>
-          <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+          <p className="mt-1 text-[10px] text-text-muted">
             {t('resolver.translationNotice')}
           </p>
           {translatedQuery && (
@@ -269,18 +269,18 @@ export default function ItemResolver({
           {results && (
             <ul className="mt-2 max-h-64 overflow-auto divide-y divide-amber-100 dark:divide-amber-900">
               {results.length === 0 && (
-                <li className="py-2 text-xs text-gray-500 dark:text-gray-400">{t('resolver.noMatches')}</li>
+                <li className="py-2 text-xs text-text-muted">{t('resolver.noMatches')}</li>
               )}
               {results.map((r, i) => (
                 <li key={i}>
                   <TapTarget
                     onClick={() => handleBind(r)}
                     disabled={submitting}
-                    className="w-full flex items-center text-left text-xs text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+                    className="w-full flex items-center text-left text-xs text-text hover:text-accent disabled:opacity-50"
                   >
                     <span className="block min-w-0">
                       {r.name}{' '}
-                      <span className="text-gray-400">
+                      <span className="text-text-muted">
                         ({Math.round(r.profile.calories_per_100g)} {t('unit.kcalPer100g')}
                         {r.source === 'custom' ? `, ${t('resolver.yourCustomFood')}` : ''})
                       </span>
@@ -297,13 +297,13 @@ export default function ItemResolver({
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
-          <label className="col-span-2 text-xs text-gray-600 dark:text-gray-300">
+          <label className="col-span-2 text-xs text-text-muted">
             {t('resolver.name')}
             <input
               type="text"
               value={manualName}
               onChange={e => setManualName(e.target.value)}
-              className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="mt-0.5 w-full border border-border rounded-md px-2 py-1 text-base bg-bg-elevated text-text"
             />
           </label>
           {(
@@ -315,7 +315,7 @@ export default function ItemResolver({
               ['saturated_fat_grams', 'resolver.saturatedFat'],
             ] as const
           ).map(([key, labelKey]) => (
-            <label key={key} className="text-xs text-gray-600 dark:text-gray-300">
+            <label key={key} className="text-xs text-text-muted">
               {t(labelKey)}
               <input
                 type="number"
@@ -325,12 +325,12 @@ export default function ItemResolver({
                   dirtyMacroKeys.current.add(key);
                   setMacros(current => ({ ...current, [key]: Number(e.target.value) }));
                 }}
-                className="mt-0.5 w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="mt-0.5 w-full border border-border rounded-md px-2 py-1 text-base bg-bg-elevated text-text"
               />
             </label>
           ))}
           {allowSaveAsCustomFood && (
-            <label className="col-span-2 flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+            <label className="col-span-2 flex items-center gap-1.5 text-xs text-text-muted">
               <input
                 type="checkbox"
                 checked={saveAsCustomFood}

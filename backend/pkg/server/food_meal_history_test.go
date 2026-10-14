@@ -174,7 +174,7 @@ func TestListMeals_SummaryOmitsInternalFields(t *testing.T) {
 	}
 	wantKeys := map[string]bool{
 		"id": true, "name": true, "logged_at": true, "status": true,
-		"calories": true, "protein_grams": true, "carbs_grams": true, "fat_grams": true,
+		"calories": true, "protein_grams": true, "carbs_grams": true, "fat_grams": true, "dietary_fiber_grams": true,
 	}
 	for k := range rows[0] {
 		if !wantKeys[k] {
@@ -601,5 +601,29 @@ func TestPatchMeal_CrossUserReturns404(t *testing.T) {
 	h.PatchMeal(w, withClaims(patchMealNameRequest(meal.ID.String(), map[string]any{"name": "x"}), uuid.New()))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestListMeals_IncludesStoredFiberIncludingZero(t *testing.T) {
+	st := newFoodTestStorage(t)
+	userID, familyID := seedFoodUser(t, st)
+	now := time.Now().UTC()
+	first := createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, now)
+	createMealAt(t, st, userID, familyID, database.MealStatusConfirmed, now.Add(-time.Hour))
+	if err := st.DB().Model(&first).Update("dietary_fiber_grams", 7.5).Error; err != nil {
+		t.Fatal(err)
+	}
+	h := server.NewFoodHandlers(st, nil, t.TempDir())
+	w := httptest.NewRecorder()
+	h.ListMeals(w, withClaims(listMealsRequest(""), userID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("list meals: %d %s", w.Code, w.Body.String())
+	}
+	var got []map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0]["dietary_fiber_grams"] != 7.5 || got[1]["dietary_fiber_grams"] != float64(0) {
+		t.Fatalf("fiber must retain both stored nonzero and zero values: %+v", got)
 	}
 }
