@@ -186,8 +186,8 @@ test.describe('Settings lost-update race', () => {
       await expect(page.locator('#display-language')).toHaveValue('ru');
 
       await page.reload();
-      await expect(page.getByLabel('Birthdate')).toHaveValue('1990-05-15');
-      await expect(page.getByLabel('Sex')).toHaveValue('female');
+      await expect(page.getByLabel('Дата рождения', { exact: true })).toHaveValue('1990-05-15');
+      await expect(page.getByRole('combobox', { name: 'Пол', exact: true })).toHaveValue('female');
       await expect(page.locator('#display-language')).toHaveValue('ru');
     } finally {
       await withSettingsSave(page, () =>

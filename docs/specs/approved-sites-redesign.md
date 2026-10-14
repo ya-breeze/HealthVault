@@ -40,8 +40,8 @@ Adapt the prototype to actual product capabilities; do not ship synthetic measur
 - [x] Mark completed
 
 ### Task 4: Validation, review and handoff
-- [ ] Add focused behavior regressions for fiber and responsive dashboard controls.
-- [ ] Pass unit/static/build gates and native plus best-effort Claude peer review.
-- [ ] Deploy reviewed branch to confirmed WIP and validate real deployed E2E plus desktop/mobile design parity.
-- [ ] Verify fixtures/preferences restored; record exact revision, checks and draft PR linked to the Idea.
-- [ ] Mark completed
+- [x] Add focused behavior regressions for fiber and responsive dashboard controls.
+- [x] Pass unit/static/build gates and native plus best-effort Claude peer review.
+- [x] Deploy reviewed branch to confirmed WIP and validate real deployed E2E plus desktop/mobile design parity.
+- [x] Verify fixtures/preferences restored; record exact revision, checks and draft PR linked to the Idea.
+- [x] Mark completed
