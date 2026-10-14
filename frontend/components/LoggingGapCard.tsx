@@ -34,12 +34,14 @@ import { useLanguage } from './LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import TapTarget from './ui/TapTarget';
 import NutritionChatSheet from './NutritionChatSheet';
+import TodayNutritionSummary from './TodayNutritionSummary';
 import { EyeIcon, EyeOffIcon, InfoIcon } from './icons';
 
 // Today's intake beside the target it is measured against — the card's top
 // row. Both halves are carried together because neither is meaningful alone:
 // a consumed figure with no target is a number with no scale.
 interface TodayRow {
+  summary: TodaySummary;
   calories: number;
   proteinGrams: number;
   carbsGrams: number;
@@ -92,12 +94,9 @@ function nutritionAdviceSignature(
   ]);
 }
 
-// `loading`, `retrieval_error` and `nutrition_target_unmet` are whole-card
-// states: each means there is no top row *and* no gap line to draw. Only
-// `ready` splits, because once the fetches land the two rows have genuinely
-// independent outcomes — a card can show today's intake perfectly well while
-// the 28-day gap stays unresolvable, which is the normal state of a user in
-// their first weeks.
+// A summary failure blocks intake and targets. An unavailable calorie
+// target preserves intake and independent fiber but gates historical energy
+// analysis. Once ready, history failures affect only the historical rows.
 type ContentState =
   | { kind: 'loading' }
   | {
@@ -107,7 +106,7 @@ type ContentState =
       healthiness: HealthinessResult | null;
       warnings: SustainabilityWarning[];
     }
-  | { kind: 'nutrition_target_unmet'; reason: NutritionTargetUnmetReason }
+  | { kind: 'nutrition_target_unmet'; reason: NutritionTargetUnmetReason; summary: TodaySummary }
   | { kind: 'retrieval_error' };
 
 interface LoggingGapCardProps {
@@ -229,19 +228,17 @@ export default function LoggingGapCard({
         }
         const summary: TodaySummary = summaryR.value;
 
-        // An unavailable target ends the card rather than degrading it: the
-        // top row has nothing to measure today's intake against, and the gap
-        // has no Implied Intake to derive. Same "complete your profile"
-        // state as before, now read from a field instead of caught — there is
-        // no 422 on /summary/today, which reports this as ordinary data.
+        // Calorie targets gate historical energy-balance analysis, not today's
+        // confirmed intake or the independently resolved fiber target.
         const target = summary.target;
         if (!target.available) {
-          setState({ kind: 'nutrition_target_unmet', reason: target.reason });
+          setState({ kind: 'nutrition_target_unmet', reason: target.reason, summary });
           return;
         }
         const nutritionTargetCalories = target.calories;
 
         const todayRow: TodayRow = {
+          summary,
           calories: summary.calories_consumed,
           proteinGrams: summary.protein_grams_consumed,
           carbsGrams: summary.carbs_grams_consumed,
@@ -546,69 +543,13 @@ export default function LoggingGapCard({
   const dim = editing && hidden ? ' opacity-40' : '';
 
   function renderToday(today: TodayRow) {
-    // Clamped so an over-target day fills the bar rather than overflowing its
-    // container; the numbers beside it keep counting past 100%, which is where
-    // that information belongs. Going over target is not an error and is not
-    // coloured as one. The guard against a non-positive target is defensive —
-    // the backend never emits one — but a zero would otherwise divide to
-    // Infinity and produce a `width: Infinity%` style.
-    const pct =
-      today.targetCalories > 0
-        ? Math.min(100, Math.max(0, (today.calories / today.targetCalories) * 100))
-        : 0;
-    // Cast-free, the way metricLabel builds its keys: the template literal
-    // expands to the union of the three `loggingGap.` macro keys, so dropping
-    // one from the dictionary is a type error here rather than a raw key
-    // rendered on the dashboard.
-    const macro = (labelKey: 'protein' | 'carbs' | 'fat', consumed: number, target: number) =>
-      interpolate(t(`loggingGap.${labelKey}`), {
-        consumed: String(Math.round(consumed)),
-        target: String(Math.round(target)),
-      });
     const v = formatNutritionTargetValues(today.derivation);
     const tierKey = activityTierKey(today.derivation.activityTier);
     const tierLabel = tierKey ? t(tierKey) : today.derivation.activityTier;
     const sexLabel = t(sexKey(today.derivation.sex));
     return (
-      <div className={`py-1${dim}`} data-testid="nutrition-today">
-        {/* The whole row is the toggle, matching renderGap's own control
-            below: on touch, TapTarget's 48px minimum applies to a bare glyph
-            anyway, so a full-width row buys a target that's hard to miss for
-            height spent regardless. No aria-label — the accessible name is
-            the calorie line itself plus the visually-hidden label. */}
-        <TapTarget
-          compactOnMouse
-          onClick={() => setTodayHintOpen(open => !open)}
-          aria-expanded={todayHintOpen}
-          aria-controls={todayHintId}
-          data-testid="nutrition-today-hint-toggle"
-          className="flex w-full items-center justify-between gap-2 text-left"
-        >
-          <span
-            className="font-[family-name:var(--font-data)] text-xl font-bold tabular-nums"
-            data-testid="nutrition-today-calories"
-          >
-            {interpolate(t('loggingGap.todayCalories'), {
-              consumed: String(Math.round(today.calories)),
-              target: String(Math.round(today.targetCalories)),
-            })}
-          </span>
-          <span className="sr-only">{t('loggingGap.hintToggle')}</span>
-          <InfoIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        </TapTarget>
-        {/* Presentational: the calorie line above is the accessible content,
-            and a bar that repeated it would only add a second thing to read. */}
-        <div className="mt-1.5 h-1.5 w-full rounded-full bg-border overflow-hidden" aria-hidden="true">
-          <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
-        </div>
-        <div
-          className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted tabular-nums"
-          data-testid="nutrition-today-macros"
-        >
-          <span>{macro('protein', today.proteinGrams, today.targetProteinGrams)}</span>
-          <span>{macro('carbs', today.carbsGrams, today.targetCarbsGrams)}</span>
-          <span>{macro('fat', today.fatGrams, today.targetFatGrams)}</span>
-        </div>
+      <div className={`py-1${dim}`}>
+        <TodayNutritionSummary summary={today.summary} onToggleHint={() => setTodayHintOpen(open => !open)} hintOpen={todayHintOpen} hintId={todayHintId}/>
         {/* Rendered even while collapsed, and hidden with the `hidden`
             attribute, matching renderGap's own panel below: `aria-controls`
             above has to name an element that exists. Explains the whole top
@@ -830,14 +771,13 @@ export default function LoggingGapCard({
       case 'retrieval_error':
         return <p className={`text-sm text-text-muted py-2${dim}`} data-testid="logging-gap-error">{t('loggingGap.retrievalError')}</p>;
       case 'nutrition_target_unmet':
-        return (
-          <p className={`text-sm text-text-muted py-2${dim}`} data-testid="logging-gap-target-unmet">
+        return <div className={dim || undefined}>
+          <TodayNutritionSummary summary={state.summary}/>
+          <p className="text-sm text-text-muted py-2" data-testid="logging-gap-target-unmet">
             {t('loggingGap.targetUnmet')}{' '}
-            <a href={unmetReasonHref(state.reason)} className="text-accent underline">
-              {t('loggingGap.targetUnmetLink')}
-            </a>
+            <a href={unmetReasonHref(state.reason)} className="text-accent underline">{t('loggingGap.targetUnmetLink')}</a>
           </p>
-        );
+        </div>;
       case 'ready':
         return (
           <>

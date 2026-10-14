@@ -24,7 +24,7 @@ export default function ExpertModeToggle({ checked, onChange }: Props) {
     // review.
     <TapTarget
       as="label"
-      className="inline-flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 select-none cursor-pointer"
+      className="inline-flex items-center gap-2 text-xs font-medium text-text-muted select-none cursor-pointer"
     >
       <input
         type="checkbox"

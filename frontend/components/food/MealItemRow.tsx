@@ -22,7 +22,7 @@ interface Props {
 
 const SOURCE_COLOR: Record<string, string> = {
   reference: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  manual: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  manual: 'bg-accent/10 text-accent',
   // Distinct from both "manual" (a value the user typed) and "none"
   // (nothing at all) — an estimated item has real macro values, but they're
   // a model guess, not a database fact or something the user confirmed.
@@ -158,16 +158,16 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
   };
 
   return (
-    <div className="py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-900 dark:text-white break-words">{item.name}</p>
+    <div className="py-5 border-b border-border last:border-b-0">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-40">
+          <p className="text-sm font-medium text-text break-words">{item.name}</p>
           <CanonicalNameLabel expertMode={expertMode} canonicalName={item.canonical_name} />
           <span className={`inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded ${SOURCE_COLOR[item.macro_source]}`}>
             {macroSourceLabel(t, item.macro_source)}
           </span>
           {referenceSourceLabel(t, item) && (
-            <span className="inline-block mt-1 ml-1 text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+            <span className="inline-block mt-1 ml-1 text-[11px] px-1.5 py-0.5 rounded bg-bg text-text-muted">
               {referenceSourceLabel(t, item)}
             </span>
           )}
@@ -181,14 +181,14 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
             disabled={saving || deleting}
             onChange={e => setWeight(Number(e.target.value))}
             onBlur={commitWeight}
-            className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+            className="w-20 border border-border rounded-md px-2 py-1 text-base text-right bg-bg-elevated text-text disabled:opacity-60"
           />
           {/* The weight input's unit suffix. Missed by twelve review rounds
               and found by looking at the rendered Russian page: this row's
               macro line below was localized while the unit label directly
               beside the input above it was not, so a Russian meal showed
               "220 g" over "396 ккал · Б 11.2г". Same key as the macro line. */}
-          <span className="text-xs text-gray-400">{t('unit.grams')}</span>
+          <span className="text-xs text-text-muted">{t('unit.grams')}</span>
           {confirmingDelete ? (
             <div className="ml-1 flex items-center gap-1">
               <TapTarget
@@ -201,7 +201,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
               <TapTarget
                 onClick={() => setConfirmingDelete(false)}
                 disabled={deleting}
-                className="px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+                className="px-2 rounded text-xs font-medium bg-bg text-text-muted disabled:opacity-50"
               >
                 {t('item.cancel')}
               </TapTarget>
@@ -210,7 +210,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
             <TapTarget
               onClick={() => setConfirmingDelete(true)}
               title={t('item.deleteTitle')}
-              className="ml-1 flex items-center justify-center rounded text-lg leading-none text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20"
+              className="ml-1 flex items-center justify-center rounded text-lg leading-none text-text-muted hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20"
             >
               ×
             </TapTarget>
@@ -218,7 +218,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
         </div>
       </div>
 
-      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+      <div className="mt-1 text-xs text-text-muted">
         {Math.round(item.calories)} {t('unit.kcal')} · {t('unit.proteinShort')}{' '}
         {item.protein_grams.toFixed(1)}{t('unit.grams')} · {t('unit.carbsShort')}{' '}
         {item.carbs_grams.toFixed(1)}{t('unit.grams')} · {t('unit.fatShort')}{' '}
@@ -228,10 +228,10 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
       {item.macro_source !== 'none' && (
         <div
           data-testid={`item-nutrients-${item.id}`}
-          className="mt-1 text-xs text-gray-500 dark:text-gray-400"
+          className="mt-1 text-xs text-text-muted"
         >
           {t('item.sodium')} {item.sodium_grams.toFixed(2)}{t('unit.grams')} ·{' '}
-          {t('item.fiber')} {item.dietary_fiber_grams.toFixed(1)}{t('unit.grams')} ·{' '}
+          {t('item.fiber')} {item.dietary_fiber_grams == null ? '—' : item.dietary_fiber_grams.toFixed(1)}{t('unit.grams')} ·{' '}
           {t('item.saturatedFat')} {item.saturated_fat_grams.toFixed(1)}{t('unit.grams')}
         </div>
       )}
@@ -246,7 +246,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
             className={
               item.macro_source === 'none' || item.macro_source === 'estimated'
                 ? 'flex items-center text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline'
-                : 'flex items-center text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline'
+                : 'flex items-center text-xs font-medium text-text-muted hover:underline'
             }
           >
             {item.macro_source === 'none'
@@ -261,7 +261,7 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
                 setResolverMode('manual');
                 setResolving(true);
               }}
-              className="flex items-center text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              className="flex items-center text-xs font-medium text-accent hover:underline"
             >
               {t('item.editNutrients')}
             </TapTarget>

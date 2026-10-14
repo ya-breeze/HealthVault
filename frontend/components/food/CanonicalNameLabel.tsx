@@ -22,7 +22,7 @@ export default function CanonicalNameLabel({
   // on hydration. `block` reproduces exactly what the <p> looked like, since
   // Tailwind's preflight already zeroes paragraph margins.
   return (
-    <span className="block text-xs text-gray-400 dark:text-gray-500 italic break-words">
+    <span className="block text-xs text-text-muted italic break-words">
       {t('expertMode.canonicalNamePrefix')} {canonicalName}
     </span>
   );

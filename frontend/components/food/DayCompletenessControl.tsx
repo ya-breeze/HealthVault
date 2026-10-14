@@ -66,7 +66,7 @@ export default function DayCompletenessControl({ date, state, onChange }: Props)
         <TapTarget
           onClick={handleUnconfirm}
           disabled={pending}
-          className="flex items-center whitespace-nowrap text-xs text-gray-500 dark:text-gray-400 hover:underline disabled:opacity-50"
+          className="flex items-center whitespace-nowrap text-xs text-text-muted hover:underline disabled:opacity-50"
         >
           {pending ? t('completeness.updating') : t('completeness.unconfirm')}
         </TapTarget>
@@ -78,7 +78,7 @@ export default function DayCompletenessControl({ date, state, onChange }: Props)
     <TapTarget
       onClick={handleConfirm}
       disabled={pending}
-      className="flex items-center whitespace-nowrap text-xs font-medium px-2 rounded-full border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+      className="flex items-center whitespace-nowrap text-xs font-medium px-2 rounded-full border border-border text-text-muted hover:border-accent hover:text-accent disabled:opacity-50"
     >
       {pending ? t('completeness.updating') : t('completeness.markComplete')}
     </TapTarget>

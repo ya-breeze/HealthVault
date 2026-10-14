@@ -71,7 +71,7 @@ export default function AddItemForm({ mealId, onAdded, expertMode = false }: Pro
     return (
       <TapTarget
         onClick={() => setOpen(true)}
-        className="mt-4 w-full rounded-lg text-sm font-medium border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400"
+        className="mt-4 w-full rounded-xl text-sm font-medium border border-dashed border-border text-text-muted hover:border-accent hover:text-accent"
       >
         + Add item
       </TapTarget>
@@ -79,18 +79,18 @@ export default function AddItemForm({ mealId, onAdded, expertMode = false }: Pro
   }
 
   return (
-    <div className="mt-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+    <div className="mt-5 bg-bg-elevated rounded-2xl border border-border p-5">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-medium text-gray-900 dark:text-white">Add item</p>
+        <p className="text-sm font-medium text-text">Add item</p>
         <div className="flex items-center gap-1">
           <input
             type="number"
             step="any"
             value={weight}
             onChange={e => setWeight(Number(e.target.value))}
-            className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-base text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            className="w-20 border border-border rounded-xl px-2 py-1 text-base text-right bg-bg-elevated text-text"
           />
-          <span className="text-xs text-gray-400">g</span>
+          <span className="text-xs text-text-muted">g</span>
         </div>
       </div>
       <ItemResolver itemName="" onBind={handleBind} onManual={handleManual} expertMode={expertMode} />
@@ -98,7 +98,7 @@ export default function AddItemForm({ mealId, onAdded, expertMode = false }: Pro
       <TapTarget
         onClick={() => setOpen(false)}
         disabled={creating}
-        className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 hover:underline disabled:opacity-50"
+        className="mt-2 flex items-center text-xs text-text-muted hover:underline disabled:opacity-50"
       >
         Cancel
       </TapTarget>

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { api, type Me } from '@/lib/api';
 import { cachedSession, rememberSession } from '@/lib/session';
 import Header from '@/components/Header';
+import DesktopSidebar from '@/components/DesktopSidebar';
 import BottomNav from '@/components/BottomNav';
 import MoreSheet from '@/components/MoreSheet';
 
@@ -96,13 +97,16 @@ export default function AuthenticatedShell({
           the header and bar being painted for someone who turns out to have
           no session — see mobile-navigation's "Bar does not flash on an
           unauthenticated deep link". */}
+      {me && <DesktopSidebar me={me} />}
+      <div className={me ? 'hv-desktop-frame' : undefined}>
       {me && <Header me={me} />}
       {/* Clearance for in-flow content. Padding on an ancestor does nothing
           for a `position: fixed` descendant, which is why the two submit
           bars and the toast stack offset themselves by the same token
           instead. `--nav-block` is `0px` at and above the breakpoint, so
           this reserves nothing on desktop. */}
-      <div data-testid="shell-content" className="pb-[var(--nav-block)]">{children}</div>
+      <div data-testid="shell-content" className="hv-shell-content pb-[var(--nav-block)]">{children}</div>
+      </div>
       {me && (
         <BottomNav
           moreOpen={moreOpen}

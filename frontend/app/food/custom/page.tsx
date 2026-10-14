@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { numberLocaleFor } from '@/lib/i18n';
 import { api, CustomFood, CustomFoodInput } from '@/lib/api';
 import CustomFoodModal from '@/components/food/CustomFoodModal';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
@@ -11,7 +13,8 @@ import CanonicalNameLabel from '@/components/food/CanonicalNameLabel';
 
 export default function CustomFoodsPage() {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const [query, setQuery] = useState('');
   const [foods, setFoods] = useState<CustomFood[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<CustomFood | 'new' | null>(null);
@@ -54,79 +57,87 @@ export default function CustomFoodsPage() {
   };
 
   return (
-    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <main className="max-w-md mx-auto px-6 py-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">{t('customFood.title')}</h1>
+    <AuthenticatedShell className="min-h-screen bg-bg">
+      <main className="hv-page">
+        <div className="hv-page-heading">
+          <div><h1>{t('customFood.title')}</h1><p>{t('redesign.entry.catalogSubtitle')}</p></div>
         <TapTarget
           onClick={() => setEditing('new')}
-          className="w-full mb-4 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+          className="rounded-xl px-5 text-sm font-semibold bg-accent hover:bg-accent/90 text-bg-elevated"
         >
           {t('customFood.addNew')}
         </TapTarget>
-
-        {error && <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
-
-        <div className="mb-2 flex justify-end">
-          <ExpertModeToggle checked={expertMode} onChange={setExpertMode} />
         </div>
+        <nav aria-label={t('redesign.entry.sectionsLabel')} className="mb-6 flex flex-wrap gap-2">
+          <TapTarget as={Link} href="/food/history/" className="inline-flex items-center justify-center rounded-xl px-5 text-sm text-text-muted hover:bg-bg-elevated">{t('redesign.entry.diary')}</TapTarget>
+          <TapTarget as={Link} href="/food/upload/" className="inline-flex items-center justify-center rounded-xl px-5 text-sm text-text-muted hover:bg-bg-elevated">{t('redesign.entry.photo')}</TapTarget>
+          <TapTarget as={Link} href="/food/manual/" className="inline-flex items-center justify-center rounded-xl px-5 text-sm text-text-muted hover:bg-bg-elevated">{t('redesign.entry.manualModes')}</TapTarget>
+        </nav>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
-          {foods === null && (
-            <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">{t('review.loading')}</p>
-          )}
-          {foods?.length === 0 && (
-            <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">{t('customFood.noneYet')}</p>
-          )}
-          {foods?.map(f => (
-            // NOTE: this row's name column has no min-w-0/truncate and the
-            // button column has no flex-shrink-0 — a known, separately
-            // tracked layout-overflow issue (deferred to a follow-up
-            // change, see openspec/changes/mobile-tap-targets/design.md).
-            // Enlarging the buttons below to the 48px tap-target minimum is
-            // sizing-only and does not fix that; it may make the overflow
-            // surface more visibly on narrow screens.
-            <div key={f.id} className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{f.name}</p>
-                <CanonicalNameLabel expertMode={expertMode} canonicalName={f.canonical_name} />
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {Math.round(f.calories_per_100g)} {t('unit.kcalPer100g')}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <TapTarget
-                  onClick={() => setEditing(f)}
-                  className="flex items-center text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  {t('customFood.edit')}
-                </TapTarget>
-                {pendingDeleteId === f.id ? (
-                  <span className="flex items-center gap-1">
-                    <TapTarget
-                      onClick={() => handleDelete(f.id)}
-                      className="text-xs px-2 rounded bg-red-600 text-white hover:bg-red-700"
-                    >
-                      {t('item.confirm')}
-                    </TapTarget>
-                    <TapTarget
-                      onClick={() => setPendingDeleteId(null)}
-                      className="text-xs px-2 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200"
-                    >
-                      {t('item.cancel')}
-                    </TapTarget>
-                  </span>
-                ) : (
+        {error && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+        <section className="hv-card">
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
+            <label className="w-full max-w-md text-sm font-medium text-text">
+              {t('redesign.entry.search')}
+              <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('redesign.entry.foodName')} className="mt-2 w-full rounded-xl border border-border bg-bg-elevated px-4 py-3 text-base text-text" />
+            </label>
+            <ExpertModeToggle checked={expertMode} onChange={setExpertMode} />
+          </div>
+
+          <div className="divide-y divide-border">
+            {foods === null && (
+              <p className="p-4 text-sm text-text-muted text-center">{t('review.loading')}</p>
+            )}
+            {foods?.length === 0 && (
+              <p className="p-4 text-sm text-text-muted text-center">{t('customFood.noneYet')}</p>
+            )}
+            {foods && foods.length > 0 && !foods.some(f => f.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) && <p className="py-10 text-center text-sm text-text-muted">{t('redesign.entry.noMatchingFoods')}</p>}
+            {foods?.filter(f => f.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map(f => (
+              <div key={f.id} className="flex flex-wrap items-center justify-between gap-4 py-5">
+                <div className="min-w-0 flex-1 basis-48">
+                  <p className="break-words text-sm font-semibold text-text">{f.name}</p>
+                  <CanonicalNameLabel expertMode={expertMode} canonicalName={f.canonical_name} />
+                  <p className="text-xs text-text-muted">
+                    {Math.round(f.calories_per_100g)} {t('unit.kcalPer100g')}
+                    {' · '}{t('item.fiber')} {Number.isFinite(f.dietary_fiber_per_100g) ? f.dietary_fiber_per_100g.toLocaleString(numberLocaleFor(language), { maximumFractionDigits: 1 }) : '—'} {t('redesign.entry.gramsPer100g')}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-3">
                   <TapTarget
-                    onClick={() => setPendingDeleteId(f.id)}
-                    className="flex items-center text-xs text-red-500 hover:text-red-700"
+                    onClick={() => setEditing(f)}
+                    className="flex items-center text-xs text-accent hover:underline"
                   >
-                    {t('customFood.delete')}
+                    {t('customFood.edit')}
                   </TapTarget>
-                )}
+                  {pendingDeleteId === f.id ? (
+                    <span className="flex items-center gap-1">
+                      <TapTarget
+                        onClick={() => handleDelete(f.id)}
+                        className="text-xs px-2 rounded bg-red-600 text-white hover:bg-red-700"
+                      >
+                        {t('item.confirm')}
+                      </TapTarget>
+                      <TapTarget
+                        onClick={() => setPendingDeleteId(null)}
+                        className="text-xs px-2 rounded bg-bg text-text"
+                      >
+                        {t('item.cancel')}
+                      </TapTarget>
+                    </span>
+                  ) : (
+                    <TapTarget
+                      onClick={() => setPendingDeleteId(f.id)}
+                      className="flex items-center text-xs text-red-500 hover:text-red-700"
+                    >
+                      {t('customFood.delete')}
+                    </TapTarget>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </section>
       </main>
 
       {editing && (

@@ -17,6 +17,8 @@ import {
   unicodeLength,
 } from '@/lib/foodGuidance';
 import TapTarget from '@/components/ui/TapTarget';
+import { useLanguage } from '@/components/LanguageContext';
+import { interpolate } from '@/lib/i18n';
 
 interface Props {
   mealId: string;
@@ -32,6 +34,7 @@ type ExpertRow = { name: string; weight: string };
 const blankRow = (): ExpertRow => ({ name: '', weight: '' });
 
 export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>('hint');
   const [hint, setHint] = useState('');
@@ -51,11 +54,11 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
     if (mode === 'hint') {
       const trimmed = hint.trim();
       if (!trimmed) {
-        setError('A hint is required');
+        setError(t('redesign.review.aHintIsRequired'));
         return null;
       }
       if (unicodeLength(trimmed) > MAX_HINT_LENGTH) {
-        setError(`Hint must be at most ${MAX_HINT_LENGTH} characters`);
+        setError(interpolate(t('redesign.review.hintMustBeAtMostMaxCharacters'), {max: String(MAX_HINT_LENGTH)}));
         return null;
       }
       return { hint: trimmed };
@@ -66,11 +69,11 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
     for (const [index, row] of components.entries()) {
       const name = row.name.trim();
       if (!name) {
-        setError(`Ingredient ${index + 1} needs a name`);
+        setError(interpolate(t('redesign.review.ingredientIndexNeedsAName'), {index: String(index + 1)}));
         return null;
       }
       if (unicodeLength(name) > MAX_COMPONENT_NAME_LENGTH) {
-        setError(`Ingredient names must be at most ${MAX_COMPONENT_NAME_LENGTH} characters`);
+        setError(interpolate(t('redesign.review.ingredientNamesMustBeAtMostMax'), {max: String(MAX_COMPONENT_NAME_LENGTH)}));
         return null;
       }
       combinedLength += unicodeLength(name);
@@ -78,7 +81,7 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
       if (row.weight.trim()) {
         const weight = Number(row.weight);
         if (!Number.isFinite(weight) || weight <= 0) {
-          setError(`Ingredient ${index + 1} weight must be greater than zero`);
+          setError(interpolate(t('redesign.review.ingredientIndexWeightMustBeGreaterThan'), {index: String(index + 1)}));
           return null;
         }
         component.weight_grams = weight;
@@ -86,7 +89,7 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
       normalized.push(component);
     }
     if (combinedLength > MAX_COMBINED_COMPONENT_NAME_LENGTH) {
-      setError(`Combined ingredient names must be at most ${MAX_COMBINED_COMPONENT_NAME_LENGTH} characters`);
+      setError(interpolate(t('redesign.review.combinedIngredientNamesMustBeAtMost'), {max: String(MAX_COMBINED_COMPONENT_NAME_LENGTH)}));
       return null;
     }
     return { components: normalized };
@@ -98,23 +101,23 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await onReanalyzed(() => api.reanalyzeMeal(mealId, input), 'Reanalysis complete');
+      await onReanalyzed(() => api.reanalyzeMeal(mealId, input), t('redesign.review.reanalysisComplete'));
       close();
     } catch (err) {
       const isFailed = err instanceof ReanalyzeFailedError || (err as { name?: string })?.name === 'ReanalyzeFailedError';
       const isSuperseded =
         err instanceof ReanalyzeSupersededError || (err as { name?: string })?.name === 'ReanalyzeSupersededError';
       if (isFailed) {
-        setError('Reanalysis failed — the meal is unchanged. You can try again.');
+        setError(t('redesign.review.reanalysisFailedTheMealIsUnchangedYou'));
       } else if (isSuperseded) {
         try {
-          await onReanalyzed(() => api.getMeal(mealId), 'Refreshed with latest change');
-          setError('Another operation took over this meal while reanalyzing — showing its current state.');
+          await onReanalyzed(() => api.getMeal(mealId), t('redesign.review.refreshedWithLatestChange'));
+          setError(t('redesign.review.anotherOperationTookOverThisMealWhile'));
         } catch {
-          setError('Another operation took over this meal, and refreshing failed. Reload to see its current state.');
+          setError(t('redesign.review.anotherOperationTookOverThisMealAnd'));
         }
       } else {
-        setError(err instanceof Error ? err.message : 'Reanalysis failed');
+        setError(err instanceof Error ? err.message : (t('redesign.review.reanalysisFailed')));
       }
     } finally {
       setBusy(false);
@@ -125,76 +128,76 @@ export default function ReanalyzeControl({ mealId, onReanalyzed }: Props) {
     return (
       <TapTarget
         onClick={() => setOpen(true)}
-        className="mt-3 w-full rounded-lg border border-gray-300 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400"
+        className="mt-3 w-full rounded-lg border border-border text-sm font-medium text-text-muted hover:border-accent hover:text-accent"
       >
-        Improve analysis
+        {t('redesign.review.improveAnalysis')}
       </TapTarget>
     );
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-      <p className="text-sm font-medium text-gray-900 dark:text-white">Improve analysis</p>
+    <div className="hv-card mt-6">
+      <p className="text-sm font-medium text-text">{t('redesign.review.improveAnalysis')}</p>
       <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-        This replaces all current items and requires review again.
+        {t('redesign.review.thisReplacesAllCurrentItemsAndRequires')}
       </p>
-      <div className="mt-3 grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-gray-700" role="tablist" aria-label="Analysis mode">
+      <div className="mt-3 grid grid-cols-2 rounded-lg bg-bg p-1" role="tablist" aria-label={t('redesign.review.analysisMode')}>
         {(['hint', 'expert'] as const).map(value => (
           <TapTarget
             key={value}
             role="tab"
             aria-selected={mode === value}
             onClick={() => { setMode(value); setError(null); }}
-            className={`rounded-md text-sm font-medium ${mode === value ? 'bg-white text-blue-700 shadow-sm dark:bg-gray-800 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300'}`}
+            className={`rounded-md text-sm font-medium ${mode === value ? 'bg-bg-elevated text-accent shadow-sm ' : 'text-text-muted '}`}
           >
-            {value === 'hint' ? 'Hint' : 'Expert'}
+            {value === 'hint' ? (t('redesign.review.hint')) : (t('redesign.review.expert'))}
           </TapTarget>
         ))}
       </div>
 
       {mode === 'hint' ? (
         <div className="mt-3">
-          <label htmlFor="reanalyze-hint" className="text-sm font-medium text-gray-900 dark:text-white">What did the model miss?</label>
+          <label htmlFor="reanalyze-hint" className="text-sm font-medium text-text">{t('redesign.review.whatDidTheModelMiss')}</label>
           <textarea
             id="reanalyze-hint"
             value={hint}
             onChange={event => setHint(event.target.value)}
-            placeholder="e.g. grilled chicken with red beans"
+            placeholder={t('redesign.review.egGrilledChickenWithRedBeans')}
             rows={3}
-            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            className="mt-2 w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm text-text"
           />
-          <p className="mt-1 text-right text-xs text-gray-400">{normalizedUnicodeLength(hint)}/{MAX_HINT_LENGTH}</p>
+          <p className="mt-1 text-right text-xs text-text-muted">{normalizedUnicodeLength(hint)}/{MAX_HINT_LENGTH}</p>
         </div>
       ) : (
         <div className="mt-3 space-y-3">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Name each ingredient. Supplied weights are used exactly; blank weights are estimated from the photo.</p>
+          <p className="text-xs text-text-muted">{t('redesign.review.nameEachIngredientSuppliedWeightsAreUsed')}</p>
           {components.map((row, index) => (
-            <div key={index} className="rounded-lg border border-gray-200 p-3 dark:border-gray-600">
+            <div key={index} className="rounded-lg border border-border p-3">
               <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-2">
                 <div>
-                  <label htmlFor={`component-name-${index}`} className="text-xs font-medium text-gray-600 dark:text-gray-300">Ingredient {index + 1}</label>
-                  <input id={`component-name-${index}`} value={row.name} onChange={event => setComponents(current => current.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} placeholder="Red beans" className="mt-1 min-h-11 w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" />
+                  <label htmlFor={`component-name-${index}`} className="text-xs font-medium text-text-muted">{t('redesign.review.ingredient')} {index + 1}</label>
+                  <input id={`component-name-${index}`} value={row.name} onChange={event => setComponents(current => current.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} placeholder={t('redesign.review.redBeans')} className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg-elevated px-2 text-sm text-text" />
                 </div>
                 <div>
-                  <label htmlFor={`component-weight-${index}`} className="text-xs font-medium text-gray-600 dark:text-gray-300">Grams</label>
-                  <input id={`component-weight-${index}`} type="number" inputMode="decimal" min="0.01" step="any" value={row.weight} onChange={event => setComponents(current => current.map((item, i) => i === index ? { ...item, weight: event.target.value } : item))} placeholder="Auto" className="mt-1 min-h-11 w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" />
+                  <label htmlFor={`component-weight-${index}`} className="text-xs font-medium text-text-muted">{t('redesign.review.grams')}</label>
+                  <input id={`component-weight-${index}`} type="number" inputMode="decimal" min="0.01" step="any" value={row.weight} onChange={event => setComponents(current => current.map((item, i) => i === index ? { ...item, weight: event.target.value } : item))} placeholder={t('redesign.review.auto')} className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg-elevated px-2 text-sm text-text" />
                 </div>
               </div>
               {components.length > 1 && (
-                <TapTarget onClick={() => setComponents(current => current.filter((_, i) => i !== index))} className="mt-2 flex items-center text-xs font-medium text-red-600 dark:text-red-400">Remove ingredient</TapTarget>
+                <TapTarget onClick={() => setComponents(current => current.filter((_, i) => i !== index))} className="mt-2 flex items-center text-xs font-medium text-red-600 dark:text-red-400">{t('redesign.review.removeIngredient')}</TapTarget>
               )}
             </div>
           ))}
           {components.length < MAX_EXPERT_COMPONENTS && (
-            <TapTarget onClick={() => setComponents(current => [...current, blankRow()])} className="w-full rounded-lg border border-dashed border-gray-300 text-sm font-medium text-gray-600 dark:border-gray-600 dark:text-gray-300">Add ingredient</TapTarget>
+            <TapTarget onClick={() => setComponents(current => [...current, blankRow()])} className="w-full rounded-lg border border-dashed border-border text-sm font-medium text-text-muted">{t('redesign.review.addIngredient')}</TapTarget>
           )}
         </div>
       )}
 
       {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <TapTarget onClick={close} disabled={busy} className="rounded-lg border border-gray-300 text-sm font-medium text-gray-600 dark:border-gray-600 dark:text-gray-300">Cancel</TapTarget>
-        <TapTarget onClick={submit} disabled={busy} className="rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">{busy ? 'Reanalyzing…' : 'Reanalyze'}</TapTarget>
+        <TapTarget onClick={close} disabled={busy} className="rounded-lg border border-border text-sm font-medium text-text-muted">{t('item.cancel')}</TapTarget>
+        <TapTarget onClick={submit} disabled={busy} className="rounded-lg bg-accent text-sm font-medium text-bg-elevated hover:opacity-90 disabled:opacity-50">{busy ? (t('redesign.review.reanalyzing')) : (t('redesign.review.reanalyze'))}</TapTarget>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 import { ReactNode, useState } from 'react';
 import TapTarget from '@/components/ui/TapTarget';
+import { useLanguage } from '@/components/LanguageContext';
 
 interface Props {
   questions: string[];
@@ -17,6 +18,7 @@ interface Props {
 // Text-only by construction: no photo is shown or sent here, matching the
 // backend's clarify endpoint, which never re-sends the image.
 export default function ClarifyModal({ questions, onSubmit, deleteControl }: Props) {
+  const { t } = useLanguage();
   const [answers, setAnswers] = useState<string[]>(() => questions.map(() => ''));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,25 +31,25 @@ export default function ClarifyModal({ questions, onSubmit, deleteControl }: Pro
     try {
       await onSubmit(answers);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit answers');
+      setError(err instanceof Error ? err.message : (t('redesign.review.failedToSubmitAnswers')));
       setSubmitting(false);
     }
   };
 
   return (
     <div data-testid="clarify-modal" className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md w-full p-6">
-        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-          A couple of questions
+      <div className="bg-bg-elevated rounded-xl shadow-lg max-w-lg w-full p-6 max-h-[85vh] overflow-y-auto">
+        <p className="text-sm font-semibold text-text mb-1">
+          {t('redesign.review.aCoupleOfQuestions')}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          The model wasn&apos;t sure about your meal. No photo is sent for this — just your answers.
+        <p className="text-xs text-text-muted mb-4">
+          {t('redesign.review.theModelWasNotSureAboutYour')}
         </p>
 
         <div className="flex flex-col gap-4">
           {questions.map((q, i) => (
             <label key={i} className="block">
-              <span className="text-sm text-gray-700 dark:text-gray-300">{q}</span>
+              <span className="text-sm text-text">{q}</span>
               <input
                 type="text"
                 value={answers[i]}
@@ -56,7 +58,7 @@ export default function ClarifyModal({ questions, onSubmit, deleteControl }: Pro
                   next[i] = e.target.value;
                   setAnswers(next);
                 }}
-                className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="mt-1 w-full border border-border rounded-md px-3 py-2 text-sm bg-bg-elevated text-text focus:outline-none focus:ring-2 focus:ring-accent"
               />
             </label>
           ))}
@@ -67,13 +69,13 @@ export default function ClarifyModal({ questions, onSubmit, deleteControl }: Pro
         <TapTarget
           onClick={handleSubmit}
           disabled={!allAnswered || submitting}
-          className="mt-5 w-full rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mt-5 w-full rounded-lg text-sm font-medium bg-accent hover:opacity-90 text-bg-elevated disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitting ? 'Submitting…' : 'Submit'}
+          {submitting ? (t('redesign.review.submitting')) : (t('redesign.review.submit'))}
         </TapTarget>
 
         {deleteControl && (
-          <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="mt-5 pt-4 border-t border-border">
             {deleteControl}
           </div>
         )}

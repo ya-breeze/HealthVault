@@ -13,5 +13,5 @@
 // it.
 export function tabClass(active: boolean, activeClasses: string): string {
   const base = 'pb-2 -mb-px border-b-2';
-  return active ? `${base} font-semibold ${activeClasses}` : `${base} border-transparent font-normal text-gray-400 dark:text-gray-500`;
+  return active ? `${base} font-semibold ${activeClasses}` : `${base} border-transparent font-normal text-text-muted`;
 }

@@ -2,18 +2,14 @@
 import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
+import { useLanguage } from '@/components/LanguageContext';
+import { numberLocaleFor, type Dictionary } from '@/lib/i18n';
 
-const TYPE_LABELS: Record<string, string> = {
-  heart_rate: 'Heart Rate',
-  steps: 'Steps',
-  sleep: 'Sleep',
-  exercise: 'Exercise',
-  distance: 'Distance',
-  total_calories: 'Total Calories',
-  oxygen_saturation: 'Oxygen Saturation',
-  speed: 'Speed',
-  weight: 'Weight',
-  body_fat: 'Body Fat',
+const TYPE_LABELS: Partial<Record<string, keyof Dictionary>> = {
+  heart_rate: 'metric.heart_rate', steps: 'metric.steps', sleep: 'metric.sleep',
+  exercise: 'metric.exercise', distance: 'metric.distance', total_calories: 'metric.total_calories',
+  oxygen_saturation: 'metric.oxygen_saturation', speed: 'metric.speed',
+  weight: 'metric.weight', body_fat: 'metric.body_fat',
 };
 
 interface ImportCardProps {
@@ -25,6 +21,7 @@ interface ImportCardProps {
 }
 
 function ImportCard({ title, description, accept, label, onImport }: ImportCardProps) {
+  const { t, language } = useLanguage();
   const fileRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -42,75 +39,74 @@ function ImportCard({ title, description, accept, label, onImport }: ImportCardP
       const result = await onImport(file);
       setCounts(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed');
+      setError(err instanceof Error ? err.message : t('redesign.pages.import.failed'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="mb-10">
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">{title}</h2>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{description}</p>
+    <section className="hv-card min-w-0">
+      <h2 className="text-lg font-semibold text-text mb-2">{title}</h2>
+      <p className="text-sm text-text-muted leading-relaxed mb-6">{description}</p>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+      <div className="rounded-2xl border border-dashed border-border bg-bg p-5">
+        <label className="block text-sm font-medium text-text mb-3">
           {label}
-        </label>
         <input
           ref={fileRef}
           type="file"
           accept={accept}
-          className="block w-full text-sm text-gray-700 dark:text-gray-300
-            file:mr-4 file:py-2 file:px-4
-            file:rounded-lg file:border-0
-            file:text-sm file:font-medium
-            file:bg-blue-50 file:text-blue-700
-            dark:file:bg-blue-900 dark:file:text-blue-200
-            hover:file:bg-blue-100 dark:hover:file:bg-blue-800
+          className="mt-3 block min-w-0 w-full text-sm text-text-muted
+            file:mr-3 file:py-3 file:px-4
+            file:rounded-xl file:border-0
+            file:text-sm file:font-semibold
+            file:bg-bg-elevated file:text-accent
+            hover:file:opacity-80
             file:cursor-pointer cursor-pointer"
         />
+        </label>
 
         <button
           onClick={handleImport}
           disabled={loading}
-          className={`mt-4 w-full py-2.5 rounded-lg text-sm font-medium transition-all ${
+          className={`mt-4 min-h-12 w-full py-3 rounded-xl text-sm font-semibold transition-all ${
             loading
-              ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700 text-white'
+              ? 'bg-border text-text-muted cursor-not-allowed'
+              : 'bg-accent hover:opacity-90 text-bg-elevated'
           }`}
         >
-          {loading ? 'Importing…' : 'Import'}
+          {loading ? t('redesign.pages.import.importing') : t('redesign.pages.import.submit')}
         </button>
       </div>
 
       {error && (
-        <div className="mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
-          <p className="text-sm font-medium text-red-700 dark:text-red-400">Import failed</p>
+        <div role="alert" className="mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+          <p className="text-sm font-medium text-red-700 dark:text-red-400">{t('redesign.pages.import.failed')}</p>
           <p className="text-sm text-red-600 dark:text-red-300 mt-1 font-mono break-all">{error}</p>
         </div>
       )}
 
       {counts && (
-        <div className="mt-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">Import complete</p>
+        <div className="mt-5 bg-bg-elevated rounded-xl border border-border overflow-auto">
+          <div className="px-5 py-4 border-b border-border">
+            <p role="status" className="text-sm font-semibold text-text">{t('redesign.pages.import.complete')}</p>
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 dark:bg-gray-900/50">
-                <th className="text-left px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Type</th>
-                <th className="text-right px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Records</th>
+              <tr className="bg-bg">
+                <th className="text-left px-5 py-3 font-medium text-text-muted">{t('redesign.pages.import.type')}</th>
+                <th className="text-right px-5 py-3 font-medium text-text-muted">{t('redesign.pages.import.records')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+            <tbody className="divide-y divide-border">
               {Object.entries(counts).map(([key, count]) => (
                 <tr key={key}>
-                  <td className="px-6 py-3 text-gray-700 dark:text-gray-300">
-                    {TYPE_LABELS[key] ?? key.replace(/_/g, ' ')}
+                  <td className="px-5 py-3 text-text">
+                    {TYPE_LABELS[key] ? t(TYPE_LABELS[key]) : key.replace(/_/g, ' ')}
                   </td>
-                  <td className="px-6 py-3 text-right font-mono text-gray-900 dark:text-white">
-                    {count.toLocaleString()}
+                  <td className="px-5 py-3 text-right tabular-nums text-text">
+                    {count.toLocaleString(numberLocaleFor(language))}
                   </td>
                 </tr>
               ))}
@@ -118,30 +114,33 @@ function ImportCard({ title, description, accept, label, onImport }: ImportCardP
           </table>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
 export default function ImportPage() {
+  const { t } = useLanguage();
   return (
-    <AuthenticatedShell className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <main className="max-w-2xl mx-auto px-6 py-10">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Import Data</h1>
+    <AuthenticatedShell className="min-h-screen bg-bg">
+      <main className="hv-page">
+        <div className="hv-page-heading"><div><h1>{t('redesign.pages.import.title')}</h1><p className="text-text-muted mt-2">{t('redesign.pages.import.subtitle')}</p></div></div>
+        <div className="grid gap-6 xl:grid-cols-2 items-start">
         <ImportCard
-          title="Import Health Connect"
-          description="Upload the zip archive exported from Android's Health Connect app to import your health history."
+          title={t('redesign.pages.import.healthConnectTitle')}
+          description={t('redesign.pages.import.healthConnectDescription')}
           accept=".zip"
-          label="Health Connect archive (.zip)"
+          label={t('redesign.pages.import.healthConnectFile')}
           onImport={api.importHealthConnect}
         />
 
         <ImportCard
-          title="Import Libra"
-          description="Upload the CSV exported from the Libra weight-tracking app to import your weight history."
+          title={t('redesign.pages.import.libraTitle')}
+          description={t('redesign.pages.import.libraDescription')}
           accept=".csv"
-          label="Libra export (.csv)"
+          label={t('redesign.pages.import.libraFile')}
           onImport={api.importLibra}
         />
+        </div>
       </main>
     </AuthenticatedShell>
   );

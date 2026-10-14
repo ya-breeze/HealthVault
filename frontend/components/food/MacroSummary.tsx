@@ -1,44 +1,35 @@
 import { FoodMeal } from '@/lib/api';
+import { useLanguage } from '@/components/LanguageContext';
 
-// Displays the meal's own aggregate columns. Confirmed meals show a real
-// total that stays live as items are added/edited/deleted afterward (see
-// "Meal Aggregate Recomputed After Edit While Confirmed"); pending_review
-// meals show all-zero (or partial, once items are resolved by the user)
-// since the aggregate is computed only on confirm — see FoodMeal.Aggregate,
-// called from PUT .../confirm, not from analysis.
+// Pending meals do not contribute to logged totals. Unknown fiber stays unknown.
 export default function MacroSummary({ meal }: { meal: FoodMeal }) {
+  const { t } = useLanguage();
   const isFinal = meal.status === 'confirmed';
+  const nutrients = [
+    [t('unit.kcal'), meal.calories],
+    [t('resolver.protein'), meal.protein_grams],
+    [t('resolver.carbs'), meal.carbs_grams],
+    [t('resolver.fat'), meal.fat_grams],
+    [t('resolver.fiber'), meal.dietary_fiber_grams],
+  ] as const;
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
-      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-        {isFinal ? 'Logged totals (updates as you edit items)' : 'Totals will be calculated when you confirm'}
+    <section className="hv-card" data-testid="meal-nutrition-summary">
+      <h2 className="text-lg font-semibold text-text">{t('redesign.review.mealNutrition')}</h2>
+      <p className="text-xs text-text-muted mt-2 mb-5">
+        {isFinal
+          ? t('redesign.review.loggedTotalsUpdateAsYouEditItems')
+          : t('redesign.review.totalsWillBeCalculatedWhenYouConfirm')}
       </p>
-      <div className="grid grid-cols-4 gap-3 text-center">
-        <div>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">
-            {isFinal ? Math.round(meal.calories) : '—'}
-          </p>
-          <p className="text-[11px] text-gray-400">kcal</p>
-        </div>
-        <div>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">
-            {isFinal ? meal.protein_grams.toFixed(0) : '—'}
-          </p>
-          <p className="text-[11px] text-gray-400">protein g</p>
-        </div>
-        <div>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">
-            {isFinal ? meal.carbs_grams.toFixed(0) : '—'}
-          </p>
-          <p className="text-[11px] text-gray-400">carbs g</p>
-        </div>
-        <div>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">
-            {isFinal ? meal.fat_grams.toFixed(0) : '—'}
-          </p>
-          <p className="text-[11px] text-gray-400">fat g</p>
-        </div>
+      <div className="grid grid-cols-2 gap-3">
+        {nutrients.map(([label, value], index) => (
+          <div key={label} className={`rounded-xl p-4 ${index === 4 ? 'bg-accent/10 col-span-2' : 'bg-bg'}`}>
+            <p className="text-xs text-text-muted">{label}</p>
+            <p className="text-2xl font-semibold text-text tabular-nums mt-2" data-testid={index === 4 ? 'meal-total-fiber' : undefined}>
+              {isFinal && value != null ? (index === 4 ? value.toFixed(1) : Math.round(value)) : '—'}
+            </p>
+          </div>
+        ))}
       </div>
-    </div>
+    </section>
   );
 }

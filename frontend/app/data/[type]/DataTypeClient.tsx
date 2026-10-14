@@ -666,9 +666,9 @@ export default function DataTypeClient({ type }: Props) {
 
   return (
     <AuthenticatedShell className="min-h-screen bg-bg">
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-          <h1 className="text-xl font-bold text-text flex items-center gap-2">
+      <main className="hv-page">
+        <div className="hv-page-heading flex-wrap">
+          <h1 className="text-text flex items-center gap-3">
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
             {metricLabel(t, dataType)}
           </h1>
@@ -676,7 +676,7 @@ export default function DataTypeClient({ type }: Props) {
             <TapTarget
               type="button"
               onClick={() => setShowGoalForm(true)}
-              className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
+              className="rounded-xl text-sm font-semibold bg-border text-text px-4 py-2"
             >
               {t('dataDetail.setGoal')}
             </TapTarget>
@@ -701,12 +701,12 @@ export default function DataTypeClient({ type }: Props) {
               type="button"
               onClick={() => setShowHeightForm(true)}
               data-testid="set-height"
-              className="rounded-md text-xs font-semibold uppercase tracking-wide bg-border text-text px-3 py-1.5"
+              className="rounded-xl text-sm font-semibold bg-border text-text px-4 py-2"
             >
               {t('dataDetail.setHeight')}
             </TapTarget>
           )}
-          <div className="flex gap-1 bg-bg-elevated border border-border rounded-lg p-1">
+          <div className="flex flex-wrap gap-1 bg-bg-elevated border border-border rounded-xl p-1">
             {ZOOMS.map(z => (
               <TapTarget
                 key={z.key}
@@ -768,7 +768,7 @@ export default function DataTypeClient({ type }: Props) {
         )}
 
         {hasChart && (
-        <div className="bg-bg-elevated rounded-[12px] border border-border p-4 mb-4">
+        <div className="hv-card mb-6">
           {/* touch-pan-y is the deliberate split: a vertical drag still scrolls
               the page (browser-native panning is preserved on that axis), while
               a horizontal drag belongs to the chart and its touch events are no
@@ -884,7 +884,7 @@ export default function DataTypeClient({ type }: Props) {
             </p>
           )}
 
-          <div className="flex gap-6 mt-3 pt-3 border-t border-border">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-6 mt-5 pt-5 border-t border-border">
             <div>
               <p className="font-[family-name:var(--font-data)] text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1">{t('dataDetail.avg')}</p>
               <p className="font-[family-name:var(--font-data)] text-base font-semibold text-text tabular-nums">{formatMetricValue(dataType, stats.avg, numberLocale)}</p>
@@ -912,7 +912,7 @@ export default function DataTypeClient({ type }: Props) {
         )}
 
         {stepsDiagnostics !== null && (
-          <div className="bg-bg-elevated rounded-[12px] border border-border p-4 mb-4">
+          <div className="hv-card mb-6">
             {/* Same hint-then-detail shape as LoggingGapCard's footnote
                 disclosure: the whole row toggles, aria-expanded carries the
                 open state, and the content region is rendered (hidden, not
@@ -966,7 +966,7 @@ export default function DataTypeClient({ type }: Props) {
           </div>
         )}
 
-        <div className="bg-bg-elevated rounded-[12px] border border-border overflow-auto">
+        <div className="bg-bg-elevated rounded-[20px] border border-border overflow-auto">
           {loading ? (
             <p className="p-6 text-text-muted text-center text-sm">{t('dataTable.loading')}</p>
           ) : (
