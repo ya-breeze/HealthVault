@@ -190,7 +190,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     <AuthenticatedShell className={`min-h-screen bg-bg ${showConfirmBar ? 'pb-24' : ''}`}>
       <main className="hv-page">
         <div className="hv-page-heading">
-          <div><h1>{meal.name || t('review.mealFallbackName')}</h1><p className="text-sm text-text-muted mt-2">{mealStatusLabel(t, meal.status)}</p></div>
+          <div><h1>{t('redesign.review.reviewHeading')}</h1></div>
           <TapTarget as="a" href="/food/history/" className="rounded-xl border border-border px-4 text-sm text-accent">{t('redesign.review.backToDiary')}</TapTarget>
         </div>
         {(meal.status === 'pending_review' || meal.status === 'confirmed') && (
@@ -199,9 +199,10 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
           </div>
         )}
         <div className="hv-card flex items-center justify-between mb-6">
+          <div className="min-w-0"><h2 className="text-lg font-semibold text-text break-words">{meal.name || t('review.mealFallbackName')}</h2>
           <span className="text-sm font-medium text-text-muted">
             {mealStatusLabel(t, meal.status)}
-          </span>
+          </span></div>
           {meal.photo_path && (
             // eslint-disable-next-line @next/next/no-img-element
             <img

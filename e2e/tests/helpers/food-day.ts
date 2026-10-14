@@ -257,11 +257,10 @@ export async function findEmptyDaysAgo(
   );
 }
 
-// Locates the day-group section (page.tsx's `<div className="mb-5">` per
-// day) containing the given meal name, so assertions about that day's
+// Locates the day-group section by its stable test hook containing the given meal name, so assertions about that day's
 // completeness control don't accidentally match another day's section.
 export function daySection(page: Page, mealName: string): Locator {
-  return page.locator('div.mb-5').filter({ hasText: mealName });
+  return page.getByTestId('food-day-section').filter({ hasText: mealName });
 }
 
 export function isoAtUTC(daysAgo: number, hour: number, minute = 0): string {

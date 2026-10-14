@@ -127,6 +127,7 @@ const ru: Dictionary = {
   "redesign.review.theModelWasNotSureAboutYour": "Модели нужны детали о приёме пищи. Мы отправим только ответы, без фото.",
   "redesign.review.submitting": "Отправка…",
   "redesign.review.submit": "Отправить",
+  'redesign.review.reviewHeading': 'Проверьте приём пищи',
   "header.space": "Личное пространство",
   "sidebar.caption": "ВАШЕ ЗДОРОВЬЕ",
   "dashboard.overviewTitle": "Каждый день понятнее",

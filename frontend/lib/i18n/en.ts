@@ -143,6 +143,7 @@ const en = {
   "redesign.review.theModelWasNotSureAboutYour": "The model was not sure about your meal. Only your answers are sent, without a photo.",
   "redesign.review.submitting": "Submitting…",
   "redesign.review.submit": "Submit",
+  'redesign.review.reviewHeading': 'Review meal',
   "header.space": "Personal space",
   "sidebar.caption": "YOUR HEALTH",
   "dashboard.overviewTitle": "Every day, a little clearer",

@@ -228,7 +228,7 @@ export default function FoodHistoryPage() {
         )}
 
         {dayGroups.map(day => (
-          <section key={day.dateKey} className="hv-card mb-6">
+          <section key={day.dateKey} data-testid="food-day-section" data-date={day.dateKey} className="hv-card mb-6">
             <div data-testid="day-header" className="mb-3 pb-4 border-b border-border">
               {/* Two rows, because the date, the completeness control and the day's
                   totals cannot share one at a phone width — their combined natural
