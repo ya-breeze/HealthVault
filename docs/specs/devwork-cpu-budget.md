@@ -30,6 +30,6 @@ make lint
 ```
 
 ### Task 1: Add the optional development CPU overlay
-- [ ] Add `compose.cpu-policy.yml` for the exact development service set.
-- [ ] Verify that the overlay changes only `cpuset` and preserves the base Compose files.
-- [ ] Mark completed
+- [x] Add `compose.cpu-policy.yml` for the exact development service set.
+- [x] Verify that the overlay changes only `cpuset` and preserves the base Compose files.
+- [x] Mark completed

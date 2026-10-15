@@ -1,0 +1,5 @@
+services:
+  backend:
+    cpuset: "1,2,3"
+  nginx:
+    cpuset: "1,2,3"
