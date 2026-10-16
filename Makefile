@@ -5,7 +5,7 @@ ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 # which the USDA food index depends on. Keep it on build, test and vet alike.
 GO_TAGS := sqlite_fts5
 
-.PHONY: all build test test-backend test-frontend test-android test-e2e lint lint-android lint-e2e run-backend android-apk
+.PHONY: all build test test-backend test-frontend test-android test-e2e test-workflows lint lint-android lint-e2e run-backend android-apk
 
 all: build
 
@@ -23,6 +23,10 @@ test-backend:
 
 test-frontend:
 	@cd $(ROOT_DIR)/frontend && npm test --silent
+
+# Requires Python 3 and PyYAML. This reads workflow files without starting jobs.
+test-workflows:
+	@cd $(ROOT_DIR) && python3 -m unittest discover -s tests/workflows -p 'test_*.py'
 
 # android/README.md has the SDK setup this needs. Both android/local.properties
 # and $ANDROID_HOME are absent in this environment, so this prints a visible

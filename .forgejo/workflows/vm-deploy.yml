@@ -1,0 +1,26 @@
+name: VM deployment
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    if: forgejo.event_name == 'push' && forgejo.ref == 'refs/heads/main'
+    runs-on: vm-deploy-trusted
+    timeout-minutes: 45
+    env:
+      FORGEJO_ACTIONS: 'true'
+      FORGEJO_EVENT_NAME: ${{ forgejo.event_name }}
+      FORGEJO_REF: ${{ forgejo.ref }}
+      FORGEJO_SHA: ${{ forgejo.sha }}
+      FORGEJO_REPOSITORY: ${{ forgejo.repository }}
+    steps:
+      - name: Deploy exact main revision
+        run: python3 /opt/vm-deploy/ci.py healthvault
+      - name: Report interrupted or failed job
+        if: failure() || cancelled()
+        run: >-
+          python3 /opt/vm-deploy/deploy.py healthvault "$FORGEJO_SHA"
+          --config /etc/vm-deploy/healthvault.json
+          --activation /etc/vm-deploy/healthvault.activation.json
+          --result /var/lib/vm-deploy/healthvault/ci-finalizer.json
+          --ci --notify-only
