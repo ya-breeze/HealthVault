@@ -38,6 +38,9 @@ type Config struct {
 	OFFDBPath      string
 	MaxUploadBytes int64
 	VisionTimeout  time.Duration
+
+	// Local providers for an isolated disposable test stack only.
+	DisposableE2E bool
 }
 
 func Load() (*Config, error) {
@@ -73,6 +76,7 @@ func Load() (*Config, error) {
 
 		OpenAIAPIKey:   viper.GetString("OPENAI_API_KEY"),
 		OpenAIModel:    viper.GetString("OPENAI_MODEL"),
+		DisposableE2E:  viper.GetBool("DISPOSABLE_E2E"),
 		UploadsDir:     viper.GetString("UPLOADS_DIR"),
 		USDADBPath:     viper.GetString("USDA_DB_PATH"),
 		OFFDBPath:      viper.GetString("OFF_DB_PATH"),

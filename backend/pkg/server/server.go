@@ -17,7 +17,6 @@ import (
 	"github.com/ya-breeze/healthvault/pkg/mcpserver"
 	"github.com/ya-breeze/healthvault/pkg/off"
 	"github.com/ya-breeze/healthvault/pkg/usda"
-	"github.com/ya-breeze/healthvault/pkg/vision"
 	"github.com/ya-breeze/healthvault/pkg/weather"
 	"github.com/ya-breeze/kin-core/cookies"
 )
@@ -82,12 +81,12 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	}
 	defer offIndex.Close() //nolint:errcheck
 
-	// Without an API key, every photo upload fails with vision.ErrNotConfigured;
-	// manual entry, custom foods, and search need no vision access at all.
-	var visionClient vision.Client = vision.Unconfigured{}
-	if cfg.OpenAIAPIKey != "" {
-		visionClient = vision.NewOpenAIClient(cfg.OpenAIAPIKey, cfg.OpenAIModel)
+	// Ordinary runtime uses the configured model or fails closed without a key.
+	// Disposable E2E instead uses local providers, even if a key is present.
+	if cfg.DisposableE2E {
+		logger.Warn("disposable E2E providers enabled; never use with real data")
 	}
+	visionClient, weatherProvider := selectProviders(cfg)
 	fh := NewFoodHandlers(storage, usdaIndex, cfg.UploadsDir).
 		WithVision(visionClient, cfg.MaxUploadBytes, cfg.VisionTimeout).
 		WithOFF(offIndex)
@@ -102,7 +101,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	weatherStore := &weather.Store{DB: storage.DB()}
 	weatherCtx, stopWeather := context.WithCancel(ctx)
 	defer stopWeather()
-	go weatherStore.Run(weatherCtx, weather.NewOpenMeteo(), captureBarrier, logger)
+	go weatherStore.Run(weatherCtx, weatherProvider, captureBarrier, logger)
 	var backupRunner backupapi.Runner = backupapi.RunnerFunc(backupapi.UnconfiguredRunner)
 	if cfg.BackupSpoolDir != "" && cfg.BackupAgeRecipient != "" && cfg.BackupEncryptionKeyID != "" {
 		backupRunner = &backupapi.SetRunner{DatabasePath: cfg.DBPath, UploadsDir: cfg.UploadsDir,

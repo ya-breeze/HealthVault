@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "post_publish_e2e": {
+    "required": true,
+    "make_target": "test-e2e",
+    "url_make_variable": "BASE_URL",
+    "env": {}
+  },
+  "environment": {
+    "provider": "ephemeral",
+    "profile": "healthvault-synthetic"
+  }
+}

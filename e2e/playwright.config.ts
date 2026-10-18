@@ -3,6 +3,8 @@ import { BASE_URL } from './tests/helpers/target';
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: process.env.HCW_DISPOSABLE_E2E === '1' ? './tests/helpers/disposable-seed.ts' : undefined,
+  forbidOnly: process.env.HCW_DISPOSABLE_E2E === '1',
   timeout: 30_000,
   retries: 1,
   // Every spec file logs in as the same seeded account against one shared

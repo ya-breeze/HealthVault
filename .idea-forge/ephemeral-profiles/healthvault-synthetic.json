@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "project": "HealthVault",
+  "repository": "forgejo:shared/HealthVault",
+  "adapter": {
+    "name": "useful-synthetic",
+    "version": 1
+  },
+  "parameters": {}
+}
