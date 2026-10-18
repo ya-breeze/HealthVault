@@ -992,6 +992,30 @@ test.describe('Editing a confirmed meal', () => {
   });
 });
 
+// Record fetch calls synchronously in the browser. Playwright's request and
+// route events can arrive after a held response is released, so those events
+// cannot prove when a queued mutation was actually started.
+async function recordMealMutationStarts(page: Page) {
+  await page.addInitScript(() => {
+    const nativeFetch = window.fetch.bind(window);
+    const starts: string[] = [];
+    (window as Window & { __mealMutationStarts?: string[] }).__mealMutationStarts = starts;
+    window.fetch = (...args) => {
+      const [input, options] = args;
+      const method = (options?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+      const pathname = new URL(input instanceof Request ? input.url : String(input), location.href).pathname;
+      if ((method === 'PATCH' || method === 'DELETE') && pathname.includes('/api/')) {
+        starts.push(`${method} ${pathname}`);
+      }
+      return nativeFetch(...args);
+    };
+  });
+}
+
+async function mealMutationStarts(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as Window & { __mealMutationStarts?: string[] }).__mealMutationStarts ?? []);
+}
+
 test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)', () => {
   test('shows sodium and fiber before confirmation and edits them from prefilled values', async ({ page }) => {
     await login(page);
@@ -1371,6 +1395,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     page,
   }) => {
     await login(page);
+    await recordMealMutationStarts(page);
     const twoItems = mockFoodMeal({
       items: [
         { ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 },
@@ -1389,17 +1414,22 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     const afterWeightEditAndDelete = mockFoodMeal({
       items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 175 }],
     });
+    let releaseWeight!: () => void;
+    const weightHeld = new Promise<void>(resolve => { releaseWeight = resolve; });
+    let deleteRequested = false;
 
     await page.route('**/api/food/meals/mock-meal-id', route =>
       route.request().method() === 'GET' ? route.fulfill({ json: twoItems }) : route.continue()
     );
     await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
-      await new Promise(resolve => setTimeout(resolve, 400));
+      await weightHeld;
       return route.fulfill({ json: afterWeightEditOnly });
     });
-    await page.route('**/api/food/meals/mock-meal-id/items/item-2', route =>
-      route.request().method() === 'DELETE' ? route.fulfill({ json: afterWeightEditAndDelete }) : route.continue()
-    );
+    await page.route('**/api/food/meals/mock-meal-id/items/item-2', route => {
+      if (route.request().method() !== 'DELETE') return route.continue();
+      deleteRequested = true;
+      return route.fulfill({ json: afterWeightEditAndDelete });
+    });
 
     await page.goto('/food/review/?meal=mock-meal-id');
     await expect(page.getByText('Keep Me')).toBeVisible();
@@ -1408,21 +1438,19 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(page.getByText('Delete Me', { exact: true })).toBeVisible();
 
     const weightInputs = page.locator('input[type="number"]');
-    const start = Date.now();
+    const weightRequest = page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-1');
     await weightInputs.first().fill('175');
-    await weightInputs.first().blur(); // queues the slow weight PATCH (in flight for 400ms)
+    await weightInputs.first().blur();
+    await weightRequest;
     // Delete is a two-step confirm (see MealItemRow's confirmingDelete state);
     // only the Confirm click actually issues the delete mutation.
     await page.locator('button[title="Delete item"]').last().click();
-    await page.getByRole('button', { name: 'Confirm' }).click(); // queued behind the weight PATCH, not sent yet
-
-    // The delete's own network request must not go out until the weight
-    // edit ahead of it in the queue has resolved — asserting on elapsed
-    // time (rather than DOM visibility, which could pass either way
-    // depending on render timing) is what actually proves the two
-    // mutations were serialized rather than raced.
-    await page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-2');
-    expect(Date.now() - start).toBeGreaterThanOrEqual(350);
+    const deleteRequest = page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-2');
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    expect(await mealMutationStarts(page)).toEqual(['PATCH /api/food/meals/mock-meal-id/items/item-1']);
+    releaseWeight();
+    await deleteRequest;
+    await expect.poll(() => deleteRequested).toBe(true);
 
     await expect(page.getByText('Delete Me', { exact: true })).not.toBeVisible();
     await expect(page.getByText('Keep Me')).toBeVisible();
@@ -1442,19 +1470,22 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     page,
   }) => {
     await login(page);
+    await recordMealMutationStarts(page);
     const initial = mockFoodMeal({
       items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 }],
     });
     const afterWeightEditOnly = mockFoodMeal({
       items: [{ ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 175 }],
     });
+    let releaseWeight!: () => void;
+    const weightHeld = new Promise<void>(resolve => { releaseWeight = resolve; });
     let deleteRequested = false;
 
     await page.route('**/api/food/meals/mock-meal-id', route =>
       route.request().method() === 'GET' ? route.fulfill({ json: initial }) : route.continue()
     );
     await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
-      await new Promise(resolve => setTimeout(resolve, 400));
+      await weightHeld;
       return route.fulfill({ json: afterWeightEditOnly });
     });
     await page.route('**/api/data/food_meal/mock-meal-id', route => {
@@ -1469,19 +1500,16 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await expect(page.getByText('Keep Me')).toBeVisible();
 
     const weightInput = page.locator('input[type="number"]').first();
-    const start = Date.now();
+    const weightRequest = page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-1');
     await weightInput.fill('175');
-    await weightInput.blur(); // queues the slow weight PATCH (in flight for 400ms)
+    await weightInput.blur();
+    await weightRequest;
     await page.getByRole('button', { name: 'Delete meal' }).click();
-    await page.getByRole('button', { name: 'Confirm' }).click(); // must wait behind the weight PATCH
-
-    // Wait on the delete request itself — the one actually gated by the
-    // queue — not the weight PATCH: that request goes out immediately on
-    // blur (only its *response* is delayed), so a waitForRequest set up
-    // this late would miss it and hang, the same trap the ordering here is
-    // designed to catch on the delete side instead.
-    await page.waitForRequest('**/api/data/food_meal/mock-meal-id');
-    expect(Date.now() - start).toBeGreaterThanOrEqual(350);
+    const deleteRequest = page.waitForRequest('**/api/data/food_meal/mock-meal-id');
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    expect(await mealMutationStarts(page)).toEqual(['PATCH /api/food/meals/mock-meal-id/items/item-1']);
+    releaseWeight();
+    await deleteRequest;
 
     await page.waitForURL(/\/food\/history\/?$/);
     expect(deleteRequested).toBe(true);
@@ -1700,6 +1728,7 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
   // itself, waits its turn.
   test('an edit queued after Confirm still runs after the delete, not racing it', async ({ page }) => {
     await login(page);
+    await recordMealMutationStarts(page);
     const twoItems = mockFoodMeal({
       items: [
         { ...mockFoodMeal().items[0], id: 'item-1', name: 'Keep Me', weight_grams: 100 },
@@ -1707,12 +1736,16 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
       ],
     });
     const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>(resolve => { releaseFirst = resolve; });
+    let releaseDelete!: () => void;
+    const deleteHeld = new Promise<void>(resolve => { releaseDelete = resolve; });
 
     await page.route('**/api/food/meals/mock-meal-id', route =>
       route.request().method() === 'GET' ? route.fulfill({ json: twoItems }) : route.continue()
     );
     await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
-      await new Promise(resolve => setTimeout(resolve, 400));
+      await firstHeld;
       order.push('item-1');
       return route.fulfill({ json: twoItems });
     });
@@ -1720,9 +1753,10 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
       order.push('item-2');
       return route.fulfill({ json: twoItems });
     });
-    await page.route('**/api/data/food_meal/mock-meal-id', route => {
+    await page.route('**/api/data/food_meal/mock-meal-id', async route => {
       if (route.request().method() === 'DELETE') {
         order.push('delete');
+        await deleteHeld;
         return route.fulfill({ status: 204 });
       }
       return route.continue();
@@ -1731,14 +1765,26 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.goto('/food/review/?meal=mock-meal-id');
     const weightInputs = page.locator('input[type="number"]');
 
+    const firstRequest = page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-1');
     await weightInputs.first().fill('175');
-    await weightInputs.first().blur(); // queues item-1's slow PATCH (400ms)
+    await weightInputs.first().blur();
+    await firstRequest;
     await page.getByRole('button', { name: 'Delete meal' }).click();
+    const deleteRequest = page.waitForRequest('**/api/data/food_meal/mock-meal-id');
     await page.getByRole('button', { name: 'Confirm' }).click(); // claims the queue slot right behind item-1
 
     // Queued only after Confirm was clicked — must chain behind the delete.
     await weightInputs.last().fill('150');
     await weightInputs.last().blur();
+    expect(await mealMutationStarts(page)).toEqual(['PATCH /api/food/meals/mock-meal-id/items/item-1']);
+    releaseFirst();
+
+    await deleteRequest;
+    expect(await mealMutationStarts(page)).toEqual([
+      'PATCH /api/food/meals/mock-meal-id/items/item-1',
+      'DELETE /api/data/food_meal/mock-meal-id',
+    ]);
+    releaseDelete();
 
     await page.waitForURL(/\/food\/history\/?$/);
     await expect.poll(() => order).toEqual(['item-1', 'delete', 'item-2']);
@@ -1756,9 +1802,8 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
   // waits for that trailing mutation to settle first, and a shared
   // mealGoneRef suppresses the "Update failed" toast that mutation would
   // otherwise show — it's fallout from the user's own delete, not a real
-  // failure. item-2's edit is given its own delay here (distinct from
-  // item-1's) so there's a clear window, after the delete itself has
-  // resolved, in which navigation must NOT yet have happened. Its route
+  // failure. Hold both edits explicitly so there is a clear window after
+  // the delete resolves in which navigation must NOT yet happen. Its route
   // returns 404, matching what the real backend does once the parent meal
   // is gone (not the 200 the "still runs after the delete" test above uses,
   // which only checks ordering, not this failure-suppression behavior).
@@ -1771,18 +1816,22 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
       ],
     });
     const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>(resolve => { releaseFirst = resolve; });
+    let releaseSecond!: () => void;
+    const secondHeld = new Promise<void>(resolve => { releaseSecond = resolve; });
 
     await page.route('**/api/food/meals/mock-meal-id', route =>
       route.request().method() === 'GET' ? route.fulfill({ json: twoItems }) : route.continue()
     );
     await page.route('**/api/food/meals/mock-meal-id/items/item-1', async route => {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await firstHeld;
       order.push('item-1');
       return route.fulfill({ json: twoItems });
     });
     await page.route('**/api/food/meals/mock-meal-id/items/item-2', async route => {
-      await new Promise(resolve => setTimeout(resolve, 300));
       order.push('item-2');
+      await secondHeld;
       // Matches real backend behavior: PatchMealItem 404s once its parent
       // meal has been hard-deleted.
       return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
@@ -1798,21 +1847,25 @@ test.describe('Editing a confirmed meal — mocked UI behavior (deterministic)',
     await page.goto('/food/review/?meal=mock-meal-id');
     const weightInputs = page.locator('input[type="number"]');
 
+    const firstRequest = page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-1');
     await weightInputs.first().fill('175');
-    await weightInputs.first().blur(); // queues item-1's slow PATCH (300ms)
+    await weightInputs.first().blur();
+    await firstRequest;
     await page.getByRole('button', { name: 'Delete meal' }).click();
+    const secondRequest = page.waitForRequest('**/api/food/meals/mock-meal-id/items/item-2');
     await page.getByRole('button', { name: 'Confirm' }).click(); // claims the queue slot right behind item-1
 
     // Queued only after Confirm was clicked — must chain behind the delete.
     await weightInputs.last().fill('150');
-    await weightInputs.last().blur(); // item-2's own slow PATCH (300ms), issued only once the delete settles
+    await weightInputs.last().blur();
+    releaseFirst();
+    await secondRequest;
 
-    // The delete has settled, but item-2 (issued right after) hasn't yet —
-    // navigation must still be pending.
-    await expect.poll(() => order).toEqual(['item-1', 'delete']);
+    // The delete has settled, but item-2 is held — navigation must still be pending.
+    await expect.poll(() => order).toEqual(['item-1', 'delete', 'item-2']);
     await expect(page).toHaveURL(/\/food\/review\//);
 
-    await expect.poll(() => order).toEqual(['item-1', 'delete', 'item-2']);
+    releaseSecond();
     await page.waitForURL(/\/food\/history\/?$/);
     await expect(page.getByRole('status').filter({ hasText: 'Update failed' })).not.toBeVisible();
   });
