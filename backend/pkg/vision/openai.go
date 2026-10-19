@@ -204,8 +204,41 @@ func languageDirective(displayLanguage string) string {
 }
 
 // estimatedProfileUnitsDirective is shared by photo, description, and
-// clarification recognition so every path uses the same per-100g units.
+// clarification recognition so every path uses the same as-eaten basis and
+// per-100g units.
 const estimatedProfileUnitsDirective = `
+
+Estimate calories and every nutrient for the food as eaten, in the same
+state as its reported weight, preparation, and state fields. For a served
+meal, use the edible prepared food, not its dry or raw ingredients. Account
+for water absorbed or lost during cooking and for added oil, sauces, and
+other ingredients. Never apply a dry ingredient's per-100g profile to the
+weight of the cooked food.
+
+In an ordinary meal, buckwheat, rice, pasta, and other grains mean cooked
+food unless the user explicitly specifies a dry or raw ingredient. Infer
+the ordinary cooked preparation from this meal context without asking
+whether the user ate dry grains. For example, a 150 g portion of buckwheat
+means 150 g of boiled buckwheat including absorbed water, not 150 g of dry
+groats. Its entire estimated_profile must describe the cooked buckwheat.
+This also applies to a bare description such as "гречка 150 г": the meal
+context implies boiled buckwheat even when "boiled" was not written.
+
+Before returning the result, check every nutrient against the as-eaten
+state, not just calories. As a consistency example, plain boiled buckwheat
+is roughly 92 kcal, 3.4 g protein, 20 g carbs, 0.6 g fat, and 2.7 g fiber
+per 100 g, with variation from water content. A profile near 343 kcal,
+13 g protein, 72 g carbs, and 10 g fiber describes dry groats and is wrong
+for that boiled portion. Correct the whole profile when it describes the
+dry ingredient; setting state to cooked without adjusting nutrients is
+not sufficient. Use the actual preparation, including added ingredients,
+rather than forcing every buckwheat dish to the plain-boiled example.
+
+Foods normally eaten without cooking, such as fruit, raw vegetables,
+yogurt, cheese, and nuts, keep their actual as-eaten state; do not invent a
+cooking step. Preserve explicitly stated dry or raw ingredient weights;
+do not silently reinterpret them as cooked weights or combine them with a
+cooked per-100g profile.
 
 estimated_profile fields are all per 100 g. calories_per_100g is kcal per
 100 g. protein_per_100g, carbs_per_100g, fat_per_100g, sugar_per_100g,
