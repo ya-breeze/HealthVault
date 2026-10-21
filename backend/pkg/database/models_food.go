@@ -31,6 +31,7 @@ const (
 	MacroSourceReference = "reference" // bound to an FDC or custom food, scaled by weight
 	MacroSourceManual    = "manual"    // values supplied directly by the user
 	MacroSourceEstimated = "estimated" // no reference/custom-food match; scaled from Recognize's own photo-derived estimate
+	MacroSourceHistory   = "history"   // frozen nutrition copied explicitly from a confirmed meal
 	MacroSourceNone      = "none"      // unresolved; zeroed, excluded from aggregates
 )
 
@@ -69,7 +70,9 @@ type FoodMeal struct {
 	DietaryFiberGrams float64 `gorm:"not null;default:0" json:"dietary_fiber_grams"`
 	SaturatedFatGrams float64 `gorm:"not null;default:0" json:"saturated_fat_grams"`
 
-	Items []FoodItem `gorm:"foreignKey:MealID" json:"items,omitempty"`
+	HistorySuggestion *MealHistorySuggestion `gorm:"serializer:json;type:text" json:"history_suggestion,omitempty"`
+	HistoryVersion    string                 `gorm:"-" json:"history_version"`
+	Items             []FoodItem             `gorm:"foreignKey:MealID" json:"items,omitempty"`
 }
 
 // MealCookingContext records the owner's added-salt choice, not a measured salt amount.
@@ -115,12 +118,17 @@ type FoodItem struct {
 	// brand was legible, not that the food is unbranded.
 	Brand string `gorm:"type:varchar(128)" json:"brand,omitempty"`
 
-	FdcID        *int64     `gorm:"index" json:"fdc_id,omitempty"`
-	CustomFoodID *uuid.UUID `gorm:"type:uuid;index" json:"custom_food_id,omitempty"`
-	OffCode      *string    `gorm:"index" json:"off_code,omitempty"`
-	MacroSource  string     `gorm:"type:varchar(16);not null;default:'none'" json:"macro_source"`
-	WeightGrams  float64    `gorm:"not null" json:"weight_grams"`
-	Confidence   float64    `gorm:"not null" json:"confidence"`
+	HistoryProfile            *NutrientProfile `gorm:"serializer:json;type:text" json:"history_profile,omitempty"`
+	HistorySourceMealID       *uuid.UUID       `gorm:"type:uuid" json:"history_source_meal_id,omitempty"`
+	HistorySourceItemID       *uuid.UUID       `gorm:"type:uuid" json:"history_source_item_id,omitempty"`
+	HistoryOriginalSource     string           `json:"history_original_source,omitempty"`
+	HistoryOriginalConfidence float64          `json:"history_original_confidence,omitempty"`
+	FdcID                     *int64           `gorm:"index" json:"fdc_id,omitempty"`
+	CustomFoodID              *uuid.UUID       `gorm:"type:uuid;index" json:"custom_food_id,omitempty"`
+	OffCode                   *string          `gorm:"index" json:"off_code,omitempty"`
+	MacroSource               string           `gorm:"type:varchar(16);not null;default:'none'" json:"macro_source"`
+	WeightGrams               float64          `gorm:"not null" json:"weight_grams"`
+	Confidence                float64          `gorm:"not null" json:"confidence"`
 
 	Calories          float64 `gorm:"not null" json:"calories"`
 	ProteinGrams      float64 `gorm:"not null" json:"protein_grams"`
@@ -269,7 +277,7 @@ func (i *FoodItem) SetIngredientReferenceProfile(p NutrientProfile) {
 // HasMacros reports whether the item contributes to its meal's aggregate.
 func (i FoodItem) HasMacros() bool {
 	return i.MacroSource == MacroSourceReference || i.MacroSource == MacroSourceManual ||
-		i.MacroSource == MacroSourceEstimated
+		i.MacroSource == MacroSourceEstimated || i.MacroSource == MacroSourceHistory
 }
 
 // SetEstimatedProfile persists Recognize's per-item estimate (nil when

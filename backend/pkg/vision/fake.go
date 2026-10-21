@@ -30,14 +30,16 @@ type Fake struct {
 	// arguments, in order, so a test can assert on what was actually sent
 	// (e.g. that a re-analysis used the same photo, that a clarify round
 	// carried no image content, or which candidates were offered).
-	RecognizeCalls       []RecognizeCall
-	EstimateWeightsCalls []EstimateWeightsCall
-	ClarifyCalls         []ClarifyCall
-	SelectCalls          [][]ItemCandidates
-	TranslateCalls       []string
-	AdviseCalls          []AdviceInput
-	NutritionChatCalls   []NutritionChatInput
-	DescribeCalls        []DescribeCall
+	RecognizeCalls            []RecognizeCall
+	RecognizeWithHistoryCalls []RecognizeWithHistoryCall
+	EstimateWeightsCalls      []EstimateWeightsCall
+	ClarifyCalls              []ClarifyCall
+	ClarifyWithHistoryCalls   []ClarifyWithHistoryCall
+	SelectCalls               [][]ItemCandidates
+	TranslateCalls            []string
+	AdviseCalls               []AdviceInput
+	NutritionChatCalls        []NutritionChatInput
+	DescribeCalls             []DescribeCall
 }
 
 // DescribeCall records one Describe invocation.
@@ -60,6 +62,19 @@ type RecognizeCall struct {
 	DisplayLanguage string
 }
 
+type RecognizeWithHistoryCall struct {
+	RecognizeCall
+	History []HistoryMeal
+}
+
+func (f *Fake) RecognizeWithHistory(ctx context.Context, image []byte, mimeType, hint, displayLanguage string, history []HistoryMeal) (*RecognizeResult, error) {
+	f.RecognizeWithHistoryCalls = append(f.RecognizeWithHistoryCalls, RecognizeWithHistoryCall{
+		RecognizeCall: RecognizeCall{Image: image, MimeType: mimeType, Hint: hint, DisplayLanguage: displayLanguage},
+		History:       history,
+	})
+	return f.Recognize(ctx, image, mimeType, hint, displayLanguage)
+}
+
 func (f *Fake) EstimateWeights(_ context.Context, image []byte, mimeType string, components []WeightEstimateInput) (*WeightEstimateResult, error) {
 	f.EstimateWeightsCalls = append(f.EstimateWeightsCalls, EstimateWeightsCall{Image: image, MimeType: mimeType, Components: components})
 	if f.EstimateWeightsErr != nil {
@@ -77,6 +92,19 @@ type ClarifyCall struct {
 	PriorItems      []Item
 	History         []ClarifyTurn
 	DisplayLanguage string
+}
+
+type ClarifyWithHistoryCall struct {
+	ClarifyCall
+	HistoryMeals []HistoryMeal
+}
+
+func (f *Fake) ClarifyWithHistory(ctx context.Context, description string, priorItems []Item, historyTurns []ClarifyTurn, displayLanguage string, historyMeals []HistoryMeal) (*RecognizeResult, error) {
+	f.ClarifyWithHistoryCalls = append(f.ClarifyWithHistoryCalls, ClarifyWithHistoryCall{
+		ClarifyCall:  ClarifyCall{Description: description, PriorItems: priorItems, History: historyTurns, DisplayLanguage: displayLanguage},
+		HistoryMeals: historyMeals,
+	})
+	return f.Clarify(ctx, description, priorItems, historyTurns, displayLanguage)
 }
 
 func (f *Fake) Recognize(_ context.Context, image []byte, mimeType, hint, displayLanguage string) (*RecognizeResult, error) {

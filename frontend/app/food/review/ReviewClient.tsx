@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, FoodMeal, pendingClarifyQuestions } from '@/lib/api';
 import ClarifyModal from '@/components/food/ClarifyModal';
+import RecentMealSuggestion from '@/components/food/RecentMealSuggestion';
 import MealItemRow from '@/components/food/MealItemRow';
 import AddItemForm from '@/components/food/AddItemForm';
 import ReanalyzeControl from '@/components/food/ReanalyzeControl';
@@ -22,10 +23,16 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const { t } = useLanguage();
   const [expertMode, setExpertMode] = useState(false);
   const [meal, setMeal] = useState<FoodMeal | null>(null);
+  const mealRef = useRef<FoodMeal | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [timezone, setTimezone] = useState('UTC');
+
+  useEffect(() => {
+    api.getSettings().then(settings => setTimezone(settings.timezone || 'UTC')).catch(() => {});
+  }, []);
 
   // Every mutation control below (item rows, add-item, meal name/time,
   // reanalyze, retry, clarify, confirm) needs its resulting FoodMeal
@@ -75,6 +82,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
   const applyMealUpdate = useCallback((issue: () => Promise<FoodMeal>, label?: string): Promise<FoodMeal> => {
     return claimSlot(issue)
       .then(result => {
+        mealRef.current = result;
         setMeal(result);
         showToast(label ?? t('review.saved'), 'success');
         return result;
@@ -122,7 +130,7 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
     setLoading(true);
     setLoadError(null);
     api.getMeal(mealId)
-      .then(setMeal)
+      .then(result => { mealRef.current = result; setMeal(result); })
       .catch(err => setLoadError(err instanceof Error ? err.message : t('review.loadFailed')))
       .finally(() => setLoading(false));
   };
@@ -143,6 +151,31 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
 
   const handleClarify = async (answers: string[]) => {
     await applyMealUpdate(() => api.clarifyMeal(mealId, answers), t('review.clarificationSubmitted'));
+  };
+
+  const handleHistoryAction = async (action: 'apply' | 'dismiss') => {
+    setBusy(true);
+    try {
+      // Read only when the queue reaches this operation. A preceding weight
+      // blur can finish after this click and produce a new target version.
+      return await applyMealUpdate(() => {
+        const version = mealRef.current?.history_version;
+        if (!version) throw new Error(t('mealHistory.stale'));
+        return api.resolveMealHistory(mealId, action, version);
+      },
+        t(action === 'apply' ? 'mealHistory.applied' : 'mealHistory.dismissed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleHistoryRefresh = async () => {
+    setBusy(true);
+    try {
+      return await applyMealUpdate(() => api.getMeal(mealId));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleConfirm = async () => {
@@ -212,6 +245,12 @@ export default function ReviewClient({ mealId }: { mealId: string }) {
             />
           )}
         </div>
+
+        <RecentMealSuggestion meal={meal} timezone={timezone} busy={busy}
+          onAction={handleHistoryAction} onRefresh={handleHistoryRefresh} />
+        {items.some(item => item.macro_source === 'history') && (
+          <p data-testid="history-copy-notice" className="mb-4 text-sm text-text-muted">{t('mealHistory.reviewCopy')}</p>
+        )}
 
         {meal.description && (
           <div className="mb-4 bg-bg-elevated rounded-xl border border-border px-4 py-3">

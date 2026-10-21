@@ -5,7 +5,7 @@ import ItemResolver, { type NutrientValues } from './ItemResolver';
 import TapTarget from '@/components/ui/TapTarget';
 import CanonicalNameLabel from '@/components/food/CanonicalNameLabel';
 import { useLanguage } from '@/components/LanguageContext';
-import { macroSourceLabel, type Dictionary } from '@/lib/i18n';
+import { interpolate, macroSourceLabel, type Dictionary } from '@/lib/i18n';
 
 interface Props {
   mealId: string;
@@ -23,6 +23,7 @@ interface Props {
 const SOURCE_COLOR: Record<string, string> = {
   reference: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   manual: 'bg-accent/10 text-accent',
+  history: 'bg-accent/10 text-accent',
   // Distinct from both "manual" (a value the user typed) and "none"
   // (nothing at all) — an estimated item has real macro values, but they're
   // a model guess, not a database fact or something the user confirmed.
@@ -72,12 +73,12 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
   const commitWeight = async () => {
     if (weight === item.weight_grams) return;
     // Mirrors PatchMealItem's server-side check: a non-positive weight on a
-    // reference- or estimated-sourced item would rescale it to negative or
+    // reference-, estimated- or history-sourced item would rescale it to negative or
     // zero macros (see ApplyProfile/ApplyEstimatedProfile), and the backend
     // now rejects both. Only applies to those two sources — a manual item's
     // weight is metadata, not a scale factor, so it's not restricted here.
-    if ((item.macro_source === 'reference' || item.macro_source === 'estimated') && weight <= 0) {
-      setError(t(item.macro_source === 'estimated' ? 'item.weightPositiveEstimated' : 'item.weightPositiveMatched'));
+    if ((item.macro_source === 'reference' || item.macro_source === 'estimated' || item.macro_source === 'history') && weight <= 0) {
+      setError(t(item.macro_source === 'history' ? 'mealHistory.weightPositive' : item.macro_source === 'estimated' ? 'item.weightPositiveEstimated' : 'item.weightPositiveMatched'));
       setWeight(item.weight_grams);
       return;
     }
@@ -166,6 +167,18 @@ export default function MealItemRow({ mealId, item, onUpdated, expertMode }: Pro
           <span className={`inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded ${SOURCE_COLOR[item.macro_source]}`}>
             {macroSourceLabel(t, item.macro_source)}
           </span>
+          {item.macro_source === 'history' && (
+            <div data-testid={`history-provenance-${item.id}`} className="mt-2 text-xs text-text-muted">
+              <span className={`inline-block rounded px-1.5 py-0.5 ${SOURCE_COLOR[item.history_original_source || 'none'] || ''}`}>
+                {interpolate(t('mealHistory.originalSource'), { source: macroSourceLabel(t, item.history_original_source || 'none') })}
+              </span>
+              {item.history_original_source === 'estimated' && <p>{t('mealHistory.estimated')}</p>}
+              {item.history_source_meal_id && (
+                <TapTarget as="a" href={`/food/review/?meal=${encodeURIComponent(item.history_source_meal_id)}`}
+                  className="inline-flex items-center text-accent">{t('mealHistory.copied')}</TapTarget>
+              )}
+            </div>
+          )}
           {referenceSourceLabel(t, item) && (
             <span className="inline-block mt-1 ml-1 text-[11px] px-1.5 py-0.5 rounded bg-bg text-text-muted">
               {referenceSourceLabel(t, item)}

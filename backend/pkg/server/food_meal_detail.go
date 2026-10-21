@@ -28,6 +28,7 @@ func (h *foodHandlers) loadOwnedMeal(id, userID uuid.UUID) (*database.FoodMeal, 
 	if err != nil {
 		return nil, err
 	}
+	meal.SetHistoryVersion()
 	return &meal, nil
 }
 
@@ -172,7 +173,12 @@ func (h *foodHandlers) ConfirmMeal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "update error", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, meal)
+	current, loadErr := h.loadOwnedMeal(id, claims.UserID)
+	if loadErr != nil {
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, current)
 }
 
 // MealSummary is the response shape for GET /api/food/meals: enough for a
@@ -181,6 +187,7 @@ func (h *foodHandlers) ConfirmMeal(w http.ResponseWriter, r *http.Request) {
 // (the full model JSON blob), clarify_log, and tenant metadata, none of
 // which the list view needs.
 type MealSummary struct {
+	CanRepeat         bool      `json:"can_repeat"`
 	ID                uuid.UUID `json:"id"`
 	Name              string    `json:"name"`
 	LoggedAt          time.Time `json:"logged_at"`
@@ -321,9 +328,15 @@ func (h *foodHandlers) ListMeals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	canRepeat, err := h.repeatCapabilities(claims.UserID, meals, time.Now().UTC())
+	if err != nil {
+		http.Error(w, "query error", http.StatusInternalServerError)
+		return
+	}
 	summaries := make([]MealSummary, len(meals))
 	for i, m := range meals {
 		summaries[i] = MealSummary{
+			CanRepeat:         canRepeat[m.ID],
 			ID:                m.ID,
 			Name:              m.Name,
 			LoggedAt:          m.LoggedAt,

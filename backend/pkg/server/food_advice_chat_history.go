@@ -39,6 +39,7 @@ type nutritionChatSource struct {
 	NutrientGrams float64 `json:"nutrient_grams"`
 	MacroSource   string  `json:"macro_source"`
 	Confidence    float64 `json:"confidence"`
+	HistoryReused bool    `json:"history_reused,omitempty"`
 }
 
 type nutritionChatHistoryTools struct {
@@ -207,6 +208,7 @@ type nutritionSignalContributor struct {
 	ShareOfEligibleWindow float64   `json:"share_of_eligible_window"`
 	MacroSource           string    `json:"macro_source"`
 	Confidence            float64   `json:"confidence"`
+	HistoryReused         bool      `json:"history_reused,omitempty"`
 	MealID                uuid.UUID `json:"-"`
 	ItemID                uuid.UUID `json:"-"`
 }
@@ -317,9 +319,10 @@ func (t *nutritionChatHistoryTools) explainNutritionSignal(
 				if name == "" {
 					name = strings.TrimSpace(item.CanonicalName)
 				}
+				origin, confidence := item.NutritionOrigin()
 				result.Contributors = append(result.Contributors, nutritionSignalContributor{
 					Date: day.Date, Food: name, NutrientGrams: value,
-					MacroSource: item.MacroSource, Confidence: item.Confidence,
+					MacroSource: origin, Confidence: confidence, HistoryReused: item.MacroSource == database.MacroSourceHistory,
 					MealID: meal.ID, ItemID: item.ID,
 				})
 			}
@@ -364,7 +367,7 @@ func (t *nutritionChatHistoryTools) recordContributorSources(
 		t.sources = append(t.sources, nutritionChatSource{
 			Date: contributor.Date, MealID: contributor.MealID.String(), Food: contributor.Food,
 			Signal: signal, NutrientGrams: contributor.NutrientGrams,
-			MacroSource: contributor.MacroSource, Confidence: contributor.Confidence,
+			MacroSource: contributor.MacroSource, Confidence: contributor.Confidence, HistoryReused: contributor.HistoryReused,
 		})
 	}
 }
@@ -486,6 +489,7 @@ type nutritionDayItemResult struct {
 	SaturatedFatGrams float64 `json:"saturated_fat_grams"`
 	MacroSource       string  `json:"macro_source"`
 	Confidence        float64 `json:"confidence"`
+	HistoryReused     bool    `json:"history_reused,omitempty"`
 }
 
 type nutritionDayMealResult struct {
@@ -548,7 +552,7 @@ func (t *nutritionChatHistoryTools) getDayDetails(
 			Calories: meal.Calories, ProteinGrams: meal.ProteinGrams, CarbsGrams: meal.CarbsGrams,
 			FatGrams: meal.FatGrams, SugarGrams: meal.SugarGrams, SodiumGrams: meal.SodiumGrams,
 			DietaryFiberGrams: meal.DietaryFiberGrams, SaturatedFatGrams: meal.SaturatedFatGrams,
-				Items: make([]nutritionDayItemResult, 0),
+			Items: make([]nutritionDayItemResult, 0),
 		}
 		for _, item := range meal.Items {
 			if itemCount >= nutritionChatMaxDayItems {
@@ -559,13 +563,14 @@ func (t *nutritionChatHistoryTools) getDayDetails(
 			if name == "" {
 				name = strings.TrimSpace(item.CanonicalName)
 			}
+			origin, confidence := item.NutritionOrigin()
 			out.Items = append(out.Items, nutritionDayItemResult{
 				Food: name, WeightGrams: item.WeightGrams, Calories: item.Calories,
 				ProteinGrams: item.ProteinGrams, CarbsGrams: item.CarbsGrams,
 				FatGrams: item.FatGrams, SugarGrams: item.SugarGrams,
 				SodiumGrams: item.SodiumGrams, DietaryFiberGrams: item.DietaryFiberGrams,
 				SaturatedFatGrams: item.SaturatedFatGrams,
-				MacroSource:       item.MacroSource, Confidence: item.Confidence,
+				MacroSource:       origin, Confidence: confidence, HistoryReused: item.MacroSource == database.MacroSourceHistory,
 			})
 			itemCount++
 		}

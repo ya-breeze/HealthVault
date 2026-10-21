@@ -144,6 +144,7 @@ func (h *foodHandlers) CreateManualMeal(w http.ResponseWriter, r *http.Request) 
 	}
 
 	meal.Items = items
+	meal.SetHistoryVersion()
 	writeJSONStatus(w, http.StatusCreated, meal)
 }
 

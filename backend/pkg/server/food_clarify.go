@@ -159,7 +159,20 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 	if guidance := cookingContextGuidance(meal); guidance != "" {
 		history = append([]vision.ClarifyTurn{{Question: "Meal preparation context", Answer: guidance}}, history...)
 	}
-	recognized, err := h.vision.Clarify(ctx, meal.Description, priorItems, history, displayLanguage)
+	var recognized *vision.RecognizeResult
+	var recent []database.FoodMeal
+	if client, ok := h.vision.(vision.HistoryClarifier); ok && meal.PhotoPath != "" {
+		recent, err = h.recentHistory(meal.UserID, meal.ID, time.Now().UTC())
+		if err == nil {
+			if len(recent) > 0 {
+				recognized, err = client.ClarifyWithHistory(ctx, meal.Description, priorItems, history, displayLanguage, visionHistory(recent))
+			} else {
+				recognized, err = h.vision.Clarify(ctx, meal.Description, priorItems, history, displayLanguage)
+			}
+		}
+	} else {
+		recognized, err = h.vision.Clarify(ctx, meal.Description, priorItems, history, displayLanguage)
+	}
 	if err == nil {
 		carryForwardPriorFields(priorItems, recognized.Items, displayLanguage)
 	}
@@ -174,7 +187,7 @@ func (h *foodHandlers) ClarifyMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applied := true
-	if err := h.processRecognition(ctx, meal, recognized, lease, false, displayLanguage); err != nil {
+	if err := h.processRecognition(ctx, meal, recognized, lease, false, displayLanguage, recent); err != nil {
 		var failErr error
 		applied, failErr = h.failMeal(meal, lease)
 		if failErr != nil {

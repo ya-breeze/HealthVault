@@ -75,8 +75,9 @@ type IngredientEstimate struct {
 // photo. A non-empty ClarificationQuestions means the model could not
 // confidently recognize the photo well enough to proceed to matching.
 type RecognizeResult struct {
-	Items                  []Item   `json:"items"`
-	ClarificationQuestions []string `json:"clarification_questions,omitempty"`
+	Items                  []Item        `json:"items"`
+	ClarificationQuestions []string      `json:"clarification_questions,omitempty"`
+	HistoryMatch           *HistoryMatch `json:"history_match,omitempty"`
 
 	Model            string        `json:"model"`
 	PromptTokens     int           `json:"prompt_tokens"`

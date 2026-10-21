@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { api, DayCompletenessState, MealSummary } from '@/lib/api';
 import AuthenticatedShell from '@/components/AuthenticatedShell';
 import TapTarget from '@/components/ui/TapTarget';
+import RepeatMealButton from '@/components/food/RepeatMealButton';
+import { canRepeatMeal } from '@/lib/mealHistory';
 import DayCompletenessControl from '@/components/food/DayCompletenessControl';
 import HistorySettingsPanel from '@/components/food/HistorySettingsPanel';
 import { useLanguage } from '@/components/LanguageContext';
@@ -263,24 +265,24 @@ export default function FoodHistoryPage() {
             </div>
             <div className="bg-bg-elevated rounded-xl shadow-sm border border-border divide-y divide-border">
               {day.meals.map(meal => (
-                <TapTarget
-                  key={meal.id}
-                  as="a"
-                  href={`/food/review/?meal=${meal.id}`}
-                  className="flex items-center justify-between gap-3 px-2 py-4 hover:bg-bg transition-colors"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-text truncate">
-                      {meal.name || t('review.mealFallbackName')}
-                    </p>
-                    {/* Time only: the day header directly above already names the
-                        day, so a full date here is noise — and it has to be the
-                        stored zone, not the browser's, or a row can show a time
-                        belonging to a different day than the header it sits under.
-                        See loggedDayTime. */}
-                    <p data-testid="meal-meta" className="text-xs text-text-muted">
-                      {loggedDayTime(new Date(meal.logged_at), dateLocaleFor(language), timezone)} · {mealStatusLabel(t, meal.status)}
-                    </p>
+                <div key={meal.id} data-testid={`meal-history-row-${meal.id}`}>
+                  <TapTarget
+                    as="a"
+                    href={`/food/review/?meal=${meal.id}`}
+                    className="flex items-center justify-between gap-3 px-2 py-4 hover:bg-bg transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text truncate">
+                        {meal.name || t('review.mealFallbackName')}
+                      </p>
+                      {/* Time only: the day header directly above already names the
+                          day, so a full date here is noise — and it has to be the
+                          stored zone, not the browser's, or a row can show a time
+                          belonging to a different day than the header it sits under.
+                          See loggedDayTime. */}
+                      <p data-testid="meal-meta" className="text-xs text-text-muted">
+                        {loggedDayTime(new Date(meal.logged_at), dateLocaleFor(language), timezone)} · {mealStatusLabel(t, meal.status)}
+                      </p>
                   </div>
                   {meal.status === 'confirmed' && (
                     <span className="text-sm font-semibold text-text tabular-nums flex-shrink-0">
@@ -291,6 +293,8 @@ export default function FoodHistoryPage() {
                     </span>
                   )}
                 </TapTarget>
+                {canRepeatMeal(meal, timezone) && <RepeatMealButton mealId={meal.id} />}
+                </div>
               ))}
             </div>
           </section>

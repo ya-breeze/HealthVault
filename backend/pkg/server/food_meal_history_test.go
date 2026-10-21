@@ -173,7 +173,7 @@ func TestListMeals_SummaryOmitsInternalFields(t *testing.T) {
 		t.Fatalf("expected 1 row, got %d", len(rows))
 	}
 	wantKeys := map[string]bool{
-		"id": true, "name": true, "logged_at": true, "status": true,
+		"id": true, "name": true, "logged_at": true, "status": true, "can_repeat": true,
 		"calories": true, "protein_grams": true, "carbs_grams": true, "fat_grams": true, "dietary_fiber_grams": true,
 	}
 	for k := range rows[0] {

@@ -348,6 +348,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 
 		switch {
 		case req.Manual:
+			item.ClearHistory()
 			item.FdcID = nil
 			item.CustomFoodID = nil
 			item.OffCode = nil
@@ -384,6 +385,7 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 				item.CanonicalName = ""
 			}
 		case req.FdcID != nil || req.CustomFoodID != nil || req.OffCode != nil:
+			item.ClearHistory()
 			if req.WeightGrams != nil {
 				item.WeightGrams = *req.WeightGrams
 			}
@@ -437,6 +439,10 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 					return &itemMutationError{status: status, msg: err.Error()}
 				}
 				item.ApplyProfile(profile)
+			case database.MacroSourceHistory:
+				if !item.ApplyHistoryProfile() {
+					return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive for a history item"}
+				}
 			case database.MacroSourceEstimated:
 				if item.WeightGrams <= 0 {
 					return &itemMutationError{status: http.StatusBadRequest, msg: "weight_grams must be positive for an estimated item"}
@@ -510,21 +516,26 @@ func (h *foodHandlers) PatchMealItem(w http.ResponseWriter, r *http.Request) {
 		res := tx.Model(&database.FoodItem{}).
 			Where("id = ? AND updated_at = ?", item.ID, observedUpdatedAt).
 			Updates(map[string]any{
-				"fdc_id":              item.FdcID,
-				"custom_food_id":      item.CustomFoodID,
-				"off_code":            item.OffCode,
-				"macro_source":        item.MacroSource,
-				"weight_grams":        item.WeightGrams,
-				"name":                item.Name,
-				"canonical_name":      item.CanonicalName,
-				"calories":            item.Calories,
-				"protein_grams":       item.ProteinGrams,
-				"carbs_grams":         item.CarbsGrams,
-				"fat_grams":           item.FatGrams,
-				"sugar_grams":         item.SugarGrams,
-				"sodium_grams":        item.SodiumGrams,
-				"dietary_fiber_grams": item.DietaryFiberGrams,
-				"saturated_fat_grams": item.SaturatedFatGrams,
+				"history_profile":             historyProfileJSON(item.HistoryProfile),
+				"history_source_meal_id":      item.HistorySourceMealID,
+				"history_source_item_id":      item.HistorySourceItemID,
+				"history_original_source":     item.HistoryOriginalSource,
+				"history_original_confidence": item.HistoryOriginalConfidence,
+				"fdc_id":                      item.FdcID,
+				"custom_food_id":              item.CustomFoodID,
+				"off_code":                    item.OffCode,
+				"macro_source":                item.MacroSource,
+				"weight_grams":                item.WeightGrams,
+				"name":                        item.Name,
+				"canonical_name":              item.CanonicalName,
+				"calories":                    item.Calories,
+				"protein_grams":               item.ProteinGrams,
+				"carbs_grams":                 item.CarbsGrams,
+				"fat_grams":                   item.FatGrams,
+				"sugar_grams":                 item.SugarGrams,
+				"sodium_grams":                item.SodiumGrams,
+				"dietary_fiber_grams":         item.DietaryFiberGrams,
+				"saturated_fat_grams":         item.SaturatedFatGrams,
 			})
 		if res.Error != nil {
 			// A concurrent write landing between this transaction's read and

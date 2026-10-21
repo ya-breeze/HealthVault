@@ -79,8 +79,7 @@ export default function FoodUploadPage() {
         </nav>
         <section className="hv-card mx-auto max-w-3xl">
           <p className="text-sm text-text-muted mb-6">
-            Take or upload a photo of your meal. The photo is sent to an external AI model (OpenAI)
-            to identify foods and estimate portions — review and confirm before it&apos;s logged.
+            {t('photoDraft.providerDisclosure')}
           </p>
 
           {uploading ? (

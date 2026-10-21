@@ -15,6 +15,14 @@ var ErrNotConfigured = errors.New("OpenAI Vision is not configured (HCW_OPENAI_A
 // whole server down.
 type Unconfigured struct{}
 
+func (Unconfigured) ClarifyWithHistory(context.Context, string, []Item, []ClarifyTurn, string, []HistoryMeal) (*RecognizeResult, error) {
+	return nil, ErrNotConfigured
+}
+
+func (Unconfigured) RecognizeWithHistory(context.Context, []byte, string, string, string, []HistoryMeal) (*RecognizeResult, error) {
+	return nil, ErrNotConfigured
+}
+
 func (Unconfigured) Recognize(context.Context, []byte, string, string, string) (*RecognizeResult, error) {
 	return nil, ErrNotConfigured
 }

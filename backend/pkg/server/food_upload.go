@@ -201,11 +201,25 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 		return err
 	}
 	displayLanguage := DisplayLanguage(h.storage, meal.UserID)
-	recognized, err := h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), withCookingContext(meal, hint), displayLanguage)
+	var recognized *vision.RecognizeResult
+	var recent []database.FoodMeal
+	if client, ok := h.vision.(vision.HistoryRecognizer); ok {
+		recent, err = h.recentHistory(meal.UserID, meal.ID, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		if len(recent) > 0 {
+			recognized, err = client.RecognizeWithHistory(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), withCookingContext(meal, hint), displayLanguage, visionHistory(recent))
+		} else {
+			recognized, err = h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), withCookingContext(meal, hint), displayLanguage)
+		}
+	} else {
+		recognized, err = h.vision.Recognize(ctx, photoBytes, mimeTypeForExt(extOf(meal.PhotoPath)), withCookingContext(meal, hint), displayLanguage)
+	}
 	if err != nil {
 		return err
 	}
-	return h.processRecognition(ctx, meal, recognized, lease, strict, displayLanguage)
+	return h.processRecognition(ctx, meal, recognized, lease, strict, displayLanguage, recent)
 }
 
 // processRecognition persists the outcome of a Recognize or Clarify call.
@@ -225,8 +239,9 @@ func (h *foodHandlers) runAnalysis(ctx context.Context, meal *database.FoodMeal,
 // through to resolveItems.
 func (h *foodHandlers) processRecognition(
 	ctx context.Context, meal *database.FoodMeal, recognized *vision.RecognizeResult, lease time.Time, strict bool,
-	displayLanguage string,
+	displayLanguage string, recent ...[]database.FoodMeal,
 ) error {
+	meal.HistorySuggestion = nil
 	nextRound := meal.ClarifyRound + 1
 	if len(recognized.ClarificationQuestions) > 0 && nextRound <= database.MaxClarifyRounds {
 		items := unresolvedItemsFrom(recognized.Items, meal.ID, meal.UserID, meal.FamilyID)
@@ -240,6 +255,9 @@ func (h *foodHandlers) processRecognition(
 	items, err := h.resolveItems(ctx, meal, recognized.Items, strict, displayLanguage)
 	if err != nil {
 		return err
+	}
+	if len(recent) > 0 {
+		meal.HistorySuggestion = buildHistorySuggestion(recognized.HistoryMatch, recent[0], items)
 	}
 	return h.persistAnalysis(meal, database.MealStatusPendingReview, recognized.Raw, items, nil, lease)
 }
@@ -1099,7 +1117,8 @@ func (h *foodHandlers) persistAnalysis(
 ) error {
 	updates := map[string]any{
 		"status": status, "raw_response": rawResponse,
-		"calories": 0, "protein_grams": 0, "carbs_grams": 0, "fat_grams": 0,
+		"history_suggestion": historySuggestionJSON(meal.HistorySuggestion),
+		"calories":           0, "protein_grams": 0, "carbs_grams": 0, "fat_grams": 0,
 		"sugar_grams": 0, "sodium_grams": 0, "dietary_fiber_grams": 0, "saturated_fat_grams": 0,
 	}
 	if clarifyLog != nil {
@@ -1140,6 +1159,7 @@ func (h *foodHandlers) persistAnalysis(
 	if clarifyLog != nil {
 		meal.ClarifyLog = *clarifyLog
 	}
+	meal.SetHistoryVersion()
 	return nil
 }
 

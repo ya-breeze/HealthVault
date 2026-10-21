@@ -168,6 +168,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config, storage d
 	api.HandleFunc("/food/meals/{id}/retry", fh.RetryMeal).Methods("POST")
 	api.HandleFunc("/food/meals/{id}/reanalyze", fh.Reanalyze).Methods("POST")
 	api.HandleFunc("/food/meals/{id}/clarify", fh.ClarifyMeal).Methods("POST")
+	api.HandleFunc("/food/meals/{id}/history", fh.ResolveMealHistory).Methods("POST")
+	api.HandleFunc("/food/meals/{id}/repeat", fh.RepeatMeal).Methods("POST")
 	api.HandleFunc("/food/meals/{id}/confirm", fh.ConfirmMeal).Methods("PUT")
 	api.HandleFunc("/food/meals/{id}/items", fh.CreateMealItem).Methods("POST")
 	api.HandleFunc("/food/meals/{id}/items/{item_id}", fh.PatchMealItem).Methods("PATCH")

@@ -228,7 +228,9 @@ func (h *foodHandlers) phoneMealHistory(ctx context.Context, id uuid.UUID, p pho
 	}
 	var meals []database.FoodMeal
 	if err := q.Select("id", "logged_at", "name", "description", "status", "cooking_context", "calories", "protein_grams", "carbs_grams", "fat_grams", "sugar_grams", "sodium_grams", "dietary_fiber_grams", "saturated_fat_grams").
-		Preload("Items", func(db *gorm.DB) *gorm.DB { return db.Select("id", "meal_id", "macro_source").Where("user_id = ?", id) }).
+		Preload("Items", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id", "meal_id", "macro_source", "history_original_source").Where("user_id = ?", id)
+		}).
 		Order("logged_at DESC, id DESC").Limit(limit + 1).Find(&meals).Error; err != nil {
 		return out, errors.New("meal history unavailable")
 	}
@@ -244,7 +246,7 @@ func (h *foodHandlers) phoneMealHistory(ctx context.Context, id uuid.UUID, p pho
 			if !it.HasMacros() {
 				row.UnknownItems++
 			}
-			if it.MacroSource == database.MacroSourceEstimated {
+			if origin, _ := it.NutritionOrigin(); origin == database.MacroSourceEstimated {
 				row.EstimatedItems++
 			}
 		}
@@ -294,7 +296,9 @@ func (h *foodHandlers) phoneDailyTotals(ctx context.Context, id uuid.UUID, p pho
 		}
 		start, end := phoneWindow(p, loc)
 		var meals []database.FoodMeal
-		if err := db.Select("id", "logged_at", "status").Preload("Items", func(q *gorm.DB) *gorm.DB { return q.Select("id", "meal_id", "macro_source").Where("user_id = ?", id) }).
+		if err := db.Select("id", "logged_at", "status").Preload("Items", func(q *gorm.DB) *gorm.DB {
+			return q.Select("id", "meal_id", "macro_source", "history_original_source").Where("user_id = ?", id)
+		}).
 			Where("user_id = ? AND logged_at >= ? AND logged_at < ?", id, start, end).Find(&meals).Error; err != nil {
 			return err
 		}
@@ -315,7 +319,7 @@ func (h *foodHandlers) phoneDailyTotals(ctx context.Context, id uuid.UUID, p pho
 					if !it.HasMacros() {
 						c.UnknownConfirmedItems++
 					}
-					if it.MacroSource == database.MacroSourceEstimated {
+					if origin, _ := it.NutritionOrigin(); origin == database.MacroSourceEstimated {
 						c.EstimatedConfirmedItems++
 					}
 				}

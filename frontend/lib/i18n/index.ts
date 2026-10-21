@@ -146,6 +146,8 @@ export function macroSourceLabel(t: (key: keyof Dictionary) => string, source: s
       return t('item.sourceManual');
     case 'estimated':
       return t('item.sourceEstimated');
+    case 'history':
+      return t('mealHistory.source');
     case 'none':
       return t('item.sourceNone');
     default:

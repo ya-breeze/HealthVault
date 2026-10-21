@@ -291,7 +291,7 @@ export type CustomFoodInput = Omit<CustomFood, 'id'>;
 export type MealStatus =
   | 'processing' | 'pending_clarification' | 'pending_review' | 'confirmed' | 'failed';
 
-export type MacroSource = 'reference' | 'manual' | 'estimated' | 'none';
+export type MacroSource = 'reference' | 'manual' | 'estimated' | 'history' | 'none';
 
 export interface FoodItem {
   id: string;
@@ -308,6 +308,10 @@ export interface FoodItem {
   macro_source: MacroSource;
   weight_grams: number;
   confidence: number;
+  history_original_source?: string;
+  history_original_confidence?: number;
+  history_source_meal_id?: string;
+  history_source_item_id?: string;
   calories: number;
   protein_grams: number;
   carbs_grams: number;
@@ -322,11 +326,21 @@ export interface MealCookingContext {
   low_added_salt: boolean;
 }
 
+export interface MealHistorySuggestion {
+  source_meal_id: string;
+  source_name: string;
+  source_logged_at: string;
+  mappings: { item_id: string; source_item_id: string; source_name: string }[];
+  source_items: { name: string; weight_grams: number; macro_source: string }[];
+}
+
 export interface FoodMeal {
   id: string;
   photo_path?: string;
   description?: string;
   cooking_context?: MealCookingContext;
+  history_version?: string;
+  history_suggestion?: MealHistorySuggestion;
   status: MealStatus;
   logged_at: string;
   name: string;
@@ -413,6 +427,7 @@ export type ReanalyzeInput = { hint: string } | { components: ExpertComponentInp
 export type CreateItemInput = PatchItemInput & { name: string };
 
 export interface MealSummary {
+  can_repeat?: boolean;
   id: string;
   name: string;
   logged_at: string;
@@ -1109,6 +1124,14 @@ export const api = {
   describeMeal: (input: { description: string; name?: string; logged_at?: string; cooking_context?: MealCookingContext }) =>
     apiFetch<FoodMeal>('/food/meals/describe', { method: 'POST', body: JSON.stringify(input) }),
   getMeal: (id: string) => apiFetch<FoodMeal>(`/food/meals/${id}`),
+  resolveMealHistory: (id: string, action: 'apply' | 'dismiss', expectedVersion: string) =>
+    apiFetch<FoodMeal>(`/food/meals/${id}/history`, {
+      method: 'POST', body: JSON.stringify({ action, expected_version: expectedVersion }),
+    }),
+  repeatMeal: (id: string, requestId: string) =>
+    apiFetch<FoodMeal>(`/food/meals/${id}/repeat`, {
+      method: 'POST', body: JSON.stringify({ request_id: requestId }),
+    }),
   mealPhotoUrl: (id: string) => `${BASE}/food/meals/${id}/photo`,
   retryMeal: (id: string) => apiFetch<FoodMeal>(`/food/meals/${id}/retry`, { method: 'POST' }),
   clarifyMeal: (id: string, answers: string[]) =>

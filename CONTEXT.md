@@ -36,6 +36,23 @@ _Avoid_: Ingredient (reserve for informal use only — a Food Item can be a whol
 A user's personal, reusable catalog entry for a food — a name plus its macros — created once (typically from a recognition) and then reused across future Food Items instead of re-recognizing or re-matching against a reference database.
 _Avoid_: Recipe, saved food
 
+**Recent Meal Suggestion**:
+A proposed match between newly photographed Food Items and a confirmed Food Meal from the owner's
+last seven local dates. The owner accepts the suggestion before its nutrition replaces the new
+photo's estimates.
+_Avoid_: Automatic correction, learned recipe
+
+**History Profile**:
+An independent copy of a prior Food Item's nutrition per 100 g, with its source and original
+uncertainty preserved. A new portion uses its own weight; later changes to the source do not
+change the copy.
+_Avoid_: Measured profile, Custom Food
+
+**Repeat Meal**:
+A new, unconfirmed Food Meal based on an owner's recent confirmed Food Meal, with editable
+portions and independent History Profiles.
+_Avoid_: Duplicate intake, automatic confirmation
+
 **Eating Occasion**:
 A group of a Logged Day's Food Meals collapsed by proximity — a new occasion starts whenever the gap to the previous Food Meal's `LoggedAt` exceeds 10 minutes, otherwise it merges into the current one. Exists so a single sitting logged as 2-3 follow-up photos isn't double-counted toward Day Completeness.
 _Avoid_: Meal count, session (too generic)

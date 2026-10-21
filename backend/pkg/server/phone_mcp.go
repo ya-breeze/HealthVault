@@ -42,9 +42,11 @@ type phoneConfirmInput struct {
 }
 
 type phoneItem struct {
-	Name        string  `json:"name"`
-	WeightGrams float64 `json:"weight_grams"`
-	MacroSource string  `json:"macro_source"`
+	Name          string  `json:"name"`
+	WeightGrams   float64 `json:"weight_grams"`
+	MacroSource   string  `json:"macro_source"`
+	Confidence    float64 `json:"confidence"`
+	HistoryReused bool    `json:"history_reused,omitempty"`
 }
 type phoneMealResult struct {
 	MealID          string             `json:"meal_id"`
@@ -76,7 +78,8 @@ func phoneResult(meal *database.FoodMeal) phoneMealResult {
 			"dietary_fiber_grams": preview.DietaryFiberGrams},
 	}
 	for _, it := range meal.Items {
-		out.Items = append(out.Items, phoneItem{it.Name, it.WeightGrams, it.MacroSource})
+		source, confidence := it.NutritionOrigin()
+		out.Items = append(out.Items, phoneItem{Name: it.Name, WeightGrams: it.WeightGrams, MacroSource: source, Confidence: confidence, HistoryReused: it.MacroSource == database.MacroSourceHistory})
 	}
 	var entries []database.ClarifyEntry
 	if json.Unmarshal([]byte(meal.ClarifyLog), &entries) == nil && meal.Status == database.MealStatusPendingClarification {

@@ -626,23 +626,26 @@ func toRecognizeResult(resp *chatCompletionResponse, latency time.Duration, disp
 // Recognize sends the photo and asks the model to identify its foods. See
 // Client.Recognize for hint's and displayLanguage's meaning.
 func (c *OpenAIClient) Recognize(ctx context.Context, image []byte, mimeType, hint, displayLanguage string) (*RecognizeResult, error) {
+	resp, latency, err := c.call(ctx, recognitionMessages(image, mimeType, hint, displayLanguage), "food_recognition", recognizeJSONSchema)
+	if err != nil {
+		return nil, err
+	}
+	return toRecognizeResult(resp, latency, displayLanguage)
+}
+
+func recognitionMessages(image []byte, mimeType, hint, displayLanguage string) []chatMessage {
 	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(image)
 	promptText := "Identify the foods in this photo."
 	if hint != "" {
 		promptText += "\n\nThe user has supplied this correction — take it into account: " + hint
 	}
-	messages := []chatMessage{
+	return []chatMessage{
 		{Role: "system", Content: recognizeSystemPrompt + estimatedProfileUnitsDirective + languageDirective(displayLanguage)},
 		{Role: "user", Content: []map[string]any{
 			{"type": "text", "text": promptText},
 			{"type": "image_url", "image_url": map[string]string{"url": dataURL}},
 		}},
 	}
-	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
-	if err != nil {
-		return nil, err
-	}
-	return toRecognizeResult(resp, latency, displayLanguage)
 }
 
 // Describe sends the user's own written description of a meal and asks the
@@ -724,6 +727,18 @@ func (c *OpenAIClient) EstimateWeights(ctx context.Context, image []byte, mimeTy
 // Client.Clarify for displayLanguage's meaning and for why a non-empty
 // description is replayed every round.
 func (c *OpenAIClient) Clarify(ctx context.Context, description string, priorItems []Item, history []ClarifyTurn, displayLanguage string) (*RecognizeResult, error) {
+	messages, err := clarificationMessages(description, priorItems, history, displayLanguage)
+	if err != nil {
+		return nil, err
+	}
+	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
+	if err != nil {
+		return nil, err
+	}
+	return toRecognizeResult(resp, latency, displayLanguage)
+}
+
+func clarificationMessages(description string, priorItems []Item, history []ClarifyTurn, displayLanguage string) ([]chatMessage, error) {
 	contextPayload := map[string]any{
 		"previously_recognized_items": priorItems,
 		"question_answer_history":     history,
@@ -760,15 +775,10 @@ func (c *OpenAIClient) Clarify(ctx context.Context, description string, priorIte
 			"list, or ask further clarification_questions if still unsure:\n"
 	}
 
-	messages := []chatMessage{
+	return []chatMessage{
 		{Role: "system", Content: systemPrompt + estimatedProfileUnitsDirective + languageDirective(displayLanguage)},
 		{Role: "user", Content: instruction + string(contextJSON)},
-	}
-	resp, latency, err := c.call(ctx, messages, "food_recognition", recognizeJSONSchema)
-	if err != nil {
-		return nil, err
-	}
-	return toRecognizeResult(resp, latency, displayLanguage)
+	}, nil
 }
 
 var selectJSONSchema = map[string]any{
