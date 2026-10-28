@@ -19,11 +19,13 @@ export default function RecentMealSuggestion({ meal, timezone, busy, onAction, o
   const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
+  const [mismatch, setMismatch] = useState(false);
   // Refreshing portions cannot repair a changed source snapshot. Only a
   // newly analyzed suggestion (or dismissal) replaces that snapshot.
   const suggestionKey = JSON.stringify(meal.history_suggestion);
   useEffect(() => {
     setStale(false);
+    setMismatch(false);
     setError(null);
   }, [suggestionKey]);
   const suggestion = meal.history_suggestion;
@@ -44,8 +46,11 @@ export default function RecentMealSuggestion({ meal, timezone, busy, onAction, o
     } catch (err) {
       const conflict = (err instanceof ApiError || (err as { name?: string })?.name === 'ApiError')
         && (err as ApiError).status === 409;
+      const invalidMatch = (err instanceof ApiError || (err as { name?: string })?.name === 'ApiError')
+        && (err as ApiError).status === 422;
       if (conflict) setStale(true);
-      setError(conflict ? t('mealHistory.stale') : err instanceof Error ? err.message : t('mealHistory.failed'));
+      if (invalidMatch) setMismatch(true);
+      setError(invalidMatch ? t('mealHistory.mismatch') : conflict ? t('mealHistory.stale') : err instanceof Error ? err.message : t('mealHistory.failed'));
     } finally {
       inFlight.current = false;
     }
@@ -73,7 +78,7 @@ export default function RecentMealSuggestion({ meal, timezone, busy, onAction, o
         {suggestion.mappings.map(mapping => {
           const target = meal.items?.find(item => item.id === mapping.item_id);
           return <li key={mapping.item_id}>
-            {mapping.source_name}{target ? ` · ${target.weight_grams} ${t('unit.grams')}` : ''}
+            {mapping.source_name}{target ? ` → ${target.name || target.canonical_name || t('mealHistory.unnamedFood')} · ${target.weight_grams} ${t('unit.grams')}` : ''}
           </li>;
         })}
       </ul>
@@ -81,7 +86,7 @@ export default function RecentMealSuggestion({ meal, timezone, busy, onAction, o
       <p className="mt-2 text-xs text-text-muted">{t('mealHistory.uncertainty')}</p>
       <div className="mt-4 flex flex-wrap gap-3">
         <TapTarget data-testid="history-suggestion-apply" onClick={() => run('apply')}
-          disabled={busy || stale || !meal.history_version}
+          disabled={busy || stale || mismatch || !meal.history_version}
           className="rounded-xl px-4 text-sm font-medium bg-accent text-bg-elevated disabled:opacity-50">
           {t('mealHistory.use')}
         </TapTarget>

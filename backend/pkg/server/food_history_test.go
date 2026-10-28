@@ -40,6 +40,7 @@ func seedHistorySource(t *testing.T, st database.Storage, user, family uuid.UUID
 	m.LoggedAt = time.Now().UTC().Add(-time.Hour)
 	// Current manual correction differs deliberately from persisted Recognize estimate.
 	it := &m.Items[0]
+	it.Name = "Vegetables"
 	it.WeightGrams = 200
 	it.MacroSource = database.MacroSourceManual
 	it.Calories = 77

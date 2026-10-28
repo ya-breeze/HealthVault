@@ -30,6 +30,19 @@ const meal: FoodMeal = {
 };
 
 describe('recent meal source presentation', () => {
+  it('does not present an unnamed target as the source food', () => {
+    const unnamed: FoodMeal = { ...meal, items: [{ ...meal.items![0], name: '', canonical_name: '' }] };
+    const html = renderToStaticMarkup(<RecentMealSuggestion meal={unnamed} timezone="UTC" busy={false}
+      onAction={async () => unnamed} onRefresh={async () => unnamed} />);
+    expect(html).toContain('Meat cutlet → Unnamed food · 180 g');
+    expect(html).not.toContain('Meat cutlet → Meat cutlet');
+  });
+  it('uses the canonical name when the target display name is empty', () => {
+    const withEmptyName: FoodMeal = { ...meal, items: [{ ...meal.items![0], name: '', canonical_name: 'meat cutlet' }] };
+    const html = renderToStaticMarkup(<RecentMealSuggestion meal={withEmptyName} timezone="UTC" busy={false}
+      onAction={async () => withEmptyName} onRefresh={async () => withEmptyName} />);
+    expect(html).toContain('Meat cutlet → meat cutlet · 180 g');
+  });
   it('shows the entire source composition and its uncertainty separately from current matched portions', () => {
     const html = renderToStaticMarkup(<RecentMealSuggestion meal={meal} timezone="UTC" busy={false}
       onAction={async () => meal} onRefresh={async () => meal} />);
@@ -38,7 +51,7 @@ describe('recent meal source presentation', () => {
     expect(composition).toContain('Meat cutlet · 100 g');
     expect(composition).toContain('Steamed vegetables · 200 g');
     expect(composition).toContain('AI estimate');
-    expect(mappings).toContain('Meat cutlet · 180 g');
+    expect(mappings).toContain('Meat cutlet → New cutlet · 180 g');
     expect(mappings).not.toContain('Steamed vegetables');
     expect(html).toContain('Estimates stay estimates when reused.');
   });

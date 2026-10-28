@@ -774,6 +774,8 @@ const en = {
   'mealHistory.failed': "Could not update the history suggestion.",
   'mealHistory.stale': "This meal or its source changed. Refresh to load current portions. Keep the new analysis, or analyze the photo again to get a new history suggestion.",
   'mealHistory.refresh': "Refresh meal",
+  'mealHistory.mismatch': "These foods do not match the new meal. Choose Keep new analysis to use its original estimates.",
+  'mealHistory.unnamedFood': "Unnamed food",
   'mealHistory.repeat': "Repeat this meal",
   'mealHistory.repeating': "Preparing…",
   'mealHistory.repeatFailed': "Could not repeat this meal. Try again.",

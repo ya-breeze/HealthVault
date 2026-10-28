@@ -110,7 +110,7 @@ test.describe('Recent meal reuse', () => {
     }
   });
 
-  for (const action of ['apply', 'dismiss'] as const) {
+  for (const action of ['apply', 'dismiss', 'mismatch'] as const) {
     test(`photo suggestion requires explicit ${action} and preserves fresh portion weights`, async ({ page, request }) => {
       await login(page);
       const cookies = await cookieHeader(page);
@@ -141,7 +141,12 @@ test.describe('Recent meal reuse', () => {
         await page.route('**/api/food/meals/suggestion-target', route => route.fulfill({ json: initial }));
         await page.route('**/api/food/meals/suggestion-target/history', async route => {
           mutationCount++;
-          expect(route.request().postDataJSON()).toEqual({ action, expected_version: initial.history_version });
+          const submittedAction = action === 'mismatch' ? mutationCount === 1 ? 'apply' : 'dismiss' : action;
+          expect(route.request().postDataJSON()).toEqual({ action: submittedAction, expected_version: initial.history_version });
+          if (action === 'mismatch' && mutationCount === 1) {
+            await route.fulfill({ status: 422, body: 'history foods do not match; keep the new analysis' });
+            return;
+          }
           const changed: FoodMeal = {
             ...initial, history_suggestion: undefined, history_version: 'resolved-version',
             items: action === 'apply' ? [{ ...item, macro_source: 'history',
@@ -153,12 +158,20 @@ test.describe('Recent meal reuse', () => {
         await page.goto('/food/review/?meal=suggestion-target');
         await expect(page.getByTestId('history-suggestion')).toContainText('Yesterday homemade lunch');
         await expect(page.getByTestId('history-suggestion')).toContainText('Meat cutlet without bread');
+        await expect(page.getByTestId('history-suggestion-mappings')).toContainText('Meat cutlet without bread → Meat cutlet');
         expect(mutationCount).toBe(0);
         const row = page.getByTestId(`item-nutrients-${item.id}`).locator('..');
         await expect(row.locator('input[type="number"]').first()).toHaveValue('150');
-        await page.getByTestId(`history-suggestion-${action}`).click();
+        await page.getByTestId(`history-suggestion-${action === 'mismatch' ? 'apply' : action}`).click();
+        if (action === 'mismatch') {
+          await expect(page.getByTestId('history-suggestion').getByRole('alert')).toContainText('These foods do not match the new meal.');
+          await expect(page.getByTestId('history-suggestion-apply')).toBeDisabled();
+          await expect(page.getByRole('button', { name: 'Refresh meal', exact: true })).toHaveCount(0);
+          await expect(row).toContainText('22.5');
+          await page.getByTestId('history-suggestion-dismiss').click();
+        }
         await expect(page.getByTestId('history-suggestion')).toHaveCount(0);
-        expect(mutationCount).toBe(1);
+        expect(mutationCount).toBe(action === 'mismatch' ? 2 : 1);
         await expect(row.locator('input[type="number"]').first()).toHaveValue('150');
         await expect(row).toContainText(action === 'apply' ? '33.0' : '22.5');
       } finally {

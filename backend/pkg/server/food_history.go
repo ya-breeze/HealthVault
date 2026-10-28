@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -96,6 +97,35 @@ func visionHistory(meals []database.FoodMeal) []vision.HistoryMeal {
 	}
 	return out
 }
+func normalizedHistoryIdentity(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
+}
+
+// A model's valid array indices do not establish that two foods are the same.
+// Keep this conservative: an uncertain synonym loses a suggestion, not nutrition.
+func historyIdentityConflict(source, target database.FoodItem) string {
+	sourceName, targetName := source.Name, target.Name
+	if strings.TrimSpace(source.CanonicalName) != "" && strings.TrimSpace(target.CanonicalName) != "" {
+		sourceName, targetName = source.CanonicalName, target.CanonicalName
+	}
+	if normalizedHistoryIdentity(sourceName) == "" || normalizedHistoryIdentity(sourceName) != normalizedHistoryIdentity(targetName) {
+		return "food_identity"
+	}
+	if a, b := normalizedHistoryIdentity(source.Preparation), normalizedHistoryIdentity(target.Preparation); a != "" && b != "" && a != b {
+		return "preparation"
+	}
+	if a, b := normalizedHistoryIdentity(source.State), normalizedHistoryIdentity(target.State); a != "" && b != "" && a != b {
+		return "state"
+	}
+	return ""
+}
+
+func logHistoryRejection(stage, reason string, sourceMealID, sourceItemID uuid.UUID, target database.FoodItem) {
+	slog.Warn("food history mapping rejected", "stage", stage, "reason", reason,
+		"meal_id", target.MealID, "item_id", target.ID,
+		"source_meal_id", sourceMealID, "source_item_id", sourceItemID)
+}
+
 func buildHistorySuggestion(match *vision.HistoryMatch, history []database.FoodMeal, items []database.FoodItem) *database.MealHistorySuggestion {
 	if match == nil || match.SourceMealIndex < 0 || match.SourceMealIndex >= len(history) || len(match.Mappings) == 0 {
 		return nil
@@ -111,6 +141,10 @@ func buildHistorySuggestion(match *vision.HistoryMatch, history []database.FoodM
 		targets[m.ItemIndex] = true
 		sources[m.SourceItemIndex] = true
 		it := source.Items[m.SourceItemIndex]
+		if reason := historyIdentityConflict(it, items[m.ItemIndex]); reason != "" {
+			logHistoryRejection("suggest", reason, source.ID, it.ID, items[m.ItemIndex])
+			return nil
+		}
 		p, ok := it.CurrentProfile()
 		if !ok {
 			return nil
@@ -139,11 +173,12 @@ func copyHistoryProfile(target *database.FoodItem, mapping database.MealHistoryM
 }
 
 var errHistoryConflict = errors.New("meal history changed; reload and try again")
+var errHistoryIdentity = errors.New("history foods do not match; keep the new analysis")
 var errHistoryUnavailable = errors.New("meal cannot be repeated: every item needs usable nutrition and a positive weight; use a meal with 1 to 100 items")
 
 func (h *foodHandlers) historyError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, errHistoryUnavailable):
+	case errors.Is(err, errHistoryUnavailable) || errors.Is(err, errHistoryIdentity):
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 	case errors.Is(err, database.ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
@@ -213,11 +248,26 @@ func (h *foodHandlers) ResolveMealHistory(w http.ResponseWriter, r *http.Request
 			for i := range meal.Items {
 				targets[meal.Items[i].ID] = &meal.Items[i]
 			}
+			sources := map[uuid.UUID]database.FoodItem{}
+			for _, it := range source.Items {
+				sources[it.ID] = it
+			}
 			for _, m := range s.Mappings {
 				it := targets[m.ItemID]
 				if it == nil || !isPositiveFinite(it.WeightGrams) || !database.ValidHistoryProfile(m.Profile) {
 					return errHistoryConflict
 				}
+				from, ok := sources[m.SourceItemID]
+				if !ok {
+					return errHistoryConflict
+				}
+				if reason := historyIdentityConflict(from, *it); reason != "" {
+					logHistoryRejection("apply", reason, source.ID, from.ID, *it)
+					return errHistoryIdentity
+				}
+			}
+			for _, m := range s.Mappings {
+				it := targets[m.ItemID]
 				copyHistoryProfile(it, m, s.SourceMealID)
 				if err := tx.Omit("CreatedAt").Save(it).Error; err != nil {
 					return err
