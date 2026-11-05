@@ -236,10 +236,9 @@ test.describe('Recent meal reuse', () => {
   });
 });
 
-// Opt in explicitly: this exercises the deployed model adapter and incurs a
-// real provider request. It uses the repository's synthetic meal illustration.
-test.describe('Recent meal reuse with deployed photo recognition', () => {
-  test.skip(process.env.HCW_LIVE_AI_E2E !== '1', 'Set HCW_LIVE_AI_E2E=1 for provider-backed integration');
+// Register provider-backed cases only when explicitly requested. The default
+// synthetic suite must not report skipped cases or make live provider requests.
+if (process.env.HCW_LIVE_AI_E2E === '1') test.describe('Recent meal reuse with deployed photo recognition', () => {
   for (const action of ['apply', 'dismiss'] as const) {
     test(`real photo suggestion ${action} reaches the deployed history endpoint`, async ({ page, request }) => {
       test.setTimeout(180_000);
