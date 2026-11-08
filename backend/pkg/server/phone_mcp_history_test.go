@@ -218,7 +218,7 @@ func TestPhoneHistoryDiscoveryAndSelectorSchema(t *testing.T) {
 			if err := json.Unmarshal([]byte(body), &reply); err != nil {
 				t.Fatal(err)
 			}
-			if len(reply.Result.Tools) != 10 {
+			if len(reply.Result.Tools) != 14 {
 				t.Fatalf("tools: %s", body)
 			}
 			for _, tool := range reply.Result.Tools {
