@@ -7,14 +7,7 @@ GO_TAGS := sqlite_fts5
 
 .PHONY: all build test test-backend test-frontend test-android test-e2e test-e2e-disposable test-workflows lint lint-android lint-e2e run-backend android-apk
 
-DISPOSABLE_RUNNER ?= /data/Useful/ai/truenas/test_environment.py
-DISPOSABLE_PROFILE ?= /data/Useful/ai/truenas/test-environment-profiles/healthvault-synthetic.json
-DISPOSABLE_PORTAINER_URL ?= https://192.168.1.54:31015
-DISPOSABLE_BIND_IP ?= 192.168.1.54
-DISPOSABLE_HTTP_PORT ?=
-DISPOSABLE_SESSION ?=
-DISPOSABLE_OWNER ?= $(DISPOSABLE_SESSION)
-DISPOSABLE_PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
+DISPOSABLE_OWNER ?=
 
 all: build
 
@@ -55,19 +48,12 @@ test-android:
 test-e2e: $(ROOT_DIR)e2e/node_modules/.install-stamp
 	@cd $(ROOT_DIR)e2e && BASE_URL=$(or $(BASE_URL),http://192.168.1.54:8892) npx playwright test --reporter=line $(E2E_ARGS)
 
-# Run the existing full suite in a private, synthetic stack. The runner supplies
-# BASE_URL inside that stack, retains results, and cleans up without using WIP.
+# Run the full suite in a private, synthetic stack through the e2e_lite runner.
+# The runner supplies BASE_URL inside the stack, keeps results and removes its
+# labeled resources afterwards, without using WIP.
 test-e2e-disposable:
-	@test -n "$(DISPOSABLE_HTTP_PORT)" && test -n "$(DISPOSABLE_SESSION)" || { echo "Set DISPOSABLE_HTTP_PORT and DISPOSABLE_SESSION" >&2; exit 2; }
-	python3 "$(DISPOSABLE_RUNNER)" run-checkout --checkout "$(ROOT_DIR)" \
-		--profile "$(DISPOSABLE_PROFILE)" \
-		--runs-dir /data/data/test-environment-runs \
-		--artifact-root /data/data/test-environment-artifacts \
-		--owner "$(DISPOSABLE_OWNER)" --session "$(DISPOSABLE_SESSION)" \
-		--portainer-url "$(DISPOSABLE_PORTAINER_URL)" --endpoint-id 3 \
-		--bind-ip "$(DISPOSABLE_BIND_IP)" --http-port "$(DISPOSABLE_HTTP_PORT)" \
-		--timeout-seconds 5400 --expiry-seconds 7200 \
-		--playwright-base-image "$(DISPOSABLE_PLAYWRIGHT_IMAGE)"
+	cd /data/Useful/ai/truenas && python3 -m e2e_lite.runner --checkout "$(ROOT_DIR)" \
+		--profile healthvault --suite full --owner "$(or $(DISPOSABLE_OWNER),healthvault-e2e)"
 
 $(ROOT_DIR)e2e/node_modules/.install-stamp: $(ROOT_DIR)e2e/package-lock.json
 	@cd $(ROOT_DIR)e2e && npm ci
