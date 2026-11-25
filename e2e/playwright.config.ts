@@ -3,7 +3,7 @@ import { BASE_URL } from './tests/helpers/target';
 
 export default defineConfig({
   testDir: './tests',
-  globalSetup: process.env.HCW_DISPOSABLE_E2E === '1' ? './tests/helpers/disposable-seed.ts' : undefined,
+  globalSetup: process.env.HCW_DISPOSABLE_E2E === '1' ? './tests/helpers/disposable-start.ts' : undefined,
   forbidOnly: process.env.HCW_DISPOSABLE_E2E === '1',
   timeout: 30_000,
   retries: 1,

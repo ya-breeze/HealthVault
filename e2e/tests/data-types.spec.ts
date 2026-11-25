@@ -1,6 +1,13 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { BASE_URL } from './helpers/target';
 import { webhookAuthHeaders } from './helpers/webhook';
+import { seedHistory, removeHistory, type HistoryHandle } from './helpers/history';
+
+// This file reads charts, trends and vitals, so it creates its own health
+// history through the webhook and removes it afterwards.
+let history: HistoryHandle | undefined;
+test.beforeAll(async () => { history = await seedHistory(); });
+test.afterAll(async () => { await removeHistory(history); });
 
 const USER = process.env.HCW_USER || 'alice';
 const PASS = process.env.HCW_PASS || 'pass1';
